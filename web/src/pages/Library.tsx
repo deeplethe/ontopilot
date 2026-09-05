@@ -1622,7 +1622,7 @@ function SourceModal({
                   <option value="feed">{S.library.rssModeFeed}</option>
                 </NativeSelect>,
               )}
-              <p className="-mt-1 mb-3 text-caption leading-relaxed text-ink-3">
+              <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-3">
                 {rssContentMode === "full_new_items"
                   ? S.library.rssFullModeHint
                   : S.library.rssFeedModeHint}
@@ -2011,7 +2011,7 @@ function SourceEditModal({
                   <option value="feed">{S.library.rssModeFeed}</option>
                 </NativeSelect>,
               )}
-              <p className="-mt-1 mb-3 text-caption leading-relaxed text-ink-3">
+              <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-3">
                 {rssContentMode === "full_new_items"
                   ? S.library.rssFullModeHint
                   : S.library.rssFeedModeHint}

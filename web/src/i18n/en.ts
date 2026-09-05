@@ -594,11 +594,11 @@ export const en = {
     rssModeFull: "Full article content (new items)",
     rssModeFeedShort: "Feed only",
     rssModeFullShort: "Full articles",
-    rssContentModeHint: "Full mode fetches linked articles only for items first seen after activation.",
+    rssContentModeHint: "Full articles are fetched only for items that appear after you switch this on.",
     rssFullModeHint:
-      "The first successful sync records the current feed as a baseline and imports nothing. Later new items use feed content first, then a guarded article fetch; summaries without usable content remain diagnosable terminal outcomes.",
+      "The first sync records what the feed holds now and imports nothing. Each item that appears after that is stored from the feed's own text when there is enough of it, otherwise from the linked article; an item with neither is listed as skipped.",
     rssFeedModeHint:
-      "Legacy mode stores feed content or the summary and does not fetch linked articles.",
+      "Stores what the feed itself carries — the entry text or its summary — and never opens the linked article.",
     rssHydrationCounts: (pending: number, queued: number, retrying: number, complete: number, terminal: number) =>
       `pending ${pending} · queued ${queued} · retrying ${retrying} · complete ${complete} · terminal ${terminal}`,
     repoField: "Repository (owner/name)",

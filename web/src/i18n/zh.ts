@@ -541,10 +541,10 @@ export const zh: Strings = {
     rssModeFull: "新条目获取完整文章",
     rssModeFeedShort: "仅订阅",
     rssModeFullShort: "完整文章",
-    rssContentModeHint: "完整模式只为启用后首次发现的新条目抓取链接文章。",
+    rssContentModeHint: "只为开启之后新出现的条目抓取全文。",
     rssFullModeHint:
-      "第一次成功同步只把当前订阅记录为基线，不导入文档。之后的新条目优先使用订阅正文，再进行受限文章抓取；没有可用正文的摘要只保留为可诊断的终止结果。",
-    rssFeedModeHint: "兼容模式保存订阅正文或摘要，不抓取链接文章。",
+      "第一次同步只记下订阅当前有哪些条目，不导入。之后新出现的条目，订阅自带的正文够长就用它，不够就去抓链接的文章；两者都没有的条目记为跳过。",
+    rssFeedModeHint: "只存订阅自带的内容——正文或摘要——不去打开链接的文章。",
     rssHydrationCounts: (pending: number, queued: number, retrying: number, complete: number, terminal: number) =>
       `待处理 ${pending} · 排队 ${queued} · 重试 ${retrying} · 完成 ${complete} · 终止 ${terminal}`,
     repoField: "仓库（owner/name）",
