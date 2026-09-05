@@ -32,8 +32,9 @@ export function KbSwitcher({
         size="sm"
         aria-expanded={open}
         title={S.nav.kbLabel}
-        // px-4 与面板行同一个内距：面板长出来时，第一行的图标就落在胶囊图标的位置上
-        className={cn("h-auto max-w-64 border-0 px-4 py-1", open && "invisible")}
+        // 与右边的用户菜单胶囊同高（34）：py-2 加一行正文。px-6 与面板行同一个
+        // 内距，面板长出来时第一行的图标就落在胶囊图标的位置上
+        className={cn("h-auto max-w-64 border-0 px-6 py-2", open && "invisible")}
         icon={<Layers size={15} strokeWidth={1.8} className="text-ink-2" />}
         onClick={() => (open ? close() : setOpen(true))}
       >
@@ -49,7 +50,7 @@ export function KbSwitcher({
           {/* 第一行是胶囊自己：同一个图标、同一个名字，箭头翻上去；再点一下缩回 */}
           <div
             onClick={close}
-            className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
+            className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-6 py-3"
           >
             <Layers size={15} strokeWidth={1.8} className="shrink-0 text-ink-2" />
             <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
@@ -62,7 +63,7 @@ export function KbSwitcher({
               <Row
                 key={k.id}
                 density="menu"
-                className="gap-3 px-4 py-2 text-body"
+                className="gap-3 px-6 py-2 text-body"
                 trailing={
                   k.id === kb?.id ? <Check size={13} className="text-ink-2" /> : undefined
                 }
