@@ -235,7 +235,6 @@ export function Dropdown({
   icon,
   menuLabel,
   footer,
-  bare,
 }: {
   value: string;
   options: DropdownOption[];
@@ -249,9 +248,6 @@ export function Dropdown({
   menuLabel?: string;
   /** 弹层底部固定操作区（点击后弹层关闭） */
   footer?: ReactNode;
-  /** 无底无框：只有文字和箭头。给顶栏那种本身已经是一块面的地方——再套一个
-   *  输入框的壳，就是面上叠面 */
-  bare?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -281,16 +277,9 @@ export function Dropdown({
         type="button"
         onClick={() => setOpen(!open)}
         title={menuLabel}
-        className={cn(
-          bare ? "u-dropdown-bare" : "input-dark",
-          "w-full flex items-center gap-2 text-left",
-          pad,
-        )}
+        className={cn("input-dark w-full flex items-center gap-2 text-left", pad)}
       >
-        {/* 无框的触发器（顶栏）里图标与导航标签同一档灰；输入框里的照旧更淡 */}
-        {icon && (
-          <span className={cn("shrink-0", bare ? "text-ink-2" : "text-ink-3")}>{icon}</span>
-        )}
+        {icon && <span className="shrink-0 text-ink-3">{icon}</span>}
         <span className="flex-1 min-w-0 truncate">
           {current?.label ?? (
             <span className="text-ink-3">{placeholder ?? ""}</span>
@@ -308,9 +297,7 @@ export function Dropdown({
         <div
           className={cn(
             // 与告警面板、用户菜单同一张皮（u-menu-glass）：浮在页面上的面只有一种
-            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 rounded-xl shadow-2xl overflow-hidden",
-            // 无框的触发器按内容宽，菜单不能跟着窄：给一个下限，按最长的名字撑开
-            bare ? "min-w-48 w-max max-w-80" : "w-full",
+            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-xl shadow-2xl overflow-hidden",
           )}
         >
           {menuLabel && (

@@ -8,7 +8,6 @@ import {
 } from "@tanstack/react-router";
 import {
   Database,
-  Layers,
   Library as LibraryIcon,
   ListChecks,
   MessagesSquare,
@@ -20,7 +19,8 @@ import {
 import { api, ApiError } from "../api";
 import { S } from "../i18n";
 import { useKb, useKbId } from "../kb";
-import { Dropdown, GithubMark, Wordmark } from "../ui";
+import { GithubMark, Wordmark } from "../ui";
+import { KbSwitcher } from "./KbSwitcher";
 import { AlertBell } from "./AlertBell";
 import { UserMenu } from "./UserMenu";
 import { ServerDown } from "./ServerDown";
@@ -96,9 +96,9 @@ export function Shell() {
       {/* z-40：backdrop-filter 使顶栏与 tab 条各自成 stacking context，
           不提权则后者按 DOM 序盖住顶栏内的弹出面板 */}
       {/* 左内距 32px：字标的左缘落在下面第一个标签的图标上（nav px-4 + 标签
-          px-4）。字标与切换器之间 gap-4：切换器的图标正好落在第二个标签的图标上
+          px-4）。字标与切换器之间 gap-3：切换器的图标正好落在第二个标签的图标上
           （英文界面下的巧合，字标一换字号就得重量）——两行同一套节奏 */}
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-4 px-8">
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-3 px-8">
         {/* 字标：逐字母淡入，hover 浮出 ↗，点击去官网 */}
         <Wordmark className="text-display" />
         {/* 知识库切换器紧跟字标，中间不画斜杠——它不是面包屑的第二级，就是
@@ -108,15 +108,7 @@ export function Shell() {
             是库名；中号字与下面的标签同一个字号；箭头贴着名字，不顶到一个固定
             宽度的右边去。
             纯切换器：建库是管理动作，入口在 System settings › Knowledge bases */}
-        <Dropdown
-          bare
-          className="max-w-64"
-          icon={<Layers size={13} />}
-          menuLabel={S.nav.kbLabel}
-          value={kb?.id ?? ""}
-          onChange={setKb}
-          options={kbs.map((k) => ({ value: k.id, label: k.name }))}
-        />
+        <KbSwitcher kb={kb} kbs={kbs} onChange={setKb} />
         {/* 三组：项目入口 / 告警 / 身份。**组间 gap-3，组内 gap-2**——
             间距由结构表达，而不是给某一个元素补一次性的 ml。
             此前用户菜单挂着一个 ml-2（当初它紧挨 GitHub 胶囊时调的），
