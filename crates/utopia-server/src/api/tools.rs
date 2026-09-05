@@ -209,7 +209,7 @@ pub async fn get_document(
 
     let when = doc
         .doc_time
-        .map(|t| t.format("%Y-%m-%d").to_string())
+        .map(crate::time_text::instant)
         .unwrap_or_else(|| "no date".to_string());
     let header = format!(
         "\"{}\" ({when}) — {} section(s):",
@@ -347,7 +347,7 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
                     Some(t) => format!(
                         "{}: no facts valid as of {}.",
                         node.name,
-                        t.format("%Y-%m-%d")
+                        crate::time_text::instant(t)
                     ),
                     None => format!("{}: no recorded facts.", node.name),
                 }
@@ -499,14 +499,17 @@ pub async fn rule_matches(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
 }
 
 pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult {
-    let day = |k: &str| {
-        args[k]
-            .as_str()
-            .and_then(|s| chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok())
-    };
-    let Some((since, until, window)) =
-        changes_window(day("since"), day("until"), chrono::Utc::now())
-    else {
+    // 两端与 `at` 同一种写法：YYYY / YYYY-MM / YYYY-MM-DD。`since` 取那一段的第一天，
+    // `until` 取最后一天——「2023 年有什么变化」不该逼模型编一个 12 月 31 日
+    let since = args["since"]
+        .as_str()
+        .and_then(utopia_extract::parse_time)
+        .map(|(t, _)| t.date_naive());
+    let until = args["until"]
+        .as_str()
+        .and_then(utopia_extract::parse_time)
+        .map(|(t, p)| period_last_day(t.date_naive(), p));
+    let Some((since, until, window)) = changes_window(since, until, chrono::Utc::now()) else {
         return (
             "Invalid or missing `since` (expected YYYY-MM-DD).".to_string(),
             json!({ "kind": "changes", "label": "?", "detail": "invalid since" }),
@@ -585,11 +588,27 @@ pub async fn query_data(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResu
 
 pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult {
     let text = args["text"].as_str().map(str::trim).unwrap_or("");
-    let occurred_at = args["occurred_at"]
-        .as_str()
-        .and_then(|s| chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok())
-        .map(|d| d.and_hms_opt(12, 0, 0).unwrap().and_utc())
-        .unwrap_or_else(chrono::Utc::now);
+    // 与 `at` 同一种写法：YYYY / YYYY-MM / YYYY-MM-DD 或 RFC3339。日期落在那段第一天的
+    // 正午——离两边的日界都最远；时刻照给的。回显按给的精度写，不把「2023 年」说成 1 月 1 日
+    let (occurred_at, occurred_text) = match args["occurred_at"].as_str().map(str::trim) {
+        Some(s) if !s.is_empty() => match utopia_extract::parse_time(s) {
+            Some((d, precision)) => (
+                d + chrono::Duration::hours(12),
+                crate::time_text::world(d, Some(precision)),
+            ),
+            None => match parse_when(s) {
+                Some(at) => (at, crate::time_text::instant(at)),
+                None => {
+                    let now = chrono::Utc::now();
+                    (now, crate::time_text::instant(now))
+                }
+            },
+        },
+        _ => {
+            let now = chrono::Utc::now();
+            (now, crate::time_text::instant(now))
+        }
+    };
     if text.is_empty() {
         return (
             "remember requires non-empty text.".to_string(),
@@ -620,7 +639,7 @@ pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult
                      before entering the graph. Tell the user exactly that: the sentence is \
                      recorded, and the extracted facts await their confirmation. Do not claim \
                      any fact has been added to the knowledge graph.",
-                    occurred_at.format("%Y-%m-%d")
+                    occurred_text
                 ),
                 json!({
                     "kind": "tool", "label": "remember",
@@ -712,20 +731,27 @@ fn fact_line(f: &EntityFact) -> String {
     } else {
         format!("{pred} ← {other}")
     };
-    let range = match (&f.valid_from, &f.valid_to) {
-        (Some(from), Some(to)) => {
-            format!(" ({} → {})", from.format("%Y-%m-%d"), to.format("%Y-%m-%d"))
-        }
-        (Some(from), None) => format!(" ({} → now)", from.format("%Y-%m-%d")),
-        (None, Some(to)) => format!(" (→ {})", to.format("%Y-%m-%d")),
-        (None, None) => String::new(),
+    // 两端各按自己的精度写；没起点的从证据起，结束了不知哪天的到说出它的那份文档为止
+    //（time_text，0022）。从前一律 %Y-%m-%d，年精度印成 1 月 1 日、结束未知印成 now
+    let range = crate::time_text::span(crate::time_text::Span {
+        valid_from: f.valid_from,
+        from_precision: f.valid_from_precision.as_deref(),
+        valid_to: f.valid_to,
+        to_precision: f.valid_to_precision.as_deref(),
+        holds_from: f.holds_from,
+        holds_to: f.holds_to,
+    });
+    let range = if range.is_empty() {
+        range
+    } else {
+        format!(" ({range})")
     };
     format!("{core}{range} [{}%]", (f.confidence * 100.0).round() as i32)
 }
 
 // 记录轴上的两次更正可以发生在同一秒；输出必须能原样交回 as_of，不能截到天或秒。
 fn record_stamp(time: chrono::DateTime<chrono::Utc>) -> String {
-    time.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+    crate::time_text::instant(time)
 }
 
 fn entity_facts_detail(
@@ -736,10 +762,10 @@ fn entity_facts_detail(
     match (at, as_of) {
         (Some(t), Some(r)) => format!(
             "{count} facts at {}, as recorded by {}",
-            t.format("%Y-%m-%d"),
+            record_stamp(t),
             record_stamp(r)
         ),
-        (Some(t), None) => format!("{count} facts as of {}", t.format("%Y-%m-%d")),
+        (Some(t), None) => format!("{count} facts as of {}", record_stamp(t)),
         (None, Some(r)) => format!("{count} facts as recorded by {}", record_stamp(r)),
         (None, None) => format!("{count} facts"),
     }
@@ -749,8 +775,9 @@ fn entity_facts_detail(
 /// 时刻常常是一个带时间的戳（"第一波灌完那一刻"），日期粒度装不下它
 fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     let s = raw.trim();
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Some(d.and_hms_opt(0, 0, 0).unwrap().and_utc());
+    // YYYY / YYYY-MM / YYYY-MM-DD 取那一段的开头——与抽取端同一个解析
+    if let Some((d, _)) = utopia_extract::parse_time(s) {
+        return Some(d);
     }
     chrono::DateTime::parse_from_rfc3339(s)
         .ok()
@@ -801,6 +828,25 @@ fn literal_text(v: &serde_json::Value) -> Option<String> {
 /// 一起被测住；分在两处写，迟早再次分叉。
 ///
 /// `now` 从外面传进来而不是在里面取，纯粹是为了这个函数测得动。
+/// 一段（年 / 月 / 日）的最后一天：`until=2023` 是到 12 月 31 日为止，含那一整天。
+fn period_last_day(first: chrono::NaiveDate, precision: &str) -> chrono::NaiveDate {
+    use chrono::Datelike;
+    match precision {
+        "year" => chrono::NaiveDate::from_ymd_opt(first.year(), 12, 31).unwrap_or(first),
+        "month" => {
+            let (y, m) = if first.month() == 12 {
+                (first.year() + 1, 1)
+            } else {
+                (first.year(), first.month() + 1)
+            };
+            chrono::NaiveDate::from_ymd_opt(y, m, 1)
+                .and_then(|d| d.pred_opt())
+                .unwrap_or(first)
+        }
+        _ => first,
+    }
+}
+
 fn changes_window(
     since: Option<chrono::NaiveDate>,
     until: Option<chrono::NaiveDate>,
@@ -841,17 +887,19 @@ fn change_line(c: &GraphChange) -> String {
         (None, Some(v)) => literal_text(v).unwrap_or_else(|| "?".to_string()),
         (None, None) => "?".to_string(),
     };
-    let range = match (&c.valid_from, &c.valid_to) {
-        (Some(from), Some(to)) => {
-            format!(
-                " [valid {} → {}]",
-                from.format("%Y-%m-%d"),
-                to.format("%Y-%m-%d")
-            )
-        }
-        (Some(from), None) => format!(" [valid {} → now]", from.format("%Y-%m-%d")),
-        (None, Some(to)) => format!(" [valid → {}]", to.format("%Y-%m-%d")),
-        (None, None) => String::new(),
+    // 世界轴两端按自己的精度写（time_text）；事件行上没有锚点，结束未知只能写成话
+    let range = crate::time_text::span(crate::time_text::Span {
+        valid_from: c.valid_from,
+        from_precision: c.valid_from_precision.as_deref(),
+        valid_to: c.valid_to,
+        to_precision: c.valid_to_precision.as_deref(),
+        holds_from: None,
+        holds_to: None,
+    });
+    let range = if range.is_empty() {
+        range
+    } else {
+        format!(" [valid {range}]")
     };
     // 文件名不带 [n]：引证编号是 chunk 的，这里只有 document，发一个编号出去
     // 会在界面上落成一条指不到东西的引证
@@ -944,6 +992,36 @@ mod tests {
 
     // --- change_line --------------------------------------------------------
 
+    /// 年精度的起点写成年，不再印成 1 月 1 日；结束了不知哪天绝不写 now
+    #[test]
+    fn a_change_line_shows_each_end_at_its_precision() {
+        let mut c = change("asserted");
+        c.valid_from = Some(t("2019-01-01T00:00:00Z"));
+        c.valid_from_precision = Some("year".into());
+        assert!(
+            change_line(&c).contains("[valid 2019 → now]"),
+            "{}",
+            change_line(&c)
+        );
+        c.valid_to_precision = Some("unknown".into());
+        assert!(
+            change_line(&c).contains("[valid 2019 → ended, date unknown]"),
+            "{}",
+            change_line(&c)
+        );
+    }
+
+    #[test]
+    fn a_window_end_covers_the_whole_period_named() {
+        assert_eq!(period_last_day(d("2023-01-01"), "year"), d("2023-12-31"));
+        assert_eq!(period_last_day(d("2024-02-01"), "month"), d("2024-02-29"));
+        assert_eq!(period_last_day(d("2023-12-01"), "month"), d("2023-12-31"));
+        assert_eq!(period_last_day(d("2023-06-15"), "day"), d("2023-06-15"));
+        // parse_when 与 at 同一种写法
+        assert_eq!(parse_when("2023"), Some(t("2023-01-01T00:00:00Z")));
+        assert_eq!(parse_when("2023-06"), Some(t("2023-06-01T00:00:00Z")));
+    }
+
     fn change(kind: &str) -> GraphChange {
         GraphChange {
             fact_id: Uuid::nil(),
@@ -991,13 +1069,16 @@ mod tests {
         let as_of = Some(t("2026-09-05T02:43:53.382001Z"));
         assert_eq!(
             entity_facts_detail(2, at, as_of),
-            "2 facts at 2024-08-01, as recorded by 2026-09-05T02:43:53.382001Z"
+            "2 facts at 2024-08-01T00:00:00Z, as recorded by 2026-09-05T02:43:53.382001Z"
         );
         assert_eq!(
             entity_facts_detail(2, None, as_of),
             "2 facts as recorded by 2026-09-05T02:43:53.382001Z"
         );
-        assert_eq!(entity_facts_detail(2, at, None), "2 facts as of 2024-08-01");
+        assert_eq!(
+            entity_facts_detail(2, at, None),
+            "2 facts as of 2024-08-01T00:00:00Z"
+        );
         assert_eq!(entity_facts_detail(0, None, None), "0 facts");
     }
 
@@ -1076,6 +1157,7 @@ mod tests {
         c.object_name = Some("Berlin".to_string());
         c.predicate_label = Some("headquartered in".to_string());
         c.valid_from = Some(t("2019-01-01T00:00:00Z"));
+        c.valid_from_precision = Some("day".into());
         let line = change_line(&c);
         assert!(
             line.starts_with("2026-08-28T10:00:00Z corrected: "),

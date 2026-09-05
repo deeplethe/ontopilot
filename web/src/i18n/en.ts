@@ -1687,7 +1687,7 @@ export const en = {
     closeOldAt: (d: string) => `Close old at ${d}`,
     keepBoth: "Keep both",
     rejectNew: "Reject new",
-    closeAtPlaceholder: "YYYY-MM-DD",
+    closeAtPlaceholder: "YYYY-MM-DD · YYYY-MM · YYYY",
     unconfirmed: "No longer stated",
     unconfirmedHint:
       "Every source that stated these facts has since been updated without them. " +

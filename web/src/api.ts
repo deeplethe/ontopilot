@@ -1943,15 +1943,20 @@ export const api = {
     }>(
       `/api/v1/kbs/${kbId}/review?queue=${queue}&limit=${limit}&offset=${offset}`,
     ),
-  closeFact: (kbId: string, factId: string, validTo: string) =>
+  /** 闭合日期带精度（year | month | day）：写多少位就是多少精度，服务端照存 */
+  closeFact: (kbId: string, factId: string, validTo: string, precision: string) =>
     request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/facts/${factId}/close`, {
       method: "POST",
-      body: JSON.stringify({ valid_to: validTo }),
+      body: JSON.stringify({ valid_to: validTo, valid_to_precision: precision }),
     }),
   resolveConflict: (
     kbId: string,
     conflictId: string,
-    body: { action: "close" | "keep" | "reject_new"; close_at?: string },
+    body: {
+      action: "close" | "keep" | "reject_new";
+      close_at?: string;
+      close_at_precision?: string;
+    },
   ) =>
     request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/conflicts/${conflictId}`, {
       method: "POST",
@@ -2062,7 +2067,7 @@ export const api = {
     kbId: string,
     violationId: string,
     resolution: ViolationResolution,
-    opts: { closeAt?: string; factId?: string } = {},
+    opts: { closeAt?: string; closeAtPrecision?: string; factId?: string } = {},
   ) =>
     request<{ ok: boolean }>(
       `/api/v1/kbs/${kbId}/review/violations/${violationId}`,
@@ -2071,6 +2076,7 @@ export const api = {
         body: JSON.stringify({
           resolution,
           close_at: opts.closeAt ?? null,
+          close_at_precision: opts.closeAtPrecision ?? null,
           fact_id: opts.factId ?? null,
         }),
       },

@@ -536,15 +536,19 @@ pub async fn list_conflicts(
 
 /// 人工裁决：close（旧事实闭合于 close_at 或新事实起点）/ keep（并存不矛盾）/
 /// reject_new（新事实是抽取错误，作废）。
+/// 一条待裁决的冲突：旧事实、新事实、新事实的起点及其精度
+type ConflictRow = (Uuid, Uuid, Option<DateTime<Utc>>, Option<String>);
+
 pub async fn resolve_conflict(
     pool: &PgPool,
     kb_id: Uuid,
     conflict_id: Uuid,
     resolution: &str,
     close_at: Option<DateTime<Utc>>,
+    close_at_precision: &str,
 ) -> AppResult<()> {
-    let row: Option<(Uuid, Uuid, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "SELECT c.old_fact_id, c.new_fact_id, fn_.valid_from
+    let row: Option<ConflictRow> = sqlx::query_as(
+        "SELECT c.old_fact_id, c.new_fact_id, fn_.valid_from, fn_.valid_from_precision
          FROM fact_conflicts c JOIN facts fn_ ON fn_.id = c.new_fact_id
          WHERE c.id = $1 AND c.kb_id = $2 AND c.status = 'open'",
     )
@@ -552,19 +556,28 @@ pub async fn resolve_conflict(
     .bind(kb_id)
     .fetch_optional(pool)
     .await?;
-    let Some((old_fact_id, new_fact_id, new_from)) = row else {
+    let Some((old_fact_id, new_fact_id, new_from, new_from_precision)) = row else {
         return Err(utopia_core::AppError::NotFound);
     };
 
     let stored = match resolution {
         "close" => {
-            let at = close_at.or(new_from).ok_or_else(|| {
-                utopia_core::AppError::invalid(
-                    "close_at_required",
-                    "close_at is required when the new fact has no start time",
-                )
-            })?;
-            close_superseded(pool, old_fact_id, at, "day").await?;
+            // 闭合点带着它的精度走：人给了日期就用人给的精度，没给就闭合在新事实的
+            // 起点——那个起点是几月还是几号，闭合点就是几月还是几号。从前一律写 day，
+            // 「2023 年 6 月接任」把前任闭合成了 6 月 1 日
+            let (at, precision) = match close_at {
+                Some(at) => (at, close_at_precision),
+                None => (
+                    new_from.ok_or_else(|| {
+                        utopia_core::AppError::invalid(
+                            "close_at_required",
+                            "close_at is required when the new fact has no start time",
+                        )
+                    })?,
+                    new_from_precision.as_deref().unwrap_or("day"),
+                ),
+            };
+            close_superseded(pool, old_fact_id, at, precision).await?;
             "closed"
         }
         "keep" => "kept_both",
