@@ -8,9 +8,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  BookMarked,
   Check,
   Languages,
+  Layers,
   LogOut,
   ShieldCheck,
   UserRound,
@@ -99,18 +99,32 @@ export function UserMenu({ user }: { user: User }) {
           </div>
 
           <div>
-            <Row density="menu" className="gap-3 px-4 py-3 text-body" onClick={() => go("/account")}>
-              <UserRound size={13} className="text-ink-3" />
+            {/* 图标走 Row 的 icon 槽——塞在 children 里的 svg 是块级的，会把文字
+                挤到第二行 */}
+            <Row
+              density="menu"
+              className="gap-3 px-4 py-3 text-body"
+              icon={<UserRound size={13} />}
+              onClick={() => go("/account")}
+            >
               {S.account.profile}
             </Row>
             {/* 人人可看：全部可见库 + 我在每个库的身份 */}
-            <Row density="menu" className="gap-3 px-4 py-3 text-body" onClick={() => go("/account/kbs")}>
-              <BookMarked size={13} className="text-ink-3" />
+            <Row
+              density="menu"
+              className="gap-3 px-4 py-3 text-body"
+              icon={<Layers size={13} />}
+              onClick={() => go("/account/kbs")}
+            >
               {S.account.kbsNav}
             </Row>
             {user.is_admin && (
-              <Row density="menu" className="gap-3 px-4 py-3 text-body" onClick={() => go("/admin")}>
-                <ShieldCheck size={13} className="text-ink-3" />
+              <Row
+                density="menu"
+                className="gap-3 px-4 py-3 text-body"
+                icon={<ShieldCheck size={13} />}
+                onClick={() => go("/admin")}
+              >
                 {S.account.administration}
               </Row>
             )}
@@ -124,20 +138,30 @@ export function UserMenu({ user }: { user: User }) {
               {S.account.language}
             </div>
             {LANGS.map((l) => (
-              <Row density="menu" className="gap-3 px-4 py-3 text-body" key={l} onClick={() => setLang(l)}>
-                <span className="w-[13px] shrink-0">
-                  {l === lang && (
-                    <Check size={13} className="text-ink-2" />
-                  )}
-                </span>
+              <Row
+                density="menu"
+                className="gap-3 px-4 py-3 text-body"
+                key={l}
+                icon={
+                  <span className="block w-[13px]">
+                    {l === lang && <Check size={13} className="text-ink-2" />}
+                  </span>
+                }
+                onClick={() => setLang(l)}
+              >
                 {LANG_NAMES[l]}
               </Row>
             ))}
           </div>
 
           <div className="border-t border-line">
-            <Row density="menu" danger className="gap-3 px-4 py-3 text-body" onClick={logout}>
-              <LogOut size={13} />
+            <Row
+              density="menu"
+              danger
+              className="gap-3 px-4 py-3 text-body"
+              icon={<LogOut size={13} />}
+              onClick={logout}
+            >
               {S.nav.signOut}
             </Row>
           </div>
