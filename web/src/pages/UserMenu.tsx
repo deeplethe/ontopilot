@@ -103,7 +103,7 @@ export function UserMenu({ user }: { user: User }) {
                 挤到第二行 */}
             <Row
               density="menu"
-              className="gap-3 px-4 py-3 text-body"
+              className="gap-3 px-4 py-2 text-body"
               icon={<UserRound size={13} />}
               onClick={() => go("/account")}
             >
@@ -112,7 +112,7 @@ export function UserMenu({ user }: { user: User }) {
             {/* 人人可看：全部可见库 + 我在每个库的身份 */}
             <Row
               density="menu"
-              className="gap-3 px-4 py-3 text-body"
+              className="gap-3 px-4 py-2 text-body"
               icon={<Layers size={13} />}
               onClick={() => go("/account/kbs")}
             >
@@ -121,7 +121,7 @@ export function UserMenu({ user }: { user: User }) {
             {user.is_admin && (
               <Row
                 density="menu"
-                className="gap-3 px-4 py-3 text-body"
+                className="gap-3 px-4 py-2 text-body"
                 icon={<ShieldCheck size={13} />}
                 onClick={() => go("/admin")}
               >
@@ -140,7 +140,7 @@ export function UserMenu({ user }: { user: User }) {
             {LANGS.map((l) => (
               <Row
                 density="menu"
-                className="gap-3 px-4 py-3 text-body"
+                className="gap-3 px-4 py-2 text-body"
                 key={l}
                 icon={
                   <span className="block w-[13px]">
@@ -158,7 +158,7 @@ export function UserMenu({ user }: { user: User }) {
             <Row
               density="menu"
               danger
-              className="gap-3 px-4 py-3 text-body"
+              className="gap-3 px-4 py-2 text-body"
               icon={<LogOut size={13} />}
               onClick={logout}
             >

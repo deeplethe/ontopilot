@@ -62,7 +62,7 @@ export function KbSwitcher({
               <Row
                 key={k.id}
                 density="menu"
-                className="gap-3 px-4 py-3 text-body"
+                className="gap-3 px-4 py-2 text-body"
                 trailing={
                   k.id === kb?.id ? <Check size={13} className="text-ink-2" /> : undefined
                 }
