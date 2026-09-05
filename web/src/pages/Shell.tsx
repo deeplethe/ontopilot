@@ -94,11 +94,10 @@ export function Shell() {
       {/* 顶栏：品牌 + 工作区 + 用户（Vercel 式） */}
       {/* z-40：backdrop-filter 使顶栏与 tab 条各自成 stacking context，
           不提权则后者按 DOM 序盖住顶栏内的弹出面板 */}
-      {/* 两行贴着左边：顶栏 px-4，导航条不留内距——第一个标签自己的 px-4 就是
-          它的缩进，于是字标的左缘落在第一个标签的图标上（16）。字标与切换器之间
-          gap-1（切换器自己有 px-6）：切换器的图标正好落在第二个标签的图标上
-          （英文界面下的巧合，字标一换字号就得重量）——两行同一套节奏 */}
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-1 px-4">
+      {/* 左内距 32px：字标的左缘落在下面第一个标签的图标上（nav px-4 + 标签
+          px-4）。字标与切换器之间 gap-1（切换器自己有 px-6）：切换器的图标正好落在
+          第二个标签的图标上（英文界面下的巧合，字标一换字号就得重量）——两行同一套节奏 */}
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-1 px-8">
         {/* 字标：逐字母淡入，hover 浮出 ↗，点击去官网 */}
         <Wordmark className="text-display" />
         {/* 知识库切换器紧跟字标，中间不画斜杠——它不是面包屑的第二级，就是
@@ -118,7 +117,7 @@ export function Shell() {
       </header>
 
       {/* Tab 导航条：图标 + 文字，激活态下划线（Vercel 式） */}
-      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-stretch gap-1">
+      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-stretch gap-1 px-4">
         {TABS.map(({ to, label, Icon }) => (
           <Link
             key={to}

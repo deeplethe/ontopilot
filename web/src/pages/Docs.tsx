@@ -177,7 +177,7 @@ export function DocsPage() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-4">
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-8">
         <SectionMark text={S.docs.brand} title={S.docs.backTitle} />
         {/* 居中搜索：检索打包在本地的全部文档；宽度对齐正文栏（max-w-3xl 去掉 px-8） */}
         <div
