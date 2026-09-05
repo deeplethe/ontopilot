@@ -66,7 +66,8 @@ export function UserMenu({ user }: { user: User }) {
         className={cn("u-avatar-btn", open && "is-hidden")}
         onClick={() => setOpen((v) => !v)}
       >
-        <Avatar name={user.display_name} size={24} />
+        {/* 26：胶囊连边框正好 36 高，与左边的库切换器同高 */}
+        <Avatar name={user.display_name} size={26} />
         <span className="text-body text-ink-2">{user.display_name}</span>
       </Button>
 
