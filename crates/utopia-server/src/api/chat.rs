@@ -110,7 +110,7 @@ pub(super) fn tools_schema(can_write: bool, data_source_names: &[String]) -> ser
                             "occurred_at": {
                                 "type": "string",
                                 "description": "Optional date the stated fact took effect \
-                                    (YYYY-MM-DD). Omit to use today."
+                                    (YYYY, YYYY-MM, YYYY-MM-DD or RFC3339). Omit to use today."
                             }
                         },
                         "required": ["text"]
@@ -358,11 +358,11 @@ pub(super) fn base_tools() -> serde_json::Value {
                     "properties": {
                         "since": {
                             "type": "string",
-                            "description": "Start of the window (YYYY-MM-DD), inclusive."
+                            "description": "Start of the window (YYYY, YYYY-MM or YYYY-MM-DD), inclusive — a year or month means its first day."
                         },
                         "until": {
                             "type": "string",
-                            "description": "End of the window (YYYY-MM-DD), inclusive of that                                 whole day. Omit for 'up to now'."
+                            "description": "End of the window (YYYY, YYYY-MM or YYYY-MM-DD), inclusive of that                                 whole day, month or year. Omit for 'up to now'."
                         },
                         "entity_id": {
                             "type": "string",
@@ -416,7 +416,10 @@ const SYSTEM_PROMPT: &str = "You are the assistant of Utopia, a temporal knowled
        when useful.\n\
     2. Facts carry validity ranges (from → to). For \"as of <date>\" questions pass `at` to \
        entity_facts and the server filters to that moment; for history questions omit `at` \
-       to see the full timeline. For 'what did we know / have on record / believe as of <date>' or 'before <memo> arrived' pass `as_of` — that is the record axis and the ONLY way to answer such a question; do not narrate a plan, call the tool. The two combine: `at` for the date asked about, `as_of` for when. State dates in the answer.\n\
+       to see the full timeline. For 'what did we know / have on record / believe as of <date>' or 'before <memo> arrived' pass `as_of` — that is the record axis and the ONLY way to answer such a question; do not narrate a plan, call the tool. The two combine: `at` for the date asked about, `as_of` for when. State dates in the answer. Dates in tool output carry their own precision: \
+       `2023` means the year and `2023-06` the month — never turn them into a specific day; \
+       `attested <time>` marks a fact with no stated start, known only from that evidence on; \
+       `ended by <time>` marks one the text says is over, date not given.\n\
     2a. For 'before a correction or memo arrived', call changes to find its exact record timestamp, \
        then call entity_facts with `as_of` one microsecond before that timestamp. At the timestamp \
        itself the change already applies. Preserve fractional seconds: for example, before \

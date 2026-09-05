@@ -28,6 +28,7 @@ mod rdf;
 mod retrieval;
 mod rss_full_content;
 mod state;
+mod time_text;
 mod type_resolution;
 mod webdav;
 

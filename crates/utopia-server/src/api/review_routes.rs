@@ -135,6 +135,25 @@ pub async fn list(
 #[derive(Deserialize)]
 pub struct CloseFactBody {
     pub valid_to: chrono::DateTime<chrono::Utc>,
+    /// year | month | day。**写多少位就是多少精度**（与图谱页的区间编辑同一约定）；
+    /// 不给按日——只发日期的老客户端就是这个意思
+    #[serde(default)]
+    pub valid_to_precision: Option<String>,
+}
+
+/// 人给的世界轴精度。从前这里一律写 "day"（「人在界面上选的是一个日期」），于是
+/// 「2023 年 6 月结束」只能编成 6 月 1 日——在无知的地方填一个确定的值，正是
+/// `facts.valid_to_precision` 那条注释说的病
+fn world_precision(p: Option<&str>) -> Result<&'static str, utopia_core::AppError> {
+    match p {
+        None | Some("day") => Ok("day"),
+        Some("month") => Ok("month"),
+        Some("year") => Ok("year"),
+        Some(_) => Err(utopia_core::AppError::invalid(
+            "bad_precision",
+            "A closing date's precision is year, month or day.",
+        )),
+    }
 }
 
 /// 人工闭合一条事实的有效区间（"这事在某时结束了"）——走作废+改写，
@@ -159,11 +178,13 @@ pub async fn close_fact(
     if ok.is_none() {
         return Err(utopia_core::AppError::NotFound.into());
     }
+    let precision = world_precision(body.valid_to_precision.as_deref())?;
     let snap = fact_snapshot(&state, kb_id, fact_id).await;
-    // 人在界面上选的是一个日期，所以闭合点按日
-    utopia_store::temporal::close_superseded(&state.pool, fact_id, body.valid_to, "day").await?;
+    utopia_store::temporal::close_superseded(&state.pool, fact_id, body.valid_to, precision)
+        .await?;
     if let Some(mut d) = snap {
         d["valid_to"] = json!(body.valid_to.to_rfc3339());
+        d["valid_to_precision"] = json!(precision);
         let _ = utopia_store::audit::record(
             &state.pool,
             Some(kb_id),
@@ -186,6 +207,9 @@ pub struct ConflictBody {
     /// close 且新事实无起点时必填
     #[serde(default)]
     pub close_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// `close_at` 的精度（year | month | day），不给按日
+    #[serde(default)]
+    pub close_at_precision: Option<String>,
 }
 
 /// 时态冲突裁决（S3：自动闭合拿不准的那些）。
@@ -216,12 +240,14 @@ pub async fn resolve_conflict(
     .await
     .ok()
     .flatten();
+    let close_precision = world_precision(body.close_at_precision.as_deref())?;
     utopia_store::temporal::resolve_conflict(
         &state.pool,
         kb_id,
         conflict_id,
         &body.action,
         body.close_at,
+        close_precision,
     )
     .await?;
     if let Some((os, oo, ns, no, pred)) = snap {
@@ -242,6 +268,7 @@ pub async fn resolve_conflict(
                 "old_subject": os, "old_object": oo,
                 "new_subject": ns, "new_object": no,
                 "close_at": body.close_at.map(|t| t.to_rfc3339()),
+                "close_at_precision": body.close_at.map(|_| close_precision),
             }),
         )
         .await;
@@ -518,6 +545,9 @@ pub struct DecideViolationReq {
     /// `fact_closed` 必填：旧断言在哪一天结束
     #[serde(default)]
     pub close_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// `close_at` 的精度（year | month | day），不给按日
+    #[serde(default)]
+    pub close_at_precision: Option<String>,
     /// `fact_retracted` 时撤哪条：双事实与环上的违规必填，单事实的可省（#202）
     #[serde(default)]
     pub fact_id: Option<Uuid>,
@@ -621,10 +651,12 @@ pub async fn decide_violation(
                 )
                 .into());
             }
+            let precision = world_precision(req.close_at_precision.as_deref())?;
             let snap = fact_snapshot(&state, kb_id, left).await;
-            utopia_store::temporal::close_superseded(&state.pool, left, at, "day").await?;
+            utopia_store::temporal::close_superseded(&state.pool, left, at, precision).await?;
             if let Some(mut d) = snap {
                 d["valid_to"] = json!(at.to_rfc3339());
+                d["valid_to_precision"] = json!(precision);
                 let _ = utopia_store::audit::record(
                     &state.pool,
                     Some(kb_id),

@@ -1475,7 +1475,7 @@ export const zh: Strings = {
     closeOldAt: (d: string) => `在 ${d} 闭合旧的`,
     keepBoth: "两条都留",
     rejectNew: "驳回新的",
-    closeAtPlaceholder: "YYYY-MM-DD",
+    closeAtPlaceholder: "YYYY-MM-DD · YYYY-MM · YYYY",
     unconfirmed: "已不再被陈述",
     unconfirmedHint:
       "曾经陈述这些事实的每一个来源，此后都更新过且不再包含它们。" +

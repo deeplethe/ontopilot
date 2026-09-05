@@ -16,6 +16,7 @@ import {
   type ReviewSide,
   type ViolationResolution,
 } from "../api";
+import { parseDateInput } from "../time";
 import { PendingFactRow, useCanDecide } from "./PendingFacts";
 import { ReviewOverview } from "./ReviewOverview";
 import { S } from "../i18n";
@@ -214,15 +215,15 @@ function ConflictRow({
   onResolve: (
     action: "close" | "keep" | "reject_new",
     closeAt?: string,
+    closeAtPrecision?: string,
   ) => void;
 }) {
   const [closeAt, setCloseAt] = useState("");
   const c = conflict;
   const needsDate = !c.new_valid_from;
-  // close_at 输入按天精度转 RFC3339
-  const closeAtIso = /^\d{4}-\d{2}-\d{2}$/.test(closeAt.trim())
-    ? `${closeAt.trim()}T00:00:00Z`
-    : undefined;
+  // 写多少位就是多少精度（time.ts）：「2023-06」闭合在那个月，不编一个 1 日
+  const closeParsed = parseDateInput(closeAt);
+  const closeAtIso = closeParsed?.iso;
 
   return (
     <div className="glass rounded-xl p-4">
@@ -278,7 +279,7 @@ function ConflictRow({
         )}
         <Button variant="secondary" size="sm"
           disabled={busy || (needsDate && !closeAtIso)}
-          onClick={() => onResolve("close", closeAtIso)}
+          onClick={() => onResolve("close", closeAtIso, closeParsed?.precision)}
         >
           {c.new_valid_from
             ? S.review.closeOldAt(c.new_valid_from.slice(0, 10))
@@ -299,12 +300,11 @@ function UnconfirmedRow({
   fact: FactReviewItem;
   busy: boolean;
   onReject: () => void;
-  onClose: (validTo: string) => void;
+  onClose: (validTo: string, precision: string) => void;
 }) {
   const [closeAt, setCloseAt] = useState("");
-  const closeAtIso = /^\d{4}-\d{2}-\d{2}$/.test(closeAt.trim())
-    ? `${closeAt.trim()}T00:00:00Z`
-    : undefined;
+  const closeParsed = parseDateInput(closeAt);
+  const closeAtIso = closeParsed?.iso;
   const range = dateRange(fact.valid_from, fact.valid_to);
 
   return (
@@ -352,7 +352,9 @@ function UnconfirmedRow({
         />
         <Button variant="secondary" size="sm"
           disabled={busy || !closeAtIso}
-          onClick={() => closeAtIso && onClose(closeAtIso)}
+          onClick={() =>
+            closeParsed && onClose(closeParsed.iso, closeParsed.precision)
+          }
         >
           {closeAt.trim()
             ? S.review.closeFactAt(closeAt.trim())
@@ -549,7 +551,7 @@ function DefectRow({
  *  矛盾可能出在定义上（用户导的本体把某个属性声明成反对称，而他的语料里
  *  那关系其实双向），这时该改的是本体，不是二十条事实。 */
 /** 裁决的附加参数：闭合日期（fact_closed）、撤哪条（fact_retracted） */
-type DecideOpts = { closeAt?: string; factId?: string };
+type DecideOpts = { closeAt?: string; closeAtPrecision?: string; factId?: string };
 
 function ViolationRow({
   violation: v,
@@ -698,17 +700,25 @@ function ContradictionRow({
       </div>
       <p className="mt-2 text-small text-ink-3">{hint}</p>
       <div className="mt-2 flex gap-2 flex-wrap items-center">
-        <Input size="sm" className="u-num"
-          type="date"
+        {/* 不用日期选择器：它逼人给出一个日，而「那年结束的」正是这里常见的答案。
+            写多少位就是多少精度（time.ts） */}
+        <Input size="sm" className="u-num w-28 text-center"
+          placeholder={S.review.closeAtPlaceholder}
           value={closeAt}
           title={S.review.closeAssertion}
           onChange={(e) => setCloseAt(e.target.value)}
         />
         <Button variant="primary" size="sm"
-          disabled={busy || !closeAt}
-          onClick={() =>
-            onDecide("fact_closed", { closeAt: new Date(closeAt).toISOString() })
-          }
+          disabled={busy || !parseDateInput(closeAt)}
+          onClick={() => {
+            const parsed = parseDateInput(closeAt);
+            if (parsed) {
+              onDecide("fact_closed", {
+                closeAt: parsed.iso,
+                closeAtPrecision: parsed.precision,
+              });
+            }
+          }}
         >
           {S.review.closeAssertion}
         </Button>
@@ -935,17 +945,31 @@ export function Review() {
       id,
       action,
       closeAt,
+      closeAtPrecision,
     }: {
       id: string;
       action: "close" | "keep" | "reject_new";
       closeAt?: string;
-    }) => api.resolveConflict(kb!.id, id, { action, close_at: closeAt }),
+      closeAtPrecision?: string;
+    }) =>
+      api.resolveConflict(kb!.id, id, {
+        action,
+        close_at: closeAt,
+        close_at_precision: closeAtPrecision,
+      }),
     onSettled: invalidate,
   });
 
   const closeFactAction = useMutation({
-    mutationFn: ({ id, validTo }: { id: string; validTo: string }) =>
-      api.closeFact(kb!.id, id, validTo),
+    mutationFn: ({
+      id,
+      validTo,
+      precision,
+    }: {
+      id: string;
+      validTo: string;
+      precision: string;
+    }) => api.closeFact(kb!.id, id, validTo, precision),
     onSettled: invalidate,
   });
 
@@ -1188,8 +1212,13 @@ export function Review() {
                         conflictAction.isPending &&
                         conflictAction.variables?.id === c.id
                       }
-                      onResolve={(action, closeAt) =>
-                        conflictAction.mutate({ id: c.id, action, closeAt })
+                      onResolve={(action, closeAt, closeAtPrecision) =>
+                        conflictAction.mutate({
+                          id: c.id,
+                          action,
+                          closeAt,
+                          closeAtPrecision,
+                        })
                       }
                     />
                   ))}
@@ -1211,8 +1240,8 @@ export function Review() {
                       onReject={() =>
                         factAction.mutate({ id: fact.id, action: "reject" })
                       }
-                      onClose={(validTo) =>
-                        closeFactAction.mutate({ id: fact.id, validTo })
+                      onClose={(validTo, precision) =>
+                        closeFactAction.mutate({ id: fact.id, validTo, precision })
                       }
                     />
                   ))}
