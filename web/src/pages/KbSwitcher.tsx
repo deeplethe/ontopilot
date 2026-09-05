@@ -23,7 +23,8 @@ export function KbSwitcher({
 
   return (
     <div ref={rootRef} className="relative">
-      {/* 胶囊：无底无框，图标与导航标签同一档灰，名字是正文色——它是当前库的
+      {/* 胶囊：无底无框，图标与导航标签同一档灰、同一个大小和线宽（15 / 1.8），
+          名字与标签同一个字号和字重（正文、中等），颜色是正文色——它是当前库的
           名字，不是次要信息。打开时隐形，位置留给面板的第一行 */}
       <Button
         ref={anchorRef}
@@ -33,10 +34,10 @@ export function KbSwitcher({
         title={S.nav.kbLabel}
         // px-4 与面板行同一个内距：面板长出来时，第一行的图标就落在胶囊图标的位置上
         className={cn("h-auto max-w-64 border-0 px-4 py-1", open && "invisible")}
-        icon={<Layers size={13} className="text-ink-2" />}
+        icon={<Layers size={15} strokeWidth={1.8} className="text-ink-2" />}
         onClick={() => (open ? close() : setOpen(true))}
       >
-        <span className="truncate text-body text-ink">{name}</span>
+        <span className="truncate text-body font-medium text-ink">{name}</span>
         <ChevronDown size={12} className="shrink-0 text-ink-3" />
       </Button>
 
@@ -50,7 +51,7 @@ export function KbSwitcher({
             onClick={close}
             className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
           >
-            <Layers size={13} className="shrink-0 text-ink-2" />
+            <Layers size={15} strokeWidth={1.8} className="shrink-0 text-ink-2" />
             <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
               {name}
             </span>
