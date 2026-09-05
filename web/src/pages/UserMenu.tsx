@@ -63,11 +63,14 @@ export function UserMenu({ user }: { user: User }) {
       <Button
         variant="ghost"
         ref={anchorRef}
-        className={cn("u-avatar-btn", open && "is-hidden")}
+        // 与左端的库切换器同一个做法：静止时没有框，胶囊的右内距挂进顶栏内距里
+        // （-mr-3 抵掉 12px），名字的右缘落在离屏幕 16 的那条线上，与字标左缘对称；
+        // 面板锚在外层 div 上，不跟着挪
+        className={cn("u-avatar-btn -mr-3 border-0", open && "is-hidden")}
         onClick={() => setOpen((v) => !v)}
       >
-        {/* 26：胶囊连边框正好 36 高，与左边的库切换器同高 */}
-        <Avatar name={user.display_name} size={26} />
+        {/* 28：没有边框了，头像加上下 4px 正好 36 高，与左边的库切换器同高 */}
+        <Avatar name={user.display_name} size={28} />
         <span className="text-body text-ink-2">{user.display_name}</span>
       </Button>
 
