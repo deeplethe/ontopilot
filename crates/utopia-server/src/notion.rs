@@ -196,7 +196,7 @@ pub async fn fetch(token: &str, query: Option<&str>) -> anyhow::Result<(Vec<Noti
             let Some(id) = p["id"].as_str() else { continue };
             let title = page_title(&p);
             let text = page_text(&mut http, id).await.unwrap_or_else(|e| {
-                tracing::warn!(%id, error = %e, "页面正文取不回来，只留标题");
+                tracing::warn!(%id, error = %e, "notion page body could not be read, keeping the title only");
                 String::new()
             });
 
