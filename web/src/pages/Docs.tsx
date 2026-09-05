@@ -185,8 +185,8 @@ export function DocsPage() {
           className="absolute left-1/2 -translate-x-1/2 w-[min(44rem,55vw)]"
         >
           <div className="relative">
+            {/* 中号：与别处的搜索框同一个高度（32），小号在顶栏里显得矮一截 */}
             <Input
-              size="sm"
               className="w-full"
               icon={<Search size={13} />}
               ref={inputRef}
