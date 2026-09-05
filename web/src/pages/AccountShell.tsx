@@ -12,14 +12,12 @@ import {
 import { api, ApiError } from "../api";
 import { S } from "../i18n";
 import {
-  GithubMark,
   RAIL_CLS,
   rowClass,
   SectionMark,
 } from "../ui";
 import { ServerDown } from "./ServerDown";
-import { AlertBell } from "./AlertBell";
-import { UserMenu } from "./UserMenu";
+import { HeaderActions } from "./HeaderActions";
 
 export function AccountShell() {
   const navigate = useNavigate();
@@ -49,31 +47,14 @@ export function AccountShell() {
   return (
     <div className="h-screen flex flex-col overflow-hidden u-arrive">
       {/* 顶栏与 Docs 页同构：分区字标（点击回城）+ 返回 + GitHub·版本 + 用户 */}
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-6">
+      {/* px-8 与 App 顶栏同一个内距：右上那一组换页时不该动 */}
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-8">
         <SectionMark text={S.account.brand} title={S.docs.backTitle} />
-        <div className="ml-auto flex items-center gap-2">
-          <Link
-            to="/"
-            className="u-navlink"
-          >
-            {S.account.backToApp}
-          </Link>
-          <a
-            href={S.login.githubUrl}
-            target="_blank"
-            rel="noreferrer"
-            title="GitHub"
-            className="u-pill"
-          >
-            <GithubMark size={13} />
-            {health.data && <span className="u-num text-fine">v{health.data.version}</span>}
-          </a>
-          {/* 告警角标跟着人走，不跟着页面走：在账户页里库照样在跑、照样会出事 */}
-          <AlertBell />
-          <div className="ml-2">
-            <UserMenu user={me.data} />
-          </div>
-        </div>
+        <HeaderActions
+          link={{ to: "/", label: S.account.backToApp }}
+          version={health.data?.version}
+          user={me.data}
+        />
       </header>
 
       <div className="flex-1 min-h-0 flex">

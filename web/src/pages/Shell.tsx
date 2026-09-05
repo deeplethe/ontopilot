@@ -19,10 +19,9 @@ import {
 import { api, ApiError } from "../api";
 import { S } from "../i18n";
 import { useKb, useKbId } from "../kb";
-import { GithubMark, Wordmark } from "../ui";
+import { Wordmark } from "../ui";
 import { KbSwitcher } from "./KbSwitcher";
-import { AlertBell } from "./AlertBell";
-import { UserMenu } from "./UserMenu";
+import { HeaderActions } from "./HeaderActions";
 import { ServerDown } from "./ServerDown";
 import { useAlertEvents } from "../useAlertEvents";
 import { useKbEvents } from "../useKbEvents";
@@ -109,42 +108,12 @@ export function Shell() {
             宽度的右边去。
             纯切换器：建库是管理动作，入口在 System settings › Knowledge bases */}
         <KbSwitcher kb={kb} kbs={kbs} onChange={setKb} />
-        {/* 三组：项目入口 / 告警 / 身份。**组间 gap-3，组内 gap-2**——
-            间距由结构表达，而不是给某一个元素补一次性的 ml。
-            此前用户菜单挂着一个 ml-2（当初它紧挨 GitHub 胶囊时调的），
-            铃铛插进两者之间以后就成了左 6px 右 12px */}
-        <div className="ml-auto flex items-center gap-3">
-          {/* 项目入口：Docs + [GitHub·版本] 胶囊（版本取自后端 health，与部署一致）。
-              版本并入 GitHub 胶囊：两个等高元素，视觉平衡。
-              这两个是一对，所以彼此贴得比组间近 */}
-          <div className="flex items-center gap-2">
-            <Link
-              to="/docs"
-              className="u-navlink"
-            >
-              {S.nav.docs}
-            </Link>
-            <a
-              href={S.login.githubUrl}
-              target="_blank"
-              rel="noreferrer"
-              title="GitHub"
-              className="u-pill"
-            >
-              <GithubMark size={13} />
-              {health.data && (
-                <span className="u-num text-fine">
-                  v{health.data.version}
-                </span>
-              )}
-            </a>
-          </div>
-          {/* 告警角标：跨库的未读数。失败此前只留在日志与 jobs.last_error 里，
-              界面上一份文档也不会变颜色（0005） */}
-          <AlertBell />
-          {/* 用户菜单：个人信息 / 系统管理（仅管理员）/ 登出 */}
-          <UserMenu user={me.data} />
-        </div>
+        {/* 右上那一组三个顶栏共用一份（HeaderActions）：换页时它不该动 */}
+        <HeaderActions
+          link={{ to: "/docs", label: S.nav.docs }}
+          version={health.data?.version}
+          user={me.data}
+        />
       </header>
 
       {/* Tab 导航条：图标 + 文字，激活态下划线（Vercel 式） */}

@@ -11,14 +11,12 @@ import { S } from "../i18n";
 import {
   Button,
   cn,
-  GithubMark,
   Input,
   Row,
   rowClass,
   SectionMark,
 } from "../ui";
-import { AlertBell } from "./AlertBell";
-import { UserMenu } from "./UserMenu";
+import { HeaderActions } from "./HeaderActions";
 import { usePageTitle } from "../useTitle";
 import ingestMd from "../docs/ingest.md?raw";
 import mcpMd from "../docs/mcp.md?raw";
@@ -179,7 +177,7 @@ export function DocsPage() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-6">
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-8">
         <SectionMark text={S.docs.brand} title={S.docs.backTitle} />
         {/* 居中搜索：检索打包在本地的全部文档；宽度对齐正文栏（max-w-3xl 去掉 px-8） */}
         <div
@@ -231,42 +229,19 @@ export function DocsPage() {
           )}
         </div>
 
-        {/* 右侧：显式返回（与字标双路回城）+ GitHub·版本胶囊 + 登录态 */}
-        <div className="ml-auto flex items-center gap-2">
-          <Link
-            to="/"
-            className="u-navlink"
-          >
-            {S.account.backToApp}
-          </Link>
-          <a
-            href={S.login.githubUrl}
-            target="_blank"
-            rel="noreferrer"
-            title="GitHub"
-            className="u-pill"
-          >
-            <GithubMark size={13} />
-            {health.data && <span className="u-num text-fine">v{health.data.version}</span>}
-          </a>
-          {me.data ? (
-            <>
-              {/* 告警角标跟着人走：读文档的时候库也在跑。没登录就没有它——
-                  告警是登录后的东西 */}
-              <AlertBell />
-              <div className="ml-1">
-                <UserMenu user={me.data} />
-              </div>
-            </>
-          ) : me.isError ? (
-            <Link
-              to="/login"
-              className="u-btn u-btn-ghost px-3 py-2 text-small"
-            >
-              {S.login.signIn}
-            </Link>
-          ) : null}
-        </div>
+        {/* 右侧与 App、账户页同一份：换页时不该动。没登录就只剩一个「登录」 */}
+        <HeaderActions
+          link={{ to: "/", label: S.account.backToApp }}
+          version={health.data?.version}
+          user={me.data}
+          signedOut={
+            me.isError ? (
+              <Link to="/login" className="u-btn u-btn-ghost px-3 py-2 text-small">
+                {S.login.signIn}
+              </Link>
+            ) : null
+          }
+        />
       </header>
 
       {/* 整页滚动（滚动条贴窗口最右），侧栏 sticky 钉住——正规文档站布局 */}
