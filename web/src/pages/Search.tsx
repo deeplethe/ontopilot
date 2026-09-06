@@ -94,7 +94,7 @@ export function Search() {
               to="/kb/$kbId/doc/$docId"
               params={{ kbId, docId: r.document_id }}
               search={{ chunk: r.id }}
-              className="block glass rounded-xl p-4 glass-hover"
+              className="block glass rounded-lg p-4 glass-hover"
             >
               <div className="mb-2 text-small text-ink-3">
                 {S.search.chunkOf(r.filename, r.seq + 1)}

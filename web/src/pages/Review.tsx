@@ -38,6 +38,7 @@ import {
   RailItem,
   Segmented,
   GroupLabel,
+  PageHeader,
 } from "../ui";
 
 const DUP_PAGE = 6;
@@ -123,7 +124,7 @@ function DuplicateCard({
   const reasonCode = item.reason?.split("|", 1)[0];
 
   return (
-    <div className={cn("glass rounded-xl p-4", picked && "u-picked")}>
+    <div className={cn("glass rounded-lg p-4", picked && "u-picked")}>
       <div className="flex gap-4">
         <Checkbox
           className="shrink-0 self-start"
@@ -203,7 +204,7 @@ function FactRow({
 }) {
   const range = dateRange(fact.valid_from, fact.valid_to);
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">
           {fact.subject_name}
@@ -274,7 +275,7 @@ function ConflictRow({
   const closeAtIso = closeParsed?.iso;
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">{c.old_subject}</span>
         <span className="text-small text-ink-3">
@@ -356,7 +357,7 @@ function UnconfirmedRow({
   const range = dateRange(fact.valid_from, fact.valid_to);
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">
           {fact.subject_name}
@@ -423,7 +424,7 @@ function MergeRow({
   onRevert: () => void;
 }) {
   return (
-    <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
+    <div className="glass rounded-lg px-4 py-3 flex items-center gap-3">
       <div className="min-w-0 flex-1">
         <div className="text-body text-ink-2 truncate">
           <span className="text-ink-3">{merge.source_name}</span>
@@ -499,7 +500,7 @@ function AgentRow({
   const trace = d.trace ?? [];
   const hasDetail = precedents.length > 0 || trace.length > 0;
   return (
-    <div className="glass rounded-xl px-4 py-3">
+    <div className="glass rounded-lg px-4 py-3">
       <div className="flex items-center gap-3">
         <Chip tone={AGENT_ACTION_TONE[d.action]}>{S.review.agentActions[d.action]}</Chip>
         <span className="text-body text-ink-2 truncate min-w-0">
@@ -612,7 +613,7 @@ function DecisionRow({ e }: { e: ReviewHistoryEvent }) {
   else text = `${d.source} → ${d.target}`;
 
   return (
-    <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
+    <div className="glass rounded-lg px-4 py-3 flex items-center gap-3">
       <Chip tone={DECISION_TONE[e.action] ?? "neutral"}>
         {S.review.decisionActions[e.action] ?? e.action}
       </Chip>
@@ -667,7 +668,7 @@ function DefectRow({
   const unsatisfiable =
     d.kind === "disjoint_with_ancestor" || d.kind === "inherits_disjoint";
   return (
-    <div className="glass rounded-xl p-3">
+    <div className="glass rounded-lg p-3">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-danger">{what}</span>
         {d.subject_label && (
@@ -765,7 +766,7 @@ function ViolationRow({
             { id: v.right_fact, text: v.right_text },
           ];
   return (
-    <div className="glass rounded-xl p-3">
+    <div className="glass rounded-lg p-3">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-warn">{what}</span>
         {v.predicate && (
@@ -851,7 +852,7 @@ function ContradictionRow({
           ? S.review.hintUnsure
           : S.review.hintReadBoth;
   return (
-    <div className="glass rounded-xl p-3 border border-[color-mix(in_srgb,var(--u-contest)_35%,transparent)]">
+    <div className="glass rounded-lg p-3 border border-[color-mix(in_srgb,var(--u-contest)_35%,transparent)]">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-contest">{what}</span>
         {v.predicate && (
@@ -1257,7 +1258,7 @@ export function Review() {
       <aside className={`${RAIL_CLS} flex flex-col overflow-y-auto u-scroll`}>
         {/* 总览在最上面，七档队列直接排在它下面，不另起标题——「队列」这个词
             说的是它们是什么，而人要的是它们有多少 */}
-        <div className="px-3 pt-3 space-y-1">
+        <div className="u-rail-list px-3 pt-3">
           <RailItem
             active={active === "overview"}
             icon={<LayoutDashboard size={14} />}
@@ -1266,7 +1267,7 @@ export function Review() {
             {S.review.railOverview}
           </RailItem>
         </div>
-        <div className="px-3 pt-2 space-y-1">
+        <div className="u-rail-list px-3 pt-1">
           <RailItem
             active={active === "pending"}
             count={counts.pending}
@@ -1326,7 +1327,7 @@ export function Review() {
           </RailItem>
         </div>
         <RailHeader label={S.review.tabHistory} />
-        <div className="px-3 space-y-1">
+        <div className="u-rail-list px-3">
           <RailItem
             active={active === "decisions"}
                         onClick={() => select("decisions")}
@@ -1364,7 +1365,7 @@ export function Review() {
 
       {/* 右侧：一次只显示选中的一类，单一分页 */}
       <div className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
-        <div className="max-w-4xl">
+        <div>
           {review.isPending && (
             <p className="text-body text-ink-3">{S.nav.loading}</p>
           )}
@@ -1376,13 +1377,7 @@ export function Review() {
 
           {review.data && (
             <section>
-              {/* 页级标题：与 Library/KB Settings 同级（text-title），不是卡片头 */}
-              <h2 className="u-title text-title mb-1">{SECTION[active].title}</h2>
-              {SECTION[active].hint && (
-                <p className="text-small text-ink-3 mb-3">
-                  {SECTION[active].hint}
-                </p>
-              )}
+              <PageHeader title={SECTION[active].title} sub={SECTION[active].hint} />
 
               {/* 空态：整个待办全清 vs 单类清空。**公理这一档除外**——它自己那句要
                   分清「查过、没矛盾」和「还没查过」，通用空态说不出这个差别 */}
@@ -1390,7 +1385,7 @@ export function Review() {
                 active !== "violations" &&
                 active !== "defects" &&
                 counts[active] === 0 && (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {queueEmpty ? S.review.empty : S.review.categoryEmpty}
                   </div>
                 )}
@@ -1484,7 +1479,7 @@ export function Review() {
                     )}
                   </div>
                   {asDuplicates().length === 0 && (
-                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                       {S.review.typesEmpty}
                     </div>
                   )}
@@ -1605,7 +1600,7 @@ export function Review() {
               {active === "defects" && (
                 <div className="space-y-3">
                   {counts.defects === 0 && (
-                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                       {S.review.categoryEmpty}
                     </div>
                   )}
@@ -1657,7 +1652,7 @@ export function Review() {
                     )}
                   </div>
                   {counts.violations === 0 && !runCheck.data && (
-                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                       {S.review.checkNeverRun}
                     </div>
                   )}
@@ -1666,7 +1661,7 @@ export function Review() {
                       key={v.id}
                       className={
                         v.id === search.item
-                          ? "rounded-xl ring-1 ring-contest"
+                          ? "rounded-lg ring-1 ring-contest"
                           : undefined
                       }
                     >
@@ -1689,7 +1684,7 @@ export function Review() {
 
               {active === "agent" &&
                 ((c?.agent_rows ?? 0) === 0 ? (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {S.review.agentEmpty}
                     {!kb?.governance && (
                       <>
@@ -1720,7 +1715,7 @@ export function Review() {
 
               {active === "merges" &&
                 (counts.merges === 0 ? (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {S.review.historyEmpty}
                   </div>
                 ) : (
@@ -1740,7 +1735,7 @@ export function Review() {
                 (history.isPending ? (
                   <p className="text-body text-ink-3">{S.nav.loading}</p>
                 ) : (history.data?.total ?? 0) === 0 ? (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {S.review.decisionsEmpty}
                   </div>
                 ) : (

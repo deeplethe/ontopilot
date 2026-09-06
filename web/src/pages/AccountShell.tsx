@@ -59,7 +59,7 @@ export function AccountShell() {
 
       <div className="flex-1 min-h-0 flex">
         {/* 账户导航栏（仅两项，管理员多一项） */}
-        <aside className={`${RAIL_CLS} p-3 space-y-1`}>
+        <aside className={`${RAIL_CLS} u-rail-list p-3`}>
           {/* exact：/account 是 /account/kbs 的前缀，默认前缀匹配会双亮 */}
           <Link
             to="/account"

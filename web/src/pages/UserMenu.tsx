@@ -66,15 +66,15 @@ export function UserMenu({ user }: { user: User }) {
         className={cn("u-avatar-btn", open && "is-hidden")}
         onClick={() => setOpen((v) => !v)}
       >
-        {/* 26：胶囊连边框正好 36 高，与左边的库切换器同高 */}
-        <Avatar name={user.display_name} size={26} />
+        {/* 24：胶囊是 32 高（顶栏所有控件同一个高度），头像两边各留 4 */}
+        <Avatar name={user.display_name} size={24} />
         <span className="text-body text-ink-2">{user.display_name}</span>
       </Button>
 
       {open && (
         <div
           ref={panelRef}
-          className="u-menu-glass absolute right-0 top-0 w-64 rounded-xl shadow-2xl z-50 overflow-hidden"
+          className="u-menu-glass absolute right-0 top-0 w-64 rounded-lg shadow-2xl z-50 overflow-hidden"
         >
           {/* 身份头：再点一下缩回胶囊 */}
           <div

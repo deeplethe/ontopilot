@@ -70,7 +70,7 @@ export function Members({ workspaceId }: { workspaceId: string }) {
   const { rows: pagedMembers, safe: safeMemberPage } = pageSlice(memberList, memberPage, MEMBER_PAGE);
 
   return (
-    <div className="glass rounded-xl p-6">
+    <div className="glass rounded-lg p-6">
       <div className="flex items-center gap-3 mb-3">
         <h3 className="text-body font-semibold text-ink">{S.members.title}</h3>
         <Input size="sm" className="ml-auto w-56"

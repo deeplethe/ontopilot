@@ -28,6 +28,7 @@ import {
   Input,
   LinkButton,
   Panel,
+  PageHeader,
 } from "../ui";
 import { toast } from "../toast";
 
@@ -299,29 +300,29 @@ export function RulesPanel({
         />
       )}
 
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-title font-medium text-ink">
+      <PageHeader
+        className="mb-0"
+        title={
+          <>
             {S.ontology.rulesTitle}
-          </h2>
-          {list.length > 0 && (
-            <span className="u-num text-small text-ink-3">{list.length}</span>
-          )}
+            {list.length > 0 && (
+              <span className="ml-2 u-num text-small text-ink-3">{list.length}</span>
+            )}
+          </>
+        }
+        sub={S.ontology.rulesHint}
+        actions={
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto"
             onClick={() => run.mutate()}
             disabled={run.isPending || !list.length}
           >
             <Play size={12} />
             {run.isPending ? S.ontology.ruleRunning : S.ontology.ruleRun}
           </Button>
-        </div>
-        <p className="text-fine leading-relaxed text-ink-3">
-          {S.ontology.rulesHint}
-        </p>
-      </div>
+        }
+      />
 
       {list.map((r) => (
         <Panel key={r.id} className="space-y-2 p-4">

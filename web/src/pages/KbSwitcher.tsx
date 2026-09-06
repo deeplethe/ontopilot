@@ -35,7 +35,7 @@ export function KbSwitcher({
         // 与右边的用户菜单胶囊同高（36）：py-2 加一行正文。左右只留 px-2——胶囊没有边框，
         // 内距再宽就只是把图标从字标旁边推开；面板行仍是 px-4，靠面板整体左移 8 让
         // 第一行的图标落在胶囊图标的位置上
-        className={cn("h-auto max-w-64 border-0 px-2 py-2", open && "invisible")}
+        className={cn("h-8 max-w-64 border-0 px-2", open && "invisible")}
         icon={<Layers size={15} strokeWidth={1.8} className="text-ink-2" />}
         onClick={() => (open ? close() : setOpen(true))}
       >
@@ -47,7 +47,7 @@ export function KbSwitcher({
         <div
           ref={panelRef}
           // -left-2：胶囊只有 8 的内距，面板行有 16——面板左移 8，行里的图标才与胶囊的图标同一个 x
-          className="u-menu-glass absolute -left-2 top-0 z-50 w-max min-w-64 max-w-80 overflow-hidden rounded-xl shadow-2xl"
+          className="u-menu-glass absolute -left-2 top-0 z-50 w-max min-w-64 max-w-80 overflow-hidden rounded-lg shadow-2xl"
         >
           {/* 第一行是胶囊自己：同一个图标、同一个名字，箭头翻上去；再点一下缩回 */}
           <div

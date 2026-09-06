@@ -39,7 +39,6 @@ import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronRight,
   CircleDashed,
   Grape,
   Loader2,
@@ -1343,7 +1342,7 @@ export function Graph() {
               }
             >
               <span
-                className={`h-2 w-2 ${t.shape === "square" ? "" : "rounded-full"}`}
+                className={`h-2 w-2 ${t.shape === "square" ? "scale-90" : "rounded-full"}`}
                 style={{ background: t.color }}
               />
               <span>{t.label}</span>
@@ -1381,7 +1380,7 @@ export function Graph() {
               {legendPop.open && (
                 <div
                   ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-xl p-2 shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-lg p-2 shadow-2xl"
                 >
                   {/* 面板盖在 chip 原位，所以**第一行就长成那个 chip 的样子**，
                       点它收回去——「哪儿展开的就从哪儿收回去」，
@@ -1429,7 +1428,7 @@ export function Graph() {
                             }
                           >
                             <span
-                              className={`h-2 w-2 shrink-0 ${t.shape === "square" ? "" : "rounded-full"}`}
+                              className={`h-2 w-2 shrink-0 ${t.shape === "square" ? "scale-90" : "rounded-full"}`}
                               style={{
                                 background: t.color,
                                 opacity: hiddenTypes.has(key) ? 0.35 : 1,
@@ -1932,7 +1931,7 @@ function TimeScrubber({
        仍夹在视口内（calc 那一项），窄屏不会顶出去。
        实测宽度：年 320 / 月 648 / 日 760。 */
     <div
-      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-xl px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
+      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-lg px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
       style={{ width: `min(${trackW}px, calc(100vw - 4rem))` }}
     >
       <IconButton
@@ -2171,11 +2170,11 @@ function DerivedPanel({
     : null;
 
   // **盖在触发器原位往右上长开**（bottom-0 left-0），而不是在旁边挂一扇窗。
-  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-xl
+  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-lg
   return (
     <div
       ref={panelRef}
-      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-xl px-3 pb-3 pt-3 shadow-2xl"
+      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-lg px-3 pb-3 pt-3 shadow-2xl"
     >
       {/* items-center 而不是 baseline：标题旁边站着一个按钮和一个关闭键，
           按基线对齐会让那两个看着往上飘 */}
@@ -2273,7 +2272,7 @@ function DerivedPanel({
 /** 推出来的一条边。**行式样与 FactRow 对齐**：同样的圆角行、同样的
  *  chevron 展开、同样的 role="link" 跳转（避免按钮套按钮）。
  *
- *  从前这里是一张 `glass rounded-xl p-3` 卡片、证明常驻展开——在一列
+ *  从前这里是一张 `glass rounded-lg p-3` 卡片、证明常驻展开——在一列
  *  Relations/Timeline/History 的紧凑行里显得是另一个产品的东西，而且十几条
  *  推导堆起来是一面墙。证明是「问了才看」的东西，收进展开区正合适。 */
 function DerivedRow({
@@ -2298,15 +2297,8 @@ function DerivedRow({
     <ExpandCard
       open={open}
       onToggle={onToggle}
-      headerClassName="flex items-center gap-2"
       header={
-        <>
-        <ChevronRight
-          size={11}
-          className={`shrink-0 text-ink-3 u-turn ${open ? "rotate-90" : ""}`}
-        />
-        {/* 业务规则的结论是字面值（一个类、一个值），另一端没有实体可跳——
-            这时候画成普通文字，而不是一个点了没反应的链接（0021） */}
+        <div className="flex items-center gap-2">
         {/* 业务规则的结论是字面值（一个类、一个值），另一端没有实体可跳——
             这时候画成普通文字，而不是一个点了没反应的链接（0021） */}
         {otherId ? (
@@ -2330,14 +2322,14 @@ function DerivedRow({
         ) : (
           <span className="truncate text-body text-ink">{otherName}</span>
         )}
-        <span className="ml-auto shrink-0 pl-2 text-fine text-ink-3">
+        <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-3">
           {d.premises.length}
         </span>
-        </>
+        </div>
       }
     >
-      {/* 证明：前提按推导顺序，每条展开到原句（0002 R2）。**边框与 EvidenceList
-          同一档**——两者是同一件事的两种形态：一个给出处，一个给推理链 */}
+      {/* 证明：前提按推导顺序，每条展开到原句（0002 R2）。与 EvidenceList
+          同一个位置、同一种缩进——两者是同一件事的两种形态：一个给出处，一个给推理链 */}
       {open && <ProofChain kbId={kbId} d={d} />}
     </ExpandCard>
   );
@@ -2355,7 +2347,7 @@ function ProofChain({ kbId, d }: { kbId: string; d: DerivedFact }) {
   });
   const steps = proof.data?.proof?.steps;
   return (
-    <div className="mx-2 mb-2 mt-1 border-l border-line-strong pl-3">
+    <div>
       {proof.isPending && (
         <p className="text-fine text-ink-3">{S.graph.proofLoading}</p>
       )}
@@ -2469,13 +2461,8 @@ function BlockedRow({
     <ExpandCard
       open={open}
       onToggle={onToggle}
-      headerClassName="flex items-center gap-2"
       header={
-        <>
-        <ChevronRight
-          size={11}
-          className={`shrink-0 text-ink-3 u-turn ${open ? "rotate-90" : ""}`}
-        />
+        <div className="flex items-center gap-2">
         {out ? <ArrowRight size={10} className="shrink-0 text-ink-3" /> : <ArrowLeft size={10} className="shrink-0 text-ink-3" />}
         <span className="shrink-0 text-fine text-ink-3">{b.predicate}</span>
         <span
@@ -2498,10 +2485,10 @@ function BlockedRow({
         <span className="ml-auto shrink-0 pl-2 text-fine text-ink-3">
           {S.graph.ruleNames[b.rule] ?? b.rule}
         </span>
-        </>
+        </div>
       }
     >
-      <div className="flex items-center gap-2 px-2 pb-2 pl-[26px] text-fine">
+      <div className="flex items-center gap-2 text-fine">
         <span className="truncate text-contest">
           {S.graph.blockedBy(b.against_text)}
         </span>
@@ -2521,7 +2508,7 @@ function BlockedRow({
         </span>
       </div>
       {open && (
-        <div className="mx-2 mb-2 mt-1 border-l border-line-strong pl-3">
+        <div>
           {proof.isPending && (
             <p className="text-fine text-ink-3">{S.graph.proofLoading}</p>
           )}
@@ -2772,7 +2759,7 @@ function EntityPanel({
 
   return (
     <div
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-xl shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-lg shadow-2xl flex flex-col`}
     >
       <div className="flex items-start justify-between px-4 py-4 border-b border-line">
         <div>
@@ -3133,19 +3120,19 @@ function TimelineView({
   const undated = facts.filter((f) => !dated.includes(f));
 
   return (
-    <div className="px-2 pt-1">
-      <div className="relative ml-2 border-l border-line-strong pl-3 space-y-1">
+    <div className="pt-1">
+      {/* 与 Relations 同一种行：chevron + 两行头（区间在上，谓词和值在下）。
+          年表的次序靠排序和第一行的区间说话，不另画一条线 */}
+      <div>
         {dated.map((f) => (
-          <div key={f.id} className="relative">
-            <span className="absolute -left-[17.5px] top-2.5 h-2 w-2 rounded-full bg-ink-3 ring-2 ring-ground" />
-            <TimelineRow
-              kbId={kbId}
-              fact={f}
-              open={openFact === f.id}
-              onToggle={() => onToggle(f.id)}
-              onNavigate={onNavigate}
-            />
-          </div>
+          <TimelineRow
+            key={f.id}
+            kbId={kbId}
+            fact={f}
+            open={openFact === f.id}
+            onToggle={() => onToggle(f.id)}
+            onNavigate={onNavigate}
+          />
         ))}
         {dated.length === 0 && (
           <p className="py-2 text-small text-ink-3">
@@ -3366,11 +3353,11 @@ function TimeEditor({
 
   return (
     <div
-      className="mx-2 mb-2 rounded-lg border border-line bg-surface p-3"
+      className="mb-2 rounded-lg border border-line bg-surface p-3"
       onClick={(ev) => ev.stopPropagation()}
     >
       <div className="flex items-center gap-2">
-        <label className="w-11 shrink-0 text-fine text-ink-3">
+        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
           {S.graph.timeStart}
         </label>
         <Input
@@ -3382,7 +3369,7 @@ function TimeEditor({
         />
       </div>
       <div className="mt-2 flex items-start gap-2">
-        <label className="w-11 shrink-0 pt-1 text-fine text-ink-3">
+        <label className="w-11 shrink-0 pt-1 text-small font-medium text-ink-2">
           {S.graph.timeEnd}
         </label>
         <div className="flex-1 space-y-1">
@@ -3414,7 +3401,7 @@ function TimeEditor({
         </div>
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <label className="w-11 shrink-0 text-fine text-ink-3">
+        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
           {S.graph.timeNote}
         </label>
         <Input
@@ -3476,13 +3463,8 @@ function FactRow({
       onToggle={onToggle}
       dim={fact.stale}
       title={fact.stale ? S.graph.staleFactHint : undefined}
-      headerClassName="flex items-center gap-2"
       header={
-        <>
-        <ChevronRight
-          size={11}
-          className={`shrink-0 text-ink-3 u-turn ${open ? "rotate-90" : ""}`}
-        />
+        <div className="flex items-center gap-2">
         {fact.other_id ? (
           <span
             role="link"
@@ -3522,7 +3504,7 @@ function FactRow({
             {interval}
           </span>
         )}
-        </>
+        </div>
       }
     >
       {open && <EvidenceList kbId={kbId} fact={fact} />}
@@ -3537,7 +3519,7 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
     queryFn: () => api.factEvidence(kbId, fact.id),
   });
   return (
-    <div className="mx-2 mb-2 mt-1 space-y-2 border-l border-line-strong pl-3">
+    <div className="space-y-2">
       {evidence.data?.evidence.map((ev: Evidence) => (
         <Link
           key={ev.chunk_id}

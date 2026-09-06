@@ -60,6 +60,7 @@ import {
   cn,
   pageSlice,
   GroupLabel,
+  PageHeader,
 } from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
@@ -110,7 +111,7 @@ export function Ontology() {
   // 模式图详情面板停在哪一段。**跨选中保留**：在实例上挨个类看下去，
   // 是一种真实的读法，每换一个类就被弹回定义页会打断它
   const [panelTab, setPanelTab] = useState<
-    "definition" | "properties" | "instances"
+    "definition" | "relations" | "attributes" | "instances"
   >("definition");
   /** 正在退场的那次选择：面板演完 `u-dock-out` 再卸载，而不是一下子消失 */
   const [exitingSel, setExitingSel] = useState<Sel>(null);
@@ -207,14 +208,7 @@ export function Ontology() {
     panelSel?.kind === "relation"
       ? (relation_types.find((r) => r.id === panelSel.id) ?? null)
       : null;
-  // 选中类身上挂着的东西，面板分段的计数和内容都用它
-  const classRelations = selectedClass
-    ? relations.filter(
-        (r) =>
-          r.domains.includes(selectedClass.id) ||
-          r.ranges.includes(selectedClass.id),
-      )
-    : [];
+  // 选中类身上挂着的属性，Attributes 一段用它
   const classAttributes = selectedClass
     ? relation_types.filter(
         (r) => r.kind === "attribute" && r.domains.includes(selectedClass.id),
@@ -229,7 +223,7 @@ export function Ontology() {
       <aside className={`${RAIL_CLS} flex flex-col`}>
         {/* 与图谱页的搜索框同一副身材、同一个角落（左上各 12px、中号、232 宽）：
             两个标签页切来切去，框留在原地 */}
-        <div className="px-3 pt-3 pb-2">
+        <div className="px-3 pt-3 pb-1">
           <Input
             icon={<Search size={12} />}
             placeholder={S.ontology.filter}
@@ -240,7 +234,7 @@ export function Ontology() {
         {/* 模式图：本体结构的主视图,不是 Import/Refine/Unmatched 那种管理性操作——
             放在筛选框正下方、列表上方,与那三个钉在底部的按钮拉开位置,
             视觉上就说明了「这是浏览本体的另一种方式」而不是「这是一项维护动作」 */}
-        <div className="px-3 pb-2">
+        <div className="px-3 pb-1">
           <Row
             density="nav"
             active={sel?.kind === "schema"}
@@ -267,7 +261,7 @@ export function Ontology() {
         </div>
         <div
           ref={listRef}
-          className="flex-1 min-h-0 overflow-hidden px-3 pt-2 pb-2 flex flex-col"
+          className="flex-1 min-h-0 overflow-hidden px-3 pb-2 flex flex-col"
         >
           {/* 新建行置顶：随当前段建类/建关系 */}
           {!filter.trim() && (
@@ -334,7 +328,7 @@ export function Ontology() {
         {/* 底部常驻：关于本体的几个入口——从外部拿一份本体、业务规则、类型消解，
             以及数据顶回来的两种信号。一条分隔线说明它们是钉住的，行本身与上面
             列表里的行同一副样子 */}
-        <div className="shrink-0 border-t border-line px-3 py-2 space-y-1">
+        <div className="u-rail-list shrink-0 border-t border-line px-3 py-2">
         <RailItem
           active={sel?.kind === "import"}
           icon={<Upload size={14} />}
@@ -397,17 +391,17 @@ export function Ontology() {
       sel?.kind === "uniqueness" ||
       sel?.kind === "rules" ? (
         <div className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
-          <div className="max-w-6xl">
+          <div>
             {sel.kind === "import" ? (
-              <div className="max-w-xl">
+              <div>
                 <ImportPanel kbId={kb.id} onChanged={refresh} onError={onError} />
               </div>
             ) : sel.kind === "refine" ? (
-              <div className="max-w-2xl">
+              <div>
                 <RefinePanel kbId={kb.id} onChanged={refresh} onError={onError} />
               </div>
             ) : sel.kind === "uniqueness" ? (
-              <div className="max-w-2xl">
+              <div>
                 <UniquenessPanel
                   kbId={kb.id}
                   candidates={overlaps}
@@ -421,7 +415,7 @@ export function Ontology() {
                 />
               </div>
             ) : sel.kind === "rules" ? (
-              <div className="max-w-2xl">
+              <div>
                 <RulesPanel
                   kbId={kb.id}
                   classes={entity_types}
@@ -430,7 +424,7 @@ export function Ontology() {
                 />
               </div>
             ) : (
-              <div className="max-w-xl">
+              <div>
                 <MissesPanel
                   kbId={kb.id}
                   misses={misses}
@@ -486,14 +480,16 @@ export function Ontology() {
                         label: S.ontology.schemaTabDefinition,
                       },
                       {
-                        value: "properties",
-                        label: S.ontology.schemaTabProperties,
-                        count: classRelations.length + classAttributes.length,
+                        value: "relations",
+                        label: S.ontology.schemaTabRelations,
+                      },
+                      {
+                        value: "attributes",
+                        label: S.ontology.schemaTabAttributes,
                       },
                       {
                         value: "instances",
                         label: S.ontology.schemaTabInstances,
-                        count: selectedClass.usage,
                       },
                     ]}
                   />
@@ -541,11 +537,7 @@ export function Ontology() {
               </div>
               {selectedClass && (
                 <>
-                  <div
-                    className={
-                      classTab === "properties" ? "flex flex-col gap-3" : "hidden"
-                    }
-                  >
+                  <div className={classTab === "relations" ? "" : "hidden"}>
                     <RelationshipsCard
                       kbId={kb.id}
                       cls={selectedClass}
@@ -561,6 +553,8 @@ export function Ontology() {
                         })
                       }
                     />
+                  </div>
+                  <div className={classTab === "attributes" ? "" : "hidden"}>
                     <AttributesCard
                       kbId={kb.id}
                       type={selectedClass}
@@ -655,7 +649,7 @@ function DockedPanel({
     <div
       // 与图谱页的实体面板同一副壳：同宽（w-96）、同一个顶部起点（给顶上那排
       // 药丸让位），同一个头部解剖。两页并排看是同一件东西
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-xl shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-lg shadow-2xl flex flex-col`}
     >
       <div className="shrink-0 flex items-start justify-between gap-2 px-4 py-4 border-b border-line">
         <div className="min-w-0">{header}</div>
@@ -695,7 +689,7 @@ function PanelHeader({
       <div className="flex items-center gap-2">
         {color && (
           <span
-            className={`h-2.5 w-2.5 shrink-0 ${square ? "" : "rounded-full"}`}
+            className={`h-2.5 w-2.5 shrink-0 ${square ? "scale-90" : "rounded-full"}`}
             style={{ background: color, boxShadow: `0 0 8px ${color}55` }}
           />
         )}
@@ -724,14 +718,13 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
   });
   const total = q.data?.total ?? 0;
   const rows = q.data?.entities ?? [];
-  if (!q.isPending && total === 0) return null; // 没有实例时不占版面
+  // 这一段自己就是 Instances 那个 tab：没有实例就说一句，不顶同名的标题
+  if (!q.isPending && total === 0)
+    return <p className="text-small text-ink-3">{S.ontology.schemaNoInstances}</p>;
 
   return (
-    // 平铺在面板里：面板已经是一块面，里面不再套卡片。标题与行同一个 px-2
+    // 平铺在面板里：面板已经是一块面，里面不再套卡片
     <div>
-      <GroupLabel className="mb-1 px-2" count={total}>
-        {S.ontology.instances}
-      </GroupLabel>
       <div>
         {rows.map((e) => (
           <Link
@@ -739,10 +732,10 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
             to="/kb/$kbId/graph"
             params={{ kbId }}
             search={{ entity: e.id }}
-            className={rowClass()}
+            className={cn(rowClass(), "-mx-2")}
           >
             <span
-              className={`h-2 w-2 shrink-0 ${type.shape === "square" ? "" : "rounded-full"}`}
+              className={`h-2 w-2 shrink-0 ${type.shape === "square" ? "scale-90" : "rounded-full"}`}
               style={{ background: type.color }}
             />
             <span className="truncate">{e.name}</span>
@@ -845,6 +838,7 @@ function RelationshipsCard({
     // 悬停要有底色：这一行整条可点，只把文字提亮半级在深底上几乎看不出来。
     // 底色用左栏那一档（white/[0.05]），右端的类型小字跟着一起提亮
     <Row
+      className="-mx-2"
       icon={
         dir === "out" ? (
           <ArrowRight size={12} className="text-violet" />
@@ -865,16 +859,11 @@ function RelationshipsCard({
   );
 
   return (
-    // 平铺在面板里，与图谱面板的关系分组同一个骨架：带方向箭头的小标题 + 行
+    // 平铺在面板里，与图谱面板的关系分组同一个骨架：带方向箭头的小标题 + 行。
+    // 这一段自己就是 Relations 那个 tab，不再顶一个同名的标题
     <div>
-      <GroupLabel
-        className="mb-1 px-2"
-        count={outgoing.length + incoming.length || undefined}
-      >
-        {S.ontology.schemaRelationships}
-      </GroupLabel>
       {outgoing.length === 0 && incoming.length === 0 ? (
-        <p className="mb-2 px-2 text-small text-ink-3">
+        <p className="mb-2 text-small text-ink-3">
           {S.ontology.schemaNoRelationships}
         </p>
       ) : (
@@ -882,7 +871,7 @@ function RelationshipsCard({
           {outgoing.length > 0 && (
             <>
               <GroupLabel
-                className="px-2 pb-1 pt-2"
+                className="pb-1 pt-2"
                 icon={<ArrowRight size={10} />}
                 count={outgoing.length > 1 ? outgoing.length : undefined}
               >
@@ -898,7 +887,7 @@ function RelationshipsCard({
           {incoming.length > 0 && (
             <>
               <GroupLabel
-                className="px-2 pb-1 pt-2"
+                className="pb-1 pt-2"
                 icon={<ArrowLeft size={10} />}
                 count={incoming.length > 1 ? incoming.length : undefined}
               >
@@ -913,7 +902,7 @@ function RelationshipsCard({
           )}
         </div>
       )}
-      <div className="border-t border-line px-2 pt-3">
+      <div className="border-t border-line pt-3">
         <p className="text-fine text-ink-3 mb-2">
           {S.ontology.schemaConnectHint}
         </p>
@@ -932,7 +921,7 @@ function RelationshipsCard({
           />
         </div>
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-fine text-ink-3">
+          <span className="text-small font-medium text-ink-2">
             {S.ontology.schemaConnectAs}
           </span>
           <Segmented
@@ -991,11 +980,8 @@ export function AttributesCard({
   useEffect(() => setEditing(null), [type.id]);
 
   return (
-    <div className="border-t border-line pt-3">
-      <GroupLabel className="mb-1 px-2" count={attributes.length || undefined}>
-        {S.ontology.attributes}
-      </GroupLabel>
-      <p className="mb-2 px-2 text-small text-ink-3">
+    <div>
+      <p className="mb-2 text-fine text-ink-3">
         {S.ontology.attributesHint}
       </p>
       <div className="divide-y divide-line">
@@ -1125,7 +1111,7 @@ function AttributeForm({
     onError,
   });
 
-  const lbl = "block text-small font-medium text-ink-3 mb-1";
+  const lbl = "block text-small font-medium text-ink-2 mb-1";
   return (
     <div className="py-3 space-y-3">
       {!existing && (
@@ -1287,7 +1273,7 @@ function ClassTree({
   const { rows: paged, safe } = pageSlice(rows, page, pageSize);
 
   return (
-    <div className="space-y-1">
+    <div className="u-rail-list">
       {paged.map(({ t, depth, hasChildren }) => (
         <Row
           key={t.id}
@@ -1317,7 +1303,7 @@ function ClassTree({
           <span className="flex items-center gap-2">
             {/* 方形是直角：与圆形拉开区分度（图谱节点同理） */}
             <span
-              className={`h-2.5 w-2.5 shrink-0 ${t.shape === "square" ? "" : "rounded-full"}`}
+              className={`h-2.5 w-2.5 shrink-0 ${t.shape === "square" ? "scale-90" : "rounded-full"}`}
               style={{ background: t.color }}
             />
             {/* 不在列表里放逐项用量读数：数量级上来后统计和渲染都是负担，用量看表单 */}
@@ -1362,7 +1348,7 @@ function PropertyList({
   useEffect(() => setPage(0), [filter]);
   const { rows: paged, safe } = pageSlice(rows, page, pageSize);
   return (
-    <div className="space-y-1">
+    <div className="u-rail-list">
       {paged.map((r) => (
         <Row
           key={r.id}
@@ -1507,13 +1493,13 @@ export function ClassForm({
     onError,
   });
 
-  const lbl = "block text-small font-medium text-ink-3 mb-1";
+  const lbl = "block text-small font-medium text-ink-2 mb-1";
   return (
     <div className="space-y-3">
       {!headless && (
         <div className="flex items-center gap-2">
           <span
-            className={`h-3 w-3 ${shape === "square" ? "" : "rounded-full"}`}
+            className={`h-3 w-3 ${shape === "square" ? "scale-90" : "rounded-full"}`}
             style={{ background: color }}
           />
           <span className="font-semibold text-ink">
@@ -1566,12 +1552,16 @@ export function ClassForm({
             options={(["circle", "square"] as const).map((sh) => ({
               value: sh,
               title: sh,
+              // 图标占一行正文的高（h-4 = text-fine 的行高）：Segmented 的高度由内容撑，
+              // 光秃秃的 12px 图标会让它比旁边 32 高的色井矮一截
               label: (
-                <span
-                  className={`h-3 w-3 border-[1.5px] border-current ${
-                    sh === "circle" ? "rounded-full" : ""
-                  }`}
-                />
+                <span className="flex h-4 items-center">
+                  <span
+                    className={`h-3 w-3 border-[1.5px] border-current ${
+                      sh === "circle" ? "rounded-full" : "scale-90"
+                    }`}
+                  />
+                </span>
               ),
             }))}
           />
@@ -1805,7 +1795,7 @@ export function PropertyForm({
     onError,
   });
 
-  const lbl = "block text-small font-medium text-ink-3 mb-1";
+  const lbl = "block text-small font-medium text-ink-2 mb-1";
   return (
     <div className="space-y-3">
       {!headless && (
@@ -1852,7 +1842,7 @@ export function PropertyForm({
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="min-w-0">
-            <div className="mb-1 text-fine font-medium text-ink-3">
+            <div className="mb-1 text-small font-medium text-ink-2">
               {S.ontology.domainLabel}
             </div>
             <MultiSearchSelect
@@ -1864,7 +1854,7 @@ export function PropertyForm({
             />
           </div>
           <div className="min-w-0">
-            <div className="mb-1 text-fine font-medium text-ink-3">
+            <div className="mb-1 text-small font-medium text-ink-2">
               {S.ontology.rangeLabel}
             </div>
             <MultiSearchSelect
@@ -2101,12 +2091,7 @@ function RefinePanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="u-title text-title mb-1">{S.ontology.refineTitle}</h3>
-        <p className="text-small leading-relaxed text-ink-3 max-w-xl">
-          {S.ontology.refineHint}
-        </p>
-      </div>
+      <PageHeader className="mb-2" title={S.ontology.refineTitle} sub={S.ontology.refineHint} />
 
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" disabled={busy} onClick={() => look.mutate()}>
@@ -2126,7 +2111,7 @@ function RefinePanel({
               : S.ontology.refineCandidates(preview.length)}
           </p>
           {preview.map((s) => (
-            <div key={s.entity_id} className="glass rounded-xl p-3">
+            <div key={s.entity_id} className="glass rounded-lg p-3">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-body text-ink">{s.name}</span>
                 <span className="text-fine text-ink-3">
@@ -2192,7 +2177,7 @@ function RefinePanel({
                 {S.ontology.refineForReview(outcome.for_review.length)}
               </p>
               {outcome.for_review.map((r) => (
-                <div key={r.entity_id} className="glass rounded-xl p-3">
+                <div key={r.entity_id} className="glass rounded-lg p-3">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-body text-ink">{r.name}</span>
                     <span className="text-fine text-ink-3">
@@ -2242,7 +2227,7 @@ function RefinePanel({
                 {S.ontology.refineLeftAlone(outcome.left_alone.length)}
               </p>
               {outcome.left_alone.map((d, i) => (
-                <div key={i} className="glass rounded-xl px-3 py-2">
+                <div key={i} className="glass rounded-lg px-3 py-2">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-body text-ink">
                       {d.name}
@@ -2346,14 +2331,7 @@ function UniquenessPanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-body font-medium text-ink">
-          {S.ontology.uniqueness}
-        </h2>
-        <p className="mt-1 text-small leading-relaxed text-ink-3">
-          {S.ontology.uniquenessHint}
-        </p>
-      </div>
+      <PageHeader className="mb-2" title={S.ontology.uniqueness} sub={S.ontology.uniquenessHint} />
 
       {pending ? (
         <p className="text-small text-ink-3">{S.nav.loading}</p>
@@ -2787,23 +2765,24 @@ function MissesPanel({
   });
 
   return (
-    <div className="glass rounded-xl p-4">
-      <div className="flex items-center gap-3 mb-1">
-        <h3 className="text-body font-semibold text-ink">
-          {S.ontology.misses}
-        </h3>
-        {misses.length > 0 && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => suggest.mutate()}
-            disabled={suggest.isPending}
-          >
-            {suggest.isPending ? S.ontology.suggesting : S.ontology.suggest}
-          </Button>
-        )}
-      </div>
-      <p className="text-small text-ink-3 mb-3">{S.ontology.missesHint}</p>
+    // 整页视图不再套一层卡片：标题是页标题，正文平铺（与 Refine / Rules 同一副样子）
+    <div>
+      <PageHeader
+        title={S.ontology.misses}
+        sub={S.ontology.missesHint}
+        actions={
+          misses.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => suggest.mutate()}
+              disabled={suggest.isPending}
+            >
+              {suggest.isPending ? S.ontology.suggesting : S.ontology.suggest}
+            </Button>
+          )
+        }
+      />
 
       {misses.length === 0 ? (
         <p className="text-body text-ink-3">{S.ontology.noMisses}</p>
@@ -2812,7 +2791,7 @@ function MissesPanel({
           {misses.map((m) => (
             <span
               key={`${m.kind}:${m.key}`}
-              className="glass rounded-full px-3 py-1 text-small flex items-center gap-2"
+              className="glass rounded-lg px-3 py-1 text-small flex items-center gap-2"
               title={m.example ?? ""}
             >
               <Chip tone={m.kind === "entity_type" ? "info" : "violet"}>
@@ -2851,7 +2830,7 @@ function MissesPanel({
                 {dismissedMisses.map((m) => (
                   <span
                     key={`d:${m.kind}:${m.key}`}
-                    className="glass rounded-full px-3 py-1 text-small flex items-center gap-2 opacity-60"
+                    className="glass rounded-lg px-3 py-1 text-small flex items-center gap-2 opacity-60"
                     title={m.example ?? ""}
                   >
                     <Chip tone={m.kind === "entity_type" ? "info" : "violet"}>
@@ -3175,11 +3154,8 @@ function ImportPanel({
     plan.attributes.length === 0;
 
   return (
-    <div className="glass rounded-xl p-4">
-      <h3 className="text-body font-semibold text-ink mb-1">
-        {S.ontology.importTitle}
-      </h3>
-      <p className="text-small text-ink-3 mb-3">{S.ontology.importHint}</p>
+    <div>
+      <PageHeader title={S.ontology.importTitle} sub={S.ontology.importHint} />
 
       <input
         ref={pick}

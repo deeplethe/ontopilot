@@ -928,7 +928,7 @@ export function OntologySchemaGraph({
           ).map(([label, color]) => (
             <span
               key={label}
-              className="glass rounded-full px-3 py-1 text-fine flex items-center gap-2 text-ink-2"
+              className="glass rounded-lg px-3 py-1 text-fine flex items-center gap-2 text-ink-2"
             >
               <span className="h-0.5 w-3 rounded-full" style={{ background: color }} />
               {label}
@@ -945,7 +945,7 @@ export function OntologySchemaGraph({
                   : S.ontology.schemaScopeInUseHint
               }
             >
-              <span className="glass rounded-full px-3 py-1 text-fine flex items-center text-ink-2">
+              <span className="glass rounded-lg px-3 py-1 text-fine flex items-center text-ink-2">
                 {S.ontology.schemaMoreClasses(scope.hidden)}
               </span>
             </Tooltip>
@@ -966,7 +966,7 @@ export function OntologySchemaGraph({
               {unscopedPop.open && (
                 <div
                   ref={unscopedPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-xl p-2 shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-lg p-2 shadow-2xl"
                 >
                   <Pill className="mb-2 w-full" onClick={() => unscopedPop.close()}>
                     {S.ontology.schemaUnscoped(schema.unscoped.length)}

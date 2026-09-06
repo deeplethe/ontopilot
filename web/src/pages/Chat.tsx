@@ -411,7 +411,7 @@ export function Chat() {
               />
             </Button>
             {scopeOpen && (
-              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-xl shadow-2xl overflow-hidden">
+              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-lg shadow-2xl overflow-hidden">
                 <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
                   {S.ask.scopeLabel}
                 </div>
@@ -472,7 +472,7 @@ export function Chat() {
             角落（左上各 12px、中号带放大镜）：换标签页时框留在原地。
             **标题重是常态**（同一个问题问两次就重了），而正文里那句话才是人
             记得住的——所以服务端两处都搜 */}
-        <div className="px-3 pt-3 pb-2">
+        <div className="px-3 pt-3 pb-1">
           <Input
             icon={<Search size={12} />}
             placeholder={S.ask.searchConversations}
@@ -489,7 +489,7 @@ export function Chat() {
             {S.ask.newChat}
           </Row>
         </div>
-        <div className="u-scroll flex-1 overflow-y-auto px-3 pb-3 space-y-1">
+        <div className="u-rail-list u-scroll flex-1 overflow-y-auto px-3 pb-3">
           {(convs.data?.conversations ?? []).map((c: ConversationRow) => (
             <div
               key={c.id}
@@ -724,7 +724,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   if (turn.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="u-bubble-user max-w-[85%] rounded-xl rounded-tr-sm px-4 py-2 text-body whitespace-pre-wrap text-ink">
+        <div className="u-bubble-user max-w-[85%] rounded-lg px-4 py-2 text-body whitespace-pre-wrap text-ink">
           {turn.content}
         </div>
       </div>

@@ -37,6 +37,7 @@ import {
   Pager,
   Segmented,
   Textarea,
+  PageHeader,
 } from "../ui";
 import {
   KIND_ICON,
@@ -567,18 +568,19 @@ export function Library() {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
       >
-        {/* 工作页居左：与 Review/Ontology 同规——左缘随栏起步，切页不跳 */}
-        <div className="max-w-4xl">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="u-title text-title">
-              {selectedSource?.name ??
-                (selection === "uploads"
-                  ? S.library.uploads
-                  : selection === "deleted"
-                    ? S.library.deleted
-                    : S.library.title)}
-            </h1>
-            <div className="flex items-center gap-2">
+        {/* 工作页铺满栏右的整个宽度：与 Review/Ontology/设置页同规，切页不跳 */}
+        <div>
+          <PageHeader
+            title={
+              selectedSource?.name ??
+              (selection === "uploads"
+                ? S.library.uploads
+                : selection === "deleted"
+                  ? S.library.deleted
+                  : S.library.title)
+            }
+            actions={
+              <>
               {/* 历史视图下过滤框只藏不撤（invisible 保留占位），标题行高度不塌、不抖 */}
               <div className={`relative ${showHistory ? "invisible" : ""}`}>
                 <Search
@@ -651,7 +653,9 @@ export function Library() {
                   {S.library.upload}
                 </Button>
               )}
-            </div>
+              </>
+            }
+          />
             <input
               ref={fileInput}
               type="file"
@@ -660,7 +664,6 @@ export function Library() {
               accept=".pdf,.docx,.xlsx,.xls,.ods,.pptx,.md,.txt,.html,.htm,.csv,.tsv,.json,.yaml,.yml,.xml,.log"
               onChange={(e) => e.target.files?.length && upload.mutate(e.target.files)}
             />
-          </div>
 
           {selectedSource && (
             <SourceBar
@@ -685,7 +688,7 @@ export function Library() {
             const total = (docs.data?.ready ?? 0) + pending;
             const done = total - pending;
             return (
-              <div className="mb-3 glass rounded-xl px-4 py-3">
+              <div className="mb-3 glass rounded-lg px-4 py-3">
                 <div className="flex items-center justify-between text-small text-ink-2 mb-2">
                   <span>{S.library.extractProgress(done, total)}</span>
                   <span className="u-num text-ink-3">
@@ -715,7 +718,7 @@ export function Library() {
             <RunsPanel kbId={kb.id} sourceId={selectedSource.id} />
           ) : (
           <>
-          <div className={`glass rounded-xl glass-hover ${dragging ? "u-highlight" : ""}`}>
+          <div className={`glass rounded-lg glass-hover ${dragging ? "u-highlight" : ""}`}>
             {selection === "deleted" ? (
               <DeletedTable
                 docs={pagedDocs}
@@ -936,7 +939,7 @@ function SourceBar({
     cfg.content_mode === "full_new_items" ? "full_new_items" : "feed";
 
   return (
-    <div className="glass rounded-xl mb-3">
+    <div className="glass rounded-lg mb-3">
       <div className="px-4 py-3 flex items-center gap-3 text-small">
         {/* api 与拉取型同一状态语汇：点 + 状态 + 时刻 + 产出/错误；
             端点是一次性集成信息，放 Token 弹窗，不占常驻条 */}
@@ -1276,7 +1279,7 @@ function RunsPanel({ kbId, sourceId }: { kbId: string; sourceId: string }) {
   const list = runs.data?.runs ?? [];
 
   return (
-    <div className="glass rounded-xl">
+    <div className="glass rounded-lg">
       {runs.isLoading ? (
         <div className="py-20 text-center text-body text-ink-3">{S.nav.loading}</div>
       ) : list.length === 0 ? (

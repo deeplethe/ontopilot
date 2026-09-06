@@ -161,7 +161,7 @@ export function SourcesRail({
           </RailItem>
         </div>
       )}
-      <div className="u-scroll flex-1 overflow-y-auto px-3 pt-1 pb-3 space-y-1">
+      <div className="u-rail-list u-scroll flex-1 overflow-y-auto px-3 pt-1 pb-3">
         {/* Uploads：常驻默认来源（上传的默认去处，不可删除） */}
         <RailItem
           active={active === "uploads"}

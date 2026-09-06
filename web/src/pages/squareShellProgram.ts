@@ -2,7 +2,7 @@
 // 状态环(0.1) → 钢灰描边(0.07) → 深色壳(0.3) → 微彩核心(fill)。
 // 圆形用欧氏距离 length()，方形改用切比雪夫距离 max(|x|,|y|)，
 // 几何沿用 @sigma/node-square：6 顶点四边形、角点 ±45°/±135°、sqrt8 缩放
-//（等效半边长与圆形半径一致，hover/selected 状态环两种形状表现对齐）。
+//（半边长取圆形半径的 0.9：边长等于直径时方块看着比圆大；状态环随之等比缩）。
 
 import { NodeProgram } from "sigma/rendering";
 import type { ProgramInfo } from "sigma/rendering";
@@ -44,7 +44,9 @@ const float sqrt_8 = sqrt(8.0);
 const float sqrt_2 = sqrt(2.0);
 
 void main() {
-  float size = a_size * u_correctionRatio / u_sizeRatio * sqrt_8;
+  // 方块比圆小一丁点：边长 = 直径时方块看着比圆大（面积 4r² 对 πr²）。取 0.9，
+  // 接近等面积的 0.886，四层环随之一起缩，hover/选中态两种形状仍对齐
+  float size = a_size * u_correctionRatio / u_sizeRatio * sqrt_8 * 0.9;
   // 屏幕上保持轴对齐（跟随相机旋转），切比雪夫度量用未旋转的本地坐标
   float angle = a_angle + u_cameraAngle;
   vec2 diffVector = size * vec2(cos(angle), sin(angle));
@@ -52,7 +54,7 @@ void main() {
   gl_Position = vec4((u_matrix * vec3(position, 1)).xy, 0, 1);
 
   v_diffVector = size * vec2(cos(a_angle), sin(a_angle));
-  v_radius = size / sqrt_2; // 半边长，与圆形程序的半径等值
+  v_radius = size / sqrt_2; // 半边长 = 0.9 × 圆形程序的半径
 
   #ifdef PICKING_MODE
   v_color = a_id;

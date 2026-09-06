@@ -18,9 +18,9 @@ No `text-xs`/`text-sm`, no `text-[11px]`. If a size between two steps seems nece
 
 `1 2 3 4 6 8` (4, 8, 12, 16, 24, 32 px), for padding, margin and gap alike. No half steps, no pixels. Values of `12` and above are layout, not rhythm — clearance under a floating bar, a footer's breathing room — and are allowed for that. Controls carry their own padding — a page never sets padding on a button or an input. Page gutters are `6` or `8`; the gap between two related controls is `2`; between two groups, `4`; between two sections, `6`.
 
-## 3. Two radii
+## 3. One radius
 
-`rounded-lg` (8 px) on anything you press or type into; `rounded-xl` (12 px) on any surface — panel, popover, dialog, card; `rounded-full` on pills and round buttons. Nothing else.
+`rounded-lg` (8 px) on everything that has corners — a button, an input, a panel, a popover, a dialog, a card, a chip, a pill. `rounded-full` only on things that are circles: an avatar, a status dot, a colour swatch, a graph node. Nothing else — no 12 px surfaces, no pill-shaped rectangles.
 
 ## 4. Colour is a token, never a value
 

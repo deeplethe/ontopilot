@@ -10,6 +10,7 @@ import {
   Button,
   Chip,
   Loading,
+  PageHeader,
 } from "../ui";
 
 const ymd = (iso: string) => iso.slice(0, 10);
@@ -43,16 +44,14 @@ export function MyKbs() {
   };
 
   return (
-    <div className="max-w-2xl p-8">
-      <div className="mb-6">
-        <h1 className="u-title text-title">{S.account.kbsTitle}</h1>
-      </div>
+    <div className="px-8 py-6">
+      <PageHeader title={S.account.kbsTitle} />
 
       <div className="space-y-3">
         {rows.map((row) => {
           const canManage = row.my_role === "admin" || row.my_role === "owner";
           return (
-            <div key={row.kb.id} className="glass glass-hover rounded-xl px-6 py-4">
+            <div key={row.kb.id} className="glass glass-hover rounded-lg px-6 py-4">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

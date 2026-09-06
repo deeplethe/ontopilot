@@ -297,7 +297,7 @@ export function Dropdown({
         <div
           className={cn(
             // 与告警面板、用户菜单同一张皮（u-menu-glass）：浮在页面上的面只有一种
-            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-xl shadow-2xl overflow-hidden",
+            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden",
           )}
         >
           {menuLabel && (
@@ -440,7 +440,7 @@ export function SearchSelect({
         }}
       />
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-xl shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -553,7 +553,7 @@ export function MultiSearchSelect({
               key={o.value}
               type="button"
               onClick={() => onToggle(o.value)}
-              className="group flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-fine text-ink transition-colors duration-fast hover:bg-surface-3"
+              className="group flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-0.5 text-fine text-ink transition-colors duration-fast hover:bg-surface-3"
               title={o.hint ?? o.label}
             >
               {o.label}
@@ -609,7 +609,7 @@ export function MultiSearchSelect({
         />
       </div>
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-xl shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -737,10 +737,10 @@ export function ColorPicker({
           type="button"
           title={value}
           onClick={() => setOpen(!open)}
-          className="h-8 w-14 rounded-lg border border-line-strong hover:border-line-strong transition-colors bg-surface grid place-items-center"
+          className="h-8 w-10 rounded-lg border border-line-strong hover:border-line-strong transition-colors bg-surface grid place-items-center"
         >
           <span
-            className={cn("h-3.5 w-3.5", shape === "circle" && "rounded-full")}
+            className={cn("h-3.5 w-3.5", shape === "circle" ? "rounded-full" : "scale-90")}
             style={{ background: valid ? value : ENTITY_PALETTE[0] }}
           />
         </button>
@@ -754,8 +754,8 @@ export function ColorPicker({
         />
       )}
       {open && (
-        // 显式宽度：绝对定位的收缩宽度会被 inline-block 触发器的 56px 容器块钳死
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-xl p-3 shadow-2xl">
+        // 显式宽度：绝对定位的收缩宽度会被 inline-block 触发器的容器块钳死
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-lg p-3 shadow-2xl">
           <div className="grid grid-cols-8 gap-1.5 mb-2.5">
             {ENTITY_PALETTE.map((c) => (
               <button
@@ -859,7 +859,7 @@ export function Panel({
 }) {
   return (
     <div
-      className={cn(strong ? "glass-strong" : "glass", "rounded-xl", className)}
+      className={cn(strong ? "glass-strong" : "glass", "rounded-lg", className)}
     >
       {children}
     </div>
@@ -979,7 +979,7 @@ export function EmptyState({
 }) {
   return (
     <div className="text-center">
-      <div className="glass mx-auto mb-4 h-14 w-14 rounded-xl grid place-items-center text-title font-bold text-ink-2">
+      <div className="glass mx-auto mb-4 h-14 w-14 rounded-lg grid place-items-center text-title font-bold text-ink-2">
         {icon}
       </div>
       <div className="text-body text-ink-3 whitespace-pre-line">
@@ -1010,6 +1010,32 @@ export function GithubMark({ size = 16 }: { size?: number }) {
     >
       <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
     </svg>
+  );
+}
+
+/* ---------- PageHeader（栏右内容区的页级标题） ----------
+   display 字号（规矩 1：页标题，也只有页标题）+ 一句副标题 + 右端的动作。
+   每一页都从这里拿标题，字号、副标题的颜色、到正文的距离就不会各写各的。
+   className 给了就替掉默认的 mb-6（外层已经用 space-y 排的地方传 mb-2 之类）。 */
+export function PageHeader({
+  title,
+  sub,
+  actions,
+  className,
+}: {
+  title: ReactNode;
+  sub?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn(className ?? "mb-6", "flex items-center justify-between gap-4")}>
+      <div className="min-w-0">
+        <h1 className="u-title text-display break-words">{title}</h1>
+        {sub && <p className="mt-1 text-body text-ink-3">{sub}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </div>
   );
 }
 
@@ -1058,24 +1084,30 @@ export function localDateTime(iso: string): string {
    只差密度：nav 高一点、带图标；list 矮一点、可缩进。 */
 /** 一行的类：Row 自己用；页面里必须是 <Link> 的行（跳去图谱的实例行）也用它 */
 export type RowDensity = "nav" | "list" | "menu";
+/** 行的语义色：danger = 会删东西的那一行；warn = 通往危险区的入口——只是去往，
+ *  还没动手，用警示色而不是危险色 */
+export type RowTone = "danger" | "warn";
 export function rowClass(
   active?: boolean,
   density: RowDensity = "list",
-  danger?: boolean,
+  tone?: RowTone,
 ): string {
   return cn(
     "group flex w-full items-center gap-2 text-left transition-colors duration-fast",
     density === "menu" ? "rounded-none" : "rounded-lg",
+    // 左栏导航项 32 高（py 6）：36 在一列十几条里显得松
     density === "nav"
-      ? "px-2 py-2 text-body font-medium"
+      ? "px-2 py-1.5 text-body font-medium"
       : density === "menu"
         ? "px-3 py-2 text-small"
         : "px-2 py-1 text-body",
     active
       ? "u-nav-active"
-      : danger
+      : tone === "danger"
         ? "text-danger hover:bg-surface-2"
-        : "text-ink-2 hover:bg-surface-2 hover:text-ink",
+        : tone === "warn"
+          ? "text-warn hover:bg-surface-2"
+          : "text-ink-2 hover:bg-surface-2 hover:text-ink",
   );
 }
 /** 行右端小字：静止时最淡，整行被指着时提亮一级 */
@@ -1084,6 +1116,7 @@ export const ROW_TRAILING = "ml-auto shrink-0 text-fine text-ink-3 group-hover:t
 export function Row({
   active,
   danger,
+  tone,
   density = "list",
   indent = 0,
   icon,
@@ -1094,8 +1127,9 @@ export function Row({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   active?: boolean;
-  /** 危险的那一行（菜单里的删除） */
+  /** 危险的那一行（菜单里的删除）；= tone="danger" */
   danger?: boolean;
+  tone?: RowTone;
   /** nav = 左栏导航项；list = 列表行；menu = 弹出菜单里的一项（顶满、不圆角） */
   density?: RowDensity;
   /** 树形缩进的层级 */
@@ -1109,10 +1143,16 @@ export function Row({
       type={type}
       aria-current={active ? "true" : undefined}
       style={indent ? { paddingLeft: `${8 + indent * 14}px` } : undefined}
-      className={cn(rowClass(active, density, danger), className)}
+      className={cn(rowClass(active, density, danger ? "danger" : tone), className)}
       {...props}
     >
-      {icon && <span className="shrink-0 text-ink-3">{icon}</span>}
+      {/* 图标跟文字同色：选中变白、警示变橙都一起来。导航项没图标也留出
+          图标那一格，一列里有图标的和没图标的文字对齐 */}
+      {icon ? (
+        <span className="shrink-0">{icon}</span>
+      ) : density === "nav" ? (
+        <span className="w-3.5 shrink-0" aria-hidden />
+      ) : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {trailing && <span className={ROW_TRAILING}>{trailing}</span>}
     </button>
@@ -1211,12 +1251,12 @@ export function Segmented<T extends string>({
               fill && "flex-1",
               active
                 ? "bg-surface-3 text-ink"
-                : "text-ink-3 hover:bg-surface-2 hover:text-ink-2",
+                : "text-ink-2 hover:bg-surface-2 hover:text-ink",
             )}
           >
             {o.label}
             {o.count !== undefined && o.count > 0 && (
-              <span className="u-num text-ink-3">{o.count}</span>
+              <span className="u-num">{o.count}</span>
             )}
           </button>
         );
@@ -1281,7 +1321,7 @@ export function ToolTower({
   return (
     <div
       className={cn(
-        "u-tower group glass-strong flex flex-col overflow-hidden rounded-xl shadow-xl",
+        "u-tower group glass-strong flex flex-col overflow-hidden rounded-lg shadow-xl",
         className,
       )}
     >
@@ -1346,7 +1386,7 @@ export function GroupLabel({
     >
       {icon}
       <span className="min-w-0 truncate">{children}</span>
-      {count !== undefined && <span className="u-num text-ink-3">{count}</span>}
+      {count !== undefined && <span className="u-num">{count}</span>}
     </div>
   );
 }
@@ -1390,15 +1430,16 @@ export function Radio({
   );
 }
 
-/* ---------- ExpandCard（可展开的一条：事实、派生、被挡下的派生） ----------
-   头是一整条可点的按钮，展开的内容跟在下面。头里可以有 role="link" 的 span
-   （去看另一端），但不能有按钮——按钮里不能嵌按钮。 */
+/* ---------- ExpandCard（可展开的一条：事实、派生、年表条目） ----------
+   折叠行只有一副样子：左边固定一格 chevron（开了转 90°），右边是头——一行
+   或两行文字——展开的内容缩进到文字底下（pl-7 = 内距 8 + chevron 12 + 间距 8）。
+   头是一整条可点的按钮，里面可以有 role="link" 的 span（去看另一端），
+   但不能有按钮——按钮里不能嵌按钮。 */
 export function ExpandCard({
   open,
   onToggle,
   dim,
   title,
-  headerClassName,
   className,
   header,
   children,
@@ -1408,7 +1449,6 @@ export function ExpandCard({
   /** 陈旧的那种：整条压淡 */
   dim?: boolean;
   title?: string;
-  headerClassName?: string;
   className?: string;
   header: ReactNode;
   children?: ReactNode;
@@ -1421,11 +1461,15 @@ export function ExpandCard({
       <button
         type="button"
         onClick={onToggle}
-        className={cn("w-full px-2 py-1 text-left", headerClassName)}
+        className="flex w-full items-start gap-2 px-2 py-1.5 text-left"
       >
-        {header}
+        <ChevronRight
+          size={12}
+          className={cn("mt-1 shrink-0 text-ink-3 u-turn", open && "rotate-90")}
+        />
+        <div className="min-w-0 flex-1">{header}</div>
       </button>
-      {children}
+      {children && <div className="pb-2 pl-7 pr-2">{children}</div>}
     </div>
   );
 }
