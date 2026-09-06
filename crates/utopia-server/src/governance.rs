@@ -208,10 +208,15 @@ async fn permit(ctx: &Ctx<'_>) -> Option<tokio::sync::OwnedSemaphorePermit> {
 fn pair_of(item: &ReviewItem, p: &Precedents) -> utopia_extract::AdjudicationPair {
     // 同名且大类不冲突的对：两侧写同一个类型标签。抽取器给同一家公司的两条记录
     // Store 与 Organization，模型就拿这个当「不同」的理由——把拐杖拿掉，让它看事实
+    // 只在两侧都归得到同一个大类（人、组织、地点、事件）时才共用：Periodical 对 Service、
+    // VideoGame 对没类型，那些标签是有信息的，留着
     let same_kind = gov::name_shape(&item.left.name, &item.right.name) == gov::NameShape::Identical
-        && !gov::types_conflict(
-            item.left.type_label.as_deref(),
-            item.right.type_label.as_deref(),
+        && matches!(
+            (
+                item.left.type_label.as_deref().and_then(gov::type_family),
+                item.right.type_label.as_deref().and_then(gov::type_family),
+            ),
+            (Some(a), Some(b)) if a == b
         );
     let shared = item
         .left
