@@ -80,7 +80,9 @@ export function DocViewer() {
         onSelect={(sel) => navigate({ to: "/kb/$kbId/library", params: { kbId }, search: { src: sel } })}
       />
       <div className="flex-1 min-w-0 overflow-y-auto u-scroll">
-        <div className="max-w-4xl mx-auto p-6">
+        {/* 靠左排，与文库列表同一个内距（px-8 py-6），不居中；上限放宽到 6xl，
+            分块那一栏才有地方摊开——原来 4xl 居中，减掉右边的抽取栏只剩六百来像素 */}
+        <div className="max-w-6xl px-8 py-6">
         <div className="mb-4 flex items-baseline justify-between gap-4">
           <div>
             <h2 className="text-title font-semibold text-ink break-all">{doc.filename}</h2>
