@@ -31,6 +31,7 @@ import {
   Row,
   SearchSelect,
   Segmented,
+  PageHeader,
 } from "../ui";
 
 const KB_ROLES = [
@@ -199,9 +200,9 @@ export function KbSettings() {
       </aside>
 
       <main className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
-        <div className="space-y-6">
+        <div>
           {/* 不缀库名：顶栏切换器已标明当前库 */}
-          <h2 className="u-title text-title">{S.kbset.title}</h2>
+          <PageHeader title={S.kbset.title} />
 
           {section === "general" && (
             <div className="glass rounded-xl p-4">

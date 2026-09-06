@@ -60,6 +60,7 @@ import {
   cn,
   pageSlice,
   GroupLabel,
+  PageHeader,
 } from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
@@ -2090,12 +2091,7 @@ function RefinePanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="u-title text-title mb-1">{S.ontology.refineTitle}</h3>
-        <p className="text-small leading-relaxed text-ink-3 max-w-xl">
-          {S.ontology.refineHint}
-        </p>
-      </div>
+      <PageHeader className="mb-2" title={S.ontology.refineTitle} sub={S.ontology.refineHint} />
 
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" disabled={busy} onClick={() => look.mutate()}>
@@ -2335,14 +2331,7 @@ function UniquenessPanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-body font-medium text-ink">
-          {S.ontology.uniqueness}
-        </h2>
-        <p className="mt-1 text-small leading-relaxed text-ink-3">
-          {S.ontology.uniquenessHint}
-        </p>
-      </div>
+      <PageHeader className="mb-2" title={S.ontology.uniqueness} sub={S.ontology.uniquenessHint} />
 
       {pending ? (
         <p className="text-small text-ink-3">{S.nav.loading}</p>
@@ -2776,23 +2765,24 @@ function MissesPanel({
   });
 
   return (
-    <div className="glass rounded-xl p-4">
-      <div className="flex items-center gap-3 mb-1">
-        <h3 className="text-body font-semibold text-ink">
-          {S.ontology.misses}
-        </h3>
-        {misses.length > 0 && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => suggest.mutate()}
-            disabled={suggest.isPending}
-          >
-            {suggest.isPending ? S.ontology.suggesting : S.ontology.suggest}
-          </Button>
-        )}
-      </div>
-      <p className="text-small text-ink-3 mb-3">{S.ontology.missesHint}</p>
+    // 整页视图不再套一层卡片：标题是页标题，正文平铺（与 Refine / Rules 同一副样子）
+    <div>
+      <PageHeader
+        title={S.ontology.misses}
+        sub={S.ontology.missesHint}
+        actions={
+          misses.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => suggest.mutate()}
+              disabled={suggest.isPending}
+            >
+              {suggest.isPending ? S.ontology.suggesting : S.ontology.suggest}
+            </Button>
+          )
+        }
+      />
 
       {misses.length === 0 ? (
         <p className="text-body text-ink-3">{S.ontology.noMisses}</p>
@@ -3164,11 +3154,8 @@ function ImportPanel({
     plan.attributes.length === 0;
 
   return (
-    <div className="glass rounded-xl p-4">
-      <h3 className="text-body font-semibold text-ink mb-1">
-        {S.ontology.importTitle}
-      </h3>
-      <p className="text-small text-ink-3 mb-3">{S.ontology.importHint}</p>
+    <div>
+      <PageHeader title={S.ontology.importTitle} sub={S.ontology.importHint} />
 
       <input
         ref={pick}

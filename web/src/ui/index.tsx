@@ -1013,6 +1013,32 @@ export function GithubMark({ size = 16 }: { size?: number }) {
   );
 }
 
+/* ---------- PageHeader（栏右内容区的页级标题） ----------
+   display 字号（规矩 1：页标题，也只有页标题）+ 一句副标题 + 右端的动作。
+   每一页都从这里拿标题，字号、副标题的颜色、到正文的距离就不会各写各的。
+   className 给了就替掉默认的 mb-6（外层已经用 space-y 排的地方传 mb-2 之类）。 */
+export function PageHeader({
+  title,
+  sub,
+  actions,
+  className,
+}: {
+  title: ReactNode;
+  sub?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn(className ?? "mb-6", "flex items-center justify-between gap-4")}>
+      <div className="min-w-0">
+        <h1 className="u-title text-display break-words">{title}</h1>
+        {sub && <p className="mt-1 text-body text-ink-3">{sub}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
 /* ---------- SectionMark（分区字标：Docs/账户层等，逐字母入场，点击回应用） ---------- */
 import { Link as RouterLink } from "@tanstack/react-router";
 export function SectionMark({ text, title }: { text: string; title: string }) {

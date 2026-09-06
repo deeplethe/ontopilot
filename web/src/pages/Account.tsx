@@ -7,6 +7,7 @@ import {
   Button,
   Input,
   Loading,
+  PageHeader,
 } from "../ui";
 import { toast } from "../toast";
 import { Avatar } from "./UserMenu";
@@ -52,7 +53,7 @@ export function Account() {
 
   return (
     <div className="px-8 py-6">
-      <h1 className="u-title text-title mb-6">{S.account.profileTitle}</h1>
+      <PageHeader title={S.account.profileTitle} />
 
       <div className="glass rounded-xl p-6 mb-4">
         <div className="max-w-xl">

@@ -17,6 +17,7 @@ import {
   Pill,
   SearchSelect,
   Segmented,
+  PageHeader,
 } from "../ui";
 import { Members } from "./Members";
 
@@ -779,9 +780,7 @@ export function Settings() {
   return (
     <div className="h-full overflow-y-auto u-scroll px-8 py-6">
       <div>
-        <h2 className="text-title font-semibold text-ink mb-3">
-          {S.settings.title}
-        </h2>
+        <PageHeader className="mb-3" title={S.settings.title} />
         <Segmented
           className="mb-6 w-fit"
           value={tab}

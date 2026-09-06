@@ -16,6 +16,7 @@ import {
   Input,
   Loading,
   NativeSelect,
+  PageHeader,
 } from "../ui";
 import { toast } from "../toast";
 
@@ -252,8 +253,7 @@ export function Tokens() {
 
   return (
     <div className="px-8 py-6">
-      <h1 className="u-title text-title">{S.account.tokensTitle}</h1>
-      <p className="mt-1 mb-6 text-small text-ink-3 max-w-lg">{S.account.tokensHint}</p>
+      <PageHeader title={S.account.tokensTitle} sub={S.account.tokensHint} />
 
       {issued && (
         <IssuedPanel

@@ -38,6 +38,7 @@ import {
   RailItem,
   Segmented,
   GroupLabel,
+  PageHeader,
 } from "../ui";
 
 const DUP_PAGE = 6;
@@ -1376,13 +1377,7 @@ export function Review() {
 
           {review.data && (
             <section>
-              {/* 页级标题：与 Library/KB Settings 同级（text-title），不是卡片头 */}
-              <h2 className="u-title text-title mb-1">{SECTION[active].title}</h2>
-              {SECTION[active].hint && (
-                <p className="text-small text-ink-3 mb-3">
-                  {SECTION[active].hint}
-                </p>
-              )}
+              <PageHeader title={SECTION[active].title} sub={SECTION[active].hint} />
 
               {/* 空态：整个待办全清 vs 单类清空。**公理这一档除外**——它自己那句要
                   分清「查过、没矛盾」和「还没查过」，通用空态说不出这个差别 */}

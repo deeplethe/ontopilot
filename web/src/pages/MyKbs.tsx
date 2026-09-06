@@ -10,6 +10,7 @@ import {
   Button,
   Chip,
   Loading,
+  PageHeader,
 } from "../ui";
 
 const ymd = (iso: string) => iso.slice(0, 10);
@@ -44,9 +45,7 @@ export function MyKbs() {
 
   return (
     <div className="px-8 py-6">
-      <div className="mb-6">
-        <h1 className="u-title text-title">{S.account.kbsTitle}</h1>
-      </div>
+      <PageHeader title={S.account.kbsTitle} />
 
       <div className="space-y-3">
         {rows.map((row) => {

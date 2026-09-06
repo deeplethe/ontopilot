@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { api, type ChunkFact } from "../api";
 import { S } from "../i18n";
 import { useKbId } from "../kb";
-import { GroupLabel, Pager, pageSlice } from "../ui";
+import { GroupLabel, PageHeader, Pager, pageSlice } from "../ui";
 import { SourcesRail } from "./SourcesRail";
 
 const DOC_PAGE = 12;
@@ -83,18 +83,20 @@ export function DocViewer() {
         {/* 靠左排，与文库列表同一个内距（px-8 py-6），铺满栏右的整个宽度：
             分块那一栏和右边的抽取栏一起摊开 */}
         <div className="px-8 py-6">
-        <div className="mb-4 flex items-baseline justify-between gap-4">
-          <div>
-            <h2 className="text-title font-semibold text-ink break-all">{doc.filename}</h2>
-            <p className="mt-1 text-small text-ink-3">
+        <PageHeader
+          title={doc.filename}
+          sub={
+            <>
               {chunks.length} {S.doc.sections} · {(doc.size_bytes / 1024).toFixed(0)} KB ·{" "}
               {new Date(doc.created_at).toLocaleDateString()}
-            </p>
-          </div>
-          <Link to="/kb/$kbId/library" params={{ kbId }} className="u-link shrink-0 text-body">
-            {S.doc.backToLibrary}
-          </Link>
-        </div>
+            </>
+          }
+          actions={
+            <Link to="/kb/$kbId/library" params={{ kbId }} className="u-link shrink-0 text-body">
+              {S.doc.backToLibrary}
+            </Link>
+          }
+        />
 
         <div className="space-y-3">
           {pagedChunks.map((c) => {

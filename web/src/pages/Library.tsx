@@ -37,6 +37,7 @@ import {
   Pager,
   Segmented,
   Textarea,
+  PageHeader,
 } from "../ui";
 import {
   KIND_ICON,
@@ -569,16 +570,17 @@ export function Library() {
       >
         {/* 工作页铺满栏右的整个宽度：与 Review/Ontology/设置页同规，切页不跳 */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="u-title text-title">
-              {selectedSource?.name ??
-                (selection === "uploads"
-                  ? S.library.uploads
-                  : selection === "deleted"
-                    ? S.library.deleted
-                    : S.library.title)}
-            </h1>
-            <div className="flex items-center gap-2">
+          <PageHeader
+            title={
+              selectedSource?.name ??
+              (selection === "uploads"
+                ? S.library.uploads
+                : selection === "deleted"
+                  ? S.library.deleted
+                  : S.library.title)
+            }
+            actions={
+              <>
               {/* 历史视图下过滤框只藏不撤（invisible 保留占位），标题行高度不塌、不抖 */}
               <div className={`relative ${showHistory ? "invisible" : ""}`}>
                 <Search
@@ -651,7 +653,9 @@ export function Library() {
                   {S.library.upload}
                 </Button>
               )}
-            </div>
+              </>
+            }
+          />
             <input
               ref={fileInput}
               type="file"
@@ -660,7 +664,6 @@ export function Library() {
               accept=".pdf,.docx,.xlsx,.xls,.ods,.pptx,.md,.txt,.html,.htm,.csv,.tsv,.json,.yaml,.yml,.xml,.log"
               onChange={(e) => e.target.files?.length && upload.mutate(e.target.files)}
             />
-          </div>
 
           {selectedSource && (
             <SourceBar
