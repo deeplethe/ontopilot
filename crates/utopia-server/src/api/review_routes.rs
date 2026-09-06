@@ -50,6 +50,9 @@ pub struct ReviewQuery {
     /// 要看哪一档。缺省 duplicates
     #[serde(default)]
     pub queue: Option<String>,
+    /// 只对 duplicates 有意义：any（缺省）/ same（两边同类）/ conflict（两边类型冲突）
+    #[serde(default)]
+    pub types: Option<String>,
     #[serde(default)]
     pub limit: Option<i64>,
     #[serde(default)]
@@ -81,9 +84,16 @@ pub async fn list(
     let items = match queue {
         // 记忆抽出、等人点头的事实（0015）。排第一：它是人自己说的话
         "pending" => json!(utopia_store::pending::list(&state.pool, kb_id, limit, offset).await?),
-        "duplicates" => {
-            json!(utopia_store::resolution::list_reviews(&state.pool, kb_id, limit, offset).await?)
-        }
+        "duplicates" => json!(
+            utopia_store::resolution::list_reviews(
+                &state.pool,
+                kb_id,
+                utopia_store::resolution::TypeFilter::parse(q.types.as_deref())?,
+                limit,
+                offset,
+            )
+            .await?
+        ),
         "conflicts" => {
             json!(utopia_store::temporal::list_conflicts(&state.pool, kb_id, limit, offset).await?)
         }
@@ -325,6 +335,77 @@ pub async fn decide(
     }
     state.emit_review(kb_id);
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct BatchBody {
+    pub ids: Vec<Uuid>,
+    /// merge | keep，整批一个动作
+    pub action: String,
+}
+
+/// 一批 id 最多多少条：够一屏「全选」，又挡住一次请求把库锁上几分钟
+const BATCH_MAX: usize = 500;
+
+/// 批量裁决（#428）：与单条 `decide` 同一条路——每条各自合并/分开、各自记
+/// 台账，回来的是逐条结果。一次只推一遍前端刷新。
+pub async fn batch(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(kb_id): Path<Uuid>,
+    Json(body): Json<BatchBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require_kb(&state, &user, kb_id, Role::Editor).await?;
+    if body.ids.is_empty() || body.ids.len() > BATCH_MAX {
+        return Err(utopia_core::AppError::invalid(
+            "batch_size",
+            format!("between 1 and {BATCH_MAX} ids per batch"),
+        )
+        .into());
+    }
+    // 台账要的名字与分数在裁决前取——合并之后 source 一侧的名字已经不在原处了
+    let snaps: Vec<(Uuid, String, String, f32)> = sqlx::query_as(
+        "SELECT rr.id, a.canonical_name, b.canonical_name, rr.score
+         FROM resolution_reviews rr
+         JOIN entities a ON a.id = rr.left_id
+         JOIN entities b ON b.id = rr.right_id
+         WHERE rr.kb_id = $1 AND rr.id = ANY($2)",
+    )
+    .bind(kb_id)
+    .bind(&body.ids)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    let outcomes = utopia_store::resolution::decide_reviews(
+        &state.pool,
+        kb_id,
+        &body.ids,
+        &body.action,
+        user.id,
+    )
+    .await?;
+    let action = if body.action == "merge" {
+        "review.merge"
+    } else {
+        "review.keep"
+    };
+    for o in outcomes.iter().filter(|o| o.error.is_none()) {
+        if let Some((_, l, r, score)) = snaps.iter().find(|s| s.0 == o.id) {
+            let _ = utopia_store::audit::record(
+                &state.pool,
+                Some(kb_id),
+                user.id,
+                action,
+                "review",
+                Some(o.id),
+                json!({ "left": l, "right": r, "score": score, "batch": body.ids.len() }),
+            )
+            .await;
+        }
+    }
+    state.emit_review(kb_id);
+    let decided = outcomes.iter().filter(|o| o.error.is_none()).count();
+    Ok(Json(json!({ "decided": decided, "outcomes": outcomes })))
 }
 
 pub async fn confirm_fact(

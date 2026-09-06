@@ -2476,7 +2476,14 @@ mod tests {
                 "a later response cannot evade A/B ambiguity by inventing a new e-handle"
             );
 
-            let reviews = utopia_store::resolution::list_reviews(&pool, kb, 10, 0).await?;
+            let reviews = utopia_store::resolution::list_reviews(
+                &pool,
+                kb,
+                utopia_store::resolution::TypeFilter::Any,
+                10,
+                0,
+            )
+            .await?;
             assert_eq!(reviews.len(), 3, "A/B, C/A and C/B");
             assert!(reviews.iter().all(|review| review.stage == "human"));
             assert!(
@@ -2574,7 +2581,14 @@ mod tests {
                 "同名并列只能等人裁，绝不该唤醒 LLM 裁决器"
             );
 
-            let reviews = utopia_store::resolution::list_reviews(&pool, kb, 10, 0).await?;
+            let reviews = utopia_store::resolution::list_reviews(
+                &pool,
+                kb,
+                utopia_store::resolution::TypeFilter::Any,
+                10,
+                0,
+            )
+            .await?;
             assert_eq!(reviews.len(), 2, "对 A、对 B 各一条审核对");
             assert!(
                 reviews.iter().all(|review| review.stage == "human"),

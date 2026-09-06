@@ -33,6 +33,12 @@ pub async fn counts(pool: &PgPool, kb_id: Uuid) -> AppResult<ReviewCounts> {
            (SELECT count(*) FROM pending_facts WHERE kb_id = $1) AS pending,
            (SELECT count(*) FROM resolution_reviews
              WHERE kb_id = $1 AND status = 'pending') AS duplicates,
+           (SELECT count(*) FROM resolution_reviews rr
+             JOIN entities a ON a.id = rr.left_id JOIN entities b ON b.id = rr.right_id
+             WHERE rr.kb_id = $1 AND rr.status = 'pending' AND {same}) AS duplicates_same_type,
+           (SELECT count(*) FROM resolution_reviews rr
+             JOIN entities a ON a.id = rr.left_id JOIN entities b ON b.id = rr.right_id
+             WHERE rr.kb_id = $1 AND rr.status = 'pending' AND {conflict}) AS duplicates_type_conflict,
            (SELECT count(*) FROM fact_conflicts
              WHERE kb_id = $1 AND status = 'open') AS conflicts,
            (SELECT count(*) FROM facts f
@@ -48,6 +54,8 @@ pub async fn counts(pool: &PgPool, kb_id: Uuid) -> AppResult<ReviewCounts> {
              WHERE kb_id = $1 AND status = 'open') AS defects,
            (SELECT count(*) FROM entity_merges WHERE kb_id = $1) AS merges",
         unconfirmed = UNCONFIRMED_FACT,
+        same = crate::resolution::TypeFilter::Same.clause(),
+        conflict = crate::resolution::TypeFilter::Conflict.clause(),
     );
     Ok(sqlx::query_as(&sql)
         .bind(kb_id)

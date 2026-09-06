@@ -1203,6 +1203,10 @@ pub struct ReviewCounts {
     /// 记忆抽出、等人点头的事实（0015）。排第一：它是人自己说的话
     pub pending: i64,
     pub duplicates: i64,
+    /// 重复项里两边类型相同（都有类型且相等）的——同名同类是人最先想批量合的一档（#428）
+    pub duplicates_same_type: i64,
+    /// 两边类型冲突（都有类型且不等）的——同名异义，合了就错
+    pub duplicates_type_conflict: i64,
     pub conflicts: i64,
     pub unconfirmed: i64,
     pub lowconf: i64,
@@ -1210,6 +1214,14 @@ pub struct ReviewCounts {
     pub violations: i64,
     pub defects: i64,
     pub merges: i64,
+}
+
+/// 批量裁决里一条的结果：`error` 为 None 就是成功。一条失败不拖累其余的，
+/// 调用方拿到逐条说明，界面上能指着说「这两条没成，为什么」
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewBatchOutcome {
+    pub id: Uuid,
+    pub error: Option<String>,
 }
 
 /// 审核台的总览（#377）：等着办的、办过的、库的成色。

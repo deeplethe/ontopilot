@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use pgvector::Vector;
 use sqlx::PgPool;
 use std::collections::HashSet;
-use utopia_core::models::{MergeLogView, ReviewItem, ReviewSide};
+use utopia_core::models::{MergeLogView, ReviewBatchOutcome, ReviewItem, ReviewSide};
 use utopia_core::{AppError, AppResult};
 use uuid::Uuid;
 
@@ -1226,25 +1226,91 @@ async fn assemble_reviews(
     Ok(items)
 }
 
+/// 重复项按两边类型的关系分三档（#428）。**没类型的一侧哪档都不进**：不知道的
+/// 既不能当成一样，也不能当成不一样。`clause()` 是 SQL 片段，别名固定 a / b
+/// （左右两个实体），列表与 `review::counts` 共用，两处口径不会分叉。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeFilter {
+    Any,
+    /// 两边都有类型且相等——同名同类，人最先想批量合的那一档
+    Same,
+    /// 两边都有类型且不等——同名异义，合了就错
+    Conflict,
+}
+
+impl TypeFilter {
+    /// 查询串里的写法：缺省 any；认不出的当契约错误报出来
+    pub fn parse(s: Option<&str>) -> AppResult<Self> {
+        match s.unwrap_or("any") {
+            "any" => Ok(Self::Any),
+            "same" => Ok(Self::Same),
+            "conflict" => Ok(Self::Conflict),
+            other => Err(AppError::invalid(
+                "unknown_type_filter",
+                format!("types must be any, same or conflict, not {other}"),
+            )),
+        }
+    }
+
+    pub fn clause(self) -> &'static str {
+        match self {
+            Self::Any => "TRUE",
+            Self::Same => "a.type_id IS NOT NULL AND a.type_id = b.type_id",
+            Self::Conflict => {
+                "a.type_id IS NOT NULL AND b.type_id IS NOT NULL AND a.type_id <> b.type_id"
+            }
+        }
+    }
+}
+
 /// 全部待处理审核项（LLM 裁决中 + 等人工的都展示，人工可随时抢先定夺）。
 pub async fn list_reviews(
     pool: &PgPool,
     kb_id: Uuid,
+    types: TypeFilter,
     limit: i64,
     offset: i64,
 ) -> AppResult<Vec<ReviewItem>> {
-    let rows: Vec<ReviewRow> = sqlx::query_as(
-        "SELECT id, left_id, right_id, score, reason, stage, created_at
-         FROM resolution_reviews
-         WHERE kb_id = $1 AND status = 'pending'
-         ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-    )
-    .bind(kb_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await?;
+    let sql = format!(
+        "SELECT rr.id, rr.left_id, rr.right_id, rr.score, rr.reason, rr.stage, rr.created_at
+         FROM resolution_reviews rr
+         JOIN entities a ON a.id = rr.left_id
+         JOIN entities b ON b.id = rr.right_id
+         WHERE rr.kb_id = $1 AND rr.status = 'pending' AND {}
+         ORDER BY rr.created_at DESC LIMIT $2 OFFSET $3",
+        types.clause()
+    );
+    let rows: Vec<ReviewRow> = sqlx::query_as(&sql)
+        .bind(kb_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
     assemble_reviews(pool, kb_id, rows).await
+}
+
+/// 批量裁决 = 逐条的人工裁决（#428）：每一条走 `decide_review`，合并方向、状态、
+/// decided_by 与单条一模一样。一条失败（不存在、已经裁过、并到一半出错）不拖累
+/// 其余的，结果逐条带回；动作不认识整批拒绝——那不是某一条的问题。
+pub async fn decide_reviews(
+    pool: &PgPool,
+    kb_id: Uuid,
+    ids: &[Uuid],
+    action: &str,
+    user_id: Uuid,
+) -> AppResult<Vec<ReviewBatchOutcome>> {
+    if action != "merge" && action != "keep" {
+        return Err(AppError::Validation("action must be merge or keep".into()));
+    }
+    let mut out = Vec::with_capacity(ids.len());
+    for &id in ids {
+        let error = decide_review(pool, kb_id, id, action, user_id)
+            .await
+            .err()
+            .map(|e| e.to_string());
+        out.push(ReviewBatchOutcome { id, error });
+    }
+    Ok(out)
 }
 
 /// 等待 LLM 裁决的审核项（后台裁决任务消费）。

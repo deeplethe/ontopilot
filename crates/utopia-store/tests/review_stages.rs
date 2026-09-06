@@ -91,7 +91,8 @@ async fn human_review_is_visible_but_never_pending_adjudication() -> anyhow::Res
         )
         .await?;
 
-        let visible = resolution::list_reviews(&pool, kb, 10, 0).await?;
+        let visible =
+            resolution::list_reviews(&pool, kb, resolution::TypeFilter::Any, 10, 0).await?;
         assert_eq!(visible.len(), 2);
         assert!(visible.iter().any(|r| r.stage == "human"));
         let pending = resolution::pending_adjudications(&pool, kb, 10).await?;
@@ -115,7 +116,8 @@ async fn human_review_is_visible_but_never_pending_adjudication() -> anyhow::Res
         assert!(resolution::pending_adjudications(&pool, kb, 10)
             .await?
             .is_empty());
-        let visible = resolution::list_reviews(&pool, kb, 10, 0).await?;
+        let visible =
+            resolution::list_reviews(&pool, kb, resolution::TypeFilter::Any, 10, 0).await?;
         let upgraded = visible.iter().find(|r| {
             (r.left.id == left && r.right.id == third) || (r.left.id == third && r.right.id == left)
         });
