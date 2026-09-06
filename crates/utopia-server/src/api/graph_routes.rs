@@ -277,7 +277,8 @@ pub struct FactTimePatch {
     pub note: Option<String>,
 }
 
-const DATE_PRECISIONS: [&str; 3] = ["year", "month", "day"];
+// 梯子只有一张（0024）：与数据库的 CHECK、抽取端、显示端同一列
+const DATE_PRECISIONS: [&str; 6] = utopia_store::graph::WORLD_PRECISIONS;
 
 /// 修改前的区间，用于「一字未改」的判定与台账里的前后对照。
 #[derive(sqlx::FromRow)]
@@ -300,7 +301,7 @@ fn check_interval(p: &FactTimePatch) -> Result<(), AppError> {
         (None, None) => {}
         _ => return Err(AppError::invalid(
             "bad_valid_from",
-            "A start date needs a precision of year, month or day, and a precision needs a date.",
+            "A start date needs a precision of year, month, day, hour, minute or second, and a precision needs a date.",
         )),
     }
     // 结束端：有日期必有精度；没日期只能是仍在持续（都为空）或结束了不知哪天
@@ -311,7 +312,7 @@ fn check_interval(p: &FactTimePatch) -> Result<(), AppError> {
         _ => {
             return Err(AppError::invalid(
                 "bad_valid_to",
-                "An end date needs a precision of year, month or day. Leave the date empty for still going, or mark it ended with an unknown date.",
+                "An end date needs a precision of year, month, day, hour, minute or second. Leave the date empty for still going, or mark it ended with an unknown date.",
             ))
         }
     }

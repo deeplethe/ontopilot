@@ -988,10 +988,12 @@ fn value_key(v: Option<&serde_json::Value>) -> Option<String> {
 /// day，正是 `facts.valid_from_precision` 那条注释里说的「在无知的地方填一个
 /// 确定的值」。
 fn coarsest(a: Option<&str>, b: Option<&str>) -> Option<String> {
-    let rank = |p: &str| match p {
-        "year" => 0,
-        "month" => 1,
-        _ => 2,
+    // 梯子的顺序（0024）：year 最粗，second 最细；不认识的当最细，免得盖过认识的
+    let rank = |p: &str| {
+        crate::graph::WORLD_PRECISIONS
+            .iter()
+            .position(|w| *w == p)
+            .unwrap_or(crate::graph::WORLD_PRECISIONS.len())
     };
     match (a, b) {
         (Some(x), Some(y)) => Some(if rank(x) <= rank(y) { x } else { y }.to_string()),
@@ -1503,26 +1505,40 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
     }
 
     for (_, d) in wanted {
-        // 精度与置信度都取前提里最保守的那一个
+        // 置信度取前提里最低的；精度跟着**赢下这一端的那条前提**走（0024）：派生的起点
+        // 就是前提里最晚的那个起点，它的精度就是那条前提的精度——值与精度说同一句话，
+        // 数据库的 CHECK 也这么要求。从前取所有前提里最粗的：year 标在一个 6 月 1 日的
+        // 值上，值与标签互相矛盾。几条前提并列时取其中最粗的；那一端若是某条前提的
+        // **锚点**顶上来的（0022），没有精度可言
         let mut fp: Option<String> = None;
         let mut tp: Option<String> = None;
         let mut conf = 1.0f32;
-        // 派生的那一端是不是某条前提的**锚点**顶上来的（0022）：是，就没有精度可言
         let mut from_anchored = false;
         let mut to_anchored = false;
         for p in &d.premises {
             if let Some((pf, pt, pc, fa, ta)) = meta.get(p) {
-                fp = coarsest(fp.as_deref(), pf.as_deref());
-                // 'unknown' 不是粒度，是「结束了不知哪天」的标记；它顶上来的那一端
-                // 走下面 to_anchored 那条路，不进粒度的比较
-                tp = coarsest(
-                    tp.as_deref(),
-                    pt.as_deref().filter(|p| *p != crate::graph::ENDED_UNKNOWN),
-                );
                 conf = conf.min(*pc);
-                if let Some((sf, st)) = spans.get(p) {
-                    from_anchored |= *fa && *sf == d.from;
-                    to_anchored |= *ta && *st == d.to;
+                let Some((sf, st)) = spans.get(p) else {
+                    continue;
+                };
+                if d.from.is_some() && *sf == d.from {
+                    if *fa {
+                        from_anchored = true;
+                    } else {
+                        fp = coarsest(fp.as_deref(), pf.as_deref());
+                    }
+                }
+                if d.to.is_some() && *st == d.to {
+                    if *ta {
+                        to_anchored = true;
+                    } else {
+                        // 'unknown' 不是粒度，是「结束了不知哪天」的标记；它顶上来的
+                        // 那一端是锚点，走上面那条路
+                        tp = coarsest(
+                            tp.as_deref(),
+                            pt.as_deref().filter(|p| *p != crate::graph::ENDED_UNKNOWN),
+                        );
+                    }
                 }
             }
         }

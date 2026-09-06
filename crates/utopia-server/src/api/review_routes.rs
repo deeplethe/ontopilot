@@ -145,15 +145,17 @@ pub struct CloseFactBody {
 /// 「2023 年 6 月结束」只能编成 6 月 1 日——在无知的地方填一个确定的值，正是
 /// `facts.valid_to_precision` 那条注释说的病
 fn world_precision(p: Option<&str>) -> Result<&'static str, utopia_core::AppError> {
-    match p {
-        None | Some("day") => Ok("day"),
-        Some("month") => Ok("month"),
-        Some("year") => Ok("year"),
-        Some(_) => Err(utopia_core::AppError::invalid(
-            "bad_precision",
-            "A closing date's precision is year, month or day.",
-        )),
-    }
+    let Some(p) = p else { return Ok("day") };
+    utopia_store::graph::WORLD_PRECISIONS
+        .iter()
+        .copied()
+        .find(|w| *w == p)
+        .ok_or_else(|| {
+            utopia_core::AppError::invalid(
+                "bad_precision",
+                "A closing date's precision is year, month, day, hour, minute or second.",
+            )
+        })
 }
 
 /// 人工闭合一条事实的有效区间（"这事在某时结束了"）——走作废+改写，

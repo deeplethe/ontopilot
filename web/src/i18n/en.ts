@@ -881,8 +881,9 @@ export const en = {
     timeEndUnknown: "Ended, date unknown",
     timeEndDate: "Ended on",
     /* 写多少位就是多少精度：2023 是「那一年」，2023-06 是「那个月」 */
-    timeFormat: "2023, 2023-06 or 2023-06-15",
-    timeBadDate: "Use 2023, 2023-06 or 2023-06-15.",
+    timeFormat: "2023 · 2023-06 · 2023-06-15 · 2023-06-15T14:32Z",
+    timeBadDate:
+      "Use 2023, 2023-06, 2023-06-15, or a clock time with its zone such as 2023-06-15T14:32Z — a time without a zone is not a moment.",
     timeNote: "Why (optional)",
     timeNotePlaceholder: "The document says the first half of 2023",
     timeSave: "Save",
@@ -1687,7 +1688,7 @@ export const en = {
     closeOldAt: (d: string) => `Close old at ${d}`,
     keepBoth: "Keep both",
     rejectNew: "Reject new",
-    closeAtPlaceholder: "YYYY-MM-DD · YYYY-MM · YYYY",
+    closeAtPlaceholder: "2024-06-15 · 2024-06 · 2024 · 2024-06-15T14:32Z",
     unconfirmed: "No longer stated",
     unconfirmedHint:
       "Every source that stated these facts has since been updated without them. " +

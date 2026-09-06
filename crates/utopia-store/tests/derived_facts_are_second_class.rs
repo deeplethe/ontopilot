@@ -254,10 +254,13 @@ async fn what_the_engine_adds_it_can_also_take_back() -> anyhow::Result<()> {
             Some("2022-06-01"),
             "交集取两个起点里晚的那个"
         );
+        // 精度跟着赢下这一端的那条前提走（0024）：起点是 b ⊂ c 的 6 月 1 日，精度就是它的
+        // day。从前取所有前提里最粗的——year 标在一个 6 月 1 日的值上，值与标签互相矛盾，
+        // 如今数据库的 CHECK 也不会放行
         assert_eq!(
             fp.as_deref(),
-            Some("year"),
-            "精度取最粗的——链只和最弱的一环一样可信"
+            Some("day"),
+            "精度跟赢下这一端的前提走，不是最粗的那个"
         );
         assert_eq!(tp, None, "结束端无界，精度必须是空");
 

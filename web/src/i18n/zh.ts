@@ -787,8 +787,9 @@ export const zh: Strings = {
     timeEndOpen: "仍在持续",
     timeEndUnknown: "已结束，日期不详",
     timeEndDate: "结束于",
-    timeFormat: "2023、2023-06 或 2023-06-15",
-    timeBadDate: "请写成 2023、2023-06 或 2023-06-15。",
+    timeFormat: "2023 · 2023-06 · 2023-06-15 · 2023-06-15T14:32Z",
+    timeBadDate:
+      "写成 2023、2023-06、2023-06-15，或带时区的钟点如 2023-06-15T14:32Z——没有时区的钟点不是一个时刻。",
     timeNote: "原因（选填）",
     timeNotePlaceholder: "文档说的是 2023 年上半年",
     timeSave: "保存",
@@ -1475,7 +1476,7 @@ export const zh: Strings = {
     closeOldAt: (d: string) => `在 ${d} 闭合旧的`,
     keepBoth: "两条都留",
     rejectNew: "驳回新的",
-    closeAtPlaceholder: "YYYY-MM-DD · YYYY-MM · YYYY",
+    closeAtPlaceholder: "2024-06-15 · 2024-06 · 2024 · 2024-06-15T14:32Z",
     unconfirmed: "已不再被陈述",
     unconfirmedHint:
       "曾经陈述这些事实的每一个来源，此后都更新过且不再包含它们。" +

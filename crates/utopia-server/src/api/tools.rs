@@ -775,13 +775,13 @@ fn entity_facts_detail(
 /// 时刻常常是一个带时间的戳（"第一波灌完那一刻"），日期粒度装不下它
 fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     let s = raw.trim();
-    // YYYY / YYYY-MM / YYYY-MM-DD 取那一段的开头——与抽取端同一个解析
-    if let Some((d, _)) = utopia_extract::parse_time(s) {
-        return Some(d);
+    // 完整的 RFC3339 时刻原样收下，小数秒也留着——记录轴上同一秒内可以先录入再更正
+    // （#351），这里截掉一位就把两次认知叠回一起。日期形式（YYYY / YYYY-MM / YYYY-MM-DD，
+    // 或带时区的缩略钟点）才交给抽取端同一个解析，取那一段的开头
+    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(t.with_timezone(&chrono::Utc));
     }
-    chrono::DateTime::parse_from_rfc3339(s)
-        .ok()
-        .map(|t| t.with_timezone(&chrono::Utc))
+    utopia_extract::parse_time(s).map(|(d, _)| d)
 }
 
 /// 字面值宾语给模型看的样子：`{value, unit}` → "28000 CNY"，布尔 → ✓/✗，

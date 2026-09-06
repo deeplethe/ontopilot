@@ -17,12 +17,16 @@ pub fn instant(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::AutoSi, true)
 }
 
-/// 世界轴的一端，按精度写。没有精度就是一个时刻（锚点、派生的界），写完整。
+/// 世界轴的一端，按精度写。小时以下用 ISO 8601 的缩略形式（`2026-06-01T14:32Z`），
+/// 同一个字符串能解析回同一个值和精度。没有精度就是一个时刻（锚点、派生的界），写完整。
 pub fn world(t: DateTime<Utc>, precision: Option<&str>) -> String {
     match precision {
         Some("year") => t.format("%Y").to_string(),
         Some("month") => t.format("%Y-%m").to_string(),
         Some("day") => t.format("%Y-%m-%d").to_string(),
+        Some("hour") => t.format("%Y-%m-%dT%HZ").to_string(),
+        Some("minute") => t.format("%Y-%m-%dT%H:%MZ").to_string(),
+        Some("second") => t.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         _ => instant(t),
     }
 }
@@ -80,6 +84,19 @@ mod tests {
         assert_eq!(world(at, Some("year")), "2023");
         assert_eq!(world(at, Some("month")), "2023-06");
         assert_eq!(world(at, Some("day")), "2023-06-15");
+        let clock = t("2026-06-01T14:32:07.382Z");
+        assert_eq!(world(clock, Some("hour")), "2026-06-01T14Z");
+        assert_eq!(world(clock, Some("minute")), "2026-06-01T14:32Z");
+        assert_eq!(world(clock, Some("second")), "2026-06-01T14:32:07Z");
+        // 写出来的能读回去，且是同一个精度
+        for (p, s) in [
+            ("hour", "2026-06-01T14Z"),
+            ("minute", "2026-06-01T14:32Z"),
+            ("second", "2026-06-01T14:32:07Z"),
+        ] {
+            let (back, bp) = utopia_extract::parse_time(s).unwrap();
+            assert_eq!((bp, world(back, Some(p))), (p, s.to_string()));
+        }
         // 没有精度 = 一个时刻（锚点、派生的界）：写完整，不冒充哪一天
         assert_eq!(world(at, None), "2023-06-15T00:00:00Z");
     }

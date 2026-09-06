@@ -325,6 +325,8 @@ pub async fn close_superseded(
     valid_to: DateTime<Utc>,
     valid_to_precision: &str,
 ) -> AppResult<Option<Uuid>> {
+    // 闭合点截到它的精度（0024）：月精度的闭合就是那个月的 1 日 0 点
+    let valid_to = crate::graph::truncate_to(valid_to, Some(valid_to_precision));
     let mut tx = pool.begin().await?;
     let corrected = Uuid::now_v7();
     let inserted: Option<(Uuid,)> = sqlx::query_as(
@@ -432,6 +434,7 @@ pub async fn correct_interval(
     fact_id: Uuid,
     validity: crate::graph::Validity<'_>,
 ) -> AppResult<Option<Uuid>> {
+    let validity = validity.truncated();
     let mut tx = pool.begin().await?;
     let corrected = Uuid::now_v7();
     let inserted: Option<(Uuid,)> = sqlx::query_as(

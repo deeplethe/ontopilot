@@ -23,6 +23,13 @@ export function fmtTime(
   const day = String(d.getUTCDate()).padStart(2, "0");
   if (precision === "year") return `${y}`;
   if (precision === "month") return `${y}-${m}`;
+  // 小时以下（0024）：ISO 的缩略形式，带 Z——钟点没有时区就不是时刻
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mi = String(d.getUTCMinutes()).padStart(2, "0");
+  const ss = String(d.getUTCSeconds()).padStart(2, "0");
+  if (precision === "hour") return `${y}-${m}-${day}T${hh}Z`;
+  if (precision === "minute") return `${y}-${m}-${day}T${hh}:${mi}Z`;
+  if (precision === "second") return `${y}-${m}-${day}T${hh}:${mi}:${ss}Z`;
   return `${y}-${m}-${day}`;
 }
 
@@ -35,13 +42,27 @@ export function parseDateInput(
   s: string,
 ): { iso: string; precision: string } | null {
   const t = s.trim();
-  const shape = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/.exec(t);
+  const shape =
+    /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?(?:T(\d{2})(?::(\d{2}))?(?::(\d{2}))?(Z|[+-]\d{2}:\d{2})?)?$/.exec(
+      t,
+    );
   if (!shape) return null;
-  const [, y, m, d] = shape;
-  const iso = `${y}-${m ?? "01"}-${d ?? "01"}T00:00:00.000Z`;
-  const parsed = new Date(iso);
+  const [, y, m, d, hh, mi, ss, zone] = shape;
+  if (hh === undefined) {
+    const iso = `${y}-${m ?? "01"}-${d ?? "01"}T00:00:00.000Z`;
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return null;
+    // 溢出静默：2023-13-01 会变成 2024-01-01，2023-02-30 会变成 3 月
+    if (parsed.toISOString().slice(0, 10) !== iso.slice(0, 10)) return null;
+    return { iso, precision: d ? "day" : m ? "month" : "year" };
+  }
+  // 钟点（0024）：没有时区就不是一个时刻——不猜，让人补上 Z 或 +08:00；
+  // 有了时区换成 UTC，值截到写出来的那一位
+  if (!d || !zone) return null;
+  const parsed = new Date(`${y}-${m}-${d}T${hh}:${mi ?? "00"}:${ss ?? "00"}${zone}`);
   if (Number.isNaN(parsed.getTime())) return null;
-  // 溢出静默：2023-13-01 会变成 2024-01-01，2023-02-30 会变成 3 月
-  if (parsed.toISOString().slice(0, 10) !== iso.slice(0, 10)) return null;
-  return { iso, precision: d ? "day" : m ? "month" : "year" };
+  return {
+    iso: parsed.toISOString(),
+    precision: ss !== undefined ? "second" : mi !== undefined ? "minute" : "hour",
+  };
 }

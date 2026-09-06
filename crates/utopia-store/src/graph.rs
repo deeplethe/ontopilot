@@ -125,7 +125,7 @@ pub async fn insert_fact(
 /// |---|---|---|
 /// | 仍在持续 | `None` | `None` |
 /// | **结束了，不知哪天** | `None` | `Some("unknown")` |
-/// | 某时结束 | `Some(t)` | `Some("year"/"month"/"day")` |
+/// | 某时结束 | `Some(t)` | `Some(WORLD_PRECISIONS 之一)` |
 ///
 /// 第二行是后加的。在它之前 `to = None` 同时承载「还在持续」和「不知何时
 /// 结束」，于是 "former CEO of Weta Digital" 这种**结束明确、日期缺失**的句子
@@ -146,6 +146,47 @@ pub struct Validity<'a> {
 /// `valid_to_precision` 表示「结束了，但不知道是哪天」。
 pub const ENDED_UNKNOWN: &str = "unknown";
 
+/// 世界轴的精度梯子（0024）：从年到秒，不再往下——没有哪个源头陈述到亚秒；记录轴留
+/// 微秒是因为那是我们自己的钟。结束端另有 `ENDED_UNKNOWN`。数据库的 CHECK 也是这一张表，
+/// 抽取端 `parse_time`、给模型看的 `time_text`、导出的 `rdf::world_time` 都照它拼
+pub const WORLD_PRECISIONS: [&str; 6] = ["year", "month", "day", "hour", "minute", "second"];
+
+/// 把值截到它的精度：年精度是 1 月 1 日 0 点，秒精度是整秒。**存的值与精度说同一句话**
+/// （0024 第 2 条，数据库有同样的 CHECK）；没有精度（锚点、派生的界）原样返回。
+pub fn truncate_to(
+    t: chrono::DateTime<chrono::Utc>,
+    precision: Option<&str>,
+) -> chrono::DateTime<chrono::Utc> {
+    use chrono::{Datelike, NaiveDate, NaiveTime, TimeZone, Timelike};
+    let n = t.naive_utc();
+    let (d, time) = (n.date(), n.time());
+    let (date, time) = match precision {
+        Some("year") => (
+            NaiveDate::from_ymd_opt(d.year(), 1, 1).unwrap_or(d),
+            NaiveTime::MIN,
+        ),
+        Some("month") => (
+            NaiveDate::from_ymd_opt(d.year(), d.month(), 1).unwrap_or(d),
+            NaiveTime::MIN,
+        ),
+        Some("day") => (d, NaiveTime::MIN),
+        Some("hour") => (
+            d,
+            NaiveTime::from_hms_opt(time.hour(), 0, 0).unwrap_or(time),
+        ),
+        Some("minute") => (
+            d,
+            NaiveTime::from_hms_opt(time.hour(), time.minute(), 0).unwrap_or(time),
+        ),
+        Some("second") => (
+            d,
+            NaiveTime::from_hms_opt(time.hour(), time.minute(), time.second()).unwrap_or(time),
+        ),
+        _ => return t,
+    };
+    chrono::Utc.from_utc_datetime(&date.and_time(time))
+}
+
 impl<'a> Validity<'a> {
     /// 起始端已知、结束端未知或不适用。
     pub fn starting(
@@ -164,6 +205,13 @@ impl<'a> Validity<'a> {
     /// 这次观察出自哪一天的文档。
     pub fn attested(mut self, at: Option<chrono::DateTime<chrono::Utc>>) -> Self {
         self.attested_at = at;
+        self
+    }
+
+    /// 两端截到各自的精度（0024）。写入路径进库前都走一遍，与数据库的 CHECK 同一句话
+    pub fn truncated(mut self) -> Self {
+        self.from = self.from.map(|t| truncate_to(t, self.from_precision));
+        self.to = self.to.map(|t| truncate_to(t, self.to_precision));
         self
     }
 
@@ -195,6 +243,7 @@ async fn insert_fact_inner(
     validity: Validity<'_>,
     confidence: f32,
 ) -> AppResult<(Uuid, bool)> {
+    let validity = validity.truncated();
     let same_sql = match object {
         FactObject::Entity(_) => {
             "SELECT id, valid_from, valid_to, valid_to_precision FROM facts

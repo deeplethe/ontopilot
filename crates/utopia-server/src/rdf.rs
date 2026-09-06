@@ -246,8 +246,19 @@ fn world_time(at: DateTime<Utc>, precision: Option<&str>) -> Literal {
     match precision {
         Some("year") => Literal::new_typed_literal(iso[..4].to_string(), xsd::G_YEAR),
         Some("month") => Literal::new_typed_literal(iso[..7].to_string(), xsd::G_YEAR_MONTH),
+        // 小时以下（0024）：xsd:dateTime 说不出「到分为止」，精度由 emit_validity 另写一条
+        Some("hour" | "minute" | "second") => Literal::new_typed_literal(
+            at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            xsd::DATE_TIME,
+        ),
         _ => Literal::new_typed_literal(iso, xsd::DATE),
     }
+}
+
+/// 小时以下的精度：XSD 的类型说不出来，另写一条 `utopia:*Precision`。日期粒度不用——
+/// gYear / gYearMonth / date 本身就是精度
+fn sub_day(precision: Option<&str>) -> Option<&str> {
+    precision.filter(|p| matches!(*p, "hour" | "minute" | "second"))
 }
 
 fn text(s: impl Into<String>) -> Literal {
@@ -574,9 +585,17 @@ fn emit_validity(
 ) -> std::io::Result<()> {
     if let Some(t) = from {
         sink.l(stmt, &schema("validFrom"), &world_time(t, from_precision))?;
+        if let Some(p) = sub_day(from_precision) {
+            sink.l(stmt, &utopia("validFromPrecision"), &text(p))?;
+        }
     }
     match (to, to_precision) {
-        (Some(t), p) => sink.l(stmt, &schema("validThrough"), &world_time(t, p))?,
+        (Some(t), p) => {
+            sink.l(stmt, &schema("validThrough"), &world_time(t, p))?;
+            if let Some(p) = sub_day(p) {
+                sink.l(stmt, &utopia("validThroughPrecision"), &text(p))?;
+            }
+        }
         // 「结束了，但不知道哪天」——账本专门为它留了一个状态，导出不能把它
         // 压成「至今仍成立」（那正是 valid_to 一列承载两个意思时的老毛病）
         (None, Some("unknown")) => sink.l(stmt, &utopia("endedUnknown"), &flag(true))?,
