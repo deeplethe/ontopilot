@@ -1,0 +1,13 @@
+# DCO 机器人的配置（probot/dco）。
+#
+# 组织成员免查。GitHub 做 squash 合并时会把提交作者改成账号的 noreply 地址，而每条
+# 提交里的 Signed-off-by 写的是真实邮箱——机器人要求两者严格一致，于是 dev → main
+# 的发布 PR 上我们自己的每一条 squash 提交都红（#441 报了 81 条）。DCO 管的是外部
+# 贡献；成员的提交由组织自己负责。外部 PR 仍逐条查，合并时用 rebase 让他们签好的
+# 原始提交原样落地，squash 会把作者改掉。
+require:
+  members: false
+# 已合进去的历史改不了（受保护分支）。真需要补签时允许补签提交，不改写历史
+allowRemediationCommits:
+  individual: true
+  thirdParty: true
