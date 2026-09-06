@@ -1562,6 +1562,25 @@ export const en = {
     noFacts: "No recorded facts",
     merge: "Merge",
     keep: "Keep separate",
+    // 重复项的类型筛选与批量裁决（#428）
+    typesAny: "All",
+    typesSame: "Same type",
+    typesConflict: "Types differ",
+    typesEmpty: "Nothing in this group.",
+    typesDiffer: (a: string, b: string) => `${a} / ${b}`,
+    typesDifferHint:
+      "The two sides are different kinds of thing. Merging them would fold one meaning into another.",
+    pickPair: "Select this pair",
+    selectPage: "Select this page",
+    selected: (n: number) => (n === 1 ? "1 selected" : `${n} selected`),
+    mergeSelected: "Merge selected",
+    keepSelected: "Keep selected apart",
+    batchDone: (ok: number, failed: number) =>
+      failed === 0
+        ? ok === 1
+          ? "1 pair decided"
+          : `${ok} pairs decided`
+        : `${ok} decided, ${failed} could not be — they stay in the queue`,
     lowConfidence: "Low-confidence facts",
     defects: "Ontology contradicts itself",
     defectsHint:

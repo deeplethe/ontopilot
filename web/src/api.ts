@@ -438,11 +438,17 @@ export type ReviewQueue =
   | "defects"
   | "merges";
 
+/** 重复项按两边类型的关系筛：any 全部；same 两边都有类型且相等；conflict 都有且不等 */
+export type ReviewTypeFilter = "any" | "same" | "conflict";
+
 /** 各档的真实条数。左栏的徽标读它，不读列表长度 */
 export interface ReviewCounts {
   /** 记忆抽出、等人点头的事实（0015） */
   pending: number;
   duplicates: number;
+  /** 重复项里两边同类型 / 类型冲突的各多少（#428）；没类型的一侧哪档都不算 */
+  duplicates_same_type: number;
+  duplicates_type_conflict: number;
   conflicts: number;
   unconfirmed: number;
   lowconf: number;
@@ -1934,15 +1940,31 @@ export const api = {
 
   /** 审核队列的各档**真实条数**。与列表分开取——列表有一页的上限，数数没有。
    *  从前徽标读的是数组长度，而接口固定只回 100 条，于是 164 条写成 100。 */
-  review: (kbId: string, queue: ReviewQueue, limit: number, offset: number) =>
+  review: (
+    kbId: string,
+    queue: ReviewQueue,
+    limit: number,
+    offset: number,
+    /** 只对 duplicates 有意义：按两边类型的关系筛（#428） */
+    types: ReviewTypeFilter = "any",
+  ) =>
     request<{
       counts: ReviewCounts;
       queue: ReviewQueue;
       /** 只有当前这一档的一页。类型按档不同，调用处按 queue 收窄 */
       items: unknown[];
     }>(
-      `/api/v1/kbs/${kbId}/review?queue=${queue}&limit=${limit}&offset=${offset}`,
+      `/api/v1/kbs/${kbId}/review?queue=${queue}&limit=${limit}&offset=${offset}&types=${types}`,
     ),
+  /** 一批重复项同一个动作（#428）：每条各自裁、各自记台账，回来逐条说成没成 */
+  reviewBatch: (kbId: string, ids: string[], action: "merge" | "keep") =>
+    request<{
+      decided: number;
+      outcomes: { id: string; error: string | null }[];
+    }>(`/api/v1/kbs/${kbId}/review/batch`, {
+      method: "POST",
+      body: JSON.stringify({ ids, action }),
+    }),
   /** 闭合日期带精度（year | month | day）：写多少位就是多少精度，服务端照存 */
   closeFact: (kbId: string, factId: string, validTo: string, precision: string) =>
     request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/facts/${factId}/close`, {

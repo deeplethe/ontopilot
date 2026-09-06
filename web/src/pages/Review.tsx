@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -6,6 +6,7 @@ import {
   api,
   type AxiomViolation,
   type ReviewQueue,
+  type ReviewTypeFilter,
   type OntologyDefect,
   type ConflictItem,
   type FactReviewItem,
@@ -21,14 +22,18 @@ import { PendingFactRow, useCanDecide } from "./PendingFacts";
 import { ReviewOverview } from "./ReviewOverview";
 import { S } from "../i18n";
 import { useKb, useKbId } from "../kb";
+import { toast } from "../toast";
 import {
   Button,
+  Checkbox,
   Chip,
   type ChipTone,
+  cn,
   Input,
   Pager,
   RAIL_CLS,
   RailItem,
+  Segmented,
 } from "../ui";
 
 const DUP_PAGE = 6;
@@ -87,20 +92,42 @@ function SideCard({ side }: { side: ReviewSide }) {
   );
 }
 
+/** 两边都有类型且不一样：同名异义，合了就错。这是扫一屏重复项时最该一眼
+ *  看到的一件事，所以提成标记，不让人去两张卡片里各读一行小字 */
+function typesDiffer(item: ReviewItem): boolean {
+  return (
+    item.left.type_label !== null &&
+    item.right.type_label !== null &&
+    item.left.type_label !== item.right.type_label
+  );
+}
+
 function DuplicateCard({
   item,
   busy,
+  picked,
+  onPick,
   onDecide,
 }: {
   item: ReviewItem;
   busy: boolean;
+  /** 批量选中（#428）：勾在卡片左上，选了就跟着上面的批量按钮走 */
+  picked: boolean;
+  onPick: (picked: boolean) => void;
   onDecide: (action: "merge" | "keep") => void;
 }) {
   const reasonCode = item.reason?.split("|", 1)[0];
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className={cn("glass rounded-xl p-4", picked && "u-picked")}>
       <div className="flex gap-4">
+        <Checkbox
+          className="shrink-0 self-start"
+          checked={picked}
+          disabled={busy}
+          onChange={(e) => onPick(e.target.checked)}
+          label={<span className="sr-only">{S.review.pickPair}</span>}
+        />
         <SideCard side={item.left} />
         <div className="self-center text-ink-3 text-body shrink-0">≟</div>
         <SideCard side={item.right} />
@@ -113,6 +140,14 @@ function DuplicateCard({
             ? S.review.stageHuman
             : S.review.stageAdjudicating}
         </span>
+        {typesDiffer(item) && (
+          <Chip tone="warn" title={S.review.typesDifferHint}>
+            {S.review.typesDiffer(
+              item.left.type_label ?? "",
+              item.right.type_label ?? "",
+            )}
+          </Chip>
+        )}
         {reasonCode !== "namesake" && (
           <span className="text-small text-ink-3">
             {S.review.similarity(Math.round(item.score * 100))}
@@ -829,6 +864,11 @@ export function Review() {
     QUEUE_ORDER.includes(search.queue as Sel) ? (search.queue as Sel) : null,
   );
   const [page, setPage] = useState(0);
+  // 重复项的类型筛选与批量选中（#428）。选中集合按页清：翻页、换档、换筛选
+  // 之后勾着的东西已经不在眼前，留着会让「合并所选」合掉看不见的东西
+  const [types, setTypes] = useState<ReviewTypeFilter>("any");
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  useEffect(() => setPicked(new Set()), [page, sel, types]);
 
   // 队列变化经 SSE 事件流推送（useKbEvents 挂在 Shell），无需轮询。
   //
@@ -840,14 +880,16 @@ export function Review() {
   )
     ? ((sel ?? "duplicates") as ReviewQueue)
     : "duplicates";
+  const typesForQuery = queueSel === "duplicates" ? types : "any";
   const review = useQuery({
-    queryKey: ["review", kb?.id, queueSel, page],
+    queryKey: ["review", kb?.id, queueSel, page, typesForQuery],
     queryFn: () =>
       api.review(
         kb!.id,
         queueSel,
         PAGE_SIZE[queueSel as Paged],
         page * PAGE_SIZE[queueSel as Paged],
+        typesForQuery,
       ),
     enabled: !!kb,
     // 翻页时别把上一页闪成空白——计数与骨架都还在，只有条目在换
@@ -878,6 +920,21 @@ export function Review() {
     mutationFn: ({ id, action }: { id: string; action: "merge" | "keep" }) =>
       api.decideReview(kb!.id, id, action),
     onSettled: invalidate,
+  });
+  // 批量裁决：一批一个动作，回来逐条说成没成；没成的留在列表里，成了的消失
+  const batch = useMutation({
+    mutationFn: ({ ids, action }: { ids: string[]; action: "merge" | "keep" }) =>
+      api.reviewBatch(kb!.id, ids, action),
+    onSuccess: (r) => {
+      const failed = r.outcomes.filter((o) => o.error).length;
+      if (failed > 0) toast.error(S.review.batchDone(r.decided, failed));
+      else toast.success(S.review.batchDone(r.decided, 0));
+    },
+    onError: (e) => toast.error((e as Error).message),
+    onSettled: () => {
+      setPicked(new Set());
+      invalidate();
+    },
   });
   const factAction = useMutation({
     mutationFn: ({
@@ -1187,12 +1244,95 @@ export function Review() {
 
               {active === "duplicates" && counts.duplicates > 0 && (
                 <div className="space-y-3">
+                  {/* 按两边类型的关系筛（#428）：同名同类那一档是人最先想一把
+                      合掉的，类型冲突那一档是绝不能合的；三档各带真实条数 */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Segmented
+                      size="sm"
+                      value={types}
+                      onChange={(v) => {
+                        setTypes(v);
+                        setPage(0);
+                      }}
+                      options={[
+                        { value: "any", label: S.review.typesAny, count: counts.duplicates },
+                        {
+                          value: "same",
+                          label: S.review.typesSame,
+                          count: c?.duplicates_same_type ?? 0,
+                        },
+                        {
+                          value: "conflict",
+                          label: S.review.typesConflict,
+                          count: c?.duplicates_type_conflict ?? 0,
+                        },
+                      ]}
+                    />
+                    {/* 批量：勾选这一页的，一个动作裁一批。按钮只在有选中时出现 */}
+                    <Checkbox
+                      className="ml-auto"
+                      checked={
+                        asDuplicates().length > 0 &&
+                        asDuplicates().every((d) => picked.has(d.id))
+                      }
+                      onChange={(e) =>
+                        setPicked(
+                          e.target.checked
+                            ? new Set(asDuplicates().map((d) => d.id))
+                            : new Set(),
+                        )
+                      }
+                      label={S.review.selectPage}
+                    />
+                    {picked.size > 0 && (
+                      <>
+                        <span className="u-num text-small text-ink-3">
+                          {S.review.selected(picked.size)}
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={batch.isPending}
+                          onClick={() =>
+                            batch.mutate({ ids: [...picked], action: "keep" })
+                          }
+                        >
+                          {S.review.keepSelected}
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={batch.isPending}
+                          onClick={() =>
+                            batch.mutate({ ids: [...picked], action: "merge" })
+                          }
+                        >
+                          {S.review.mergeSelected}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {asDuplicates().length === 0 && (
+                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                      {S.review.typesEmpty}
+                    </div>
+                  )}
                   {asDuplicates().map((item) => (
                     <DuplicateCard
                       key={item.id}
                       item={item}
+                      picked={picked.has(item.id)}
+                      onPick={(on) =>
+                        setPicked((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.add(item.id);
+                          else next.delete(item.id);
+                          return next;
+                        })
+                      }
                       busy={
-                        decide.isPending && decide.variables?.id === item.id
+                        (decide.isPending && decide.variables?.id === item.id) ||
+                        (batch.isPending && picked.has(item.id))
                       }
                       onDecide={(action) =>
                         decide.mutate({ id: item.id, action })

@@ -782,6 +782,11 @@ select.input-dark option {
   pointer-events: none;
 }
 
+/* 批量选中的卡片：边框亮一档说「这张在批里」——不涂底，底还是玻璃 */
+.u-picked {
+  border-color: var(--u-line-strong);
+}
+
 /* 一行的壳：自己不是按钮（里面还有按钮）但整行要有 hover */
 .u-row-shell {
   transition: background-color var(--u-fast);
