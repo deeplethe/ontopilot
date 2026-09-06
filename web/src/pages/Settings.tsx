@@ -603,7 +603,7 @@ function DataSourcesAdmin() {
               <div className="min-w-0 flex-1">
                 <div className="text-body text-ink">
                   {d.name}
-                  <span className="ml-2 text-fine uppercase tracking-wide text-ink-3">
+                  <span className="ml-2 text-fine text-ink-3">
                     {d.engine}
                   </span>
                 </div>

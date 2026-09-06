@@ -59,6 +59,7 @@ import {
   SearchSelect,
   cn,
   pageSlice,
+  GroupLabel,
 } from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
@@ -286,9 +287,7 @@ export function Ontology() {
           )}
           {filter.trim() ? (
             <>
-              <div className="px-2 pt-2 pb-1 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-                {S.ontology.tabClasses}
-              </div>
+              <GroupLabel className="px-2 pt-2 pb-1">{S.ontology.tabClasses}</GroupLabel>
               <ClassTree
                 types={entity_types}
                 filter={filter}
@@ -298,9 +297,7 @@ export function Ontology() {
                 onSelect={(id) => setSel({ kind: "class", id })}
                 pageSize={RAIL_PAGE_MIXED}
               />
-              <div className="px-2 pt-3 pb-1 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-                {S.ontology.tabProperties}
-              </div>
+              <GroupLabel className="px-2 pt-3 pb-1">{S.ontology.tabProperties}</GroupLabel>
               <PropertyList
                 relations={relations}
                 filter={filter}
@@ -468,6 +465,11 @@ export function Ontology() {
                   color={selectedClass?.color}
                   square={selectedClass?.shape === "square"}
                   title={selectedClass?.label ?? S.ontology.newClass}
+                  sub={
+                    selectedClass
+                      ? `${selectedClass.key} · ${S.ontology.usage(selectedClass.usage)}`
+                      : undefined
+                  }
                   builtin={selectedClass?.builtin}
                 />
               }
@@ -651,7 +653,9 @@ function DockedPanel({
 }) {
   return (
     <div
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-3 right-3 bottom-3 w-[26rem] z-10 rounded-xl shadow-2xl flex flex-col`}
+      // 与图谱页的实体面板同一副壳：同宽（w-96）、同一个顶部起点（给顶上那排
+      // 药丸让位），同一个头部解剖。两页并排看是同一件东西
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-xl shadow-2xl flex flex-col`}
     >
       <div className="shrink-0 flex items-start justify-between gap-2 px-4 py-4 border-b border-line">
         <div className="min-w-0">{header}</div>
@@ -723,21 +727,19 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
   if (!q.isPending && total === 0) return null; // 没有实例时不占版面
 
   return (
-    <div className="glass rounded-xl p-4">
-      <div className="mb-2 flex items-baseline gap-2">
-        <h3 className="text-body font-semibold text-ink">
-          {S.ontology.instances}
-        </h3>
-        <span className="u-num text-small text-ink-3">{total}</span>
-      </div>
-      <div className="divide-y divide-line">
+    // 平铺在面板里：面板已经是一块面，里面不再套卡片。标题与行同一个 px-2
+    <div>
+      <GroupLabel className="mb-1 px-2" count={total}>
+        {S.ontology.instances}
+      </GroupLabel>
+      <div>
         {rows.map((e) => (
           <Link
             key={e.id}
             to="/kb/$kbId/graph"
             params={{ kbId }}
             search={{ entity: e.id }}
-            className={cn(rowClass(), "-mx-2")}
+            className={rowClass()}
           >
             <span
               className={`h-2 w-2 shrink-0 ${type.shape === "square" ? "" : "rounded-full"}`}
@@ -843,7 +845,6 @@ function RelationshipsCard({
     // 悬停要有底色：这一行整条可点，只把文字提亮半级在深底上几乎看不出来。
     // 底色用左栏那一档（white/[0.05]），右端的类型小字跟着一起提亮
     <Row
-      className="-mx-2"
       icon={
         dir === "out" ? (
           <ArrowRight size={12} className="text-violet" />
@@ -864,30 +865,30 @@ function RelationshipsCard({
   );
 
   return (
-    // 卡片在面板里边，底交给面板；这里与属性卡、实例卡同一个写法
-    <div className="glass rounded-xl p-4">
-      <div className="mb-1 flex items-baseline gap-2">
-        <h3 className="text-body font-semibold text-ink">
-          {S.ontology.schemaRelationships}
-        </h3>
-        {outgoing.length + incoming.length > 0 && (
-          <span className="u-num text-small text-ink-3">
-            {outgoing.length + incoming.length}
-          </span>
-        )}
-      </div>
+    // 平铺在面板里，与图谱面板的关系分组同一个骨架：带方向箭头的小标题 + 行
+    <div>
+      <GroupLabel
+        className="mb-1 px-2"
+        count={outgoing.length + incoming.length || undefined}
+      >
+        {S.ontology.schemaRelationships}
+      </GroupLabel>
       {outgoing.length === 0 && incoming.length === 0 ? (
-        <p className="text-small text-ink-3 mb-2">
+        <p className="mb-2 px-2 text-small text-ink-3">
           {S.ontology.schemaNoRelationships}
         </p>
       ) : (
         <div className="mb-2">
           {outgoing.length > 0 && (
             <>
-              <div className="text-fine uppercase tracking-[0.08em] text-ink-3 mb-1">
+              <GroupLabel
+                className="px-2 pb-1 pt-2"
+                icon={<ArrowRight size={10} />}
+                count={outgoing.length > 1 ? outgoing.length : undefined}
+              >
                 {S.ontology.schemaOutgoing}
-              </div>
-              <div className="divide-y divide-line mb-2">
+              </GroupLabel>
+              <div>
                 {outgoing.map((r) => (
                   <RelationRow key={`out:${r.id}`} r={r} dir="out" />
                 ))}
@@ -896,10 +897,14 @@ function RelationshipsCard({
           )}
           {incoming.length > 0 && (
             <>
-              <div className="text-fine uppercase tracking-[0.08em] text-ink-3 mb-1">
+              <GroupLabel
+                className="px-2 pb-1 pt-2"
+                icon={<ArrowLeft size={10} />}
+                count={incoming.length > 1 ? incoming.length : undefined}
+              >
                 {S.ontology.schemaIncoming}
-              </div>
-              <div className="divide-y divide-line">
+              </GroupLabel>
+              <div>
                 {incoming.map((r) => (
                   <RelationRow key={`in:${r.id}`} r={r} dir="in" />
                 ))}
@@ -908,7 +913,7 @@ function RelationshipsCard({
           )}
         </div>
       )}
-      <div className="pt-2 border-t border-line">
+      <div className="border-t border-line px-2 pt-3">
         <p className="text-fine text-ink-3 mb-2">
           {S.ontology.schemaConnectHint}
         </p>
@@ -986,18 +991,11 @@ export function AttributesCard({
   useEffect(() => setEditing(null), [type.id]);
 
   return (
-    <div className="glass rounded-xl p-4">
-      <div className="mb-1 flex items-baseline gap-2">
-        <h3 className="text-body font-semibold text-ink">
-          {S.ontology.attributes}
-        </h3>
-        {attributes.length > 0 && (
-          <span className="u-num text-small text-ink-3">
-            {attributes.length}
-          </span>
-        )}
-      </div>
-      <p className="text-small text-ink-3 mb-2">
+    <div className="border-t border-line pt-3">
+      <GroupLabel className="mb-1 px-2" count={attributes.length || undefined}>
+        {S.ontology.attributes}
+      </GroupLabel>
+      <p className="mb-2 px-2 text-small text-ink-3">
         {S.ontology.attributesHint}
       </p>
       <div className="divide-y divide-line">
@@ -1854,7 +1852,7 @@ export function PropertyForm({
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="min-w-0">
-            <div className="text-fine uppercase tracking-[0.08em] text-ink-3 mb-1">
+            <div className="mb-1 text-fine font-medium text-ink-3">
               {S.ontology.domainLabel}
             </div>
             <MultiSearchSelect
@@ -1866,7 +1864,7 @@ export function PropertyForm({
             />
           </div>
           <div className="min-w-0">
-            <div className="text-fine uppercase tracking-[0.08em] text-ink-3 mb-1">
+            <div className="mb-1 text-fine font-medium text-ink-3">
               {S.ontology.rangeLabel}
             </div>
             <MultiSearchSelect
@@ -3220,7 +3218,7 @@ function ImportPanel({
 
       {plan && (
         <div className="mt-4">
-          <p className="text-fine uppercase tracking-[0.08em] text-ink-3 u-num">
+          <p className="u-num text-fine text-ink-3">
             {S.ontology.importParsed(plan.format, plan.triples)}
           </p>
 

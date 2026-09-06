@@ -1319,6 +1319,39 @@ export function ToolDivider() {
   return <div className="mx-2 h-px bg-line-strong" />;
 }
 
+/* ---------- GroupLabel（一组内容的小标题） ----------
+   小号、中等字重、句首大写。**不用大写字母拉字距**——那种小节标题看着像
+   另一套字体系统，用户明确不要。停靠面板里的分段、抽取栏、总览的三段、
+   左栏的分组都是它；右边可带计数，左边可带一个小图标（图谱面板里的方向箭头）。 */
+export function GroupLabel({
+  icon,
+  count,
+  tone = "default",
+  className,
+  children,
+}: {
+  icon?: ReactNode;
+  count?: ReactNode;
+  /** contest：被挡住的那一组，用争议色 */
+  tone?: "default" | "contest";
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 text-small font-medium",
+        tone === "contest" ? "text-contest" : "text-ink-2",
+        className,
+      )}
+    >
+      {icon}
+      <span className="min-w-0 truncate">{children}</span>
+      {count !== undefined && <span className="u-num text-ink-3">{count}</span>}
+    </div>
+  );
+}
+
 /* ---------- Pill（玻璃药丸：图例、"+N 个类"这类浮在画布上的小开关） ---------- */
 export const Pill = forwardRef<
   HTMLButtonElement,

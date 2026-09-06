@@ -37,6 +37,7 @@ import {
   RAIL_CLS,
   RailItem,
   Segmented,
+  GroupLabel,
 } from "../ui";
 
 const DUP_PAGE = 6;
@@ -990,9 +991,7 @@ const PAGE_SIZE: Record<Paged, number> = {
 function RailHeader({ label }: { label: string }) {
   return (
     // 文字从 20 起，与行里的图标同一条线（盒 12 + 行内 8）
-    <div className="mx-3 px-2 pt-4 pb-2 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-      {label}
-    </div>
+    <GroupLabel className="mx-3 px-2 pt-4 pb-2">{label}</GroupLabel>
   );
 }
 

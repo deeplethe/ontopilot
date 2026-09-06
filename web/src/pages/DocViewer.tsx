@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { api, type ChunkFact } from "../api";
 import { S } from "../i18n";
 import { useKbId } from "../kb";
-import { Pager, pageSlice } from "../ui";
+import { GroupLabel, Pager, pageSlice } from "../ui";
 import { SourcesRail } from "./SourcesRail";
 
 const DOC_PAGE = 12;
@@ -125,9 +125,9 @@ export function DocViewer() {
                 {/* 抽取对照栏：这个分块产出了哪些事实（实体可跳图谱） */}
                 {facts.length > 0 && (
                   <aside className="w-64 shrink-0 rounded-xl border border-line bg-surface p-3">
-                    <div className="mb-2 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-                      {S.doc.extracted} · {facts.length}
-                    </div>
+                    <GroupLabel className="mb-2" count={facts.length}>
+                      {S.doc.extracted}
+                    </GroupLabel>
                     <div className="space-y-2">
                       {facts.map((f) => {
                         const range = factRange(f);

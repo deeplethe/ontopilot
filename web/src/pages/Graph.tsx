@@ -84,6 +84,7 @@ import {
   ToolTower,
   cn,
   localDate,
+  GroupLabel,
 } from "../ui";
 import { usePopoverFlip } from "../ui/popoverFlip";
 import { useKb, useKbId } from "../kb";
@@ -2771,7 +2772,7 @@ function EntityPanel({
 
   return (
     <div
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-80 z-10 rounded-xl shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-xl shadow-2xl flex flex-col`}
     >
       <div className="flex items-start justify-between px-4 py-4 border-b border-line">
         <div>
@@ -2973,12 +2974,17 @@ function EntityPanel({
         {view === "relations" &&
           groups.map((gr) => (
             <div key={gr.key} className="mb-3 last:mb-1">
-              <div className="flex items-center gap-2 px-2 pb-1 pt-2 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-                {gr.direction === "in" ? (
-                  <ArrowLeft size={10} />
-                ) : (
-                  <ArrowRight size={10} />
-                )}
+              <GroupLabel
+                className="px-2 pb-1 pt-2"
+                icon={
+                  gr.direction === "in" ? (
+                    <ArrowLeft size={10} />
+                  ) : (
+                    <ArrowRight size={10} />
+                  )
+                }
+                count={gr.rows.length > 1 ? gr.rows.length : undefined}
+              >
                 <span
                   className={
                     gr.label === null ? "italic text-ink-3" : undefined
@@ -2991,10 +2997,7 @@ function EntityPanel({
                 >
                   {gr.label ?? S.graph.unknownPredicate}
                 </span>
-                {gr.rows.length > 1 && (
-                  <span className="text-ink-3">{gr.rows.length}</span>
-                )}
-              </div>
+              </GroupLabel>
               <div>
                 {gr.rows.map((f) => (
                   <FactRow
@@ -3034,20 +3037,20 @@ function EntityPanel({
                 与派生边抢色相的地方 */}
             {derivedGroups.map((gr) => (
               <div key={gr.key} className="mb-3 last:mb-1">
-                <div className="flex items-center gap-2 px-2 pb-1 pt-2 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-                  {gr.direction === "in" ? (
-                    <ArrowLeft size={10} />
-                  ) : (
-                    <ArrowRight size={10} />
-                  )}
-                  <span>{gr.predicate}</span>
-                  <span className="text-ink-3">{gr.rule}</span>
-                  {gr.rows.length > 1 && (
-                    <span className="ml-auto text-ink-3">
-                      {gr.rows.length}
-                    </span>
-                  )}
-                </div>
+                <GroupLabel
+                  className="px-2 pb-1 pt-2"
+                  icon={
+                    gr.direction === "in" ? (
+                      <ArrowLeft size={10} />
+                    ) : (
+                      <ArrowRight size={10} />
+                    )
+                  }
+                  count={gr.rows.length > 1 ? gr.rows.length : undefined}
+                >
+                  {gr.predicate}
+                  <span className="ml-2 font-normal text-ink-3">{gr.rule}</span>
+                </GroupLabel>
                 <div>
                   {gr.rows.map((d) => {
                     const out = d.subject_id === entityId;
@@ -3071,12 +3074,9 @@ function EntityPanel({
             ))}
             {blocked.length > 0 && (
               <div className="mb-3 last:mb-1">
-                <div className="flex items-center gap-2 px-2 pb-1 pt-2 text-fine font-medium uppercase tracking-[0.08em] text-contest">
-                  <span>{S.graph.blockedTitle}</span>
-                  <span className="ml-auto text-ink-3">
-                    {blocked.length}
-                  </span>
-                </div>
+                <GroupLabel className="px-2 pb-1 pt-2" tone="contest" count={blocked.length}>
+                  {S.graph.blockedTitle}
+                </GroupLabel>
                 <p className="px-2 pb-2 text-fine leading-relaxed text-ink-3">
                   {S.graph.blockedHint}
                 </p>
@@ -3155,9 +3155,7 @@ function TimelineView({
       </div>
       {undated.length > 0 && (
         <div className="mt-3">
-          <div className="px-2 pb-1 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-            {S.graph.undated}
-          </div>
+          <GroupLabel className="px-2 pb-1">{S.graph.undated}</GroupLabel>
           {undated.map((f) => (
             <FactRow
               key={f.id}

@@ -3,7 +3,7 @@
 // 与左栏是同一套口径（服务端共用 WHERE），页面上不再各自数一遍。
 import type { ReviewSummary } from "../api";
 import { S } from "../i18n";
-import { Chip, LinkButton } from "../ui";
+import { Chip, GroupLabel, LinkButton } from "../ui";
 
 /** 总览里能点进去的七档 */
 export type WaitingQueue = keyof ReviewSummary["waiting"];
@@ -25,11 +25,7 @@ function daysSince(iso: string): number {
 }
 
 function SectionHead({ children }: { children: string }) {
-  return (
-    <h3 className="mb-3 text-fine font-medium uppercase tracking-[0.08em] text-ink-3">
-      {children}
-    </h3>
-  );
+  return <GroupLabel className="mb-3">{children}</GroupLabel>;
 }
 
 /** 一格统计：大数在上，说明在下。卡片本身不是控件——想进那一档，点下面的
