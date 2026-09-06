@@ -68,13 +68,15 @@ The patterns became rules, written once (`IDENTITY_RULES`) and read by both prom
 
 The same 589 pairs, reset and re-run after each change:
 
-| run | decided on its own | agreed with the labels | wrong merges | wrong keeps | left for people |
-|---|---|---|---|---|---|
-| before this decision (gate of 2026-09-06) | 67% | 91% | 1 | 35 | 186 |
-| rules, shapes and families | 86% | 95.3% | 6 | 18 | 14 |
-| acronyms, surnames, two-word tails | 98.5% | 96.3% | 6 | 12 | 8 |
-| one label for identical names, second look on a split | 98.2% | 97.3% | 4 | 9 | 9 |
-| one label only within one family (the version shipped) | 97.9% | 96.9% | 4 | 11 | 11 |
+| run | decided on its own | agreed with the labels | wrong merges | wrong keeps | left for people | wall clock · loop calls |
+|---|---|---|---|---|---|---|
+| before this decision (gate of 2026-09-06) | 67% | 91% | 1 | 35 | 186 | ran alongside the 63 min import; 301 loop calls |
+| rules, shapes and families | 86% | 95.3% | 6 | 18 | 14 | 26 min · 42 |
+| acronyms, surnames, two-word tails | 98.5% | 96.3% | 6 | 12 | 8 | 22 min · 12 |
+| one label for identical names, second look on a split | 98.2% | 97.3% | 4 | 9 | 9 | 22 min · 15 |
+| one label only within one family (the version shipped) | 97.9% | 96.9% | 4 | 11 | 11 | 25 min · 46 |
+
+Wall clock is for 589 pairs with the model capped at three concurrent calls (the endpoint rate-limits above that), so about twenty-five pairs a minute; each run makes one batch call per cluster of up to twelve pairs, roughly sixty, plus the loop calls shown. The loop budget of 2000 calls a day was never approached.
 
 The last two runs differ by run-to-run noise of the model; the shipped version keeps the extractor's labels wherever they carry information (a periodical against a service, a game against an untyped record), because the run before it merged two such pairs, and a wrong merge costs more than a wrong keep. What remains disagreeing is mostly judgment: whether "Claude Mythos 5" is "Claude Mythos", whether "the Claude series" is "Claude", whether a nonprofit legal entity is the organization it controls. Two of the four wrong merges follow a precedent a simulated person left by accepting proposals blindly, which is the ledger working as designed on a bad decision. And the share left for people does not go to zero on purpose: the version and phrase rules hold back a few right merges to stop dozens of wrong ones, and a record with no facts cannot be settled by anyone.
 
