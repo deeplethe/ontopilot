@@ -756,7 +756,8 @@ select.input-dark option {
   line-height: var(--text-body--line-height);
   font-weight: 500;
   color: var(--u-text-2);
-  border-bottom: 2px solid transparent;
+  /* 1px 的线：光晕已经在说「这一页」，线只用点到为止 */
+  border-bottom: 1px solid transparent;
   transition: color var(--u-fast);
 }
 .u-tab:hover {
