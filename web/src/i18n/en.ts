@@ -1390,10 +1390,11 @@ export const en = {
     schemaScopeTopHint:
       "No class has instances yet, so the top two levels are drawn. Pick any other class in the rail to add it.",
     schemaClosePanel: "Close",
-    // 面板里的三段：定义（表单）/ 属性（关系 + 字面值字段）/ 实例。
-    // 用页面自己的词——左栏就叫 Classes / Properties
+    // 面板里的四段：定义（表单）/ 关系（边）/ 属性（字面值字段）/ 实例。
+    // 关系和属性是两种东西——左栏的 Properties 只列关系，属性挂在类下
     schemaTabDefinition: "Definition",
-    schemaTabProperties: "Properties",
+    schemaTabRelations: "Relations",
+    schemaTabAttributes: "Attributes",
     schemaTabInstances: "Instances",
     schemaAddRelationship: "New relationship…",
     schemaCheckDefects: (n: number) =>
@@ -1401,12 +1402,12 @@ export const en = {
         ? "1 new ontology issue from this change"
         : `${n} new ontology issues from this change`,
     schemaCheckReview: "Review",
-    schemaRelationships: "Relationships",
     /** 画布上并成一条的关系边写的字 */
     schemaBundle: (n: number) => `${n} relations`,
     schemaOutgoing: "From this class",
     schemaIncoming: "To this class",
     schemaNoRelationships: "No relationships yet.",
+    schemaNoInstances: "No instances yet.",
     schemaConnectHint: "Connect using an existing relationship",
     schemaConnectPlaceholder: "Search relationships…",
     schemaConnectAs: "As",

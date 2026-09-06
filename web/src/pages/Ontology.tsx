@@ -110,7 +110,7 @@ export function Ontology() {
   // 模式图详情面板停在哪一段。**跨选中保留**：在实例上挨个类看下去，
   // 是一种真实的读法，每换一个类就被弹回定义页会打断它
   const [panelTab, setPanelTab] = useState<
-    "definition" | "properties" | "instances"
+    "definition" | "relations" | "attributes" | "instances"
   >("definition");
   /** 正在退场的那次选择：面板演完 `u-dock-out` 再卸载，而不是一下子消失 */
   const [exitingSel, setExitingSel] = useState<Sel>(null);
@@ -207,14 +207,7 @@ export function Ontology() {
     panelSel?.kind === "relation"
       ? (relation_types.find((r) => r.id === panelSel.id) ?? null)
       : null;
-  // 选中类身上挂着的东西，面板分段的计数和内容都用它
-  const classRelations = selectedClass
-    ? relations.filter(
-        (r) =>
-          r.domains.includes(selectedClass.id) ||
-          r.ranges.includes(selectedClass.id),
-      )
-    : [];
+  // 选中类身上挂着的属性，Attributes 一段用它
   const classAttributes = selectedClass
     ? relation_types.filter(
         (r) => r.kind === "attribute" && r.domains.includes(selectedClass.id),
@@ -486,14 +479,16 @@ export function Ontology() {
                         label: S.ontology.schemaTabDefinition,
                       },
                       {
-                        value: "properties",
-                        label: S.ontology.schemaTabProperties,
-                        count: classRelations.length + classAttributes.length,
+                        value: "relations",
+                        label: S.ontology.schemaTabRelations,
+                      },
+                      {
+                        value: "attributes",
+                        label: S.ontology.schemaTabAttributes,
                       },
                       {
                         value: "instances",
                         label: S.ontology.schemaTabInstances,
-                        count: selectedClass.usage,
                       },
                     ]}
                   />
@@ -541,11 +536,7 @@ export function Ontology() {
               </div>
               {selectedClass && (
                 <>
-                  <div
-                    className={
-                      classTab === "properties" ? "flex flex-col gap-3" : "hidden"
-                    }
-                  >
+                  <div className={classTab === "relations" ? "" : "hidden"}>
                     <RelationshipsCard
                       kbId={kb.id}
                       cls={selectedClass}
@@ -561,6 +552,8 @@ export function Ontology() {
                         })
                       }
                     />
+                  </div>
+                  <div className={classTab === "attributes" ? "" : "hidden"}>
                     <AttributesCard
                       kbId={kb.id}
                       type={selectedClass}
@@ -724,14 +717,13 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
   });
   const total = q.data?.total ?? 0;
   const rows = q.data?.entities ?? [];
-  if (!q.isPending && total === 0) return null; // 没有实例时不占版面
+  // 这一段自己就是 Instances 那个 tab：没有实例就说一句，不顶同名的标题
+  if (!q.isPending && total === 0)
+    return <p className="text-small text-ink-3">{S.ontology.schemaNoInstances}</p>;
 
   return (
-    // 平铺在面板里：面板已经是一块面，里面不再套卡片。标题与行同一个 px-2
+    // 平铺在面板里：面板已经是一块面，里面不再套卡片
     <div>
-      <GroupLabel className="mb-1" count={total}>
-        {S.ontology.instances}
-      </GroupLabel>
       <div>
         {rows.map((e) => (
           <Link
@@ -866,14 +858,9 @@ function RelationshipsCard({
   );
 
   return (
-    // 平铺在面板里，与图谱面板的关系分组同一个骨架：带方向箭头的小标题 + 行
+    // 平铺在面板里，与图谱面板的关系分组同一个骨架：带方向箭头的小标题 + 行。
+    // 这一段自己就是 Relations 那个 tab，不再顶一个同名的标题
     <div>
-      <GroupLabel
-        className="mb-1"
-        count={outgoing.length + incoming.length || undefined}
-      >
-        {S.ontology.schemaRelationships}
-      </GroupLabel>
       {outgoing.length === 0 && incoming.length === 0 ? (
         <p className="mb-2 text-small text-ink-3">
           {S.ontology.schemaNoRelationships}
@@ -992,10 +979,7 @@ export function AttributesCard({
   useEffect(() => setEditing(null), [type.id]);
 
   return (
-    <div className="border-t border-line pt-3">
-      <GroupLabel className="mb-1" count={attributes.length || undefined}>
-        {S.ontology.attributes}
-      </GroupLabel>
+    <div>
       <p className="mb-2 text-fine text-ink-3">
         {S.ontology.attributesHint}
       </p>
