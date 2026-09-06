@@ -751,7 +751,8 @@ select.input-dark option {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  /* 左 16 与字标同缩进；右 20 给标签之间多留一口气，整行就不显得往里缩 */
+  padding: 0.75rem 1.25rem 0.75rem 1rem;
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
   font-weight: 500;
