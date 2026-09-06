@@ -39,7 +39,6 @@ import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronRight,
   CircleDashed,
   Grape,
   Loader2,
@@ -2298,15 +2297,8 @@ function DerivedRow({
     <ExpandCard
       open={open}
       onToggle={onToggle}
-      headerClassName="flex items-center gap-2"
       header={
-        <>
-        <ChevronRight
-          size={11}
-          className={`shrink-0 text-ink-3 u-turn ${open ? "rotate-90" : ""}`}
-        />
-        {/* 业务规则的结论是字面值（一个类、一个值），另一端没有实体可跳——
-            这时候画成普通文字，而不是一个点了没反应的链接（0021） */}
+        <div className="flex items-center gap-2">
         {/* 业务规则的结论是字面值（一个类、一个值），另一端没有实体可跳——
             这时候画成普通文字，而不是一个点了没反应的链接（0021） */}
         {otherId ? (
@@ -2330,14 +2322,14 @@ function DerivedRow({
         ) : (
           <span className="truncate text-body text-ink">{otherName}</span>
         )}
-        <span className="ml-auto shrink-0 pl-2 text-fine text-ink-3">
+        <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-3">
           {d.premises.length}
         </span>
-        </>
+        </div>
       }
     >
-      {/* 证明：前提按推导顺序，每条展开到原句（0002 R2）。**边框与 EvidenceList
-          同一档**——两者是同一件事的两种形态：一个给出处，一个给推理链 */}
+      {/* 证明：前提按推导顺序，每条展开到原句（0002 R2）。与 EvidenceList
+          同一个位置、同一种缩进——两者是同一件事的两种形态：一个给出处，一个给推理链 */}
       {open && <ProofChain kbId={kbId} d={d} />}
     </ExpandCard>
   );
@@ -2355,7 +2347,7 @@ function ProofChain({ kbId, d }: { kbId: string; d: DerivedFact }) {
   });
   const steps = proof.data?.proof?.steps;
   return (
-    <div className="mx-2 mb-2 mt-1 border-l border-line-strong pl-3">
+    <div>
       {proof.isPending && (
         <p className="text-fine text-ink-3">{S.graph.proofLoading}</p>
       )}
@@ -2469,13 +2461,8 @@ function BlockedRow({
     <ExpandCard
       open={open}
       onToggle={onToggle}
-      headerClassName="flex items-center gap-2"
       header={
-        <>
-        <ChevronRight
-          size={11}
-          className={`shrink-0 text-ink-3 u-turn ${open ? "rotate-90" : ""}`}
-        />
+        <div className="flex items-center gap-2">
         {out ? <ArrowRight size={10} className="shrink-0 text-ink-3" /> : <ArrowLeft size={10} className="shrink-0 text-ink-3" />}
         <span className="shrink-0 text-fine text-ink-3">{b.predicate}</span>
         <span
@@ -2498,10 +2485,10 @@ function BlockedRow({
         <span className="ml-auto shrink-0 pl-2 text-fine text-ink-3">
           {S.graph.ruleNames[b.rule] ?? b.rule}
         </span>
-        </>
+        </div>
       }
     >
-      <div className="flex items-center gap-2 px-2 pb-2 pl-[26px] text-fine">
+      <div className="flex items-center gap-2 text-fine">
         <span className="truncate text-contest">
           {S.graph.blockedBy(b.against_text)}
         </span>
@@ -2521,7 +2508,7 @@ function BlockedRow({
         </span>
       </div>
       {open && (
-        <div className="mx-2 mb-2 mt-1 border-l border-line-strong pl-3">
+        <div>
           {proof.isPending && (
             <p className="text-fine text-ink-3">{S.graph.proofLoading}</p>
           )}
@@ -3133,19 +3120,19 @@ function TimelineView({
   const undated = facts.filter((f) => !dated.includes(f));
 
   return (
-    <div className="px-2 pt-1">
-      <div className="relative ml-2 border-l border-line-strong pl-3 space-y-1">
+    <div className="pt-1">
+      {/* 与 Relations 同一种行：chevron + 两行头（区间在上，谓词和值在下）。
+          年表的次序靠排序和第一行的区间说话，不另画一条线 */}
+      <div>
         {dated.map((f) => (
-          <div key={f.id} className="relative">
-            <span className="absolute -left-[17.5px] top-2.5 h-2 w-2 rounded-full bg-ink-3 ring-2 ring-ground" />
-            <TimelineRow
-              kbId={kbId}
-              fact={f}
-              open={openFact === f.id}
-              onToggle={() => onToggle(f.id)}
-              onNavigate={onNavigate}
-            />
-          </div>
+          <TimelineRow
+            key={f.id}
+            kbId={kbId}
+            fact={f}
+            open={openFact === f.id}
+            onToggle={() => onToggle(f.id)}
+            onNavigate={onNavigate}
+          />
         ))}
         {dated.length === 0 && (
           <p className="py-2 text-small text-ink-3">
@@ -3366,7 +3353,7 @@ function TimeEditor({
 
   return (
     <div
-      className="mx-2 mb-2 rounded-lg border border-line bg-surface p-3"
+      className="mb-2 rounded-lg border border-line bg-surface p-3"
       onClick={(ev) => ev.stopPropagation()}
     >
       <div className="flex items-center gap-2">
@@ -3476,13 +3463,8 @@ function FactRow({
       onToggle={onToggle}
       dim={fact.stale}
       title={fact.stale ? S.graph.staleFactHint : undefined}
-      headerClassName="flex items-center gap-2"
       header={
-        <>
-        <ChevronRight
-          size={11}
-          className={`shrink-0 text-ink-3 u-turn ${open ? "rotate-90" : ""}`}
-        />
+        <div className="flex items-center gap-2">
         {fact.other_id ? (
           <span
             role="link"
@@ -3522,7 +3504,7 @@ function FactRow({
             {interval}
           </span>
         )}
-        </>
+        </div>
       }
     >
       {open && <EvidenceList kbId={kbId} fact={fact} />}
@@ -3537,7 +3519,7 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
     queryFn: () => api.factEvidence(kbId, fact.id),
   });
   return (
-    <div className="mx-2 mb-2 mt-1 space-y-2 border-l border-line-strong pl-3">
+    <div className="space-y-2">
       {evidence.data?.evidence.map((ev: Evidence) => (
         <Link
           key={ev.chunk_id}

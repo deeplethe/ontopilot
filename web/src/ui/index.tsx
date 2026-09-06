@@ -1431,15 +1431,16 @@ export function Radio({
   );
 }
 
-/* ---------- ExpandCard（可展开的一条：事实、派生、被挡下的派生） ----------
-   头是一整条可点的按钮，展开的内容跟在下面。头里可以有 role="link" 的 span
-   （去看另一端），但不能有按钮——按钮里不能嵌按钮。 */
+/* ---------- ExpandCard（可展开的一条：事实、派生、年表条目） ----------
+   折叠行只有一副样子：左边固定一格 chevron（开了转 90°），右边是头——一行
+   或两行文字——展开的内容缩进到文字底下（pl-7 = 内距 8 + chevron 12 + 间距 8）。
+   头是一整条可点的按钮，里面可以有 role="link" 的 span（去看另一端），
+   但不能有按钮——按钮里不能嵌按钮。 */
 export function ExpandCard({
   open,
   onToggle,
   dim,
   title,
-  headerClassName,
   className,
   header,
   children,
@@ -1449,7 +1450,6 @@ export function ExpandCard({
   /** 陈旧的那种：整条压淡 */
   dim?: boolean;
   title?: string;
-  headerClassName?: string;
   className?: string;
   header: ReactNode;
   children?: ReactNode;
@@ -1462,11 +1462,15 @@ export function ExpandCard({
       <button
         type="button"
         onClick={onToggle}
-        className={cn("w-full px-2 py-1 text-left", headerClassName)}
+        className="flex w-full items-start gap-2 px-2 py-1.5 text-left"
       >
-        {header}
+        <ChevronRight
+          size={12}
+          className={cn("mt-1 shrink-0 text-ink-3 u-turn", open && "rotate-90")}
+        />
+        <div className="min-w-0 flex-1">{header}</div>
       </button>
-      {children}
+      {children && <div className="pb-2 pl-7 pr-2">{children}</div>}
     </div>
   );
 }

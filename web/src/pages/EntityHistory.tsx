@@ -85,8 +85,8 @@ function EventRow({ e }: { e: EntityHistoryEvent }) {
   const Icon = KIND_ICON[e.kind] ?? FileText;
   const note = intervalNote(e);
   return (
-    <div className="flex gap-3 px-2 py-2">
-      <Icon size={13} className={`mt-1 shrink-0 ${KIND_TONE[e.kind] ?? ""}`} />
+    <div className="flex gap-2 px-2 py-2">
+      <Icon size={12} className={`mt-1 shrink-0 ${KIND_TONE[e.kind] ?? ""}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-small font-medium text-ink-2">
