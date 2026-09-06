@@ -86,6 +86,8 @@ The adjudicator's cache is keyed on names, types and facts. The governor's answe
 
 ## What a reader sees
 
+While a `govern` job runs, the cluster it is deciding is locked: those pairs carry `stage = adjudicating`, the Review card shows "The agent is deciding this pair" with its buttons off, "Select this page" skips them, and `decide_review` refuses them with a 409 until the round ends. The lock is three conditions together, the switch on, the job running, the stage set, so a stale `adjudicating` mark from a crashed job or from the old adjudicator never locks anything; the job also clears every mark when it starts and when it ends. The Overview's Agent section says the agent is working and how many pairs it has still to look at, and the Agent item in the rail carries a pulsing dot for as long as it runs.
+
 Duplicates that the agent proposed on carry the reason code `proposed`; pairs it decided are closed with `governed|<confidence>` and appear under Merges and in History with the machine as the actor, as auto-merges always have. `?queue=agent` lists the rows of decision 5 newest first with both names, the reason and the precedents. The cut-3 UI puts the switch in the base settings, the queue in the Review rail and the counts on the Overview.
 
 ## Dead ends

@@ -807,6 +807,76 @@ pub async fn get(pool: &PgPool, kb_id: Uuid, id: Uuid) -> AppResult<AgentDecisio
         .ok_or(AppError::NotFound)
 }
 
+/// 这个库的 govern 任务此刻在跑
+pub async fn agent_running(pool: &PgPool, kb_id: Uuid) -> AppResult<bool> {
+    let running = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = 'govern' AND status = 'running'
+                          AND payload->>'kb_id' = $1)",
+    )
+    .bind(kb_id.to_string())
+    .fetch_one(pool)
+    .await?;
+    Ok(running)
+}
+
+/// 还没轮到 agent 看的对：等人的、还没有开着的建议的
+pub async fn queue_len(pool: &PgPool, kb_id: Uuid) -> AppResult<i64> {
+    let n = sqlx::query_scalar(&format!(
+        "SELECT count(*) FROM resolution_reviews rr
+         WHERE rr.kb_id = $1 AND rr.status = 'pending' AND {OPEN_PROPOSAL}"
+    ))
+    .bind(kb_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
+}
+
+/// agent 正在裁的一簇：标成 adjudicating，界面上按钮灰掉、接口上拒绝人改——模型
+/// 调用在飞的时候人把一对裁了，落地那一步会撞上
+pub async fn lock(pool: &PgPool, kb_id: Uuid, ids: &[Uuid]) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE resolution_reviews SET stage = 'adjudicating'
+         WHERE kb_id = $1 AND id = ANY($2) AND status = 'pending'",
+    )
+    .bind(kb_id)
+    .bind(ids)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// 任务开始与结束时放开所有锁：一轮中途出错、开关关掉，都不能把对锁死
+pub async fn release_locks(pool: &PgPool, kb_id: Uuid) -> AppResult<u64> {
+    let n = sqlx::query(
+        "UPDATE resolution_reviews SET stage = 'human'
+         WHERE kb_id = $1 AND status = 'pending' AND stage = 'adjudicating'",
+    )
+    .bind(kb_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(n)
+}
+
+/// 这一对此刻是不是 agent 正在裁的：治理开着、任务在跑、这一对标着 adjudicating。
+/// 三个条件缺一个都不算锁——任务没在跑的 adjudicating 只是旧裁决器留下的标记，人照样能裁
+pub async fn locked_by_agent(pool: &PgPool, kb_id: Uuid, review_id: Uuid) -> AppResult<bool> {
+    let locked = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM resolution_reviews rr
+            JOIN knowledge_bases k ON k.id = rr.kb_id
+            WHERE rr.id = $2 AND rr.kb_id = $1 AND rr.status = 'pending'
+              AND rr.stage = 'adjudicating' AND k.governance
+              AND EXISTS (SELECT 1 FROM jobs j WHERE j.kind = 'govern' AND j.status = 'running'
+                            AND j.payload->>'kb_id' = $1::text))",
+    )
+    .bind(kb_id)
+    .bind(review_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(locked)
+}
+
 pub async fn count_proposed(pool: &PgPool, kb_id: Uuid) -> AppResult<i64> {
     let n = sqlx::query_scalar(
         "SELECT count(*) FROM agent_decisions WHERE kb_id = $1 AND status = 'proposed'",

@@ -191,6 +191,15 @@ export function ReviewOverview({
             <LinkButton onClick={onSettings}>{S.review.overviewAgentSettings}</LinkButton>
           </p>
         )}
+        {/* 此刻在跑：一颗脉动的点加还剩几对；没跑但有积压：几对等它 */}
+        {agent.running ? (
+          <p className="mb-3 flex items-center text-small text-ink-2">
+            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warn animate-pulse" />
+            {S.review.overviewAgentRunning(agent.queue)}
+          </p>
+        ) : governance && agent.queue > 0 ? (
+          <p className="mb-3 text-small text-ink-3">{S.review.overviewAgentQueue(agent.queue)}</p>
+        ) : null}
         {(governance || agent.open > 0 || agent.last_30d.applied > 0) && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat

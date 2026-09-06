@@ -1533,6 +1533,10 @@ export const en = {
     overviewAgentOverridden: (n: number) =>
       n === 1 ? "1 overridden, last 30 days" : `${n} overridden, last 30 days`,
     overviewAgentReverted: "Reverted by you",
+    overviewAgentRunning: (n: number) =>
+      n === 0 ? "The agent is working on its last cluster" : `The agent is working · ${n} pairs still to look at`,
+    overviewAgentQueue: (n: number) => (n === 1 ? "1 pair waiting for the agent" : `${n} pairs waiting for the agent`),
+    agentDeciding: "The agent is deciding this pair",
     // 总览（#377）
     overviewTitle: "Overview",
     overviewHint:

@@ -1413,6 +1413,13 @@ pub async fn decide_review(
     .fetch_optional(pool)
     .await?;
     let row = row.ok_or(AppError::NotFound)?;
+    // agent 正在裁的一对（0025）：等它的建议，或者关掉开关
+    if crate::governance::locked_by_agent(pool, kb_id, review_id).await? {
+        return Err(AppError::Conflict(
+            "The agent is deciding this pair right now; wait for its proposal or turn governance off."
+                .into(),
+        ));
+    }
 
     match action {
         "merge" => {

@@ -467,6 +467,10 @@ export interface ReviewCounts {
   agent: number;
   /** agent 的全部记录（Agent 队列翻页用） */
   agent_rows: number;
+  /** 这个库的 govern 任务此刻在跑 */
+  agent_running: boolean;
+  /** 还没轮到 agent 看的对 */
+  agent_queue: number;
 }
 
 /** 类型消解的一条建议：一个待精化的实体、送去检索的画像、以及候选类。
@@ -787,7 +791,7 @@ export interface AgentWindow {
 /** 审核台总览（#377）：等着办的、办过的、库的成色。与左栏计数同一套口径 */
 export interface ReviewSummary {
   /** agent 在这个库里做过什么（0025） */
-  agent: { open: number; last_7d: AgentWindow; last_30d: AgentWindow };
+  agent: { running: boolean; queue: number; open: number; last_7d: AgentWindow; last_30d: AgentWindow };
   waiting: Record<
     "pending" | "duplicates" | "conflicts" | "unconfirmed" | "lowconf" | "violations" | "defects",
     QueueWait

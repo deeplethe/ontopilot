@@ -115,18 +115,44 @@ pub async fn govern(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
         settings: &settings,
     };
 
+    // 上一次任务半路留下的锁先放掉；跑完（不管怎么结束的）再放一次
+    gov::release_locks(&state.pool, kb_id).await?;
+    let outcome = rounds(&ctx).await;
+    if let Err(e) = gov::release_locks(&state.pool, kb_id).await {
+        tracing::warn!(%kb_id, error = %e, "治理：放锁失败");
+    }
+    state.emit_review(kb_id);
+    let more = outcome?;
+
+    // 轮数用完还有积压：再排一个，下一轮从队头接着走
+    if more {
+        utopia_store::jobs::enqueue_unless_queued(&state.pool, "govern", json!({ "kb_id": kb_id }))
+            .await?;
+    }
+    Ok(())
+}
+
+/// 一轮轮走到队列空、开关关或轮数用完。回 true = 轮数用完还有积压
+async fn rounds(ctx: &Ctx<'_>) -> anyhow::Result<bool> {
+    let state = ctx.state;
+    let kb_id = ctx.kb_id;
+    let client = ctx.client;
     for _ in 0..MAX_ROUNDS {
         // 关闭后队列自动终止：每一簇之前看一眼
         if !utopia_store::kbs::get(&state.pool, kb_id).await?.governance {
             tracing::info!(%kb_id, "治理：开关已关，停在这里");
-            return Ok(());
+            return Ok(false);
         }
         let Some(head) = gov::queue(&state.pool, kb_id, 1).await?.into_iter().next() else {
-            return Ok(());
+            return Ok(false);
         };
         let mut items = vec![head];
         let siblings = gov::cluster_of(&state.pool, kb_id, &items[0], BATCH_SIZE - 1).await?;
         items.extend(siblings);
+        // 这一簇归 agent 了：人在这几分钟里不能裁它们，界面上看得见
+        let ids: Vec<Uuid> = items.iter().map(|i| i.id).collect();
+        gov::lock(&state.pool, kb_id, &ids).await?;
+        state.emit_review(kb_id);
 
         let mut precedents = Vec::with_capacity(items.len());
         for item in &items {
@@ -147,7 +173,7 @@ pub async fn govern(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
             {
                 Some(merged) => {
                     settle(
-                        &ctx,
+                        ctx,
                         item,
                         &pairs[idx],
                         &precedents[idx],
@@ -163,7 +189,7 @@ pub async fn govern(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
                 asked.iter().map(|&i| pairs[i].clone()).collect();
             let messages = utopia_extract::build_adjudication_messages(&batch);
             let reply = {
-                let _permit = permit(&ctx).await;
+                let _permit = permit(ctx).await;
                 // 调用/解析失败 → 任务按退避重试；重试耗尽后这些对留在队列里，人照样能裁
                 client.chat(&messages).await?
             };
@@ -184,18 +210,12 @@ pub async fn govern(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
                     ),
                     None => Look::from_batch(None, 0.0, None),
                 };
-                settle(&ctx, &items[idx], &pairs[idx], &precedents[idx], look).await?;
+                settle(ctx, &items[idx], &pairs[idx], &precedents[idx], look).await?;
             }
         }
         state.emit_review(kb_id);
     }
-
-    // 轮数用完还有积压：再排一个，下一轮从队头接着走
-    if !gov::queue(&state.pool, kb_id, 1).await?.is_empty() {
-        utopia_store::jobs::enqueue_unless_queued(&state.pool, "govern", json!({ "kb_id": kb_id }))
-            .await?;
-    }
-    Ok(())
+    Ok(!gov::queue(&state.pool, kb_id, 1).await?.is_empty())
 }
 
 async fn permit(ctx: &Ctx<'_>) -> Option<tokio::sync::OwnedSemaphorePermit> {
