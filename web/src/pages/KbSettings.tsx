@@ -205,7 +205,7 @@ export function KbSettings() {
           <PageHeader title={S.kbset.title} />
 
           {section === "general" && (
-            <div className="glass rounded-xl p-4">
+            <div className="glass rounded-lg p-4">
               <div className="max-w-xl space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -371,7 +371,7 @@ export function KbSettings() {
           {section === "activity" && <KbActivity kbId={kbId} />}
 
           {section === "danger" && (
-            <div className="glass rounded-xl px-6 py-4 flex items-center justify-between gap-4">
+            <div className="glass rounded-lg px-6 py-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-body font-medium text-ink">
                   {S.kbset.deleteRowTitle}
@@ -453,7 +453,7 @@ function KbActivity({ kbId }: { kbId: string }) {
   };
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <p className="text-small text-ink-3 mb-3">{S.kbset.activityHint}</p>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <NativeSelect size="sm"
@@ -581,7 +581,7 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
   if (members.isError) return null;
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <p className="text-small text-ink-3 mb-3">
         {isOpen ? S.kbset.membersHintOpen : S.kbset.membersHintRestricted}
       </p>

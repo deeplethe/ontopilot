@@ -55,7 +55,7 @@ export function Account() {
     <div className="px-8 py-6">
       <PageHeader title={S.account.profileTitle} />
 
-      <div className="glass rounded-xl p-6 mb-4">
+      <div className="glass rounded-lg p-6 mb-4">
         <div className="max-w-xl">
           <div className="flex items-center gap-4 mb-6">
             <Avatar name={me.data.display_name} size={56} />
@@ -85,7 +85,7 @@ export function Account() {
         </div>
       </div>
 
-      <div className="glass rounded-xl p-6">
+      <div className="glass rounded-lg p-6">
         <div className="max-w-xl">
           <h2 className="text-body font-medium text-ink mb-4">
             {S.account.passwordTitle}

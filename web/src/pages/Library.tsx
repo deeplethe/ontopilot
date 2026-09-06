@@ -688,7 +688,7 @@ export function Library() {
             const total = (docs.data?.ready ?? 0) + pending;
             const done = total - pending;
             return (
-              <div className="mb-3 glass rounded-xl px-4 py-3">
+              <div className="mb-3 glass rounded-lg px-4 py-3">
                 <div className="flex items-center justify-between text-small text-ink-2 mb-2">
                   <span>{S.library.extractProgress(done, total)}</span>
                   <span className="u-num text-ink-3">
@@ -718,7 +718,7 @@ export function Library() {
             <RunsPanel kbId={kb.id} sourceId={selectedSource.id} />
           ) : (
           <>
-          <div className={`glass rounded-xl glass-hover ${dragging ? "u-highlight" : ""}`}>
+          <div className={`glass rounded-lg glass-hover ${dragging ? "u-highlight" : ""}`}>
             {selection === "deleted" ? (
               <DeletedTable
                 docs={pagedDocs}
@@ -939,7 +939,7 @@ function SourceBar({
     cfg.content_mode === "full_new_items" ? "full_new_items" : "feed";
 
   return (
-    <div className="glass rounded-xl mb-3">
+    <div className="glass rounded-lg mb-3">
       <div className="px-4 py-3 flex items-center gap-3 text-small">
         {/* api 与拉取型同一状态语汇：点 + 状态 + 时刻 + 产出/错误；
             端点是一次性集成信息，放 Token 弹窗，不占常驻条 */}
@@ -1279,7 +1279,7 @@ function RunsPanel({ kbId, sourceId }: { kbId: string; sourceId: string }) {
   const list = runs.data?.runs ?? [];
 
   return (
-    <div className="glass rounded-xl">
+    <div className="glass rounded-lg">
       {runs.isLoading ? (
         <div className="py-20 text-center text-body text-ink-3">{S.nav.loading}</div>
       ) : list.length === 0 ? (

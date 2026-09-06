@@ -105,7 +105,7 @@ export function DocViewer() {
             return (
               <div key={c.id} ref={hit ? highlightRef : undefined} className="flex gap-3">
                 <div
-                  className={`u-chunk flex-1 min-w-0 rounded-xl border p-4 text-body leading-relaxed whitespace-pre-wrap border-line ${
+                  className={`u-chunk flex-1 min-w-0 rounded-lg border p-4 text-body leading-relaxed whitespace-pre-wrap border-line ${
                     hit && flash ? "u-flash" : "bg-surface"
                   }`}
                 >
@@ -126,7 +126,7 @@ export function DocViewer() {
 
                 {/* 抽取对照栏：这个分块产出了哪些事实（实体可跳图谱） */}
                 {facts.length > 0 && (
-                  <aside className="w-64 shrink-0 rounded-xl border border-line bg-surface p-3">
+                  <aside className="w-64 shrink-0 rounded-lg border border-line bg-surface p-3">
                     <GroupLabel className="mb-2" count={facts.length}>
                       {S.doc.extracted}
                     </GroupLabel>

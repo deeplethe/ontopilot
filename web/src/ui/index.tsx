@@ -297,7 +297,7 @@ export function Dropdown({
         <div
           className={cn(
             // 与告警面板、用户菜单同一张皮（u-menu-glass）：浮在页面上的面只有一种
-            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-xl shadow-2xl overflow-hidden",
+            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden",
           )}
         >
           {menuLabel && (
@@ -440,7 +440,7 @@ export function SearchSelect({
         }}
       />
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-xl shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -553,7 +553,7 @@ export function MultiSearchSelect({
               key={o.value}
               type="button"
               onClick={() => onToggle(o.value)}
-              className="group flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-fine text-ink transition-colors duration-fast hover:bg-surface-3"
+              className="group flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-0.5 text-fine text-ink transition-colors duration-fast hover:bg-surface-3"
               title={o.hint ?? o.label}
             >
               {o.label}
@@ -609,7 +609,7 @@ export function MultiSearchSelect({
         />
       </div>
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-xl shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -755,7 +755,7 @@ export function ColorPicker({
       )}
       {open && (
         // 显式宽度：绝对定位的收缩宽度会被 inline-block 触发器的容器块钳死
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-xl p-3 shadow-2xl">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-lg p-3 shadow-2xl">
           <div className="grid grid-cols-8 gap-1.5 mb-2.5">
             {ENTITY_PALETTE.map((c) => (
               <button
@@ -859,7 +859,7 @@ export function Panel({
 }) {
   return (
     <div
-      className={cn(strong ? "glass-strong" : "glass", "rounded-xl", className)}
+      className={cn(strong ? "glass-strong" : "glass", "rounded-lg", className)}
     >
       {children}
     </div>
@@ -979,7 +979,7 @@ export function EmptyState({
 }) {
   return (
     <div className="text-center">
-      <div className="glass mx-auto mb-4 h-14 w-14 rounded-xl grid place-items-center text-title font-bold text-ink-2">
+      <div className="glass mx-auto mb-4 h-14 w-14 rounded-lg grid place-items-center text-title font-bold text-ink-2">
         {icon}
       </div>
       <div className="text-body text-ink-3 whitespace-pre-line">
@@ -1322,7 +1322,7 @@ export function ToolTower({
   return (
     <div
       className={cn(
-        "u-tower group glass-strong flex flex-col overflow-hidden rounded-xl shadow-xl",
+        "u-tower group glass-strong flex flex-col overflow-hidden rounded-lg shadow-xl",
         className,
       )}
     >

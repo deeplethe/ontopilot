@@ -57,7 +57,7 @@ export function PendingFactRow({
   const to = ym(fact.valid_to);
   const range = from || to ? `${from ?? "…"} → ${to ?? S.review.ongoing}` : null;
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       {/* 原句先出。它是人自己说的，判断的依据就是它 */}
       <p className="text-small text-ink-2 italic">“{sentence(fact.quote)}”</p>
       <div className="mt-3 flex items-center gap-2 flex-wrap">

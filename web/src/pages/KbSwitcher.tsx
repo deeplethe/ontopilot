@@ -47,7 +47,7 @@ export function KbSwitcher({
         <div
           ref={panelRef}
           // -left-2：胶囊只有 8 的内距，面板行有 16——面板左移 8，行里的图标才与胶囊的图标同一个 x
-          className="u-menu-glass absolute -left-2 top-0 z-50 w-max min-w-64 max-w-80 overflow-hidden rounded-xl shadow-2xl"
+          className="u-menu-glass absolute -left-2 top-0 z-50 w-max min-w-64 max-w-80 overflow-hidden rounded-lg shadow-2xl"
         >
           {/* 第一行是胶囊自己：同一个图标、同一个名字，箭头翻上去；再点一下缩回 */}
           <div

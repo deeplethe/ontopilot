@@ -649,7 +649,7 @@ function DockedPanel({
     <div
       // 与图谱页的实体面板同一副壳：同宽（w-96）、同一个顶部起点（给顶上那排
       // 药丸让位），同一个头部解剖。两页并排看是同一件东西
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-xl shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-lg shadow-2xl flex flex-col`}
     >
       <div className="shrink-0 flex items-start justify-between gap-2 px-4 py-4 border-b border-line">
         <div className="min-w-0">{header}</div>
@@ -2111,7 +2111,7 @@ function RefinePanel({
               : S.ontology.refineCandidates(preview.length)}
           </p>
           {preview.map((s) => (
-            <div key={s.entity_id} className="glass rounded-xl p-3">
+            <div key={s.entity_id} className="glass rounded-lg p-3">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-body text-ink">{s.name}</span>
                 <span className="text-fine text-ink-3">
@@ -2177,7 +2177,7 @@ function RefinePanel({
                 {S.ontology.refineForReview(outcome.for_review.length)}
               </p>
               {outcome.for_review.map((r) => (
-                <div key={r.entity_id} className="glass rounded-xl p-3">
+                <div key={r.entity_id} className="glass rounded-lg p-3">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-body text-ink">{r.name}</span>
                     <span className="text-fine text-ink-3">
@@ -2227,7 +2227,7 @@ function RefinePanel({
                 {S.ontology.refineLeftAlone(outcome.left_alone.length)}
               </p>
               {outcome.left_alone.map((d, i) => (
-                <div key={i} className="glass rounded-xl px-3 py-2">
+                <div key={i} className="glass rounded-lg px-3 py-2">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-body text-ink">
                       {d.name}
@@ -2791,7 +2791,7 @@ function MissesPanel({
           {misses.map((m) => (
             <span
               key={`${m.kind}:${m.key}`}
-              className="glass rounded-full px-3 py-1 text-small flex items-center gap-2"
+              className="glass rounded-lg px-3 py-1 text-small flex items-center gap-2"
               title={m.example ?? ""}
             >
               <Chip tone={m.kind === "entity_type" ? "info" : "violet"}>
@@ -2830,7 +2830,7 @@ function MissesPanel({
                 {dismissedMisses.map((m) => (
                   <span
                     key={`d:${m.kind}:${m.key}`}
-                    className="glass rounded-full px-3 py-1 text-small flex items-center gap-2 opacity-60"
+                    className="glass rounded-lg px-3 py-1 text-small flex items-center gap-2 opacity-60"
                     title={m.example ?? ""}
                   >
                     <Chip tone={m.kind === "entity_type" ? "info" : "violet"}>

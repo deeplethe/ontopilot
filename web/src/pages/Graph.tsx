@@ -1381,7 +1381,7 @@ export function Graph() {
               {legendPop.open && (
                 <div
                   ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-xl p-2 shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-lg p-2 shadow-2xl"
                 >
                   {/* 面板盖在 chip 原位，所以**第一行就长成那个 chip 的样子**，
                       点它收回去——「哪儿展开的就从哪儿收回去」，
@@ -1932,7 +1932,7 @@ function TimeScrubber({
        仍夹在视口内（calc 那一项），窄屏不会顶出去。
        实测宽度：年 320 / 月 648 / 日 760。 */
     <div
-      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-xl px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
+      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-lg px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
       style={{ width: `min(${trackW}px, calc(100vw - 4rem))` }}
     >
       <IconButton
@@ -2171,11 +2171,11 @@ function DerivedPanel({
     : null;
 
   // **盖在触发器原位往右上长开**（bottom-0 left-0），而不是在旁边挂一扇窗。
-  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-xl
+  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-lg
   return (
     <div
       ref={panelRef}
-      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-xl px-3 pb-3 pt-3 shadow-2xl"
+      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-lg px-3 pb-3 pt-3 shadow-2xl"
     >
       {/* items-center 而不是 baseline：标题旁边站着一个按钮和一个关闭键，
           按基线对齐会让那两个看着往上飘 */}
@@ -2273,7 +2273,7 @@ function DerivedPanel({
 /** 推出来的一条边。**行式样与 FactRow 对齐**：同样的圆角行、同样的
  *  chevron 展开、同样的 role="link" 跳转（避免按钮套按钮）。
  *
- *  从前这里是一张 `glass rounded-xl p-3` 卡片、证明常驻展开——在一列
+ *  从前这里是一张 `glass rounded-lg p-3` 卡片、证明常驻展开——在一列
  *  Relations/Timeline/History 的紧凑行里显得是另一个产品的东西，而且十几条
  *  推导堆起来是一面墙。证明是「问了才看」的东西，收进展开区正合适。 */
 function DerivedRow({
@@ -2772,7 +2772,7 @@ function EntityPanel({
 
   return (
     <div
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-xl shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-lg shadow-2xl flex flex-col`}
     >
       <div className="flex items-start justify-between px-4 py-4 border-b border-line">
         <div>

@@ -86,7 +86,7 @@ function IssuedPanel({
   const kb = kbs.find((k) => k.id === kbId);
   const snippet = kb ? mcpSnippet(kb.id, kb.name, token) : "";
   return (
-    <div className="glass rounded-xl p-6 mb-4 border border-warn/40">
+    <div className="glass rounded-lg p-6 mb-4 border border-warn/40">
       <div className="text-body font-medium text-ink">{S.account.issuedTitle}</div>
       <p className="mt-1 text-small text-ink-3">{S.account.issuedHint}</p>
       <div className="mt-3 flex items-center gap-2">
@@ -151,7 +151,7 @@ function TokenRow({
     ? t.kb_ids.map(kbName).join(" · ")
     : S.account.allBases;
   return (
-    <div className={`glass rounded-xl px-4 py-3 ${revoked ? "opacity-55" : ""}`}>
+    <div className={`glass rounded-lg px-4 py-3 ${revoked ? "opacity-55" : ""}`}>
       <div className="flex items-center gap-2 flex-wrap">
         <KeyRound size={13} className="text-ink-3 shrink-0" />
         <span className="text-body font-medium text-ink">{t.name}</span>
@@ -264,7 +264,7 @@ export function Tokens() {
         />
       )}
 
-      <div className="glass rounded-xl p-6 mb-6">
+      <div className="glass rounded-lg p-6 mb-6">
         <div className="max-w-xl">
           <h2 className="text-body font-medium text-ink mb-4">{S.account.newToken}</h2>
           {field(
@@ -341,7 +341,7 @@ export function Tokens() {
 
       <h2 className="text-body font-medium text-ink mb-3">{S.account.yourTokens}</h2>
       {rows.length === 0 ? (
-        <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+        <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
           {S.account.noTokens}
         </div>
       ) : (

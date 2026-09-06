@@ -180,7 +180,7 @@ function Panel({ panelRef }: { panelRef: Ref<HTMLDivElement> }) {
     // top-0 而不是 top-9：面板要从铃铛**原位**长出来，右上角对齐
     <div
       ref={panelRef}
-      className="u-menu-glass absolute right-0 top-0 w-[420px] rounded-xl shadow-2xl z-50 overflow-hidden"
+      className="u-menu-glass absolute right-0 top-0 w-[420px] rounded-lg shadow-2xl z-50 overflow-hidden"
     >
       <div className="flex items-center gap-2 pl-4 pr-8 py-3 border-b border-line">
         <span className="text-body font-medium text-ink">

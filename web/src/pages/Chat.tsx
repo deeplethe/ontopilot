@@ -411,7 +411,7 @@ export function Chat() {
               />
             </Button>
             {scopeOpen && (
-              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-xl shadow-2xl overflow-hidden">
+              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-lg shadow-2xl overflow-hidden">
                 <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
                   {S.ask.scopeLabel}
                 </div>
@@ -724,7 +724,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   if (turn.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="u-bubble-user max-w-[85%] rounded-xl rounded-tr-sm px-4 py-2 text-body whitespace-pre-wrap text-ink">
+        <div className="u-bubble-user max-w-[85%] rounded-lg px-4 py-2 text-body whitespace-pre-wrap text-ink">
           {turn.content}
         </div>
       </div>

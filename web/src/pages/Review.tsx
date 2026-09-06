@@ -124,7 +124,7 @@ function DuplicateCard({
   const reasonCode = item.reason?.split("|", 1)[0];
 
   return (
-    <div className={cn("glass rounded-xl p-4", picked && "u-picked")}>
+    <div className={cn("glass rounded-lg p-4", picked && "u-picked")}>
       <div className="flex gap-4">
         <Checkbox
           className="shrink-0 self-start"
@@ -204,7 +204,7 @@ function FactRow({
 }) {
   const range = dateRange(fact.valid_from, fact.valid_to);
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">
           {fact.subject_name}
@@ -275,7 +275,7 @@ function ConflictRow({
   const closeAtIso = closeParsed?.iso;
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">{c.old_subject}</span>
         <span className="text-small text-ink-3">
@@ -357,7 +357,7 @@ function UnconfirmedRow({
   const range = dateRange(fact.valid_from, fact.valid_to);
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-lg p-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">
           {fact.subject_name}
@@ -424,7 +424,7 @@ function MergeRow({
   onRevert: () => void;
 }) {
   return (
-    <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
+    <div className="glass rounded-lg px-4 py-3 flex items-center gap-3">
       <div className="min-w-0 flex-1">
         <div className="text-body text-ink-2 truncate">
           <span className="text-ink-3">{merge.source_name}</span>
@@ -500,7 +500,7 @@ function AgentRow({
   const trace = d.trace ?? [];
   const hasDetail = precedents.length > 0 || trace.length > 0;
   return (
-    <div className="glass rounded-xl px-4 py-3">
+    <div className="glass rounded-lg px-4 py-3">
       <div className="flex items-center gap-3">
         <Chip tone={AGENT_ACTION_TONE[d.action]}>{S.review.agentActions[d.action]}</Chip>
         <span className="text-body text-ink-2 truncate min-w-0">
@@ -613,7 +613,7 @@ function DecisionRow({ e }: { e: ReviewHistoryEvent }) {
   else text = `${d.source} → ${d.target}`;
 
   return (
-    <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
+    <div className="glass rounded-lg px-4 py-3 flex items-center gap-3">
       <Chip tone={DECISION_TONE[e.action] ?? "neutral"}>
         {S.review.decisionActions[e.action] ?? e.action}
       </Chip>
@@ -668,7 +668,7 @@ function DefectRow({
   const unsatisfiable =
     d.kind === "disjoint_with_ancestor" || d.kind === "inherits_disjoint";
   return (
-    <div className="glass rounded-xl p-3">
+    <div className="glass rounded-lg p-3">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-danger">{what}</span>
         {d.subject_label && (
@@ -766,7 +766,7 @@ function ViolationRow({
             { id: v.right_fact, text: v.right_text },
           ];
   return (
-    <div className="glass rounded-xl p-3">
+    <div className="glass rounded-lg p-3">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-warn">{what}</span>
         {v.predicate && (
@@ -852,7 +852,7 @@ function ContradictionRow({
           ? S.review.hintUnsure
           : S.review.hintReadBoth;
   return (
-    <div className="glass rounded-xl p-3 border border-[color-mix(in_srgb,var(--u-contest)_35%,transparent)]">
+    <div className="glass rounded-lg p-3 border border-[color-mix(in_srgb,var(--u-contest)_35%,transparent)]">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-contest">{what}</span>
         {v.predicate && (
@@ -1385,7 +1385,7 @@ export function Review() {
                 active !== "violations" &&
                 active !== "defects" &&
                 counts[active] === 0 && (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {queueEmpty ? S.review.empty : S.review.categoryEmpty}
                   </div>
                 )}
@@ -1479,7 +1479,7 @@ export function Review() {
                     )}
                   </div>
                   {asDuplicates().length === 0 && (
-                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                       {S.review.typesEmpty}
                     </div>
                   )}
@@ -1600,7 +1600,7 @@ export function Review() {
               {active === "defects" && (
                 <div className="space-y-3">
                   {counts.defects === 0 && (
-                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                       {S.review.categoryEmpty}
                     </div>
                   )}
@@ -1652,7 +1652,7 @@ export function Review() {
                     )}
                   </div>
                   {counts.violations === 0 && !runCheck.data && (
-                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                       {S.review.checkNeverRun}
                     </div>
                   )}
@@ -1661,7 +1661,7 @@ export function Review() {
                       key={v.id}
                       className={
                         v.id === search.item
-                          ? "rounded-xl ring-1 ring-contest"
+                          ? "rounded-lg ring-1 ring-contest"
                           : undefined
                       }
                     >
@@ -1684,7 +1684,7 @@ export function Review() {
 
               {active === "agent" &&
                 ((c?.agent_rows ?? 0) === 0 ? (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {S.review.agentEmpty}
                     {!kb?.governance && (
                       <>
@@ -1715,7 +1715,7 @@ export function Review() {
 
               {active === "merges" &&
                 (counts.merges === 0 ? (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {S.review.historyEmpty}
                   </div>
                 ) : (
@@ -1735,7 +1735,7 @@ export function Review() {
                 (history.isPending ? (
                   <p className="text-body text-ink-3">{S.nav.loading}</p>
                 ) : (history.data?.total ?? 0) === 0 ? (
-                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
                     {S.review.decisionsEmpty}
                   </div>
                 ) : (

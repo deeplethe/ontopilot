@@ -74,7 +74,7 @@ export function UserMenu({ user }: { user: User }) {
       {open && (
         <div
           ref={panelRef}
-          className="u-menu-glass absolute right-0 top-0 w-64 rounded-xl shadow-2xl z-50 overflow-hidden"
+          className="u-menu-glass absolute right-0 top-0 w-64 rounded-lg shadow-2xl z-50 overflow-hidden"
         >
           {/* 身份头：再点一下缩回胶囊 */}
           <div
