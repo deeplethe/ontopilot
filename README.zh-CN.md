@@ -81,6 +81,8 @@ docker compose --profile app up -d
 
 打开 http://localhost:1516 注册 —— 第一个账户自动成为管理员，同时系统会创建所有人可读的公共知识库。抽取业务文档前，请先在「管理 → 模型」里配置模型端点（chat 与 embedding）。
 
+数据库口令（`.env` 里的 `UTOPIA_DB_PASSWORD`，默认 `utopia`）在数据卷首次初始化时写入。已经跑起来的部署要改口令，得同时改库里那份——`docker compose exec db psql -U utopia -c "ALTER USER utopia PASSWORD '<新口令>'"`——或者 `docker compose --profile app down -v` 从头来过（会删掉全部数据）。
+
 或者从源码构建：
 
 ```bash

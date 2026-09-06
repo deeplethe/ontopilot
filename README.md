@@ -80,6 +80,8 @@ docker compose --profile app up -d
 
 Open http://localhost:1516 and register. The first account automatically becomes the administrator, and a public knowledge base readable by everyone is created at the same time. Before extracting business documents, configure the model endpoints (chat and embedding) under Administration → Models.
 
+The database password (`UTOPIA_DB_PASSWORD` in `.env`, default `utopia`) is applied when the data volume is first initialised. To change it on a running deployment, change it in the database as well — `docker compose exec db psql -U utopia -c "ALTER USER utopia PASSWORD '<new password>'"` — or start over with `docker compose --profile app down -v`, which deletes all data.
+
 Or build from source:
 
 ```bash

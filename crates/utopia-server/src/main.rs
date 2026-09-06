@@ -63,6 +63,23 @@ fn payload_document_id(payload: &serde_json::Value) -> anyhow::Result<Uuid> {
         .ok_or_else(|| anyhow::anyhow!("payload 缺少 document_id"))
 }
 
+/// 连库失败里最常见的一种误会，当场说清楚（#456）：compose 部署的数据库口令
+/// 只在数据卷首次初始化时生效，之后改 .env 只改了应用这一头。看日志的人
+/// 应该直接拿到那句该跑的命令，而不是来开 issue。
+fn explain_db_error(e: anyhow::Error) -> anyhow::Error {
+    if format!("{e:#}").contains("password authentication failed") {
+        e.context(
+            "The database rejected the password. In a docker compose deployment the password \
+             is set only when the data volume is first initialised, so changing UTOPIA_DB_PASSWORD \
+             later only changes what the app sends. Either set it in the database too — \
+             docker compose exec db psql -U utopia -c \"ALTER USER utopia PASSWORD '<new password>'\" \
+             — or start over with `docker compose --profile app down -v` (this deletes all data).",
+        )
+    } else {
+        e
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
@@ -80,7 +97,9 @@ async fn main() -> anyhow::Result<()> {
     let migration_url = cfg.migration_url().to_string();
     let separate_migration_role = cfg.migration_url.is_some();
     {
-        let mig_pool = utopia_store::db::connect(&migration_url, Some(2)).await?;
+        let mig_pool = utopia_store::db::connect(&migration_url, Some(2))
+            .await
+            .map_err(explain_db_error)?;
         utopia_store::db::migrate(&mig_pool).await?;
         mig_pool.close().await;
     }
@@ -90,7 +109,9 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("数据库迁移完成");
     }
 
-    let pool = utopia_store::db::connect(&cfg.database_url, cfg.db_max_connections).await?;
+    let pool = utopia_store::db::connect(&cfg.database_url, cfg.db_max_connections)
+        .await
+        .map_err(explain_db_error)?;
 
     // 凭据封印钥匙：环境变量优先，否则数据目录下的 secret.key（首次启动生成）。
     // **钥匙不进库**——库泄漏不等于凭据泄漏，是这一层的全部意义。空串按未设置处理，
