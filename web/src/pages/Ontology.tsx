@@ -845,6 +845,7 @@ function RelationshipsCard({
     // 悬停要有底色：这一行整条可点，只把文字提亮半级在深底上几乎看不出来。
     // 底色用左栏那一档（white/[0.05]），右端的类型小字跟着一起提亮
     <Row
+      className="-mx-2"
       icon={
         dir === "out" ? (
           <ArrowRight size={12} className="text-violet" />
