@@ -1,0 +1,2166 @@
+{
+  "name": "ai-timeline duplicates",
+  "corpus": "ai-timeline",
+  "docs": [
+    "removal-of-sam-altman-from-openai.txt",
+    "openai.txt",
+    "anthropic.txt",
+    "google-deepmind.txt",
+    "mistral-ai.txt",
+    "inflection-ai.txt",
+    "safe-superintelligence-inc.txt",
+    "chatgpt.txt"
+  ],
+  "match": "names",
+  "note": "Every duplicate pair the resolver raised on one governed import of the eight documents above (615 pairs, 411 distinct name pairs), labeled by hand on 2026-09-07 from each side's facts and source passages. same = one real-world thing; different = two things, including a version, a division, a subsidiary or a phrase that merely contains the name; unknown = a side with no facts and a name that settles nothing (a bare 'judge', a bare 'Time'), which no reader could decide either. Keyed by the two names, either order, case-insensitive: a pair of identical names carries the label only when every such pair in that import shared it.",
+  "counts": {
+    "different": 296,
+    "same": 110,
+    "unknown": 5
+  },
+  "pairs": [
+    {
+      "left": "$10 billion",
+      "right": "$10 billion investment",
+      "verdict": "different",
+      "why": "2025 share sale vs 2023 Microsoft investment"
+    },
+    {
+      "left": "$1 billion",
+      "right": "$1 billion investment",
+      "verdict": "different"
+    },
+    {
+      "left": "$1 billion",
+      "right": "US$1 billion",
+      "verdict": "different",
+      "why": "SSI raise vs OpenAI revenue"
+    },
+    {
+      "left": "$1 billion investment",
+      "right": "$1 billion investment in OpenAI LP",
+      "verdict": "same",
+      "why": "Microsoft's 2019 $1B investment in OpenAI LP"
+    },
+    {
+      "left": "$1 billion investment in OpenAI LP",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "$4 billion",
+      "right": "another $4 billion",
+      "verdict": "unknown",
+      "why": "the bare \"$4 billion\" has no facts"
+    },
+    {
+      "left": "$4 billion",
+      "right": "US$1.3 billion at $4 billion valuation",
+      "verdict": "different"
+    },
+    {
+      "left": "$965 billion",
+      "right": "US$965 billion",
+      "verdict": "same",
+      "why": "Anthropic's $965B valuation, May 2026"
+    },
+    {
+      "left": "100 million monthly active users",
+      "right": "users",
+      "verdict": "different"
+    },
+    {
+      "left": "2024 International Mathematical Olympiad",
+      "right": "International Mathematical Olympiad",
+      "verdict": "different",
+      "why": "one edition vs the event series"
+    },
+    {
+      "left": "2026 United States intervention in Venezuela",
+      "right": "Venezuela",
+      "verdict": "different"
+    },
+    {
+      "left": "900 million weekly active users",
+      "right": "users",
+      "verdict": "different"
+    },
+    {
+      "left": "ability to create images, using Black Forest Labs' Flux Pro model",
+      "right": "Black Forest Labs' Flux Pro model",
+      "verdict": "different"
+    },
+    {
+      "left": "ability to create images, using Black Forest Labs' Flux Pro model",
+      "right": "Labs",
+      "verdict": "different"
+    },
+    {
+      "left": "ability to use Claude for all lawful purposes",
+      "right": "Claude",
+      "verdict": "different"
+    },
+    {
+      "left": "account belonging to the perpetrator",
+      "right": "the perpetrator",
+      "verdict": "different",
+      "why": "a person vs his account"
+    },
+    {
+      "left": "a consistent pattern of [...] Lying",
+      "right": "lying",
+      "verdict": "different",
+      "why": "two allegations from different documents"
+    },
+    {
+      "left": "actions",
+      "right": "autonomously performing tasks through web browser interactions",
+      "verdict": "different"
+    },
+    {
+      "left": "acute kidney injury",
+      "right": "acute kidney injury management",
+      "verdict": "different"
+    },
+    {
+      "left": "Adam D'Angelo",
+      "right": "D'Angelo",
+      "verdict": "same",
+      "why": "D'Angelo is Adam D'Angelo"
+    },
+    {
+      "left": "a decades-long project that eventually surpasses human intelligence",
+      "right": "event",
+      "verdict": "different"
+    },
+    {
+      "left": "a dozen employees",
+      "right": "employees",
+      "verdict": "different"
+    },
+    {
+      "left": "agents",
+      "right": "develop more helpful AI agents",
+      "verdict": "different"
+    },
+    {
+      "left": "AI Mode",
+      "right": "AI models",
+      "verdict": "different"
+    },
+    {
+      "left": "AI Mode",
+      "right": "An API that gives access to various OpenAI models",
+      "verdict": "different"
+    },
+    {
+      "left": "AI Mode",
+      "right": "unreleased AI model",
+      "verdict": "different"
+    },
+    {
+      "left": "AI models",
+      "right": "An API that gives access to various OpenAI models",
+      "verdict": "different"
+    },
+    {
+      "left": "AI safety researchers",
+      "right": "safety",
+      "verdict": "different"
+    },
+    {
+      "left": "AI system",
+      "right": "AI system",
+      "verdict": "different",
+      "why": "Anthropic's constitutional-AI system vs DeepMind's Atari agent"
+    },
+    {
+      "left": "AlphaDev",
+      "right": "MuZero, AlphaStar, AlphaGeometry, FunSearch, AlphaEvolve, AlphaDev, AlphaTensor",
+      "verdict": "different",
+      "why": "a list vs one of its members"
+    },
+    {
+      "left": "AlphaFold",
+      "right": "AlphaFold2",
+      "verdict": "different",
+      "why": "a version vs the product"
+    },
+    {
+      "left": "AlphaFold",
+      "right": "AlphaFold3",
+      "verdict": "different"
+    },
+    {
+      "left": "AlphaFold",
+      "right": "AlphaFold's achievement",
+      "verdict": "different"
+    },
+    {
+      "left": "AlphaGo",
+      "right": "AlphaGo Zero",
+      "verdict": "different",
+      "why": "AlphaGo Zero is its own program"
+    },
+    {
+      "left": "AlphaStar",
+      "right": "MuZero, AlphaStar, AlphaGeometry, FunSearch, AlphaEvolve, AlphaDev, AlphaTensor",
+      "verdict": "different"
+    },
+    {
+      "left": "Altimeter",
+      "right": "Altimeter Capital",
+      "verdict": "same",
+      "why": "Altimeter is Altimeter Capital"
+    },
+    {
+      "left": "Altimeter",
+      "right": "Time",
+      "verdict": "different"
+    },
+    {
+      "left": "Altimeter Capital",
+      "right": "Time",
+      "verdict": "different"
+    },
+    {
+      "left": "Altman and Brockman",
+      "right": "Brockman",
+      "verdict": "different"
+    },
+    {
+      "left": "Altman intended to return to OpenAI with support from Sutskever",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "Amazon",
+      "right": "Amazon",
+      "verdict": "same",
+      "why": "Amazon the company in both"
+    },
+    {
+      "left": "Amazon",
+      "right": "Amazon Web Services",
+      "verdict": "different",
+      "why": "AWS is a subsidiary"
+    },
+    {
+      "left": "Amazon",
+      "right": "Amazon Web Services (AWS)",
+      "verdict": "different"
+    },
+    {
+      "left": "Amazon Web Services",
+      "right": "Amazon Web Services",
+      "verdict": "same"
+    },
+    {
+      "left": "Amazon Web Services",
+      "right": "Amazon Web Services (AWS)",
+      "verdict": "same",
+      "why": "AWS with and without the acronym"
+    },
+    {
+      "left": "AMD",
+      "right": "AMD",
+      "verdict": "same"
+    },
+    {
+      "left": "AMD Instinct MI450 GPUs",
+      "right": "MI450",
+      "verdict": "same",
+      "why": "MI450 is the AMD Instinct MI450"
+    },
+    {
+      "left": "American artificial intelligence (AI) public benefit corporation",
+      "right": "public benefit corporation",
+      "verdict": "different",
+      "why": "the corporate form vs OpenAI itself"
+    },
+    {
+      "left": "Android",
+      "right": "iOS and Android mobile devices",
+      "verdict": "different"
+    },
+    {
+      "left": "Android team at Google",
+      "right": "Google",
+      "verdict": "different"
+    },
+    {
+      "left": "Anduril",
+      "right": "Anduril Industries",
+      "verdict": "same",
+      "why": "Anduril is Anduril Industries"
+    },
+    {
+      "left": "Anthropic",
+      "right": "Anthropic",
+      "verdict": "same"
+    },
+    {
+      "left": "Anthropic",
+      "right": "Anthropic Institute",
+      "verdict": "different",
+      "why": "the institute is a subsidiary"
+    },
+    {
+      "left": "Anthropic",
+      "right": "Anthropic lease",
+      "verdict": "different"
+    },
+    {
+      "left": "APEC United States 2023",
+      "right": "United States",
+      "verdict": "different"
+    },
+    {
+      "left": "API",
+      "right": "API",
+      "verdict": "same",
+      "why": "OpenAI's API in both"
+    },
+    {
+      "left": "Apple",
+      "right": "Apple",
+      "verdict": "same"
+    },
+    {
+      "left": "Apple",
+      "right": "Apple Inc.",
+      "verdict": "same",
+      "why": "Apple is Apple Inc."
+    },
+    {
+      "left": "Apple",
+      "right": "Apple's terms of service",
+      "verdict": "different"
+    },
+    {
+      "left": "Arizona State University",
+      "right": "Arizona State University",
+      "verdict": "same"
+    },
+    {
+      "left": "artificial general intelligence (AGI)",
+      "right": "ensuring that artificial general intelligence (AGI) \"benefits all of humanity\"",
+      "verdict": "different"
+    },
+    {
+      "left": "Atari 2600 games",
+      "right": "Go, chess, shogi, and Atari 2600 games",
+      "verdict": "different"
+    },
+    {
+      "left": "attorneys general of California and Delaware",
+      "right": "California",
+      "verdict": "different"
+    },
+    {
+      "left": "attorneys general of California and Delaware",
+      "right": "Delaware",
+      "verdict": "different"
+    },
+    {
+      "left": "authors",
+      "right": "authors and media companies",
+      "verdict": "different"
+    },
+    {
+      "left": "authors",
+      "right": "authors and publishers",
+      "verdict": "different"
+    },
+    {
+      "left": "authors",
+      "right": "Authors Guild",
+      "verdict": "different"
+    },
+    {
+      "left": "authors",
+      "right": "The Authors Guild",
+      "verdict": "different"
+    },
+    {
+      "left": "autonomous cyberattack",
+      "right": "cyberattack",
+      "verdict": "same",
+      "why": "the 2026-07 autonomous cyberattack by OpenAI agents"
+    },
+    {
+      "left": "Axios",
+      "right": "Axios",
+      "verdict": "same"
+    },
+    {
+      "left": "Bard",
+      "right": "Bard",
+      "verdict": "same",
+      "why": "Bard, later Gemini"
+    },
+    {
+      "left": "board members",
+      "right": "board members of staging a coup",
+      "verdict": "different",
+      "why": "a garbled phrase vs the board members"
+    },
+    {
+      "left": "Books1",
+      "right": "Books1 and Books2 contained over 100,000 copyrighted books",
+      "verdict": "different"
+    },
+    {
+      "left": "Books1 and Books2 contained over 100,000 copyrighted books",
+      "right": "Books2",
+      "verdict": "different"
+    },
+    {
+      "left": "bots",
+      "right": "Dota 2 bots",
+      "verdict": "different"
+    },
+    {
+      "left": "Breakout",
+      "right": "Breakout",
+      "verdict": "same"
+    },
+    {
+      "left": "Bret Taylor",
+      "right": "Taylor",
+      "verdict": "same",
+      "why": "Taylor is Bret Taylor"
+    },
+    {
+      "left": "Brian Chesky",
+      "right": "Chesky",
+      "verdict": "same",
+      "why": "Chesky is Brian Chesky"
+    },
+    {
+      "left": "Broadcom",
+      "right": "Broadcom",
+      "verdict": "same"
+    },
+    {
+      "left": "Brockman",
+      "right": "Greg Brockman",
+      "verdict": "same",
+      "why": "Brockman is Greg Brockman"
+    },
+    {
+      "left": "California",
+      "right": "Palo Alto, California",
+      "verdict": "different"
+    },
+    {
+      "left": "California",
+      "right": "San Francisco, California",
+      "verdict": "different"
+    },
+    {
+      "left": "candidate high-probability moves",
+      "right": "high",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT",
+      "verdict": "same",
+      "why": "ChatGPT under two types"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT agent",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT Android app",
+      "verdict": "different",
+      "why": "an app vs the product"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT Atlas",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT iOS app",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT played a role in enabling a prolonged stalking campaign against her",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT Plus",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT Pro",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT Search",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT update",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT Windows app",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "ChatGPT Work",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "custom ChatGPT instances",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "dedicated task force on ChatGPT",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "feature of ChatGPT Plus",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "increased use of ChatGPT for China-origin influence operations",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "new sign-ups for ChatGPT Plus",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "non-work tasks account for more than 72 percent of all ChatGPT usage",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "study on how people use ChatGPT for everyday tasks",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT",
+      "right": "the risks of using ChatGPT for therapy",
+      "verdict": "different"
+    },
+    {
+      "left": "ChatGPT Atlas",
+      "right": "ChatGPT Atlas",
+      "verdict": "same"
+    },
+    {
+      "left": "ChatGPT Enterprise",
+      "right": "ChatGPT Enterprise",
+      "verdict": "same"
+    },
+    {
+      "left": "ChatGPT iOS app",
+      "right": "iOS app",
+      "verdict": "different",
+      "why": "Claude's iOS app vs ChatGPT's"
+    },
+    {
+      "left": "ChatGPT Plus",
+      "right": "ChatGPT Plus",
+      "verdict": "same"
+    },
+    {
+      "left": "chess",
+      "right": "Go, chess, shogi, and Atari 2600 games",
+      "verdict": "different"
+    },
+    {
+      "left": "Chinese government",
+      "right": "Chinese government",
+      "verdict": "same"
+    },
+    {
+      "left": "class action lawsuit",
+      "right": "lawsuit",
+      "verdict": "unknown",
+      "why": "\"lawsuit\" is a catch-all with three suits behind it"
+    },
+    {
+      "left": "class-action lawsuit",
+      "right": "lawsuit",
+      "verdict": "different",
+      "why": "the stalking suit against OpenAI vs the authors' class action against Anthropic"
+    },
+    {
+      "left": "class action lawsuit against OpenAI",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude",
+      "verdict": "same",
+      "why": "Claude the LLM under two types"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 2",
+      "verdict": "different",
+      "why": "a version vs the model line"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 3.5 Sonnet",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 3 Haiku",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 3 Opus",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 3 Sonnet",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 4",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 4 Opus",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude 4 Sonnet",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude Code",
+      "verdict": "different",
+      "why": "a product built on Claude"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude Fable 5 and Mythos 5",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude Gov",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude Instant",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude Mythos",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude Mythos 5",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude Opus 4.6",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude",
+      "right": "Claude series of large language models",
+      "verdict": "same",
+      "why": "the Claude series is the LLM Claude"
+    },
+    {
+      "left": "Claude 2",
+      "right": "Claude 2",
+      "verdict": "same"
+    },
+    {
+      "left": "Claude 3 Haiku",
+      "right": "Haiku",
+      "verdict": "different",
+      "why": "one model vs the tier"
+    },
+    {
+      "left": "Claude 4",
+      "right": "Claude 4 Opus",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude 4",
+      "right": "Claude 4 Sonnet",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude Fable 5 and Mythos 5",
+      "right": "Fable",
+      "verdict": "different"
+    },
+    {
+      "left": "Claude Fable 5 and Mythos 5",
+      "right": "Fable 5",
+      "verdict": "different",
+      "why": "two models vs one"
+    },
+    {
+      "left": "Claude Mythos",
+      "right": "Claude Mythos 5",
+      "verdict": "same",
+      "why": "Claude Mythos 5 is the Mythos model announced in April 2026"
+    },
+    {
+      "left": "Codeforces",
+      "right": "GitHub data and Codeforces problems and solutions",
+      "verdict": "different"
+    },
+    {
+      "left": "collaboration with the People's Republic of China",
+      "right": "People's Republic of China",
+      "verdict": "different"
+    },
+    {
+      "left": "companies using OpenAI",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "competitiveness and safety concerns",
+      "right": "safety",
+      "verdict": "different"
+    },
+    {
+      "left": "concerns about AI safety and existential risk from artificial general intelligence",
+      "right": "safety",
+      "verdict": "different"
+    },
+    {
+      "left": "consortium of investors led by Elon Musk",
+      "right": "investors",
+      "verdict": "different"
+    },
+    {
+      "left": "constitution",
+      "right": "Constitutional AI",
+      "verdict": "different",
+      "why": "the framework vs the document"
+    },
+    {
+      "left": "Copilot",
+      "right": "Copilot Studio",
+      "verdict": "different"
+    },
+    {
+      "left": "Copilot",
+      "right": "Microsoft Copilot",
+      "verdict": "same",
+      "why": "Copilot is Microsoft Copilot"
+    },
+    {
+      "left": "copyright infringement",
+      "right": "copyright infringement lawsuit",
+      "verdict": "different"
+    },
+    {
+      "left": "copyright infringement",
+      "right": "lawsuit for copyright infringement",
+      "verdict": "different"
+    },
+    {
+      "left": "copyright infringement lawsuit",
+      "right": "lawsuit",
+      "verdict": "different"
+    },
+    {
+      "left": "critical thinking",
+      "right": "Thinking",
+      "verdict": "different"
+    },
+    {
+      "left": "C++ Standard Library sorting algorithms",
+      "right": "sorting algorithm",
+      "verdict": "different"
+    },
+    {
+      "left": "Dario Amodei",
+      "right": "Dario Amodei",
+      "verdict": "same"
+    },
+    {
+      "left": "Data Protection Act",
+      "right": "Royal Free hospital failed to comply with the Data Protection Act",
+      "verdict": "different"
+    },
+    {
+      "left": "data-sharing agreement between DeepMind and the Royal Free",
+      "right": "DeepMind",
+      "verdict": "different"
+    },
+    {
+      "left": "DeepMind",
+      "right": "DeepMind",
+      "verdict": "same"
+    },
+    {
+      "left": "DeepMind",
+      "right": "DeepMind Ethics and Society",
+      "verdict": "different"
+    },
+    {
+      "left": "DeepMind",
+      "right": "DeepMind Ethics & Society",
+      "verdict": "different"
+    },
+    {
+      "left": "DeepMind",
+      "right": "DeepMind Health",
+      "verdict": "different",
+      "why": "a division"
+    },
+    {
+      "left": "DeepMind",
+      "right": "DeepMind Health data sharing",
+      "verdict": "different"
+    },
+    {
+      "left": "DeepMind",
+      "right": "DeepMind Professors of machine learning",
+      "verdict": "different"
+    },
+    {
+      "left": "DeepMind",
+      "right": "DeepMind's initial algorithms",
+      "verdict": "different"
+    },
+    {
+      "left": "DeepMind",
+      "right": "Google DeepMind",
+      "verdict": "same",
+      "why": "DeepMind became Google DeepMind"
+    },
+    {
+      "left": "DeepMind Health",
+      "right": "DeepMind Health data sharing",
+      "verdict": "different"
+    },
+    {
+      "left": "deep reinforcement learning",
+      "right": "reinforcement learning",
+      "verdict": "different",
+      "why": "deep RL is a sub-technique"
+    },
+    {
+      "left": "Deep Research",
+      "right": "deep research agent",
+      "verdict": "same",
+      "why": "Deep Research is the deep research agent"
+    },
+    {
+      "left": "Delaware",
+      "right": "Delaware",
+      "verdict": "same"
+    },
+    {
+      "left": "Department of Defense",
+      "right": "Department of Defense (DoD)",
+      "verdict": "same"
+    },
+    {
+      "left": "Department of Defense",
+      "right": "United States Department of Defense",
+      "verdict": "same"
+    },
+    {
+      "left": "Department of Defense",
+      "right": "United States Department of Defense (DoD)",
+      "verdict": "same"
+    },
+    {
+      "left": "Department of Defense",
+      "right": "US Department of Defense",
+      "verdict": "same"
+    },
+    {
+      "left": "Department of Defense (DoD)",
+      "right": "United States Department of Defense (DoD)",
+      "verdict": "same"
+    },
+    {
+      "left": "DevDay event",
+      "right": "event",
+      "verdict": "different"
+    },
+    {
+      "left": "DGX-1 supercomputer",
+      "right": "supercomputer",
+      "verdict": "different",
+      "why": "Microsoft's supercomputer vs Nvidia's DGX-1"
+    },
+    {
+      "left": "DolphinGemma",
+      "right": "Gemma",
+      "verdict": "different"
+    },
+    {
+      "left": "domestic surveillance",
+      "right": "drop restrictions against mass domestic surveillance and fully autonomous weapons",
+      "verdict": "different"
+    },
+    {
+      "left": "Donald Trump",
+      "right": "President Donald Trump",
+      "verdict": "same"
+    },
+    {
+      "left": "drop restrictions against mass domestic surveillance and fully autonomous weapons",
+      "right": "fully autonomous weapons",
+      "verdict": "different"
+    },
+    {
+      "left": "education",
+      "right": "medical education",
+      "verdict": "different"
+    },
+    {
+      "left": "efforts",
+      "right": "Sam Altman's efforts",
+      "verdict": "different"
+    },
+    {
+      "left": "Emmett Shear",
+      "right": "Shear",
+      "verdict": "same",
+      "why": "Shear is Emmett Shear"
+    },
+    {
+      "left": "employees",
+      "right": "employees and other investors",
+      "verdict": "different"
+    },
+    {
+      "left": "employees",
+      "right": "first 52 employees",
+      "verdict": "different"
+    },
+    {
+      "left": "employees",
+      "right": "former employees",
+      "verdict": "different"
+    },
+    {
+      "left": "employees",
+      "right": "former employees from the agreement",
+      "verdict": "different"
+    },
+    {
+      "left": "employees",
+      "right": "many employees",
+      "verdict": "different"
+    },
+    {
+      "left": "employees",
+      "right": "some employees",
+      "verdict": "different"
+    },
+    {
+      "left": "employees and other investors",
+      "right": "investors",
+      "verdict": "different"
+    },
+    {
+      "left": "English",
+      "right": "Japanese to English",
+      "verdict": "different"
+    },
+    {
+      "left": "Eric Schmidt",
+      "right": "Eric Schmidt",
+      "verdict": "same"
+    },
+    {
+      "left": "ethics",
+      "right": "the ethics of its development",
+      "verdict": "different"
+    },
+    {
+      "left": "European General Data Protection Regulation",
+      "right": "violating the European General Data Protection Regulation",
+      "verdict": "different"
+    },
+    {
+      "left": "European Union",
+      "right": "European Union",
+      "verdict": "same"
+    },
+    {
+      "left": "European Union",
+      "right": "European Union documents",
+      "verdict": "different"
+    },
+    {
+      "left": "European Union",
+      "right": "push by the European Union and its member governments towards digital sovereignty",
+      "verdict": "different"
+    },
+    {
+      "left": "event",
+      "right": "prevent further misuse",
+      "verdict": "different"
+    },
+    {
+      "left": "event",
+      "right": "prevent harmful image generation",
+      "verdict": "different"
+    },
+    {
+      "left": "event",
+      "right": "prevent sexual abuse and violence",
+      "verdict": "different"
+    },
+    {
+      "left": "event",
+      "right": "recent events",
+      "verdict": "different"
+    },
+    {
+      "left": "existing investors",
+      "right": "investors",
+      "verdict": "different"
+    },
+    {
+      "left": "ExploitGym",
+      "right": "ExploitGym scorer",
+      "verdict": "different"
+    },
+    {
+      "left": "Facebook",
+      "right": "Facebook",
+      "verdict": "same"
+    },
+    {
+      "left": "federal judge",
+      "right": "judge",
+      "verdict": "unknown",
+      "why": "the bare \"judge\" has no context"
+    },
+    {
+      "left": "Federal Trade Commission",
+      "right": "US Federal Trade Commission (FTC)",
+      "verdict": "same"
+    },
+    {
+      "left": "Financial Times",
+      "right": "Time",
+      "verdict": "different",
+      "why": "Time vs the Financial Times"
+    },
+    {
+      "left": "Flow",
+      "right": "Stack Overflow",
+      "verdict": "different"
+    },
+    {
+      "left": "focus on safely developing a superintelligence",
+      "right": "superintelligence",
+      "verdict": "different"
+    },
+    {
+      "left": "former employees",
+      "right": "former employees from the agreement",
+      "verdict": "different"
+    },
+    {
+      "left": "France",
+      "right": "France",
+      "verdict": "same"
+    },
+    {
+      "left": "France",
+      "right": "France's National Assembly",
+      "verdict": "different"
+    },
+    {
+      "left": "free users",
+      "right": "users",
+      "verdict": "different"
+    },
+    {
+      "left": "fully autonomous weapons",
+      "right": "legally binding prohibitions on domestic mass surveillance or fully autonomous weapons",
+      "verdict": "different"
+    },
+    {
+      "left": "FunSearch",
+      "right": "MuZero, AlphaStar, AlphaGeometry, FunSearch, AlphaEvolve, AlphaDev, AlphaTensor",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini",
+      "right": "Gemini 2.0 Flash",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini",
+      "right": "Gemini 2.5",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini",
+      "right": "Gemini 3 Pro",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini",
+      "right": "Gemini Robotics",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini",
+      "right": "Gemini Robotics 1.5",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini",
+      "right": "Gemini Robotics-ER",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini",
+      "right": "Gemini Robotics ER-1.6",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini Robotics",
+      "right": "Gemini Robotics 1.5",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini Robotics",
+      "right": "Gemini Robotics-ER",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemini Robotics",
+      "right": "Gemini Robotics ER-1.6",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemma",
+      "right": "Gemma 2",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemma",
+      "right": "Gemma 3",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemma",
+      "right": "PaliGemma 2",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemma",
+      "right": "PaliGemma 2 Mix",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemma",
+      "right": "TxGemma",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemma 2",
+      "right": "PaliGemma 2",
+      "verdict": "different"
+    },
+    {
+      "left": "Gemma 2",
+      "right": "PaliGemma 2 Mix",
+      "verdict": "different"
+    },
+    {
+      "left": "Genie",
+      "right": "Genie 2",
+      "verdict": "different"
+    },
+    {
+      "left": "Genie",
+      "right": "Genie 3",
+      "verdict": "different"
+    },
+    {
+      "left": "geometry problems",
+      "right": "METR",
+      "verdict": "different"
+    },
+    {
+      "left": "GitHub",
+      "right": "GitHub data and Codeforces problems and solutions",
+      "verdict": "different"
+    },
+    {
+      "left": "Go, chess, shogi, and Atari 2600 games",
+      "right": "shogi",
+      "verdict": "different"
+    },
+    {
+      "left": "Google",
+      "right": "Google",
+      "verdict": "same"
+    },
+    {
+      "left": "Google",
+      "right": "Google AI's Google Brain division",
+      "verdict": "different"
+    },
+    {
+      "left": "Google",
+      "right": "Google Cloud",
+      "verdict": "different",
+      "why": "Google Cloud is a division"
+    },
+    {
+      "left": "Google",
+      "right": "Google DeepMind",
+      "verdict": "different"
+    },
+    {
+      "left": "Google",
+      "right": "Google Play's personalized app recommendations",
+      "verdict": "different"
+    },
+    {
+      "left": "Google",
+      "right": "Google Search",
+      "verdict": "different"
+    },
+    {
+      "left": "Google",
+      "right": "Google services or projects",
+      "verdict": "different"
+    },
+    {
+      "left": "Google",
+      "right": "Google TPUs",
+      "verdict": "different"
+    },
+    {
+      "left": "Google",
+      "right": "users to make specific chats discoverable through search engines like Google",
+      "verdict": "different"
+    },
+    {
+      "left": "Google DeepMind",
+      "right": "Google DeepMind",
+      "verdict": "same"
+    },
+    {
+      "left": "GPT-3",
+      "right": "GPT-3.5",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-3",
+      "right": "training of GPT-3",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-4",
+      "right": "GPT-4",
+      "verdict": "same",
+      "why": "GPT-4 under two types"
+    },
+    {
+      "left": "GPT-4",
+      "right": "GPT-4.5",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-4",
+      "right": "GPT-4 answered 44% of prompts asking for copyrighted text",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-4",
+      "right": "GPT-4o",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-4",
+      "right": "GPT-4 Turbo platform",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-4 answered 44% of prompts asking for copyrighted text",
+      "right": "prompts",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-4 answered 44% of prompts asking for copyrighted text",
+      "right": "prompts asking for copyrighted text",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT-5 mini",
+      "right": "mini",
+      "verdict": "different",
+      "why": "the generic mini tier vs one model"
+    },
+    {
+      "left": "GPT-5 nano",
+      "right": "nano",
+      "verdict": "different"
+    },
+    {
+      "left": "GPT Image",
+      "right": "images generated by GPT Image",
+      "verdict": "different"
+    },
+    {
+      "left": "hallucinations",
+      "right": "hallucinations",
+      "verdict": "same"
+    },
+    {
+      "left": "high",
+      "right": "Higher Education Advisory Board",
+      "verdict": "different"
+    },
+    {
+      "left": "high",
+      "right": "Highly Persistent Internal Model (HPIM)",
+      "verdict": "different"
+    },
+    {
+      "left": "how and when OpenAI reports potentially dangerous user behavior to authorities",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "Hugging Face",
+      "right": "Hugging Face",
+      "verdict": "same"
+    },
+    {
+      "left": "ICO investigation",
+      "right": "investigation",
+      "verdict": "different"
+    },
+    {
+      "left": "increased use of ChatGPT for China-origin influence operations",
+      "right": "influence operations",
+      "verdict": "different"
+    },
+    {
+      "left": "Inflection AI",
+      "right": "Inflection AI, Inc.",
+      "verdict": "same",
+      "why": "Inflection AI is Inflection AI, Inc."
+    },
+    {
+      "left": "information to the company's senior management and board, particularly regarding safety issues",
+      "right": "safety",
+      "verdict": "different"
+    },
+    {
+      "left": "initial public offering",
+      "right": "initial public offering (IPO)",
+      "verdict": "same",
+      "why": "OpenAI's 2026 IPO"
+    },
+    {
+      "left": "Instacart",
+      "right": "Instacart",
+      "verdict": "same"
+    },
+    {
+      "left": "International Mathematical Olympiad",
+      "right": "International Mathematical Olympiad",
+      "verdict": "same"
+    },
+    {
+      "left": "interview",
+      "right": "Suchir Balaji interview",
+      "verdict": "same",
+      "why": "the NYT interview with Suchir Balaji"
+    },
+    {
+      "left": "investigation",
+      "right": "investigation into Suchir Balaji's death",
+      "verdict": "different"
+    },
+    {
+      "left": "investigation into Suchir Balaji's death",
+      "right": "Suchir Balaji",
+      "verdict": "different"
+    },
+    {
+      "left": "investors",
+      "right": "reimburse investors",
+      "verdict": "different"
+    },
+    {
+      "left": "investors",
+      "right": "tender offer for early-stage investors",
+      "verdict": "different"
+    },
+    {
+      "left": "Jakub Pachocki",
+      "right": "Pachocki",
+      "verdict": "same",
+      "why": "Pachocki is Jakub Pachocki"
+    },
+    {
+      "left": "Japanese",
+      "right": "Japanese to English",
+      "verdict": "different"
+    },
+    {
+      "left": "Jason Kwon",
+      "right": "Kwon",
+      "verdict": "same",
+      "why": "Kwon is Jason Kwon"
+    },
+    {
+      "left": "John Schulman",
+      "right": "John Schulman",
+      "verdict": "same"
+    },
+    {
+      "left": "judge",
+      "right": "U.S. District Judge Araceli Martínez-Olguín",
+      "verdict": "unknown",
+      "why": "the bare \"judge\" has no context"
+    },
+    {
+      "left": "Labs",
+      "right": "Meta Superintelligence Labs",
+      "verdict": "different"
+    },
+    {
+      "left": "large language model",
+      "right": "large language models",
+      "verdict": "same",
+      "why": "singular and plural of the same concept"
+    },
+    {
+      "left": "lawsuit",
+      "right": "lawsuit against OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "lawsuit",
+      "right": "lawsuit against OpenAI and Altman",
+      "verdict": "different"
+    },
+    {
+      "left": "lawsuit",
+      "right": "lawsuit for copyright infringement",
+      "verdict": "different"
+    },
+    {
+      "left": "lawsuit against OpenAI",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "lawsuit against OpenAI and Altman",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "leaked letter from the National Data Guardian",
+      "right": "National Data Guardian",
+      "verdict": "different"
+    },
+    {
+      "left": "less training time",
+      "right": "Time",
+      "verdict": "different"
+    },
+    {
+      "left": "LLMs",
+      "right": "LLMs",
+      "verdict": "same"
+    },
+    {
+      "left": "LLMs",
+      "right": "LLMs can sometimes plan ahead",
+      "verdict": "different"
+    },
+    {
+      "left": "LLMs",
+      "right": "LLMs performance on copyrighted text",
+      "verdict": "different"
+    },
+    {
+      "left": "LLMs can sometimes plan ahead",
+      "right": "Time",
+      "verdict": "different"
+    },
+    {
+      "left": "London",
+      "right": "three London hospitals",
+      "verdict": "different"
+    },
+    {
+      "left": "lying",
+      "right": "lying and being manipulative in different situations",
+      "verdict": "different",
+      "why": "two allegations from different documents"
+    },
+    {
+      "left": "Lyria",
+      "right": "Lyria 3",
+      "verdict": "different"
+    },
+    {
+      "left": "Lyria",
+      "right": "Lyria 3 Pro",
+      "verdict": "different"
+    },
+    {
+      "left": "Lyria 3",
+      "right": "Lyria 3 Pro",
+      "verdict": "different"
+    },
+    {
+      "left": "March 2023",
+      "right": "March 2023 open letter",
+      "verdict": "different"
+    },
+    {
+      "left": "matrix multiplication",
+      "right": "matrix multiplication algorithm",
+      "verdict": "different",
+      "why": "the problem vs an algorithm for it"
+    },
+    {
+      "left": "matrix multiplication",
+      "right": "Multi",
+      "verdict": "different"
+    },
+    {
+      "left": "matrix multiplication algorithm",
+      "right": "Multi",
+      "verdict": "different"
+    },
+    {
+      "left": "Meta",
+      "right": "Meta",
+      "verdict": "same"
+    },
+    {
+      "left": "Meta",
+      "right": "Meta Platforms",
+      "verdict": "same",
+      "why": "Meta is Meta Platforms"
+    },
+    {
+      "left": "Meta",
+      "right": "Meta Superintelligence Labs",
+      "verdict": "different"
+    },
+    {
+      "left": "Meta Platforms",
+      "right": "Meta Platforms",
+      "verdict": "same"
+    },
+    {
+      "left": "METR",
+      "right": "MuZero, AlphaStar, AlphaGeometry, FunSearch, AlphaEvolve, AlphaDev, AlphaTensor",
+      "verdict": "different"
+    },
+    {
+      "left": "Microsoft",
+      "right": "Microsoft",
+      "verdict": "same"
+    },
+    {
+      "left": "Microsoft",
+      "right": "Microsoft AI",
+      "verdict": "different",
+      "why": "a division"
+    },
+    {
+      "left": "Microsoft",
+      "right": "Microsoft Azure",
+      "verdict": "different"
+    },
+    {
+      "left": "Microsoft",
+      "right": "Microsoft-Inflection deal",
+      "verdict": "different"
+    },
+    {
+      "left": "Microsoft",
+      "right": "Microsoft's relationship with OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "Microsoft Azure",
+      "right": "Microsoft Azure",
+      "verdict": "same"
+    },
+    {
+      "left": "Microsoft's relationship with OpenAI",
+      "right": "OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "Mira Murati",
+      "right": "Murati",
+      "verdict": "same",
+      "why": "Murati is Mira Murati"
+    },
+    {
+      "left": "MuZero",
+      "right": "MuZero",
+      "verdict": "same"
+    },
+    {
+      "left": "MuZero",
+      "right": "MuZero, AlphaStar, AlphaGeometry, FunSearch, AlphaEvolve, AlphaDev, AlphaTensor",
+      "verdict": "different"
+    },
+    {
+      "left": "Nadella",
+      "right": "Satya Nadella",
+      "verdict": "same",
+      "why": "Nadella is Satya Nadella"
+    },
+    {
+      "left": "New York Times",
+      "right": "The New York Times",
+      "verdict": "same",
+      "why": "New York Times with and without the article"
+    },
+    {
+      "left": "New York Times",
+      "right": "Time",
+      "verdict": "different"
+    },
+    {
+      "left": "non-disparagement agreement",
+      "right": "non-disparagement agreements",
+      "verdict": "same",
+      "why": "singular and plural"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI",
+      "verdict": "same",
+      "why": "OpenAI under two types"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI employees",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI engineers",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI Foundation",
+      "verdict": "different",
+      "why": "the nonprofit parent is its own legal entity"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI Global, LLC",
+      "verdict": "different",
+      "why": "a subsidiary"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI GP LLC",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI Group PBC",
+      "verdict": "different",
+      "why": "the for-profit subsidiary"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI, Inc.",
+      "verdict": "different",
+      "why": "the nonprofit legal entity vs the organization as a whole"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI investors",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI Ireland Ltd",
+      "verdict": "different",
+      "why": "a subsidiary"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI LP",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI OpCo, LLC",
+      "verdict": "different",
+      "why": "a legal entity of OpenAI's, still its own record"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI representative",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI's board of directors",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "OpenAI's safety team",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "over one hundred companies using OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "similarities between DeepSeek's model distillation approach and OpenAI's methodology",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI",
+      "right": "two executives in OpenAI",
+      "verdict": "different"
+    },
+    {
+      "left": "OpenAI Global, LLC",
+      "right": "OpenAI Global, LLC",
+      "verdict": "same"
+    },
+    {
+      "left": "OpenAI, Inc.",
+      "right": "OpenAI, Inc.",
+      "verdict": "same"
+    },
+    {
+      "left": "Oracle",
+      "right": "Oracle",
+      "verdict": "same"
+    },
+    {
+      "left": "PaliGemma 2",
+      "right": "PaliGemma 2 Mix",
+      "verdict": "different"
+    },
+    {
+      "left": "Palo Alto, California",
+      "right": "Palo Alto, California",
+      "verdict": "same"
+    },
+    {
+      "left": "partnership",
+      "right": "Partnership on Artificial Intelligence to Benefit People and Society",
+      "verdict": "different"
+    },
+    {
+      "left": "Patronus AI",
+      "right": "Patronus AI",
+      "verdict": "same"
+    },
+    {
+      "left": "Pentagon",
+      "right": "The Pentagon",
+      "verdict": "same",
+      "why": "the Pentagon with and without the article"
+    },
+    {
+      "left": "policy-gradient reinforcement learning",
+      "right": "reinforcement learning",
+      "verdict": "different"
+    },
+    {
+      "left": "policy network",
+      "right": "predict winners of games played by the policy network against itself",
+      "verdict": "different"
+    },
+    {
+      "left": "Pong",
+      "right": "Pong",
+      "verdict": "same"
+    },
+    {
+      "left": "potential violations of YouTube's terms of service",
+      "right": "YouTube",
+      "verdict": "different"
+    },
+    {
+      "left": "prompts",
+      "right": "prompts asking for copyrighted text",
+      "verdict": "different"
+    },
+    {
+      "left": "prompts",
+      "right": "rejects violating prompts",
+      "verdict": "different"
+    },
+    {
+      "left": "prompts",
+      "right": "writing prompts",
+      "verdict": "different"
+    },
+    {
+      "left": "protein folding",
+      "right": "state of the art records on benchmark tests for protein folding prediction",
+      "verdict": "different"
+    },
+    {
+      "left": "psychological abuse from Sam Altman",
+      "right": "Sam Altman",
+      "verdict": "different"
+    },
+    {
+      "left": "public benefit corporation",
+      "right": "public benefit corporation (PBC)",
+      "verdict": "same"
+    },
+    {
+      "left": "Quake",
+      "right": "Quake III Arena",
+      "verdict": "different",
+      "why": "the franchise vs one title"
+    },
+    {
+      "left": "rationale for firing Sam Altman",
+      "right": "Sam Altman",
+      "verdict": "different"
+    },
+    {
+      "left": "Reddit",
+      "right": "Reddit",
+      "verdict": "same"
+    },
+    {
+      "left": "reinforcement learning",
+      "right": "reinforcement learning from human feedback (RLHF)",
+      "verdict": "different",
+      "why": "RLHF is a specific technique"
+    },
+    {
+      "left": "reinforcement learning",
+      "right": "reinforcement learning (RL)",
+      "verdict": "same"
+    },
+    {
+      "left": "reward model",
+      "right": "reward models",
+      "verdict": "same",
+      "why": "singular and plural"
+    },
+    {
+      "left": "Royal Free hospital",
+      "right": "Royal Free Hospital",
+      "verdict": "same"
+    },
+    {
+      "left": "Royal Free hospital",
+      "right": "Royal Free hospital failed to comply with the Data Protection Act",
+      "verdict": "different"
+    },
+    {
+      "left": "Royal Free London NHS Foundation Trust",
+      "right": "Royal Free London NHS Foundation Trust",
+      "verdict": "same"
+    },
+    {
+      "left": "safety",
+      "right": "technical safety research",
+      "verdict": "different"
+    },
+    {
+      "left": "Sama",
+      "right": "Sama",
+      "verdict": "same"
+    },
+    {
+      "left": "Sam Altman",
+      "right": "Sam Altman's efforts",
+      "verdict": "different"
+    },
+    {
+      "left": "Sam Altman",
+      "right": "they didn't support Sam Altman",
+      "verdict": "different"
+    },
+    {
+      "left": "San Francisco, California",
+      "right": "San Francisco, California",
+      "verdict": "same"
+    },
+    {
+      "left": "Science",
+      "right": "Science",
+      "verdict": "different",
+      "why": "the journal vs Anthropic's service"
+    },
+    {
+      "left": "Securities and Exchange Commission",
+      "right": "US Securities and Exchange Commission (SEC)",
+      "verdict": "same"
+    },
+    {
+      "left": "Sequoia Capital",
+      "right": "Sequoia Capital",
+      "verdict": "same"
+    },
+    {
+      "left": "share sale led by Thrive Capital",
+      "right": "Thrive",
+      "verdict": "different"
+    },
+    {
+      "left": "share sale led by Thrive Capital",
+      "right": "Thrive Capital",
+      "verdict": "different"
+    },
+    {
+      "left": "Sidor",
+      "right": "Szymon Sidor",
+      "verdict": "same",
+      "why": "Sidor is Szymon Sidor"
+    },
+    {
+      "left": "SoftBank",
+      "right": "SoftBank",
+      "verdict": "same"
+    },
+    {
+      "left": "SoftBank",
+      "right": "SoftBank Group-owned SB Energy",
+      "verdict": "different"
+    },
+    {
+      "left": "Software Applications Incorporated",
+      "right": "software_application",
+      "verdict": "different"
+    },
+    {
+      "left": "Sony Corporation",
+      "right": "Sony Corporation",
+      "verdict": "same"
+    },
+    {
+      "left": "Sora",
+      "right": "Sora app",
+      "verdict": "same",
+      "why": "the Sora app is the Sora platform"
+    },
+    {
+      "left": "Sora",
+      "right": "Sora model API access",
+      "verdict": "different"
+    },
+    {
+      "left": "Sora model",
+      "right": "Sora model API access",
+      "verdict": "different"
+    },
+    {
+      "left": "Space Invaders",
+      "right": "Space Invaders",
+      "verdict": "same"
+    },
+    {
+      "left": "StarCraft",
+      "right": "StarCraft II",
+      "verdict": "different",
+      "why": "StarCraft II is one title of the series"
+    },
+    {
+      "left": "strategic thinking",
+      "right": "Thinking",
+      "verdict": "different"
+    },
+    {
+      "left": "Suchir Balaji",
+      "right": "Suchir Balaji interview",
+      "verdict": "different"
+    },
+    {
+      "left": "summarization",
+      "right": "translation and summarization tasks",
+      "verdict": "different"
+    },
+    {
+      "left": "supervised learning",
+      "right": "supervised learning",
+      "verdict": "same"
+    },
+    {
+      "left": "Suzanne Adams",
+      "right": "Suzanne Adams's estate",
+      "verdict": "different"
+    },
+    {
+      "left": "Switzerland",
+      "right": "Switzerland",
+      "verdict": "same"
+    },
+    {
+      "left": "The Atlantic",
+      "right": "The Atlantic",
+      "verdict": "same"
+    },
+    {
+      "left": "The New York Times",
+      "right": "The New York Times",
+      "verdict": "same"
+    },
+    {
+      "left": "The New York Times",
+      "right": "Time",
+      "verdict": "different"
+    },
+    {
+      "left": "The Wall Street Journal",
+      "right": "The Wall Street Journal",
+      "verdict": "same"
+    },
+    {
+      "left": "The Wall Street Journal",
+      "right": "Wall Street",
+      "verdict": "different"
+    },
+    {
+      "left": "Thrive",
+      "right": "Thrive Capital",
+      "verdict": "same",
+      "why": "Thrive is Thrive Capital"
+    },
+    {
+      "left": "Thrive",
+      "right": "Thrive Capital's tender offer",
+      "verdict": "different"
+    },
+    {
+      "left": "Thrive Capital",
+      "right": "Thrive Capital's tender offer",
+      "verdict": "different"
+    },
+    {
+      "left": "Time",
+      "right": "Time",
+      "verdict": "unknown",
+      "why": "the bare \"Time\" has no facts"
+    },
+    {
+      "left": "Time",
+      "right": "Time magazine",
+      "verdict": "same",
+      "why": "Time is Time magazine"
+    },
+    {
+      "left": "training data",
+      "right": "training data from published books by destructive book scanning",
+      "verdict": "different"
+    },
+    {
+      "left": "Trump administration",
+      "right": "Trump administration",
+      "verdict": "same"
+    },
+    {
+      "left": "UK",
+      "right": "UK",
+      "verdict": "same"
+    },
+    {
+      "left": "United States",
+      "right": "United States",
+      "verdict": "same"
+    },
+    {
+      "left": "United States",
+      "right": "United States Congress",
+      "verdict": "different"
+    },
+    {
+      "left": "United States",
+      "right": "United States Department of Defense",
+      "verdict": "different"
+    },
+    {
+      "left": "United States",
+      "right": "United States Department of Defense (DoD)",
+      "verdict": "different"
+    },
+    {
+      "left": "University College London",
+      "right": "University College London, Department of Computer Science",
+      "verdict": "different",
+      "why": "a department vs the university"
+    },
+    {
+      "left": "users",
+      "right": "users to make specific chats discoverable through search engines like Google",
+      "verdict": "different"
+    },
+    {
+      "left": "WaveNet",
+      "right": "WaveNetEQ",
+      "verdict": "different"
+    },
+    {
+      "left": "Whisper",
+      "right": "Whisper",
+      "verdict": "same"
+    },
+    {
+      "left": "xAI",
+      "right": "xAI",
+      "verdict": "same"
+    }
+  ]
+}

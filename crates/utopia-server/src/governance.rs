@@ -229,13 +229,14 @@ async fn settle(
 ) -> anyhow::Result<()> {
     let pool = &ctx.state.pool;
     let kb_id = ctx.kb_id;
-    let types_conflict = matches!(
-        (&item.left.type_label, &item.right.type_label),
-        (Some(a), Some(b)) if a != b
+    let types_conflict = gov::types_conflict(
+        item.left.type_label.as_deref(),
+        item.right.type_label.as_deref(),
     );
+    let shape = gov::name_shape(&item.left.name, &item.right.name);
 
     // 第二层：只接判不定的，硬规则拦下的不进。预算用完了照第一刀写建议
-    if gov::gate(look.same, look.conf, types_conflict, p) == Gate::Propose
+    if gov::gate(look.same, look.conf, types_conflict, shape, p) == Gate::Propose
         && look.uncertain()
         && p.reverts.is_empty()
     {
@@ -270,7 +271,7 @@ async fn settle(
         calls: look.calls,
     };
 
-    match gov::gate(look.same, look.conf, types_conflict, p) {
+    match gov::gate(look.same, look.conf, types_conflict, shape, p) {
         Gate::Apply if look.same == Some(true) => {
             let reason = format!("governed|{conf:.2}");
             // 同簇连锁：前一对合完，这一对的一侧可能已经并进了别人——合活着的那个

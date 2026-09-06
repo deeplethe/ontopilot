@@ -233,9 +233,24 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
     assert!(p.reverts.is_empty());
     let t = p.type_pair.clone().expect("两边都有类型");
     assert_eq!((t.merged, t.kept, t.reverted), (1, 3, 0));
-    assert_eq!(governance::gate(Some(false), 0.9, false, &p), Gate::Apply);
     assert_eq!(
-        governance::gate(Some(true), 0.99, false, &p),
+        governance::gate(
+            Some(false),
+            0.9,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
+        Gate::Apply
+    );
+    assert_eq!(
+        governance::gate(
+            Some(true),
+            0.99,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
         Gate::Propose,
         "人分开过，模型说合，只建议"
     );
@@ -248,8 +263,14 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
         1,
         "Apple 对 Apple Records 是这个名字对别的名字"
     );
-    assert_eq!(governance::gate(Some(true), 0.9, false, &p), Gate::Apply);
-    assert_eq!(governance::gate(Some(true), 0.7, false, &p), Gate::Propose);
+    assert_eq!(
+        governance::gate(Some(true), 0.9, false, governance::NameShape::Unrelated, &p),
+        Gate::Apply
+    );
+    assert_eq!(
+        governance::gate(Some(true), 0.7, false, governance::NameShape::Unrelated, &p),
+        Gate::Propose
+    );
     let lines = governance::render_lines(&p);
     assert!(lines[0].starts_with("this same pair was merged by a person on "));
     assert!(lines
@@ -258,17 +279,38 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
 
     let p = governance::precedents_for(pool, s.kb, &by_id(s.orion)).await?;
     assert_eq!(p.reverts.len(), 1);
-    assert_eq!(governance::gate(Some(true), 0.99, false, &p), Gate::Propose);
     assert_eq!(
-        governance::gate(Some(false), 0.99, false, &p),
+        governance::gate(
+            Some(true),
+            0.99,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
+        Gate::Propose
+    );
+    assert_eq!(
+        governance::gate(
+            Some(false),
+            0.99,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
         Gate::Propose
     );
 
     let m = by_id(s.mercury);
     let p = governance::precedents_for(pool, s.kb, &m).await?;
     assert!(p.type_pair.is_some());
-    assert_eq!(governance::gate(Some(true), 0.99, true, &p), Gate::Propose);
-    assert_eq!(governance::gate(Some(false), 0.9, true, &p), Gate::Apply);
+    assert_eq!(
+        governance::gate(Some(true), 0.99, true, governance::NameShape::Unrelated, &p),
+        Gate::Propose
+    );
+    assert_eq!(
+        governance::gate(Some(false), 0.9, true, governance::NameShape::Unrelated, &p),
+        Gate::Apply
+    );
 
     // 写了建议的对不再进队列
     let run_id = Uuid::now_v7();
