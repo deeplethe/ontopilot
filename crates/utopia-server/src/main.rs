@@ -9,6 +9,7 @@ mod docs_corpus;
 mod error;
 mod extraction;
 mod github_issues;
+mod governance;
 mod http_fetch;
 mod ingest_sources;
 mod jira_issues;
@@ -242,6 +243,34 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // 治理的定时扫描（0025）：开关开着、队列里还有 agent 没看过的对的库，每小时排一轮。
+    // 抽取结束与人的裁决各自即时排；这一轮兜的是失败重试耗尽之后留下的积压，
+    // 所以是小时不是分钟——模型挂了的时候，每分钟撞一次没有意义
+    let gov_state = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            match utopia_store::governance::due(&gov_state.pool).await {
+                Ok(due) => {
+                    for kb_id in due {
+                        if let Err(e) = utopia_store::jobs::enqueue_unless_queued(
+                            &gov_state.pool,
+                            "govern",
+                            serde_json::json!({ "kb_id": kb_id }),
+                        )
+                        .await
+                        {
+                            tracing::warn!(kb_id = %kb_id, error = %e, "治理任务入队失败");
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "扫描治理积压失败"),
+            }
+        }
+    });
+
     let app = api::router(state, &cfg);
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
     tracing::info!("Utopia 服务启动于 http://{}", cfg.bind_addr);
@@ -427,6 +456,15 @@ async fn dispatch(st: &state::AppState, job: &utopia_store::jobs::Job) -> anyhow
                 .and_then(|s| s.parse().ok())
                 .ok_or_else(|| anyhow::anyhow!("payload 缺少 kb_id"))?;
             adjudication::adjudicate_entities(st, kb_id).await
+        }
+        "govern" => {
+            let kb_id: Uuid = job
+                .payload
+                .get("kb_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse().ok())
+                .ok_or_else(|| anyhow::anyhow!("payload 缺少 kb_id"))?;
+            governance::govern(st, kb_id).await
         }
         "sync_source" => {
             let source_id: Uuid = job

@@ -85,6 +85,7 @@ pub async fn update(
     materialize_inferences: Option<bool>,
     inference_interval_minutes: Option<i32>,
     auto_type_resolution: Option<bool>,
+    governance: Option<bool>,
 ) -> AppResult<KnowledgeBase> {
     // 改语言不回头重写已有的类——它们已经是这个库的数据，可能有人手工调过。
     // 这一列往后管的是**新**描述（自动扩本体、AI 建议）写成什么语言
@@ -120,6 +121,7 @@ pub async fn update(
              materialize_inferences = COALESCE($7, materialize_inferences),
              inference_interval_minutes = COALESCE($8, inference_interval_minutes),
              auto_type_resolution = COALESCE($9, auto_type_resolution),
+             governance = COALESCE($10, governance),
              updated_at = now()
          WHERE id = $1 RETURNING *",
     )
@@ -132,6 +134,7 @@ pub async fn update(
     .bind(materialize_inferences)
     .bind(inference_interval_minutes)
     .bind(auto_type_resolution)
+    .bind(governance)
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::NotFound)

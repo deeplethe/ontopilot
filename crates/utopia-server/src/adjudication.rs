@@ -97,6 +97,7 @@ pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Resul
                         .unwrap_or_else(|| "untyped".into()),
                     facts: item.right.top_facts.clone(),
                 },
+                precedents: Vec::new(),
             })
             .collect();
         let messages = utopia_extract::build_adjudication_messages(&pairs);

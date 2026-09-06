@@ -903,6 +903,9 @@ pub struct KnowledgeBase {
     /// 抽取结束自动排一轮类型消解（0016 C2）。**只自动落地在原类子树里精化的那一档**，
     /// 跨轴的改判仍留给人。缺省开：基准上自动那一档的命中 39/41（#297），且每批可撤
     pub auto_type_resolution: bool,
+    /// 治理开关（0025，缺省关）：开着，govern 任务按先进先出过等人的重复对，
+    /// 先读台账里人的先例再裁；关掉，任务在两簇之间看到就停
+    pub governance: bool,
     /// 多久重推一次（分钟）。见 `knowledge_bases.inference_interval_minutes`
     pub inference_interval_minutes: i32,
     /// 上次推完的时间。**答的是「上次看过没有」，不是「上次改过没有」**
@@ -1214,6 +1217,31 @@ pub struct ReviewCounts {
     pub violations: i64,
     pub defects: i64,
     pub merges: i64,
+    /// agent 写下、等人回答的建议（0025）
+    pub agent: i64,
+}
+
+/// agent 的一笔（0025）：看了哪一对、想怎么办、凭什么、人怎么答的。
+/// `left` / `right` 是那一对的名字，合并之后仍按当时的实体读得出
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AgentDecisionView {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub target_kind: String,
+    pub target_id: Uuid,
+    /// merge | keep | unsure
+    pub action: String,
+    pub confidence: f32,
+    pub reason: Option<String>,
+    pub precedents: serde_json::Value,
+    /// proposed | applied | accepted | overridden | reverted | superseded
+    pub status: String,
+    pub merge_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub decided_at: Option<DateTime<Utc>>,
+    pub decided_by_name: Option<String>,
+    pub left: Option<String>,
+    pub right: Option<String>,
 }
 
 /// 批量裁决里一条的结果：`error` 为 None 就是成功。一条失败不拖累其余的，

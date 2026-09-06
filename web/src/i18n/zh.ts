@@ -1347,6 +1347,8 @@ export const zh: Strings = {
       escalate_no_verdict: "裁决没有给出结论",
       escalate_entity_changed: "裁决过程中实体发生了变化",
       escalate_unsure: "裁决的把握不够",
+      proposed: "agent 看过了，留了一条建议",
+      governed: "agent 按先例裁的",
       namesake: "同一篇文档里有两个同名实体",
       namesake_tie: "同名，画像分不出谁是谁",
       contains: "一个名字包含另一个",

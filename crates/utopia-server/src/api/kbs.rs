@@ -47,6 +47,10 @@ pub struct UpdateKbReq {
     /// 抽取结束自动排一轮类型消解（缺省开）。见 docs/decisions/0016 C2
     #[serde(default)]
     pub auto_type_resolution: Option<bool>,
+    /// 治理开关（缺省关）：开着，agent 按先进先出过等人的重复对，先读台账再裁；
+    /// 打开那一刻就排一轮，关掉后任务在两簇之间看到就停。见 docs/decisions/0025
+    #[serde(default)]
+    pub governance: Option<bool>,
 }
 
 /// 用户可见的 KB 列表（restricted 库仅矩阵成员与系统管理员可见）。
@@ -100,6 +104,7 @@ pub async fn create(
             None,
             None,
             Some(v),
+            None,
             None,
             None,
             None,
@@ -185,8 +190,14 @@ pub async fn update(
         req.materialize_inferences,
         req.inference_interval_minutes,
         req.auto_type_resolution,
+        req.governance,
     )
     .await?;
+    // 打开开关就自动开始处理：排一轮，同库已排着的不重复
+    if req.governance == Some(true) {
+        utopia_store::jobs::enqueue_unless_queued(&state.pool, "govern", json!({ "kb_id": id }))
+            .await?;
+    }
     // 审计只记不阻断
     let _ = utopia_store::audit::record(
         &state.pool,
@@ -195,7 +206,7 @@ pub async fn update(
         "kb.updated",
         "kb",
         Some(id),
-        json!({ "name": req.name, "visibility": req.visibility }),
+        json!({ "name": req.name, "visibility": req.visibility, "governance": req.governance }),
     )
     .await;
     Ok(Json(kb))

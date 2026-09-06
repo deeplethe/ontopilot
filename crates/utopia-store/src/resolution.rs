@@ -1102,7 +1102,7 @@ pub async fn create_review(
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct ReviewRow {
+pub(crate) struct ReviewRow {
     id: Uuid,
     left_id: Uuid,
     right_id: Uuid,
@@ -1206,7 +1206,7 @@ pub async fn entity_fact_lines(
         .collect())
 }
 
-async fn assemble_reviews(
+pub(crate) async fn assemble_reviews(
     pool: &PgPool,
     kb_id: Uuid,
     rows: Vec<ReviewRow>,
@@ -1388,16 +1388,24 @@ pub async fn decide_review(
 
     match action {
         "merge" => {
-            let (target, source) = merge_direction(pool, row.left_id, row.right_id).await?;
-            merge_entities(
-                pool,
-                kb_id,
-                source,
-                target,
-                Some(user_id),
-                "review decision",
-            )
-            .await?;
+            // 同名连锁（A-B 合了，B-C 还等着）：B 已并进 A，这一对实际上是 A-C。
+            // 跟着 merged_into 走到活着的那个再合；两边走到同一个，就只剩把审核行关上
+            let (l, r) = (
+                survivor(pool, kb_id, row.left_id).await?,
+                survivor(pool, kb_id, row.right_id).await?,
+            );
+            if l != r {
+                let (target, source) = merge_direction(pool, l, r).await?;
+                merge_entities(
+                    pool,
+                    kb_id,
+                    source,
+                    target,
+                    Some(user_id),
+                    "review decision",
+                )
+                .await?;
+            }
             sqlx::query(
                 "UPDATE resolution_reviews SET status = 'merged', decided_at = now(), decided_by = $2
                  WHERE id = $1",
@@ -1420,6 +1428,25 @@ pub async fn decide_review(
         _ => return Err(AppError::Validation("action must be merge or keep".into())),
     }
     Ok(())
+}
+
+/// 跟着 `merged_into` 走到还活着的那个实体。同簇连锁合并之后，一对里的一侧可能已经
+/// 并进了别人；合并要合的是活着的那个，不是那条已经空了的行
+pub async fn survivor(pool: &PgPool, kb_id: Uuid, mut id: Uuid) -> AppResult<Uuid> {
+    for _ in 0..16 {
+        let next: Option<Option<Uuid>> =
+            sqlx::query_scalar("SELECT merged_into FROM entities WHERE id = $1 AND kb_id = $2")
+                .bind(id)
+                .bind(kb_id)
+                .fetch_optional(pool)
+                .await?;
+        match next {
+            Some(Some(n)) => id = n,
+            Some(None) => return Ok(id),
+            None => return Err(AppError::NotFound),
+        }
+    }
+    Err(AppError::Conflict("merge chain too long".into()))
 }
 
 /// 合并方向：返回 (target 存活, source 被并)。

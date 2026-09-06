@@ -1542,6 +1542,8 @@ export const en = {
       escalate_no_verdict: "The adjudicator returned no verdict",
       escalate_entity_changed: "The entity changed while being adjudicated",
       escalate_unsure: "The adjudicator was not confident enough",
+      proposed: "The agent looked and left a proposal",
+      governed: "Decided by the agent from precedent",
       namesake: "Two entities with this name in one document",
       /* 画像分不开时的并列：分数是真的，所以百分比照常显示（与 namesake 的哨兵值不同） */
       namesake_tie: "Same name, and the profiles cannot tell them apart",

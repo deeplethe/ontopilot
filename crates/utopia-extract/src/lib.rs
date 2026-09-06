@@ -505,6 +505,8 @@ pub struct AdjudicationSide {
 pub struct AdjudicationPair {
     pub left: AdjudicationSide,
     pub right: AdjudicationSide,
+    /// 这个库里的人对这一对、这个名字、这种类型对做过什么（0025）。空就不提
+    pub precedents: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -513,6 +515,9 @@ pub struct AdjudicationVerdict {
     pub verdict: String,
     #[serde(default)]
     pub confidence: Option<f32>,
+    /// 一句理由；带先例的裁决要说依据了哪条
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -545,13 +550,21 @@ pub fn build_adjudication_messages(pairs: &[AdjudicationPair]) -> Vec<ChatMessag
         Platform, \"Qiming X7 programme\" is not the Qiming X7, and \"沧海平台项目\" is not \
         \"沧海平台\" — a project, a programme, a team or a component is its own record.\n\
         \n\
+        Some pairs carry precedents: decisions people made in this same knowledge base on \
+        these names, or on pairs of the same two types. Treat them as how the owners of this \
+        base want such cases judged. Follow a precedent on the same pair unless the facts of \
+        this pair clearly differ from it; when precedents disagree with each other, answer \
+        \"unsure\". A precedent never overrides a contradiction in the facts.\n\
+        \n\
         Output exactly one JSON object and nothing else:\n\
-        {\"verdicts\":[{\"i\":0,\"verdict\":\"same|different|unsure\",\"confidence\":0.9}]}\n\
+        {\"verdicts\":[{\"i\":0,\"verdict\":\"same|different|unsure\",\"confidence\":0.9,\
+        \"why\":\"one sentence\"}]}\n\
         \n\
         Rules:\n\
         1. One verdict per pair, using the pair's number as \"i\".\n\
         2. confidence in 0~1.\n\
-        3. Be conservative: if the evidence is insufficient to decide, answer \"unsure\" — \
+        3. \"why\" is one short sentence; when a precedent decided it, say which.\n\
+        4. Be conservative: if the evidence is insufficient to decide, answer \"unsure\" — \
            a wrong merge is far more damaging than leaving two records separate."
         .to_string();
 
@@ -569,8 +582,19 @@ pub fn build_adjudication_messages(pairs: &[AdjudicationPair]) -> Vec<ChatMessag
             };
             format!("\"{}\" ({})\n{}", s.name, s.type_label, facts)
         };
+        let precedents = if p.precedents.is_empty() {
+            String::new()
+        } else {
+            let lines = p
+                .precedents
+                .iter()
+                .map(|l| format!("  - {l}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("Precedents (decided by people in this base):\n{lines}\n")
+        };
         user.push_str(&format!(
-            "Pair {i}:\nRecord A: {}\nRecord B: {}\n\n",
+            "Pair {i}:\nRecord A: {}\nRecord B: {}\n{precedents}\n",
             fmt(&p.left),
             fmt(&p.right)
         ));
