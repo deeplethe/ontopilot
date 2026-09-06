@@ -95,10 +95,10 @@ export function Shell() {
       {/* z-40：backdrop-filter 使顶栏与 tab 条各自成 stacking context，
           不提权则后者按 DOM 序盖住顶栏内的弹出面板 */}
       {/* 左内距 32px：字标的左缘落在下面第一个标签的图标上（nav px-4 + 标签左 16）。
-          字标与切换器之间 gap-4（切换器自己有 px-4）：切换器的图标正好落在第二个
+          字标与切换器之间 gap-6（切换器自己只有 px-2）：切换器的图标正好落在第二个
           标签的图标上（132；英文界面下的巧合，字标或标签一换尺寸就得重量）——
           两行同一套节奏 */}
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-4 px-8">
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-6 px-8">
         {/* 字标：逐字母淡入，hover 浮出 ↗，点击去官网 */}
         <Wordmark className="text-display" />
         {/* 知识库切换器紧跟字标，中间不画斜杠——它不是面包屑的第二级，就是
