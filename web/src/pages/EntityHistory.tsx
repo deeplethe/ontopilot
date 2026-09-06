@@ -89,7 +89,7 @@ function EventRow({ e }: { e: EntityHistoryEvent }) {
       <Icon size={13} className={`mt-1 shrink-0 ${KIND_TONE[e.kind] ?? ""}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-fine font-medium text-ink-2">
+          <span className="text-small font-medium text-ink-2">
             {S.graph.historyKind[e.kind] ?? e.kind}
           </span>
           {note && <span className="u-num text-fine text-ink-3">{note}</span>}
@@ -97,15 +97,15 @@ function EventRow({ e }: { e: EntityHistoryEvent }) {
         {/* 改类事件没有谓词也没有宾语，正文换成类的两端。
             起点为空 = 从「未分类」改过来，0009 之后最常见的一种 */}
         {e.kind === "retyped" || e.kind === "retype_reverted" ? (
-          <div className="mt-1 text-small text-ink-2 truncate">
-            <span className="text-ink-3">
+          <div className="mt-1 text-body text-ink-2 truncate">
+            <span className="text-small text-ink-3">
               {e.from_type_label ?? S.graph.untyped} →{" "}
             </span>
             <span className="text-ink">{e.to_type_label}</span>
           </div>
         ) : (
-          <div className="mt-1 text-small text-ink-2 truncate">
-            <span className="text-ink-3">
+          <div className="mt-1 text-body text-ink-2 truncate">
+            <span className="text-small text-ink-3">
               {e.direction === "in" ? "← " : ""}
               <span className={e.predicate_label === null ? "italic text-ink-3" : undefined}>
                 {e.predicate_label ?? S.graph.unknownPredicate}

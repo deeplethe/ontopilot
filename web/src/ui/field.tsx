@@ -22,7 +22,7 @@ export function Field({
 }) {
   return (
     <div className={cn("mb-4", className)}>
-      <label htmlFor={htmlFor} className="mb-1 block text-small text-ink-2">
+      <label htmlFor={htmlFor} className="mb-1 block text-small font-medium text-ink-2">
         {label}
       </label>
       {children}

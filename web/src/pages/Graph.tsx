@@ -3370,7 +3370,7 @@ function TimeEditor({
       onClick={(ev) => ev.stopPropagation()}
     >
       <div className="flex items-center gap-2">
-        <label className="w-11 shrink-0 text-fine text-ink-3">
+        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
           {S.graph.timeStart}
         </label>
         <Input
@@ -3382,7 +3382,7 @@ function TimeEditor({
         />
       </div>
       <div className="mt-2 flex items-start gap-2">
-        <label className="w-11 shrink-0 pt-1 text-fine text-ink-3">
+        <label className="w-11 shrink-0 pt-1 text-small font-medium text-ink-2">
           {S.graph.timeEnd}
         </label>
         <div className="flex-1 space-y-1">
@@ -3414,7 +3414,7 @@ function TimeEditor({
         </div>
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <label className="w-11 shrink-0 text-fine text-ink-3">
+        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
           {S.graph.timeNote}
         </label>
         <Input

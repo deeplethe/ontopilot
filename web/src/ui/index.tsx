@@ -1347,7 +1347,7 @@ export function GroupLabel({
     >
       {icon}
       <span className="min-w-0 truncate">{children}</span>
-      {count !== undefined && <span className="u-num text-ink-3">{count}</span>}
+      {count !== undefined && <span className="u-num">{count}</span>}
     </div>
   );
 }

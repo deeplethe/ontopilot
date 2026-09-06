@@ -932,7 +932,7 @@ function RelationshipsCard({
           />
         </div>
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-fine text-ink-3">
+          <span className="text-small font-medium text-ink-2">
             {S.ontology.schemaConnectAs}
           </span>
           <Segmented
@@ -995,7 +995,7 @@ export function AttributesCard({
       <GroupLabel className="mb-1 px-2" count={attributes.length || undefined}>
         {S.ontology.attributes}
       </GroupLabel>
-      <p className="mb-2 px-2 text-small text-ink-3">
+      <p className="mb-2 px-2 text-fine text-ink-3">
         {S.ontology.attributesHint}
       </p>
       <div className="divide-y divide-line">
@@ -1125,7 +1125,7 @@ function AttributeForm({
     onError,
   });
 
-  const lbl = "block text-small font-medium text-ink-3 mb-1";
+  const lbl = "block text-small font-medium text-ink-2 mb-1";
   return (
     <div className="py-3 space-y-3">
       {!existing && (
@@ -1507,7 +1507,7 @@ export function ClassForm({
     onError,
   });
 
-  const lbl = "block text-small font-medium text-ink-3 mb-1";
+  const lbl = "block text-small font-medium text-ink-2 mb-1";
   return (
     <div className="space-y-3">
       {!headless && (
@@ -1809,7 +1809,7 @@ export function PropertyForm({
     onError,
   });
 
-  const lbl = "block text-small font-medium text-ink-3 mb-1";
+  const lbl = "block text-small font-medium text-ink-2 mb-1";
   return (
     <div className="space-y-3">
       {!headless && (
@@ -1856,7 +1856,7 @@ export function PropertyForm({
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="min-w-0">
-            <div className="mb-1 text-fine font-medium text-ink-3">
+            <div className="mb-1 text-small font-medium text-ink-2">
               {S.ontology.domainLabel}
             </div>
             <MultiSearchSelect
@@ -1868,7 +1868,7 @@ export function PropertyForm({
             />
           </div>
           <div className="min-w-0">
-            <div className="mb-1 text-fine font-medium text-ink-3">
+            <div className="mb-1 text-small font-medium text-ink-2">
               {S.ontology.rangeLabel}
             </div>
             <MultiSearchSelect
