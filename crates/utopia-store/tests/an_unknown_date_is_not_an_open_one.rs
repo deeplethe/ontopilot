@@ -22,6 +22,14 @@ use sqlx::PgPool;
 use utopia_store::graph::Validity;
 use uuid::Uuid;
 
+/// 裸行关上之后那一行：起点、终点精度、两个锚点
+type BareClosedRow = (
+    Option<chrono::DateTime<chrono::Utc>>,
+    Option<String>,
+    chrono::DateTime<chrono::Utc>,
+    Option<chrono::DateTime<chrono::Utc>>,
+);
+
 /// 关上之后那一行：起点、终点、终点精度、supersedes、锚点
 type ClosedRow = (
     Option<chrono::DateTime<chrono::Utc>>,
@@ -157,7 +165,7 @@ async fn edges_at(pool: &PgPool, f: &Fixture, at: Option<&str>) -> anyhow::Resul
 
 async fn attested_at(pool: &PgPool, id: Uuid) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
     Ok(
-        sqlx::query_scalar("SELECT attested_at FROM facts WHERE id = $1")
+        sqlx::query_scalar("SELECT attested_from FROM facts WHERE id = $1")
             .bind(id)
             .fetch_one(pool)
             .await?,
@@ -466,7 +474,7 @@ async fn an_ending_without_a_date_closes_the_dated_row_it_ends() -> anyhow::Resu
         assert!(invalidated.is_some(), "旧行作废，不删");
         assert!(supersedes.is_none());
         let row: ClosedRow = sqlx::query_as(
-            "SELECT valid_from, valid_to, valid_to_precision, supersedes, attested_at
+            "SELECT valid_from, valid_to, valid_to_precision, supersedes, attested_to
                FROM facts WHERE id = $1",
         )
         .bind(closed)
@@ -476,7 +484,11 @@ async fn an_ending_without_a_date_closes_the_dated_row_it_ends() -> anyhow::Resu
         assert_eq!(row.1, None);
         assert_eq!(row.2.as_deref(), Some("unknown"));
         assert_eq!(row.3, Some(open), "supersedes 链上");
-        assert_eq!(row.4, t("2025-10-15T00:00:00Z"), "锚在说出结束的那份文档");
+        assert_eq!(
+            row.4,
+            t("2025-10-15T00:00:00Z"),
+            "结束端锚在说出结束的那份文档"
+        );
 
         // #345 那道题：2026 年 1 月不该再有 Staff Engineer；2024 年 6 月还有
         assert!(!edges_at(&pool, &f, Some("2026-01-01T00:00:00Z"))
@@ -686,6 +698,92 @@ async fn a_derivation_reads_no_further_than_its_premises() -> anyhow::Result<()>
             at("2026-01-01T00:00:00Z").await?.contains(&(a, c)),
             "另一条链还开着"
         );
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+
+    sqlx::query("DELETE FROM knowledge_bases WHERE id = $1")
+        .bind(f.kb)
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM organizations WHERE id = $1")
+        .bind(f.org)
+        .execute(&pool)
+        .await?;
+    run
+}
+
+/// #393：没起点的裸行也关得上——起点留着第一份证据的锚点，终点锚在说出结束的那份文档。
+/// 从前去重把这句结束并进裸行，「它结束了」丢掉，那行继续读成「至今仍是」。
+#[tokio::test]
+async fn a_bare_row_closes_with_an_anchor_at_each_end() -> anyhow::Result<()> {
+    let Some(url) = utopia_store::test_db::url() else {
+        return Ok(());
+    };
+    let pool = PgPool::connect(&url).await?;
+    let f = seed(&pool).await?;
+
+    let run = async {
+        // 2024-02-20 的便签：担任 Staff Engineer，没写从哪天起
+        let (bare, _) = fact(
+            &pool,
+            &f,
+            f.lin,
+            f.holds_title,
+            f.staff_engineer,
+            Validity::default().attested(Some(t("2024-02-20T00:00:00Z"))),
+        )
+        .await?;
+        // 2025-10-15 的角色说明：不再担任，日期未记录——同一断言，也没起点
+        let (closed, created) = fact(
+            &pool,
+            &f,
+            f.lin,
+            f.holds_title,
+            f.staff_engineer,
+            Validity::default()
+                .ended_when_unknown()
+                .attested(Some(t("2025-10-15T00:00:00Z"))),
+        )
+        .await?;
+        assert!(created, "关上是一条修正行，不再是并进去");
+        assert_ne!(closed, bare);
+
+        let (from, to_prec, attested_from, attested_to): BareClosedRow = sqlx::query_as(
+            "SELECT valid_from, valid_to_precision, attested_from, attested_to
+               FROM facts WHERE id = $1",
+        )
+        .bind(closed)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(from, None, "起点原文没给，仍然没给");
+        assert_eq!(to_prec.as_deref(), Some("unknown"));
+        assert_eq!(
+            attested_from,
+            t("2024-02-20T00:00:00Z"),
+            "起点的锚点是第一份证据"
+        );
+        assert_eq!(
+            attested_to,
+            Some(t("2025-10-15T00:00:00Z")),
+            "终点的锚点是说出结束的那份文档"
+        );
+
+        // 读出来：[第一份证据, 说结束的文档)
+        assert!(!edges_at(&pool, &f, Some("2023-12-01T00:00:00Z"))
+            .await?
+            .contains(&closed));
+        assert!(edges_at(&pool, &f, Some("2024-06-01T00:00:00Z"))
+            .await?
+            .contains(&closed));
+        assert!(!edges_at(&pool, &f, Some("2026-01-01T00:00:00Z"))
+            .await?
+            .contains(&closed));
+        let (_, edges) =
+            utopia_store::graph::neighborhood(&pool, f.kb, f.lin, 1, None, None).await?;
+        let row = edges.iter().find(|e| e.id == closed).unwrap();
+        assert_eq!(row.holds_from, Some(t("2024-02-20T00:00:00Z")));
+        assert_eq!(row.holds_to, Some(t("2025-10-15T00:00:00Z")));
         Ok::<_, anyhow::Error>(())
     }
     .await;

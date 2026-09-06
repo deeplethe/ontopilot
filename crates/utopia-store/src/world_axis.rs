@@ -10,11 +10,12 @@
 //! 无声无息。前端也不再自己算一遍——边和事实带着 `holds_from` / `holds_to`
 //! （按这里同一套表达式投影出来的「读出来的区间」），滑杆只按它们过滤。
 //!
-//! 未知的一端**读到证据为止**：`attested_at` 是这一行的各次观察里最早那份文档的
-//! 日期。没有起点 → 从它起成立；结束了不知哪天 → 到它为止。两端的不对称是故意
-//! 的：开放的结束端仍读作「直到有人说它结束」——结束会以记录的形式到来（后面的
-//! 文档、人的修正），把行关上；而缺失的起点没有这样的修正者，不会有谁来说
-//! 「2023 年它还没开始」。所以事实从有证据的那一刻起成立，之前的诚实答案是没有。
+//! 未知的一端**读到证据为止**，两端各有各的锚点（#393）：`attested_from` 是这一行的
+//! 各次观察里最早那份文档的日期——没有起点 → 从它起成立；`attested_to` 是**说出结束**
+//! 的那份文档的日期，只在「结束了不知哪天」的行上有——到它为止。一个锚点装不下两头：
+//! 没起点的裸行被一句「不再担任」关上时，起点要用第一份证据、终点要用说结束的那份。
+//! 两端的不对称仍是故意的：开放的结束端读作「直到有人说它结束」——结束会以记录的形式
+//! 到来，把行关上；缺失的起点没有这样的修正者，不会有谁来说「2023 年它还没开始」。
 //!
 //! `at` 为 NULL 在世界轴上是**每一刻**（画布画的是历史，滑杆负责收窄），与记录轴
 //! 的「NULL 即现在」不同：没有人持有一个晚于此刻的信念，而没有时刻的图是全部
@@ -22,7 +23,7 @@
 
 /// `facts`：读出来的下界——原文给了起点用起点，否则从最早的证据起。
 pub fn facts_holds_from(alias: &str) -> String {
-    format!("COALESCE({alias}.valid_from, {alias}.attested_at)")
+    format!("COALESCE({alias}.valid_from, {alias}.attested_from)")
 }
 
 /// `facts`：读出来的上界——原文给了终点用终点；说结束了但不知哪天，到最早说出它
@@ -30,7 +31,7 @@ pub fn facts_holds_from(alias: &str) -> String {
 pub fn facts_holds_to(alias: &str) -> String {
     format!(
         "CASE WHEN {alias}.valid_to IS NOT NULL THEN {alias}.valid_to \
-              WHEN {alias}.valid_to_precision = 'unknown' THEN {alias}.attested_at END"
+              WHEN {alias}.valid_to_precision = 'unknown' THEN {alias}.attested_to END"
     )
 }
 
