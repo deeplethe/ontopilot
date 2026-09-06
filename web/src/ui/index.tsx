@@ -1147,11 +1147,10 @@ export function RailItem({
       active={active}
       icon={icon}
       className={className}
+      // 计数只在有东西时出现，写成一枚 chip；0 不写——一栏灰零只是噪音
       trailing={
-        count !== undefined ? (
-          <span className={cn("u-num", count > 0 ? "text-ink-2" : "text-ink-3")}>
-            {count}
-          </span>
+        count !== undefined && count > 0 ? (
+          <span className="u-chip u-chip-neutral u-num">{count}</span>
         ) : undefined
       }
       {...props}
