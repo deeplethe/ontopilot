@@ -319,10 +319,17 @@ pub fn name_shape(a: &str, b: &str) -> NameShape {
                     .chars()
                     .last()
                     .is_some_and(|c| c.is_alphanumeric());
-            let after_ok = long[i + short.len()..]
-                .chars()
-                .next()
-                .is_none_or(|c| !c.is_alphabetic());
+            // 后面跟着字母不算整词——除非只多一个复数的 s：sorting algorithms 含着
+            // sorting algorithm，Times 含着 Time
+            let rest = &long[i + short.len()..];
+            let mut rest_chars = rest.chars();
+            let after_ok = match (rest_chars.next(), rest_chars.next()) {
+                (None, _) => true,
+                (Some(c), _) if !c.is_alphabetic() => true,
+                (Some('s'), None) => true,
+                (Some('s'), Some(d)) => !d.is_alphanumeric(),
+                _ => false,
+            };
             if before_ok && after_ok {
                 return Some(i);
             }
@@ -366,7 +373,21 @@ pub fn name_shape(a: &str, b: &str) -> NameShape {
     if long.matches(", ").count() >= 2 {
         return NameShape::Phrase;
     }
-    if pos + short.len() == long.len() {
+    // 短的那个在长的里到哪里结束：复数的 s 算在里面
+    let end = {
+        let rest = &long[pos + short.len()..];
+        if rest.starts_with('s')
+            && rest[1..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric())
+        {
+            pos + short.len() + 1
+        } else {
+            pos + short.len()
+        }
+    };
+    if end == long.len() {
         let front = long[..pos].trim().trim_end_matches([',', '-', ':']);
         if front.chars().next().is_some_and(|c| c.is_ascii_digit()) {
             return NameShape::Version;
@@ -377,7 +398,7 @@ pub fn name_shape(a: &str, b: &str) -> NameShape {
         return NameShape::Abbreviation;
     }
     if pos == 0 {
-        let tail = long[short.len()..]
+        let tail = long[end..]
             .trim()
             .trim_start_matches([',', '-', ':', '.', 'v']);
         let tail = tail.trim();
@@ -1307,7 +1328,15 @@ mod tests {
             name_shape("MuZero, AlphaStar, AlphaGeometry", "MuZero"),
             Phrase
         );
-        assert_eq!(name_shape("Time", "Financial Times"), Unrelated);
+        assert_eq!(name_shape("Time", "Financial Times"), Abbreviation);
+        assert_eq!(
+            name_shape(
+                "C++ Standard Library sorting algorithms",
+                "sorting algorithm"
+            ),
+            Phrase
+        );
+        assert_eq!(name_shape("Timeline", "Time"), Unrelated);
         assert_eq!(name_shape("Altimeter", "Altimeter Capital"), Suffix);
     }
 
