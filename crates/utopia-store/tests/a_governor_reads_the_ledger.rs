@@ -543,12 +543,10 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
 
     // agent 正在裁的一簇锁住（0025 第五刀）：任务在跑 + 标着 adjudicating + 开关开着，
     // 三样齐了人才裁不了；任务一停，标记只是标记
-    sqlx::query(
-        "INSERT INTO jobs (kind, payload, status) VALUES ('govern', $1, 'running')",
-    )
-    .bind(serde_json::json!({ "kb_id": s.kb }))
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO jobs (kind, payload, status) VALUES ('govern', $1, 'running')")
+        .bind(serde_json::json!({ "kb_id": s.kb }))
+        .execute(pool)
+        .await?;
     assert!(governance::agent_running(pool, s.kb).await?);
     let mercury = by_id(s.mercury);
     governance::lock(pool, s.kb, &[mercury.id]).await?;
@@ -566,7 +564,11 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
     assert!(!governance::agent_running(pool, s.kb).await?);
-    assert_eq!(governance::queue_len(pool, s.kb).await?, 3, "orion、mercury、zw23 等 agent 看");
+    assert_eq!(
+        governance::queue_len(pool, s.kb).await?,
+        3,
+        "orion、mercury、zw23 等 agent 看"
+    );
 
     // 定时扫描：开关开着且有没看过的对 → 在；关了 → 不在
     assert!(governance::due(pool).await?.contains(&s.kb));
