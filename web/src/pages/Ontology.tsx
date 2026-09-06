@@ -695,7 +695,7 @@ function PanelHeader({
       <div className="flex items-center gap-2">
         {color && (
           <span
-            className={`h-2.5 w-2.5 shrink-0 ${square ? "" : "rounded-full"}`}
+            className={`h-2.5 w-2.5 shrink-0 ${square ? "scale-90" : "rounded-full"}`}
             style={{ background: color, boxShadow: `0 0 8px ${color}55` }}
           />
         )}
@@ -742,7 +742,7 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
             className={rowClass()}
           >
             <span
-              className={`h-2 w-2 shrink-0 ${type.shape === "square" ? "" : "rounded-full"}`}
+              className={`h-2 w-2 shrink-0 ${type.shape === "square" ? "scale-90" : "rounded-full"}`}
               style={{ background: type.color }}
             />
             <span className="truncate">{e.name}</span>
@@ -1317,7 +1317,7 @@ function ClassTree({
           <span className="flex items-center gap-2">
             {/* 方形是直角：与圆形拉开区分度（图谱节点同理） */}
             <span
-              className={`h-2.5 w-2.5 shrink-0 ${t.shape === "square" ? "" : "rounded-full"}`}
+              className={`h-2.5 w-2.5 shrink-0 ${t.shape === "square" ? "scale-90" : "rounded-full"}`}
               style={{ background: t.color }}
             />
             {/* 不在列表里放逐项用量读数：数量级上来后统计和渲染都是负担，用量看表单 */}
@@ -1513,7 +1513,7 @@ export function ClassForm({
       {!headless && (
         <div className="flex items-center gap-2">
           <span
-            className={`h-3 w-3 ${shape === "square" ? "" : "rounded-full"}`}
+            className={`h-3 w-3 ${shape === "square" ? "scale-90" : "rounded-full"}`}
             style={{ background: color }}
           />
           <span className="font-semibold text-ink">
@@ -1566,12 +1566,16 @@ export function ClassForm({
             options={(["circle", "square"] as const).map((sh) => ({
               value: sh,
               title: sh,
+              // 图标占一行正文的高（h-4 = text-fine 的行高）：Segmented 的高度由内容撑，
+              // 光秃秃的 12px 图标会让它比旁边 32 高的色井矮一截
               label: (
-                <span
-                  className={`h-3 w-3 border-[1.5px] border-current ${
-                    sh === "circle" ? "rounded-full" : ""
-                  }`}
-                />
+                <span className="flex h-4 items-center">
+                  <span
+                    className={`h-3 w-3 border-[1.5px] border-current ${
+                      sh === "circle" ? "rounded-full" : "scale-90"
+                    }`}
+                  />
+                </span>
               ),
             }))}
           />

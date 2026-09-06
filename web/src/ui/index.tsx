@@ -740,7 +740,7 @@ export function ColorPicker({
           className="h-8 w-14 rounded-lg border border-line-strong hover:border-line-strong transition-colors bg-surface grid place-items-center"
         >
           <span
-            className={cn("h-3.5 w-3.5", shape === "circle" && "rounded-full")}
+            className={cn("h-3.5 w-3.5", shape === "circle" ? "rounded-full" : "scale-90")}
             style={{ background: valid ? value : ENTITY_PALETTE[0] }}
           />
         </button>

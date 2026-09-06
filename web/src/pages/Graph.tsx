@@ -1343,7 +1343,7 @@ export function Graph() {
               }
             >
               <span
-                className={`h-2 w-2 ${t.shape === "square" ? "" : "rounded-full"}`}
+                className={`h-2 w-2 ${t.shape === "square" ? "scale-90" : "rounded-full"}`}
                 style={{ background: t.color }}
               />
               <span>{t.label}</span>
@@ -1429,7 +1429,7 @@ export function Graph() {
                             }
                           >
                             <span
-                              className={`h-2 w-2 shrink-0 ${t.shape === "square" ? "" : "rounded-full"}`}
+                              className={`h-2 w-2 shrink-0 ${t.shape === "square" ? "scale-90" : "rounded-full"}`}
                               style={{
                                 background: t.color,
                                 opacity: hiddenTypes.has(key) ? 0.35 : 1,
