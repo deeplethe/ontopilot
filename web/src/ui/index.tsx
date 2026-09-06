@@ -1058,24 +1058,30 @@ export function localDateTime(iso: string): string {
    只差密度：nav 高一点、带图标；list 矮一点、可缩进。 */
 /** 一行的类：Row 自己用；页面里必须是 <Link> 的行（跳去图谱的实例行）也用它 */
 export type RowDensity = "nav" | "list" | "menu";
+/** 行的语义色：danger = 会删东西的那一行；warn = 通往危险区的入口——只是去往，
+ *  还没动手，用警示色而不是危险色 */
+export type RowTone = "danger" | "warn";
 export function rowClass(
   active?: boolean,
   density: RowDensity = "list",
-  danger?: boolean,
+  tone?: RowTone,
 ): string {
   return cn(
     "group flex w-full items-center gap-2 text-left transition-colors duration-fast",
     density === "menu" ? "rounded-none" : "rounded-lg",
+    // 左栏导航项 32 高（py 6）：36 在一列十几条里显得松
     density === "nav"
-      ? "px-2 py-2 text-body font-medium"
+      ? "px-2 py-1.5 text-body font-medium"
       : density === "menu"
         ? "px-3 py-2 text-small"
         : "px-2 py-1 text-body",
     active
       ? "u-nav-active"
-      : danger
+      : tone === "danger"
         ? "text-danger hover:bg-surface-2"
-        : "text-ink-2 hover:bg-surface-2 hover:text-ink",
+        : tone === "warn"
+          ? "text-warn hover:bg-surface-2"
+          : "text-ink-2 hover:bg-surface-2 hover:text-ink",
   );
 }
 /** 行右端小字：静止时最淡，整行被指着时提亮一级 */
@@ -1084,6 +1090,7 @@ export const ROW_TRAILING = "ml-auto shrink-0 text-fine text-ink-3 group-hover:t
 export function Row({
   active,
   danger,
+  tone,
   density = "list",
   indent = 0,
   icon,
@@ -1094,8 +1101,9 @@ export function Row({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   active?: boolean;
-  /** 危险的那一行（菜单里的删除） */
+  /** 危险的那一行（菜单里的删除）；= tone="danger" */
   danger?: boolean;
+  tone?: RowTone;
   /** nav = 左栏导航项；list = 列表行；menu = 弹出菜单里的一项（顶满、不圆角） */
   density?: RowDensity;
   /** 树形缩进的层级 */
@@ -1109,10 +1117,16 @@ export function Row({
       type={type}
       aria-current={active ? "true" : undefined}
       style={indent ? { paddingLeft: `${8 + indent * 14}px` } : undefined}
-      className={cn(rowClass(active, density, danger), className)}
+      className={cn(rowClass(active, density, danger ? "danger" : tone), className)}
       {...props}
     >
-      {icon && <span className="shrink-0 text-ink-3">{icon}</span>}
+      {/* 图标跟文字同色：选中变白、警示变橙都一起来。导航项没图标也留出
+          图标那一格，一列里有图标的和没图标的文字对齐 */}
+      {icon ? (
+        <span className="shrink-0">{icon}</span>
+      ) : density === "nav" ? (
+        <span className="w-3.5 shrink-0" aria-hidden />
+      ) : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {trailing && <span className={ROW_TRAILING}>{trailing}</span>}
     </button>

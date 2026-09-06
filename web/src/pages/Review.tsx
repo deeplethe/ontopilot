@@ -1257,7 +1257,7 @@ export function Review() {
       <aside className={`${RAIL_CLS} flex flex-col overflow-y-auto u-scroll`}>
         {/* 总览在最上面，七档队列直接排在它下面，不另起标题——「队列」这个词
             说的是它们是什么，而人要的是它们有多少 */}
-        <div className="px-3 pt-3 space-y-1">
+        <div className="u-rail-list px-3 pt-3">
           <RailItem
             active={active === "overview"}
             icon={<LayoutDashboard size={14} />}
@@ -1266,7 +1266,7 @@ export function Review() {
             {S.review.railOverview}
           </RailItem>
         </div>
-        <div className="px-3 pt-2 space-y-1">
+        <div className="u-rail-list px-3 pt-1">
           <RailItem
             active={active === "pending"}
             count={counts.pending}
@@ -1326,7 +1326,7 @@ export function Review() {
           </RailItem>
         </div>
         <RailHeader label={S.review.tabHistory} />
-        <div className="px-3 space-y-1">
+        <div className="u-rail-list px-3">
           <RailItem
             active={active === "decisions"}
                         onClick={() => select("decisions")}

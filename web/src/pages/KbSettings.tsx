@@ -27,6 +27,7 @@ import {
   NativeSelect,
   Pager,
   RAIL_CLS,
+  type RowTone,
   Row,
   SearchSelect,
   Segmented,
@@ -160,12 +161,13 @@ export function KbSettings() {
     key: Section;
     label: string;
     Icon: typeof Settings2;
-    danger?: boolean;
+    tone?: RowTone;
   }[] = [
     { key: "general", label: S.kbset.general, Icon: Settings2 },
     { key: "members", label: S.kbset.members, Icon: Users },
     { key: "activity", label: S.kbset.activity, Icon: HistoryIcon },
-    // 默认库不可删除：danger 节整个不出现
+    // 默认库不可删除：danger 节整个不出现。入口用警示色：这一条只是去往危险区，
+    // 真正删库的那个按钮才是危险色
     ...(isDefault
       ? []
       : [
@@ -173,7 +175,7 @@ export function KbSettings() {
             key: "danger" as Section,
             label: S.kbset.danger,
             Icon: TriangleAlert,
-            danger: true,
+            tone: "warn" as const,
           },
         ]),
   ];
@@ -181,13 +183,13 @@ export function KbSettings() {
   return (
     <div className="h-full flex">
       {/* 分节导航：未来的抽取设置/保留策略/令牌等在此扩展 */}
-      <aside className={`${RAIL_CLS} p-3 space-y-1`}>
-        {sections.map(({ key, label, Icon, danger }) => (
+      <aside className={`${RAIL_CLS} u-rail-list p-3`}>
+        {sections.map(({ key, label, Icon, tone }) => (
           <Row
             key={key}
             density="nav"
             active={section === key}
-            danger={danger}
+            tone={tone}
             icon={<Icon size={14} />}
             onClick={() => setSection(key)}
           >

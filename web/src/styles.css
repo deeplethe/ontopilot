@@ -1116,6 +1116,14 @@ a:hover > .u-mark-arrow {
   text-wrap: balance;
 }
 
+/* ---- 左栏的一列导航项：行高 32，行距 2——4 在这里已经算松，而 2 不在间距阶梯上，
+        所以定在这里而不是页面里 ---- */
+.u-rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* ---- numbers in chrome: 默认字体（Geist）+ 等宽数字，不再用 mono ---- */
 .u-num {
   font-variant-numeric: tabular-nums;

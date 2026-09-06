@@ -472,7 +472,7 @@ export function Chat() {
             角落（左上各 12px、中号带放大镜）：换标签页时框留在原地。
             **标题重是常态**（同一个问题问两次就重了），而正文里那句话才是人
             记得住的——所以服务端两处都搜 */}
-        <div className="px-3 pt-3 pb-2">
+        <div className="px-3 pt-3 pb-1">
           <Input
             icon={<Search size={12} />}
             placeholder={S.ask.searchConversations}
@@ -489,7 +489,7 @@ export function Chat() {
             {S.ask.newChat}
           </Row>
         </div>
-        <div className="u-scroll flex-1 overflow-y-auto px-3 pb-3 space-y-1">
+        <div className="u-rail-list u-scroll flex-1 overflow-y-auto px-3 pb-3">
           {(convs.data?.conversations ?? []).map((c: ConversationRow) => (
             <div
               key={c.id}
