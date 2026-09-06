@@ -346,6 +346,21 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
 
     // 人裁了张伟 1 对 2：同簇的张伟 2 对 3 的建议作废、回到队列；Apple 的不受影响
     utopia_store::resolution::decide_review(pool, s.kb, s.zw12, "keep", s.user).await?;
+    // 同一对实体人裁过：不分左右；别的对没有
+    let zw = by_id(s.zw12);
+    assert_eq!(
+        governance::decided_before(pool, s.kb, zw.left.id, zw.right.id).await?,
+        Some(false)
+    );
+    assert_eq!(
+        governance::decided_before(pool, s.kb, zw.right.id, zw.left.id).await?,
+        Some(false)
+    );
+    let ap = by_id(s.apple);
+    assert_eq!(
+        governance::decided_before(pool, s.kb, ap.left.id, ap.right.id).await?,
+        None
+    );
     assert_eq!(governance::supersede_siblings(pool, s.kb, s.zw12).await?, 1);
     assert_eq!(
         governance::get(pool, s.kb, d_zw23).await?.status,

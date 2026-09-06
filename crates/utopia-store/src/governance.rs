@@ -19,6 +19,8 @@ use crate::resolution::{assemble_reviews, ReviewRow};
 
 /// 自己动手的置信度线。比攒批裁决器的 0.8 高一点：那一档只看这一对，这里是替人做主
 pub const AUTO_CONF: f32 = 0.85;
+/// 历史同意时的线：人对这一对、这个名字或这种类型对做过同样的决定，agent 的把握可以低一点
+pub const SUPPORTED_CONF: f32 = 0.75;
 /// 类型对的习惯要有多少笔人的决定才算数
 pub const TYPE_PAIR_MIN: i64 = 5;
 /// 每族先例最多带几条进提示词
@@ -249,36 +251,92 @@ pub enum Gate {
     Propose,
 }
 
-/// 硬规则先于置信度：类型冲突不合、有撤回只建议、与人对这一对的决定相反只建议。
-/// 合并要有先例撑着——这一对合过、这个名字合过且从没分过、或这种类型对有明显的
-/// 合并习惯且没撤回过；分开只要置信度。一个库里没有任何人的历史，就不会自己合
+impl Precedents {
+    /// 历史同意这个判决：这一对被人这么裁过、这个名字每次都这么裁、或这种类型对有
+    /// 这个习惯（够 TYPE_PAIR_MIN 笔；合并的习惯还要求没撤回过）
+    pub fn supports(&self, same: bool) -> bool {
+        let pair = self.same_pair.iter().any(|x| x.merged() == same);
+        let name = !self.same_name.is_empty() && self.same_name.iter().all(|x| x.merged() == same);
+        let habit = self.type_pair.as_ref().is_some_and(|t| {
+            t.merged + t.kept >= TYPE_PAIR_MIN
+                && if same {
+                    t.merged >= t.kept && t.reverted == 0
+                } else {
+                    t.kept > t.merged
+                }
+        });
+        pair || name || habit
+    }
+}
+
+/// agent 按自己的把握判，历史是参考（0025 决定 4，2026-09-06 修订）。历史反对就拦住：
+/// 人分开过这一对却说合、合过却说分、涉及任一名字的撤回。历史同意就把线放低。其余
+/// 按 agent 自己的把握。类型冲突永远不合——那是规则，不是把握
 pub fn gate(same: Option<bool>, conf: f32, types_conflict: bool, p: &Precedents) -> Gate {
     let Some(same) = same else {
         return Gate::Propose;
     };
-    if conf < AUTO_CONF || !p.reverts.is_empty() {
+    if !p.reverts.is_empty() || p.same_pair.iter().any(|x| x.merged() != same) {
         return Gate::Propose;
     }
-    if p.same_pair.iter().any(|x| x.merged() != same) {
+    if same && types_conflict {
         return Gate::Propose;
     }
-    if !same {
-        return Gate::Apply;
-    }
-    if types_conflict {
-        return Gate::Propose;
-    }
-    let pair_support = p.same_pair.iter().any(|x| x.merged());
-    let name_support =
-        p.same_name.iter().any(|x| x.merged()) && p.same_name.iter().all(|x| x.merged());
-    let habit = p.type_pair.as_ref().is_some_and(|t| {
-        t.merged + t.kept >= TYPE_PAIR_MIN && t.merged >= t.kept && t.reverted == 0
-    });
-    if pair_support || name_support || habit {
+    let bar = if p.supports(same) {
+        SUPPORTED_CONF
+    } else {
+        AUTO_CONF
+    };
+    if conf >= bar {
         Gate::Apply
     } else {
         Gate::Propose
     }
+}
+
+/// 同一对实体，人裁过没有：Some(true) 合过、Some(false) 分过、None 没裁过。
+/// 按实体 id 认，不按名字——名字一样的两个「张伟」不是同一个问题
+pub async fn decided_before(
+    pool: &PgPool,
+    kb_id: Uuid,
+    a: Uuid,
+    b: Uuid,
+) -> AppResult<Option<bool>> {
+    let merged: Option<bool> = sqlx::query_scalar(
+        "SELECT status = 'merged' FROM resolution_reviews
+         WHERE kb_id = $1 AND decided_by IS NOT NULL AND status IN ('merged', 'kept')
+           AND ((left_id = $2 AND right_id = $3) OR (left_id = $3 AND right_id = $2))
+         ORDER BY decided_at DESC LIMIT 1",
+    )
+    .bind(kb_id)
+    .bind(a)
+    .bind(b)
+    .fetch_optional(pool)
+    .await?;
+    Ok(merged)
+}
+
+/// 人已经定过的一对，照人的定：同一对实体裁过；或者名字不同的一对名字，人对这一对
+/// 名字的决定一致（「OpenAI OpCo ≟ OpenAI」合过就是合）。同名的一对不算——那只说明
+/// 库里有过重名，不说明眼前这两个是谁。有撤回的不走这条路
+pub fn settled_by_people(
+    left_name: &str,
+    right_name: &str,
+    p: &Precedents,
+    prior: Option<bool>,
+) -> Option<bool> {
+    if !p.reverts.is_empty() {
+        return None;
+    }
+    if let Some(m) = prior {
+        return Some(m);
+    }
+    if left_name.to_lowercase() == right_name.to_lowercase() {
+        return None;
+    }
+    let mut it = p.same_pair.iter();
+    let first = it.next()?.merged();
+    it.all(|x| x.merged() == first).then_some(first)
 }
 
 /// 有一条开着的建议的对不进队列：agent 已经问过了，等人答
@@ -710,37 +768,96 @@ mod tests {
     }
 
     #[test]
-    fn merging_needs_precedent() {
+    fn the_agent_judges_and_history_moves_the_bar() {
+        // 没有任何历史：agent 自己的把握够就合，不够就问
         let none = Precedents::default();
-        assert_eq!(gate(Some(true), 0.99, false, &none), Gate::Propose);
+        assert_eq!(gate(Some(true), 0.9, false, &none), Gate::Apply);
+        assert_eq!(gate(Some(true), 0.8, false, &none), Gate::Propose);
+        // 历史同意：线降到 SUPPORTED_CONF
         let pair = Precedents {
             same_pair: vec![p("review.merge")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(true), 0.9, false, &pair), Gate::Apply);
+        assert_eq!(gate(Some(true), 0.8, false, &pair), Gate::Apply);
+        assert_eq!(gate(Some(true), 0.7, false, &pair), Gate::Propose);
         let name = Precedents {
             same_name: vec![p("merge.manual"), p("review.merge")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(true), 0.9, false, &name), Gate::Apply);
+        assert_eq!(gate(Some(true), 0.8, false, &name), Gate::Apply);
+        // 同名的决定有合有分：不算同意，回到 agent 自己的线
         let mixed = Precedents {
             same_name: vec![p("review.merge"), p("review.keep")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(true), 0.9, false, &mixed), Gate::Propose);
+        assert_eq!(gate(Some(true), 0.8, false, &mixed), Gate::Propose);
+        assert_eq!(gate(Some(true), 0.9, false, &mixed), Gate::Apply);
+        // 类型对的习惯
         assert_eq!(
-            gate(Some(true), 0.9, false, &with_stats(6, 2, 0)),
+            gate(Some(true), 0.8, false, &with_stats(6, 2, 0)),
             Gate::Apply
         );
         assert_eq!(
-            gate(Some(true), 0.9, false, &with_stats(3, 1, 0)),
+            gate(Some(true), 0.8, false, &with_stats(3, 1, 0)),
             Gate::Propose,
             "习惯要够 {TYPE_PAIR_MIN} 笔才算"
         );
         assert_eq!(
-            gate(Some(true), 0.9, false, &with_stats(6, 2, 1)),
+            gate(Some(true), 0.8, false, &with_stats(6, 2, 1)),
             Gate::Propose,
-            "撤回过的类型对不算习惯"
+            "撤回过的类型对不算合并的习惯"
+        );
+        // 分开那一边同样：人一直分开的名字，分开的线也低
+        assert_eq!(gate(Some(false), 0.8, false, &none), Gate::Propose);
+        let kept = Precedents {
+            same_pair: vec![p("review.keep")],
+            ..Default::default()
+        };
+        assert_eq!(gate(Some(false), 0.8, false, &kept), Gate::Apply);
+        assert_eq!(
+            gate(Some(false), 0.8, false, &with_stats(1, 8, 0)),
+            Gate::Apply
+        );
+    }
+
+    #[test]
+    fn a_pair_people_decided_skips_the_agent() {
+        let none = Precedents::default();
+        assert_eq!(
+            settled_by_people("Apple", "Apple Inc.", &none, Some(true)),
+            Some(true)
+        );
+        assert_eq!(
+            settled_by_people("Zhang Wei", "Zhang Wei", &none, Some(false)),
+            Some(false)
+        );
+        assert_eq!(settled_by_people("Apple", "Apple Inc.", &none, None), None);
+        let merged = Precedents {
+            same_pair: vec![p("review.merge"), p("merge.manual")],
+            ..Default::default()
+        };
+        assert_eq!(
+            settled_by_people("Apple", "Apple Inc.", &merged, None),
+            Some(true)
+        );
+        assert_eq!(
+            settled_by_people("Zhang Wei", "Zhang Wei", &merged, None),
+            None,
+            "同名的一对：名字上的先例说不了眼前这两个是谁"
+        );
+        let mixed = Precedents {
+            same_pair: vec![p("review.merge"), p("review.keep")],
+            ..Default::default()
+        };
+        assert_eq!(settled_by_people("Apple", "Apple Inc.", &mixed, None), None);
+        let reverted = Precedents {
+            same_pair: vec![p("review.merge")],
+            reverts: vec![p("merge.revert")],
+            ..Default::default()
+        };
+        assert_eq!(
+            settled_by_people("Apple", "Apple Inc.", &reverted, Some(true)),
+            None
         );
     }
 
