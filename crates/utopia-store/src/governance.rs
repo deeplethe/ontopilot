@@ -441,6 +441,30 @@ pub async fn settle(
     Ok(())
 }
 
+/// 人在卡片上裁了一对：这一对上开着的建议就此有了答案——动作与建议相同是
+/// accepted，不同是 overridden；没有开着的建议就什么都不做
+pub async fn answer_open(
+    pool: &PgPool,
+    kb_id: Uuid,
+    review_id: Uuid,
+    action: &str,
+    user_id: Uuid,
+) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE agent_decisions
+            SET status = CASE WHEN action = $3 THEN 'accepted' ELSE 'overridden' END,
+                decided_at = now(), decided_by = $4
+          WHERE kb_id = $1 AND target_kind = 'review' AND target_id = $2 AND status = 'proposed'",
+    )
+    .bind(kb_id)
+    .bind(review_id)
+    .bind(action)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// 人裁了一对：同名或同实体的其他对上开着的建议过时了——那些建议是在没有这笔
 /// 先例时写的。标成 superseded，那些对回到队列，下一轮带着新先例再看
 pub async fn supersede_siblings(pool: &PgPool, kb_id: Uuid, review_id: Uuid) -> AppResult<u64> {

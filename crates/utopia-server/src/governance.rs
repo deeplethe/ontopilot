@@ -247,10 +247,23 @@ async fn audit(
     .await;
 }
 
-/// 人裁了一对之后：同名或同实体的对上的建议过时、那些对回到队列；开关开着就排一轮。
-/// 人批量分开三对张伟，agent 顺着同一簇把剩下的照办——#428 要的自动处理就是这一步
-pub async fn after_human_decision(state: &AppState, kb_id: Uuid, review_ids: &[Uuid]) {
+/// 人裁了一对之后：这一对上开着的建议就是被回答了（与建议相同是接受，不同是改判）；
+/// 同名或同实体的对上的建议过时、那些对回到队列；开关开着就排一轮。
+/// 人批量分开三对张伟，agent 顺着同一簇把剩下的照办——#428 要的自动处理就是这一步。
+/// `action` 为 None 时不答本对的建议（Agent 队列那条路自己已经答过了）
+pub async fn after_human_decision(
+    state: &AppState,
+    kb_id: Uuid,
+    review_ids: &[Uuid],
+    action: Option<&str>,
+    user_id: Uuid,
+) {
     for &id in review_ids {
+        if let Some(action) = action {
+            if let Err(e) = governance::answer_open(&state.pool, kb_id, id, action, user_id).await {
+                tracing::warn!(%kb_id, review = %id, error = %e, "治理：建议回答失败");
+            }
+        }
         if let Err(e) = governance::supersede_siblings(&state.pool, kb_id, id).await {
             tracing::warn!(%kb_id, review = %id, error = %e, "治理：建议作废失败");
         }

@@ -89,13 +89,18 @@ function DailyBars({ days }: { days: ReviewSummary["decided"]["daily"] }) {
 
 export function ReviewOverview({
   summary,
+  governance,
   onPick,
+  onSettings,
 }: {
   summary: ReviewSummary;
+  /** 这个库的治理开关（0025）：关着时 Agent 那一段说明去哪里打开 */
+  governance: boolean;
   /** 点某一档的「去处理」：落到左栏那一档 */
-  onPick: (queue: WaitingQueue) => void;
+  onPick: (queue: WaitingQueue | "agent") => void;
+  onSettings: () => void;
 }) {
-  const { waiting, decided, health } = summary;
+  const { waiting, decided, health, agent } = summary;
   const waitingTotal = WAITING.reduce((n, w) => n + waiting[w.key].count, 0);
   const share = (n: number) =>
     health.facts === 0 ? "—" : `${Math.round((n / health.facts) * 1000) / 10}%`;
@@ -176,6 +181,46 @@ export function ReviewOverview({
                 ))}
               </div>
             </div>
+          </div>
+        )}
+      </section>
+
+      {/* agent 做过的（0025）：开着的建议、自动裁了还站着的、人接受 / 改判 / 撤回的。
+          开关关着且什么都没做过时只说一句去哪里打开，不摆四个零 */}
+      <section>
+        <SectionHead>{S.review.overviewAgent}</SectionHead>
+        {!governance && (
+          <p className="mb-3 text-small text-ink-3">
+            {S.review.overviewAgentOff}{" "}
+            <LinkButton onClick={onSettings}>{S.review.overviewAgentSettings}</LinkButton>
+          </p>
+        )}
+        {(governance || agent.open > 0 || agent.last_30d.applied > 0) && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Stat
+              value={agent.open}
+              label={S.review.overviewAgentOpen}
+              action={
+                agent.open > 0
+                  ? { label: S.review.overviewOpen, onClick: () => onPick("agent") }
+                  : undefined
+              }
+            />
+            <Stat
+              value={agent.last_7d.applied}
+              label={S.review.overviewAgentApplied}
+              note={S.review.overviewLast7}
+            />
+            <Stat
+              value={agent.last_30d.accepted}
+              label={S.review.overviewAgentAccepted}
+              note={S.review.overviewAgentOverridden(agent.last_30d.overridden)}
+            />
+            <Stat
+              value={agent.last_30d.reverted}
+              label={S.review.overviewAgentReverted}
+              note={S.review.overviewLast30}
+            />
           </div>
         )}
       </section>

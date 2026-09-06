@@ -13,8 +13,8 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use utopia_core::models::{
-    ActionCount, ActorCount, DecidedDay, DecidedWindow, QueueWait, ReviewDecided, ReviewHealth,
-    ReviewSummary, ReviewWaiting,
+    ActionCount, ActorCount, AgentWindow, DecidedDay, DecidedWindow, QueueWait, ReviewAgent,
+    ReviewDecided, ReviewHealth, ReviewSummary, ReviewWaiting,
 };
 use utopia_core::AppResult;
 use uuid::Uuid;
@@ -31,15 +31,17 @@ const DECISION_ACTIONS: &str = "(e.action LIKE 'review.%' OR e.action LIKE 'fact
      OR e.action LIKE 'conflict.%' OR e.action LIKE 'merge.%')";
 
 pub async fn summary(pool: &PgPool, kb_id: Uuid) -> AppResult<ReviewSummary> {
-    let (waiting, decided, health) = tokio::try_join!(
+    let (waiting, decided, health, agent) = tokio::try_join!(
         waiting(pool, kb_id),
         decided(pool, kb_id),
         health(pool, kb_id),
+        agent(pool, kb_id),
     )?;
     Ok(ReviewSummary {
         waiting,
         decided,
         health,
+        agent,
     })
 }
 
@@ -247,6 +249,55 @@ struct HealthRow {
     low_confidence: i64,
     unconfirmed: i64,
     contested: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct AgentRow {
+    status: String,
+    last_7d: i64,
+    last_30d: i64,
+}
+
+/// agent 的记录（0025）：开着的建议不分时间；两个窗口里写下的行按**现在的**
+/// 状态数——「自动裁了还站着的」与「被撤回的」是两个数，合起来才是它动过手的
+async fn agent(pool: &PgPool, kb_id: Uuid) -> AppResult<ReviewAgent> {
+    let open: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM agent_decisions WHERE kb_id = $1 AND status = 'proposed'",
+    )
+    .bind(kb_id)
+    .fetch_one(pool)
+    .await?;
+    let rows: Vec<AgentRow> = sqlx::query_as(
+        "SELECT status,
+                count(*) FILTER (WHERE created_at >= now() - interval '7 days') AS last_7d,
+                count(*) AS last_30d
+           FROM agent_decisions
+          WHERE kb_id = $1 AND created_at >= now() - interval '30 days'
+          GROUP BY status",
+    )
+    .bind(kb_id)
+    .fetch_all(pool)
+    .await?;
+    let window = |seven: bool| {
+        let mut w = AgentWindow::default();
+        for r in &rows {
+            let n = if seven { r.last_7d } else { r.last_30d };
+            match r.status.as_str() {
+                "applied" => w.applied = n,
+                "proposed" => w.proposed = n,
+                "accepted" => w.accepted = n,
+                "overridden" => w.overridden = n,
+                "reverted" => w.reverted = n,
+                _ => {}
+            }
+        }
+        w
+    };
+    Ok(ReviewAgent {
+        open,
+        last_7d: window(true),
+        last_30d: window(false),
+    })
 }
 
 async fn health(pool: &PgPool, kb_id: Uuid) -> AppResult<ReviewHealth> {

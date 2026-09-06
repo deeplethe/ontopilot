@@ -767,6 +767,17 @@ pub struct ReviewSide {
     pub top_facts: Vec<String>,
 }
 
+/// agent 在一对上留下的、还开着的建议（0025）：卡片上挂一个标签，人在卡片上
+/// 的裁决就是对它的回答
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ReviewProposal {
+    pub id: Uuid,
+    /// merge | keep | unsure
+    pub action: String,
+    pub confidence: f32,
+    pub reason: Option<String>,
+}
+
 /// 消解审核项：疑似同一实体的灰区对。
 #[derive(Debug, Clone, Serialize)]
 pub struct ReviewItem {
@@ -778,6 +789,8 @@ pub struct ReviewItem {
     pub created_at: DateTime<Utc>,
     pub left: ReviewSide,
     pub right: ReviewSide,
+    /// agent 的建议，没有就是 None
+    pub proposal: Option<ReviewProposal>,
 }
 
 /// 合并日志行（审核页历史区）。
@@ -1219,6 +1232,8 @@ pub struct ReviewCounts {
     pub merges: i64,
     /// agent 写下、等人回答的建议（0025）
     pub agent: i64,
+    /// agent 的全部记录（Agent 队列翻页用）
+    pub agent_rows: i64,
 }
 
 /// agent 的一笔（0025）：看了哪一对、想怎么办、凭什么、人怎么答的。
@@ -1262,6 +1277,27 @@ pub struct ReviewSummary {
     pub waiting: ReviewWaiting,
     pub decided: ReviewDecided,
     pub health: ReviewHealth,
+    pub agent: ReviewAgent,
+}
+
+/// agent 在这个库里做过什么（0025）：开着的建议，以及近期每一笔现在的状态
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ReviewAgent {
+    /// 等人回答的建议，不分时间
+    pub open: i64,
+    pub last_7d: AgentWindow,
+    pub last_30d: AgentWindow,
+}
+
+/// 一个时间窗口里 agent 写下的行，按**现在的**状态数：自动裁了还站着的、
+/// 人接受的、人改判的、人撤回的
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct AgentWindow {
+    pub applied: i64,
+    pub proposed: i64,
+    pub accepted: i64,
+    pub overridden: i64,
+    pub reverted: i64,
 }
 
 /// 一档队列里等着的：多少条、最老的一条从什么时候开始等

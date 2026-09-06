@@ -1211,8 +1211,35 @@ pub(crate) async fn assemble_reviews(
     kb_id: Uuid,
     rows: Vec<ReviewRow>,
 ) -> AppResult<Vec<ReviewItem>> {
+    // 这一页上开着的建议（0025）：一趟查完，按审核行挂上去
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let proposals: Vec<(Uuid, utopia_core::models::ReviewProposal)> =
+        sqlx::query_as::<_, (Uuid, Uuid, String, f32, Option<String>)>(
+            "SELECT target_id, id, action, confidence, reason FROM agent_decisions
+         WHERE target_kind = 'review' AND target_id = ANY($1) AND status = 'proposed'",
+        )
+        .bind(&ids)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|(target, id, action, confidence, reason)| {
+            (
+                target,
+                utopia_core::models::ReviewProposal {
+                    id,
+                    action,
+                    confidence,
+                    reason,
+                },
+            )
+        })
+        .collect();
     let mut items = Vec::with_capacity(rows.len());
     for r in rows {
+        let proposal = proposals
+            .iter()
+            .find(|(t, _)| *t == r.id)
+            .map(|(_, p)| p.clone());
         items.push(ReviewItem {
             id: r.id,
             score: r.score,
@@ -1221,6 +1248,7 @@ pub(crate) async fn assemble_reviews(
             created_at: r.created_at,
             left: review_side(pool, kb_id, r.left_id).await?,
             right: review_side(pool, kb_id, r.right_id).await?,
+            proposal,
         });
     }
     Ok(items)

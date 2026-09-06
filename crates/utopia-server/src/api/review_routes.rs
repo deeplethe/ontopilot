@@ -335,7 +335,14 @@ pub async fn decide(
         )
         .await;
     }
-    crate::governance::after_human_decision(&state, kb_id, &[review_id]).await;
+    crate::governance::after_human_decision(
+        &state,
+        kb_id,
+        &[review_id],
+        Some(&body.action),
+        user.id,
+    )
+    .await;
     state.emit_review(kb_id);
     Ok(Json(json!({ "ok": true })))
 }
@@ -452,7 +459,7 @@ pub async fn agent_answer(
             .into())
         }
     }
-    crate::governance::after_human_decision(&state, kb_id, &[d.target_id]).await;
+    crate::governance::after_human_decision(&state, kb_id, &[d.target_id], None, user.id).await;
     state.emit_review(kb_id);
     Ok(Json(json!({ "ok": true })))
 }
@@ -528,7 +535,14 @@ pub async fn batch(
         .filter(|o| o.error.is_none())
         .map(|o| o.id)
         .collect();
-    crate::governance::after_human_decision(&state, kb_id, &decided_ids).await;
+    crate::governance::after_human_decision(
+        &state,
+        kb_id,
+        &decided_ids,
+        Some(&body.action),
+        user.id,
+    )
+    .await;
     state.emit_review(kb_id);
     let decided = decided_ids.len();
     Ok(Json(json!({ "decided": decided, "outcomes": outcomes })))

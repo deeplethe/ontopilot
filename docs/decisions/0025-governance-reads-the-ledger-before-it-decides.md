@@ -1,6 +1,6 @@
 # 0025 · Governance reads the ledger before it decides
 
-- **Status**: cut 1 implemented · migration 0035 adds `knowledge_bases.governance` and `agent_decisions`; `governance` in the store holds the precedent families, the first-in-first-out queue with its clusters, the gate and the table; the `govern` job in the server reads the switch, calls the model with precedents and applies or proposes; `?queue=agent`, `ReviewCounts.agent` and `POST /kbs/{id}/review/agent/{decision_id}` on the API · cut 2 (a tool-using loop with a `defer` action), cut 3 (the switch, the Agent queue and the Overview section in the UI) and cut 4 (the fuse) are open, see the last section
+- **Status**: cut 1 implemented · migration 0035 adds `knowledge_bases.governance` and `agent_decisions`; `governance` in the store holds the precedent families, the first-in-first-out queue with its clusters, the gate and the table; the `govern` job in the server reads the switch, calls the model with precedents and applies or proposes; `?queue=agent`, `ReviewCounts.agent` and `POST /kbs/{id}/review/agent/{decision_id}` on the API · cut 3 (UI) implemented: the switch in base settings, the Agent queue with its rows and answers, the proposal chip on a duplicate card whose Merge / Keep answers the proposal, the Agent section on the Overview · cut 2 (a tool-using loop with a `defer` action) and cut 4 (the fuse) are open, see the last section
 - **Written**: 2026-09-06 (conventions in the [README](README.md))
 - **Related**: [0016](0016-close-the-open-seams-before-cutting-new-ones.md) C2 gave a base its first automation switch, `auto_type_resolution`, and this record copies its shape; #428 asked for bulk and automatic handling of same-name pairs and got the batch path (#429, #430) this builds on; [0020](0020-an-auditor-reads-it-without-us.md) made the ledger complete enough to be read back; [0015](0015-recording-a-sentence-is-not-asserting-a-fact.md) keeps a person's own sentences out of any machine's reach.
 
@@ -64,7 +64,6 @@ Duplicates that the agent proposed on carry the reason code `proposed`; pairs it
 ## Open questions
 
 - **Cut 2, the loop.** Today the governor is the adjudicator with precedents and a gate. The next cut lets the model ask for an entity's facts, a source chunk or a ledger search instead of receiving one block, and adds a `defer` action that leaves a specific question for a person on the row.
-- **Cut 3, the UI.** The switch in base settings, the Agent queue, a chip on a pair that carries a proposal, the agent section on the Overview. Left unmerged until it has been looked at on the dev server.
 - **Cut 4, the fuse.** Two reverts of applied merges within seven days turn the switch off and raise an alert; the person turns it back on.
 - **Other queues.** Conflicts have three human actions to learn from (`conflict.close_old`, `keep_both`, `reject_new`); unconfirmed and low-confidence facts have `fact.confirm` and `fact.reject`. Nods (`pending_facts`, 0015) stay out: the person who said it nods.
 - **Cross-base precedent.** A workspace's other bases may hold the same names. Kept to one base until someone asks.

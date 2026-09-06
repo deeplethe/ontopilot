@@ -1492,7 +1492,39 @@ export const en = {
     railDefects: "Ontology",
     railDecisions: "Decisions",
     railMerges: "Merges",
+    railAgent: "Agent",
     categoryEmpty: "This queue is clear.",
+    // agent 的队列（0025）
+    agentTitle: "Agent",
+    agentHint:
+      "What the agent proposed or decided for this base, from the decisions people made here before. Answering here is your decision, and it becomes precedent for the next look.",
+    agentEmpty: "The agent has not looked at anything yet.",
+    agentActions: { merge: "Merge", keep: "Keep apart", unsure: "Unsure" } as Record<string, string>,
+    agentStatus: {
+      proposed: "Proposed",
+      applied: "Applied",
+      accepted: "Accepted",
+      overridden: "Overridden",
+      reverted: "Reverted",
+      superseded: "Superseded",
+    } as Record<string, string>,
+    agentSuggests: (action: string, pct: number) => `Agent: ${action.toLowerCase()} · ${pct}%`,
+    agentPrecedents: (n: number) => (n === 1 ? "1 precedent" : `${n} precedents`),
+    agentPrecedentMerged: "merged by a person",
+    agentPrecedentKept: "kept apart by a person",
+    agentPrecedentReverted: "merge reverted by a person",
+    agentPrecedentHabit: (merged: number, kept: number, reverted: number) =>
+      `This type pair in this base: ${merged} merged, ${kept} kept apart, ${reverted} reverted`,
+    agentAnsweredBy: (name: string, date: string) => `${name} · ${date}`,
+    overviewAgent: "Agent",
+    overviewAgentOff: "Governance is off for this base.",
+    overviewAgentSettings: "Turn it on in settings",
+    overviewAgentOpen: "Waiting for your answer",
+    overviewAgentApplied: "Decided on its own",
+    overviewAgentAccepted: "Proposals you accepted",
+    overviewAgentOverridden: (n: number) =>
+      n === 1 ? "1 overridden, last 30 days" : `${n} overridden, last 30 days`,
+    overviewAgentReverted: "Reverted by you",
     // 总览（#377）
     overviewTitle: "Overview",
     overviewHint:
@@ -1742,6 +1774,9 @@ export const en = {
     autoResolveTypes: "Resolve entity types after extraction",
     autoResolveTypesNote:
       "After each document is extracted, run a round of type resolution on entities the engine has not looked at yet. Only refinements within the current class are applied on their own — a re-classification across the tree still waits for you on the Ontology page. Every batch is listed there and can be undone.",
+    governance: "Let the agent work the duplicates queue",
+    governanceNote:
+      "First in, first out. Before deciding a pair the agent reads what people in this base decided on the same names and the same kinds of pairs. It merges only where that history supports it, keeps apart on confidence, and leaves a proposal for everything else. Every decision is listed under Agent on the Review page and can be reverted. Turning this off stops the queue.",
     inferEvery: "Re-derive every",
     minutes: "minutes",
     lastInference: (when: string) => `last run ${when}`,
