@@ -272,7 +272,7 @@ export function AlertBell() {
   return (
     <div ref={rootRef} className="relative">
       <IconButton
-        size="sm"
+        size="md"
         ref={anchorRef}
         label={S.alerts.badgeLabel}
         aria-expanded={open}

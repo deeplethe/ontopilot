@@ -588,8 +588,9 @@ select.input-dark option {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
+  height: 2rem;
   border-radius: 0.5rem;
-  padding: 0.25rem 0.625rem;
+  padding: 0 0.625rem;
   font-size: var(--text-fine);
   line-height: var(--text-fine--line-height);
   color: var(--u-text-2);
@@ -731,7 +732,10 @@ select.input-dark option {
 
 /* 顶栏里的小链接（Docs、返回） */
 .u-navlink {
-  padding: 0.25rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  padding: 0 0.5rem;
   border-radius: 0.5rem;
   font-size: var(--text-small);
   line-height: var(--text-small--line-height);
@@ -838,9 +842,8 @@ select.input-dark option {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  height: auto;
   border-radius: 0.5rem;
-  padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+  padding: 0 0.75rem 0 0.25rem;
   transition:
     background-color var(--u-fast),
     opacity var(--u-fast);
