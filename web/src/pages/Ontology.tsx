@@ -729,7 +729,7 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
   return (
     // 平铺在面板里：面板已经是一块面，里面不再套卡片。标题与行同一个 px-2
     <div>
-      <GroupLabel className="mb-1 px-2" count={total}>
+      <GroupLabel className="mb-1" count={total}>
         {S.ontology.instances}
       </GroupLabel>
       <div>
@@ -739,7 +739,7 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
             to="/kb/$kbId/graph"
             params={{ kbId }}
             search={{ entity: e.id }}
-            className={rowClass()}
+            className={cn(rowClass(), "-mx-2")}
           >
             <span
               className={`h-2 w-2 shrink-0 ${type.shape === "square" ? "scale-90" : "rounded-full"}`}
@@ -868,13 +868,13 @@ function RelationshipsCard({
     // 平铺在面板里，与图谱面板的关系分组同一个骨架：带方向箭头的小标题 + 行
     <div>
       <GroupLabel
-        className="mb-1 px-2"
+        className="mb-1"
         count={outgoing.length + incoming.length || undefined}
       >
         {S.ontology.schemaRelationships}
       </GroupLabel>
       {outgoing.length === 0 && incoming.length === 0 ? (
-        <p className="mb-2 px-2 text-small text-ink-3">
+        <p className="mb-2 text-small text-ink-3">
           {S.ontology.schemaNoRelationships}
         </p>
       ) : (
@@ -882,7 +882,7 @@ function RelationshipsCard({
           {outgoing.length > 0 && (
             <>
               <GroupLabel
-                className="px-2 pb-1 pt-2"
+                className="pb-1 pt-2"
                 icon={<ArrowRight size={10} />}
                 count={outgoing.length > 1 ? outgoing.length : undefined}
               >
@@ -898,7 +898,7 @@ function RelationshipsCard({
           {incoming.length > 0 && (
             <>
               <GroupLabel
-                className="px-2 pb-1 pt-2"
+                className="pb-1 pt-2"
                 icon={<ArrowLeft size={10} />}
                 count={incoming.length > 1 ? incoming.length : undefined}
               >
@@ -913,7 +913,7 @@ function RelationshipsCard({
           )}
         </div>
       )}
-      <div className="border-t border-line px-2 pt-3">
+      <div className="border-t border-line pt-3">
         <p className="text-fine text-ink-3 mb-2">
           {S.ontology.schemaConnectHint}
         </p>
@@ -992,10 +992,10 @@ export function AttributesCard({
 
   return (
     <div className="border-t border-line pt-3">
-      <GroupLabel className="mb-1 px-2" count={attributes.length || undefined}>
+      <GroupLabel className="mb-1" count={attributes.length || undefined}>
         {S.ontology.attributes}
       </GroupLabel>
-      <p className="mb-2 px-2 text-fine text-ink-3">
+      <p className="mb-2 text-fine text-ink-3">
         {S.ontology.attributesHint}
       </p>
       <div className="divide-y divide-line">
