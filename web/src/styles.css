@@ -1347,3 +1347,10 @@ a:hover > .u-mark-arrow {
     transition: none;
   }
 }
+
+/* 登录页与故障页正中的字标。它是品牌元素，不是界面文字，所以不在五档字号里——
+   大小定在这里（等于从前的 text-5xl：48px / 1），页面只引这个名字 */
+.u-wordmark-hero {
+  font-size: 3rem;
+  line-height: 1;
+}

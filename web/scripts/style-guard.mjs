@@ -17,12 +17,40 @@ const BASELINE = path.join(ROOT, "style-guard.baseline.json");
 const PALETTE =
   "neutral|zinc|gray|slate|stone|rose|amber|red|green|blue|sky|emerald|violet|indigo|purple|pink|orange|yellow|cyan|teal|lime";
 
+// `text-*` 允许的词从 styles.css 里读：五档字号（--text-*）与颜色令牌（--color-*）。
+// 令牌加一个这里自动认得；不用再改守卫。剩下的是 Tailwind 里不是字号也不是颜色的
+// text- 工具（对齐、换行、省略）和几个颜色关键字
+const STYLES = fs.readFileSync(path.join(SRC, "styles.css"), "utf8");
+const TOKENS = [
+  ...new Set([
+    ...[...STYLES.matchAll(/--text-([a-z]+)(?![a-z-])/g)].map((m) => m[1]),
+    ...[...STYLES.matchAll(/--color-([a-z0-9-]+)/g)].map((m) => m[1]),
+  ]),
+];
+const TEXT_UTILITIES =
+  "left|center|right|justify|start|end|ellipsis|clip|wrap|nowrap|balance|pretty|white|black|transparent|current|inherit";
+const KNOWN_TEXT = [...TOKENS, ...TEXT_UTILITIES.split("|")]
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+
 /** 每条规矩：正则 + 一句话说明 + 是否也管组件目录 */
 const RULES = [
   {
     id: "type-scale",
-    re: /\btext-(xs|sm|base|lg|xl|2xl|3xl|4xl|\[[0-9.]+(px|rem)\])\b/g,
+    re: /\btext-(xs|sm|base|lg|\d*xl|\[[0-9.]+(px|rem)\])\b/g,
     why: "字号只用五档：text-fine / small / body / title / display（规矩 1）",
+    ui: true,
+  },
+  {
+    id: "unknown-text",
+    // 不在五档字号、颜色令牌、对齐/换行工具之内的 text-<词>：多半是编出来的
+    // （text-caption、text-muted），没有定义，渲染成继承的字号或颜色，而且看不出来。
+    // Tailwind 的默认字号另有上面那条报；模型名 text-embedding-* 不是类
+    re: new RegExp(
+      `\\btext-(?!(?:${KNOWN_TEXT}|xs|sm|base|lg|\\d*xl)(?![a-z0-9-])|embedding|\\[)[a-z][a-z0-9-]*\\b`,
+      "g",
+    ),
+    why: "text-* 只能是五档字号、颜色令牌，或对齐/换行工具；别的没有定义（规矩 1、4）",
     ui: true,
   },
   {
