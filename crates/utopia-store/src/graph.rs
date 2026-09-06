@@ -137,7 +137,8 @@ pub struct Validity<'a> {
     pub to: Option<chrono::DateTime<chrono::Utc>>,
     pub to_precision: Option<&'a str>,
     /// 这次观察的证据是哪一天的——文档的日期（0022）。`None` 即此刻：人此刻写下
-    /// 的事实，人就是证据。落库成 `attested_at`；同一断言再被观察到时只往早挪。
+    /// 的事实，人就是证据。落库成 `attested_from`，说结束了不知哪天的观察还落成
+    /// `attested_to`（#393，两端各有各的锚点）；同一断言再被观察到时只往早挪。
     /// 没有起点的事实从它起成立，结束了不知哪天的到它为止——**它不是起点**，所以
     /// 不写进 `from`（0003 拒绝过把文档日期填进日期列）
     pub attested_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -265,24 +266,21 @@ async fn insert_fact_inner(
         FactObject::Value(v) => q.bind(v),
     };
     let same: Vec<FactSpanRow> = q.fetch_all(pool).await?;
-    // 「结束了，不知哪天」的观察撞上同断言**带起点的开放行**（0022）：关上它。
+    // 「结束了，不知哪天」的观察撞上同断言的**开放行**（0022 / #393）：关上它。
     // 不并进去——并进去等于把「它结束了」这唯一带来的信息丢掉（同 valid_from 那条
     // 精确重复的路会这么干）；也不另立一行——另立一行让两条各说各话，开放的那条
     // 照旧被读成「至今仍是」（#345 的那道题正是这样挂的）。
-    // 修正走 supersede：旧行作废，新行终点仍空、精度 'unknown'，锚在说出结束的那份
-    // 文档上——读出来就是「到它为止」。只关有起点的：两端都不知道的行一个锚点装不下
-    // 两头，那一半还是开问题
+    // 修正走 supersede：旧行作废，新行终点仍空、精度 'unknown'，`attested_to` 锚在说出
+    // 结束的那份文档上；起点照旧——有日期的用日期，没日期的裸行留着它自己的
+    // `attested_from`（第一份证据）。两个锚点，裸行也关得上
     if validity.to.is_none() && validity.to_precision == Some(ENDED_UNKNOWN) {
-        let open_dated = same
+        let open = same
             .iter()
             .filter(|(_, vf, vt, vtp)| {
-                vf.is_some()
-                    && vt.is_none()
-                    && vtp.is_none()
-                    && validity.from.is_none_or(|f| Some(f) == *vf)
+                vt.is_none() && vtp.is_none() && validity.from.is_none_or(|f| Some(f) == *vf)
             })
             .max_by_key(|(_, vf, _, _)| *vf);
-        if let Some((open, _, _, _)) = open_dated {
+        if let Some((open, _, _, _)) = open {
             if let Some(closed) =
                 crate::temporal::close_with_unknown_end(pool, *open, validity.attested_at).await?
             {
@@ -328,16 +326,21 @@ async fn insert_fact_inner(
     let id = Uuid::now_v7();
     let insert_sql = match object {
         FactObject::Entity(_) => {
+            // 说结束了不知哪天的观察，说出结束的就是它自己那份文档：attested_to 也落它
             "INSERT INTO facts (id, kb_id, subject_id, predicate_id, object_id,
                                 valid_from, valid_from_precision,
-                                valid_to, valid_to_precision, confidence, attested_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()))"
+                                valid_to, valid_to_precision, confidence,
+                                attested_from, attested_to)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()),
+                     CASE WHEN $9::text = 'unknown' THEN COALESCE($11, now()) END)"
         }
         FactObject::Value(_) => {
             "INSERT INTO facts (id, kb_id, subject_id, predicate_id, object_value,
                                 valid_from, valid_from_precision,
-                                valid_to, valid_to_precision, confidence, attested_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()))"
+                                valid_to, valid_to_precision, confidence,
+                                attested_from, attested_to)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()),
+                     CASE WHEN $9::text = 'unknown' THEN COALESCE($11, now()) END)"
         }
     };
     let mut ins = sqlx::query(insert_sql)
@@ -393,11 +396,20 @@ async fn attest_earlier(
     at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> AppResult<()> {
     if let Some(at) = at {
-        sqlx::query("UPDATE facts SET attested_at = least(attested_at, $2) WHERE id = $1")
-            .bind(fact_id)
-            .bind(at)
-            .execute(pool)
-            .await?;
+        // 两个锚点都只往早挪：更早的文档既是它成立的更早证据，若它说的是结束，也是
+        // 结束得更早的证据。attested_to 只在结束未知的行上有，NULL 的留 NULL
+        sqlx::query(
+            // LEAST 会跳过 NULL——开放行的 attested_to 是 NULL，直接 least 会给它凭空长出一个
+            // 终点锚，撞上 CHECK。NULL 的留 NULL
+            "UPDATE facts SET attested_from = least(attested_from, $2),
+                              attested_to = CASE WHEN attested_to IS NULL THEN NULL
+                                                 ELSE least(attested_to, $2) END
+              WHERE id = $1",
+        )
+        .bind(fact_id)
+        .bind(at)
+        .execute(pool)
+        .await?;
     }
     Ok(())
 }
@@ -1659,11 +1671,11 @@ async fn adopt(
                     "INSERT INTO facts (id, kb_id, subject_id, predicate_id, object_id, object_value,
                                         valid_from, valid_from_precision,
                                         valid_to, valid_to_precision, confidence, supersedes,
-                                        attested_at)
+                                        attested_from, attested_to)
                      SELECT $1, kb_id, $6, $3, $4, $5,
                             valid_from, valid_from_precision,
                             valid_to, valid_to_precision, confidence, id,
-                            attested_at
+                            attested_from, attested_to
                      FROM facts WHERE id = $2 AND invalidated_at IS NULL
                      RETURNING id",
                 )

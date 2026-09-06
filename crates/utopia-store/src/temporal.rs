@@ -332,9 +332,11 @@ pub async fn close_superseded(
     let inserted: Option<(Uuid,)> = sqlx::query_as(
         "INSERT INTO facts (id, kb_id, subject_id, predicate_id, object_id, object_value,
                             valid_from, valid_from_precision,
-                            valid_to, valid_to_precision, confidence, supersedes, attested_at)
+                            valid_to, valid_to_precision, confidence, supersedes,
+                            attested_from, attested_to)
          SELECT $1, kb_id, subject_id, predicate_id, object_id, object_value,
-                valid_from, valid_from_precision, $3, $4, confidence, id, attested_at
+                valid_from, valid_from_precision, $3, $4, confidence, id,
+                attested_from, NULL
          FROM facts WHERE id = $2 AND invalidated_at IS NULL
          RETURNING id",
     )
@@ -358,10 +360,10 @@ pub async fn close_superseded(
     Ok(Some(corrected))
 }
 
-/// 作废 + 改写成「结束了，不知哪天」（0022）：旧行记 invalidated_at，修正行终点仍是
-/// NULL、精度 'unknown'，锚点换成**说出结束的那份文档**——读出来就是「到它为止」
-/// （起点是原文给的，锚点只管结束端）。证据引用随行复制。
-/// 返回修正行 id；`None` = 这条已不是带起点的开放行，没动。
+/// 作废 + 改写成「结束了，不知哪天」（0022 / #393）：旧行记 invalidated_at，修正行终点仍是
+/// NULL、精度 'unknown'，`attested_to` 锚在**说出结束的那份文档**——读出来就是「到它为止」；
+/// `attested_from` 从旧行继承——没起点的裸行靠它记着第一份证据，读出来是「从那时起」。
+/// 证据引用随行复制。返回修正行 id；`None` = 这条已不是开放行，没动。
 pub async fn close_with_unknown_end(
     pool: &PgPool,
     fact_id: Uuid,
@@ -372,12 +374,14 @@ pub async fn close_with_unknown_end(
     let inserted: Option<(Uuid,)> = sqlx::query_as(
         "INSERT INTO facts (id, kb_id, subject_id, predicate_id, object_id, object_value,
                             valid_from, valid_from_precision,
-                            valid_to, valid_to_precision, confidence, supersedes, attested_at)
+                            valid_to, valid_to_precision, confidence, supersedes,
+                            attested_from, attested_to)
          SELECT $1, kb_id, subject_id, predicate_id, object_id, object_value,
-                valid_from, valid_from_precision, NULL, $3, confidence, id, COALESCE($4, now())
+                valid_from, valid_from_precision, NULL, $3, confidence, id,
+                attested_from, COALESCE($4, now())
          FROM facts
          WHERE id = $2 AND invalidated_at IS NULL
-           AND valid_from IS NOT NULL AND valid_to IS NULL AND valid_to_precision IS NULL
+           AND valid_to IS NULL AND valid_to_precision IS NULL
          RETURNING id",
     )
     .bind(corrected)
@@ -440,9 +444,12 @@ pub async fn correct_interval(
     let inserted: Option<(Uuid,)> = sqlx::query_as(
         "INSERT INTO facts (id, kb_id, subject_id, predicate_id, object_id, object_value,
                             valid_from, valid_from_precision,
-                            valid_to, valid_to_precision, confidence, supersedes, attested_at)
+                            valid_to, valid_to_precision, confidence, supersedes,
+                            attested_from, attested_to)
          SELECT $1, kb_id, subject_id, predicate_id, object_id, object_value,
-                $3, $4, $5, $6, confidence, id, attested_at
+                $3, $4, $5, $6, confidence, id,
+                attested_from,
+                CASE WHEN $6::text = 'unknown' THEN COALESCE(attested_to, now()) END
          FROM facts WHERE id = $2 AND invalidated_at IS NULL
          RETURNING id",
     )

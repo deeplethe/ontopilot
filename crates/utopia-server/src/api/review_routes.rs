@@ -50,6 +50,9 @@ pub struct ReviewQuery {
     /// 要看哪一档。缺省 duplicates
     #[serde(default)]
     pub queue: Option<String>,
+    /// 只对 duplicates 有意义：any（缺省）/ same（两边同类）/ conflict（两边类型冲突）
+    #[serde(default)]
+    pub types: Option<String>,
     #[serde(default)]
     pub limit: Option<i64>,
     #[serde(default)]
@@ -81,9 +84,16 @@ pub async fn list(
     let items = match queue {
         // 记忆抽出、等人点头的事实（0015）。排第一：它是人自己说的话
         "pending" => json!(utopia_store::pending::list(&state.pool, kb_id, limit, offset).await?),
-        "duplicates" => {
-            json!(utopia_store::resolution::list_reviews(&state.pool, kb_id, limit, offset).await?)
-        }
+        "duplicates" => json!(
+            utopia_store::resolution::list_reviews(
+                &state.pool,
+                kb_id,
+                utopia_store::resolution::TypeFilter::parse(q.types.as_deref())?,
+                limit,
+                offset,
+            )
+            .await?
+        ),
         "conflicts" => {
             json!(utopia_store::temporal::list_conflicts(&state.pool, kb_id, limit, offset).await?)
         }
@@ -114,6 +124,8 @@ pub async fn list(
         "merges" => {
             json!(utopia_store::resolution::list_merges(&state.pool, kb_id, limit, offset).await?)
         }
+        // agent 的每一笔（0025）：建议、自动裁决与人的回答，最新的在前
+        "agent" => json!(utopia_store::governance::list(&state.pool, kb_id, limit, offset).await?),
         // 认不出的档名当成契约错误报出来，而不是悄悄回空——悄悄回空会让前端
         // 拼错一个字母之后看到「这一档清空了」
         other => {
@@ -323,8 +335,219 @@ pub async fn decide(
         )
         .await;
     }
+    crate::governance::after_human_decision(
+        &state,
+        kb_id,
+        &[review_id],
+        Some(&body.action),
+        user.id,
+    )
+    .await;
     state.emit_review(kb_id);
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct AgentAnswerBody {
+    /// merge | keep 答一条建议（与建议相同是接受，不同是改判）；
+    /// revert 撤回一条自动合并；merge 也能推翻一条自动分开
+    pub action: String,
+}
+
+/// 人回答 agent 的一笔（0025）。回答走的是人的裁决路径：decided_by 是这个人，
+/// 台账记的是这个人——它就此成为下一轮的先例
+pub async fn agent_answer(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path((kb_id, decision_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<AgentAnswerBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require_kb(&state, &user, kb_id, Role::Editor).await?;
+    let d = utopia_store::governance::get(&state.pool, kb_id, decision_id).await?;
+    let (l, r) = (
+        d.left.clone().unwrap_or_default(),
+        d.right.clone().unwrap_or_default(),
+    );
+    match (d.status.as_str(), body.action.as_str()) {
+        ("proposed", act @ ("merge" | "keep")) => {
+            utopia_store::resolution::decide_review(&state.pool, kb_id, d.target_id, act, user.id)
+                .await?;
+            let status = if act == d.action {
+                "accepted"
+            } else {
+                "overridden"
+            };
+            utopia_store::governance::settle(&state.pool, kb_id, decision_id, status, user.id)
+                .await?;
+            let _ = utopia_store::audit::record(
+                &state.pool,
+                Some(kb_id),
+                user.id,
+                if act == "merge" { "review.merge" } else { "review.keep" },
+                "review",
+                Some(d.target_id),
+                json!({ "left": l, "right": r, "agent_decision": decision_id, "agent_action": d.action }),
+            )
+            .await;
+        }
+        ("applied", "revert") => {
+            let merge_id = d.merge_id.ok_or_else(|| {
+                utopia_core::AppError::invalid(
+                    "not_a_merge",
+                    "Only an applied merge can be reverted; a pair kept apart can be merged instead.",
+                )
+            })?;
+            utopia_store::resolution::revert_merge(&state.pool, kb_id, merge_id).await?;
+            utopia_store::governance::settle(&state.pool, kb_id, decision_id, "reverted", user.id)
+                .await?;
+            let _ = utopia_store::audit::record(
+                &state.pool,
+                Some(kb_id),
+                user.id,
+                "merge.revert",
+                "merge",
+                Some(merge_id),
+                json!({ "source": l, "target": r, "agent_decision": decision_id }),
+            )
+            .await;
+            // 撤回 agent 的合并到了两次：保险丝
+            crate::governance::fuse(&state, kb_id).await;
+        }
+        ("applied", "merge") if d.action == "keep" => {
+            let (left_id, right_id): (Uuid, Uuid) = sqlx::query_as(
+                "SELECT left_id, right_id FROM resolution_reviews WHERE id = $1 AND kb_id = $2",
+            )
+            .bind(d.target_id)
+            .bind(kb_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(utopia_core::AppError::from)?
+            .ok_or(utopia_core::AppError::NotFound)?;
+            let (target, source) =
+                utopia_store::resolution::merge_direction(&state.pool, left_id, right_id).await?;
+            let merge_id = utopia_store::resolution::merge_entities(
+                &state.pool,
+                kb_id,
+                source,
+                target,
+                Some(user.id),
+                "overrode agent keep",
+            )
+            .await?;
+            utopia_store::governance::settle(
+                &state.pool,
+                kb_id,
+                decision_id,
+                "overridden",
+                user.id,
+            )
+            .await?;
+            let _ = utopia_store::audit::record(
+                &state.pool,
+                Some(kb_id),
+                user.id,
+                "merge.manual",
+                "merge",
+                Some(merge_id),
+                json!({ "source": l, "target": r, "agent_decision": decision_id }),
+            )
+            .await;
+        }
+        (status, action) => {
+            return Err(utopia_core::AppError::invalid(
+                "agent_answer",
+                format!("cannot {action} an agent decision that is {status}"),
+            )
+            .into())
+        }
+    }
+    crate::governance::after_human_decision(&state, kb_id, &[d.target_id], None, user.id).await;
+    state.emit_review(kb_id);
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct BatchBody {
+    pub ids: Vec<Uuid>,
+    /// merge | keep，整批一个动作
+    pub action: String,
+}
+
+/// 一批 id 最多多少条：够一屏「全选」，又挡住一次请求把库锁上几分钟
+const BATCH_MAX: usize = 500;
+
+/// 批量裁决（#428）：与单条 `decide` 同一条路——每条各自合并/分开、各自记
+/// 台账，回来的是逐条结果。一次只推一遍前端刷新。
+pub async fn batch(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(kb_id): Path<Uuid>,
+    Json(body): Json<BatchBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require_kb(&state, &user, kb_id, Role::Editor).await?;
+    if body.ids.is_empty() || body.ids.len() > BATCH_MAX {
+        return Err(utopia_core::AppError::invalid(
+            "batch_size",
+            format!("between 1 and {BATCH_MAX} ids per batch"),
+        )
+        .into());
+    }
+    // 台账要的名字与分数在裁决前取——合并之后 source 一侧的名字已经不在原处了
+    let snaps: Vec<(Uuid, String, String, f32)> = sqlx::query_as(
+        "SELECT rr.id, a.canonical_name, b.canonical_name, rr.score
+         FROM resolution_reviews rr
+         JOIN entities a ON a.id = rr.left_id
+         JOIN entities b ON b.id = rr.right_id
+         WHERE rr.kb_id = $1 AND rr.id = ANY($2)",
+    )
+    .bind(kb_id)
+    .bind(&body.ids)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    let outcomes = utopia_store::resolution::decide_reviews(
+        &state.pool,
+        kb_id,
+        &body.ids,
+        &body.action,
+        user.id,
+    )
+    .await?;
+    let action = if body.action == "merge" {
+        "review.merge"
+    } else {
+        "review.keep"
+    };
+    for o in outcomes.iter().filter(|o| o.error.is_none()) {
+        if let Some((_, l, r, score)) = snaps.iter().find(|s| s.0 == o.id) {
+            let _ = utopia_store::audit::record(
+                &state.pool,
+                Some(kb_id),
+                user.id,
+                action,
+                "review",
+                Some(o.id),
+                json!({ "left": l, "right": r, "score": score, "batch": body.ids.len() }),
+            )
+            .await;
+        }
+    }
+    let decided_ids: Vec<Uuid> = outcomes
+        .iter()
+        .filter(|o| o.error.is_none())
+        .map(|o| o.id)
+        .collect();
+    crate::governance::after_human_decision(
+        &state,
+        kb_id,
+        &decided_ids,
+        Some(&body.action),
+        user.id,
+    )
+    .await;
+    state.emit_review(kb_id);
+    let decided = decided_ids.len();
+    Ok(Json(json!({ "decided": decided, "outcomes": outcomes })))
 }
 
 pub async fn confirm_fact(
@@ -407,6 +630,8 @@ pub async fn revert_merge(
         )
         .await;
     }
+    // 撤的是 agent 自己裁的合并：那一行记成 reverted，并看保险丝（0025）
+    crate::governance::after_revert(&state, kb_id, merge_id, user.id).await;
     state.emit_review(kb_id);
     Ok(Json(json!({ "ok": true })))
 }

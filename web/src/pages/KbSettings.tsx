@@ -90,6 +90,8 @@ export function KbSettings() {
   const [materialize, setMaterialize] = useState(false);
   // 类型消解自动跑（0016 C2）：只自动落地子树内精化的那一档
   const [autoResolve, setAutoResolve] = useState(false);
+  // 治理（0025）：**缺省关**——它会合并实体，还没在哪个库上量过；打开就开始，关掉就停
+  const [governance, setGovernance] = useState(false);
   const [inferMins, setInferMins] = useState(60);
   const [ontoLang, setOntoLang] = useState<"en" | "zh">("en");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -103,6 +105,7 @@ export function KbSettings() {
       setAutoExtend(kb.data.auto_extend_ontology);
       setMaterialize(kb.data.materialize_inferences);
       setAutoResolve(kb.data.auto_type_resolution);
+      setGovernance(kb.data.governance);
       setInferMins(kb.data.inference_interval_minutes);
       setOntoLang(kb.data.ontology_lang);
     }
@@ -122,6 +125,7 @@ export function KbSettings() {
         auto_extend_ontology: autoExtend,
         materialize_inferences: materialize,
         auto_type_resolution: autoResolve,
+        governance,
         inference_interval_minutes: inferMins,
         ontology_lang: ontoLang,
       }),
@@ -268,6 +272,16 @@ export function KbSettings() {
                 onChange={(e) => setAutoResolve(e.target.checked)}
                 label={S.kbset.autoResolveTypes}
                 hint={S.kbset.autoResolveTypesNote}
+              />
+              {/* 治理（0025）：agent 按先进先出过等人的重复对，先读台账里人的先例再裁。
+                  说明里要讲清三件事：读的是这个库的人的决定、合并要有先例撑着、
+                  关掉队列就停 */}
+              <Checkbox
+                className="pt-1"
+                checked={governance}
+                onChange={(e) => setGovernance(e.target.checked)}
+                label={S.kbset.governance}
+                hint={S.kbset.governanceNote}
               />
               {/* 重推间隔。**只在开着的时候露出来**——关着时它不影响任何事，
                   摆在那里只会让人以为设了就会推 */}

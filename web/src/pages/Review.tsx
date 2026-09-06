@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   api,
+  type AgentDecision,
+  type AgentPrecedent,
   type AxiomViolation,
   type ReviewQueue,
+  type ReviewTypeFilter,
   type OntologyDefect,
   type ConflictItem,
   type FactReviewItem,
@@ -21,14 +24,19 @@ import { PendingFactRow, useCanDecide } from "./PendingFacts";
 import { ReviewOverview } from "./ReviewOverview";
 import { S } from "../i18n";
 import { useKb, useKbId } from "../kb";
+import { toast } from "../toast";
 import {
   Button,
+  Checkbox,
   Chip,
   type ChipTone,
+  cn,
   Input,
+  LinkButton,
   Pager,
   RAIL_CLS,
   RailItem,
+  Segmented,
 } from "../ui";
 
 const DUP_PAGE = 6;
@@ -87,20 +95,42 @@ function SideCard({ side }: { side: ReviewSide }) {
   );
 }
 
+/** 两边都有类型且不一样：同名异义，合了就错。这是扫一屏重复项时最该一眼
+ *  看到的一件事，所以提成标记，不让人去两张卡片里各读一行小字 */
+function typesDiffer(item: ReviewItem): boolean {
+  return (
+    item.left.type_label !== null &&
+    item.right.type_label !== null &&
+    item.left.type_label !== item.right.type_label
+  );
+}
+
 function DuplicateCard({
   item,
   busy,
+  picked,
+  onPick,
   onDecide,
 }: {
   item: ReviewItem;
   busy: boolean;
+  /** 批量选中（#428）：勾在卡片左上，选了就跟着上面的批量按钮走 */
+  picked: boolean;
+  onPick: (picked: boolean) => void;
   onDecide: (action: "merge" | "keep") => void;
 }) {
   const reasonCode = item.reason?.split("|", 1)[0];
 
   return (
-    <div className="glass rounded-xl p-4">
+    <div className={cn("glass rounded-xl p-4", picked && "u-picked")}>
       <div className="flex gap-4">
+        <Checkbox
+          className="shrink-0 self-start"
+          checked={picked}
+          disabled={busy}
+          onChange={(e) => onPick(e.target.checked)}
+          label={<span className="sr-only">{S.review.pickPair}</span>}
+        />
         <SideCard side={item.left} />
         <div className="self-center text-ink-3 text-body shrink-0">≟</div>
         <SideCard side={item.right} />
@@ -113,6 +143,23 @@ function DuplicateCard({
             ? S.review.stageHuman
             : S.review.stageAdjudicating}
         </span>
+        {typesDiffer(item) && (
+          <Chip tone="warn" title={S.review.typesDifferHint}>
+            {S.review.typesDiffer(
+              item.left.type_label ?? "",
+              item.right.type_label ?? "",
+            )}
+          </Chip>
+        )}
+        {/* agent 的建议（0025）：这里的 Merge / Keep 就是对它的回答 */}
+        {item.proposal && (
+          <Chip tone="info" title={item.proposal.reason ?? undefined}>
+            {S.review.agentSuggests(
+              S.review.agentActions[item.proposal.action],
+              Math.round(item.proposal.confidence * 100),
+            )}
+          </Chip>
+        )}
         {reasonCode !== "namesake" && (
           <span className="text-small text-ink-3">
             {S.review.similarity(Math.round(item.score * 100))}
@@ -403,6 +450,133 @@ function MergeRow({
           {S.review.revert}
         </Button>
       )}
+    </div>
+  );
+}
+
+/* ---------- agent 的一笔（0025） ---------- */
+
+const AGENT_ACTION_TONE: Record<AgentDecision["action"], ChipTone> = {
+  merge: "violet",
+  keep: "neutral",
+  unsure: "warn",
+};
+
+const AGENT_STATUS_TONE: Record<AgentDecision["status"], ChipTone> = {
+  proposed: "warn",
+  applied: "info",
+  accepted: "success",
+  overridden: "neutral",
+  reverted: "danger",
+  superseded: "neutral",
+};
+
+/** 一条先例写成一句话；类型对的习惯是汇总，单独一句 */
+function precedentText(p: AgentPrecedent): string {
+  if (p.family === "type_pair")
+    return S.review.agentPrecedentHabit(p.merged, p.kept, p.reverted);
+  const verb =
+    p.action === "merge.revert"
+      ? S.review.agentPrecedentReverted
+      : p.action === "review.keep"
+        ? S.review.agentPrecedentKept
+        : S.review.agentPrecedentMerged;
+  return `${p.left} ≟ ${p.right} · ${verb} · ${p.at.slice(0, 10)}`;
+}
+
+function AgentRow({
+  d,
+  busy,
+  onAnswer,
+}: {
+  d: AgentDecision;
+  busy: boolean;
+  onAnswer: (action: "merge" | "keep" | "revert") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const precedents = d.precedents ?? [];
+  const trace = d.trace ?? [];
+  const hasDetail = precedents.length > 0 || trace.length > 0;
+  return (
+    <div className="glass rounded-xl px-4 py-3">
+      <div className="flex items-center gap-3">
+        <Chip tone={AGENT_ACTION_TONE[d.action]}>{S.review.agentActions[d.action]}</Chip>
+        <span className="text-body text-ink-2 truncate min-w-0">
+          {d.left ?? "?"} ≟ {d.right ?? "?"}
+        </span>
+        <span className="u-num text-small text-ink-3 shrink-0">
+          {Math.round(d.confidence * 100)}%
+        </span>
+        <Chip tone={AGENT_STATUS_TONE[d.status]} className="ml-auto shrink-0">
+          {S.review.agentStatus[d.status]}
+        </Chip>
+      </div>
+      {/* defer 留下的问题（第二刀）：这是给人看的正文，不是注脚 */}
+      {d.question && (
+        <p className="mt-1 text-body text-ink">
+          <span className="text-ink-3">{S.review.agentAsks} </span>
+          {d.question}
+        </p>
+      )}
+      {(d.reason || hasDetail) && (
+        <div className="mt-1 flex items-center gap-3 text-small text-ink-3">
+          {d.reason && <span className="truncate min-w-0">{d.reason}</span>}
+          {hasDetail && (
+            <LinkButton className="shrink-0" onClick={() => setOpen((v) => !v)}>
+              {[
+                precedents.length > 0 ? S.review.agentPrecedents(precedents.length) : null,
+                trace.length > 0 ? S.review.agentLookups(trace.length) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </LinkButton>
+          )}
+        </div>
+      )}
+      {open && hasDetail && (
+        <ul className="mt-2 space-y-1 border-t border-line pt-2 text-small text-ink-3">
+          {precedents.map((p, i) => (
+            <li key={`p${i}`} className="truncate">
+              {precedentText(p)}
+            </li>
+          ))}
+          {/* 轨迹就是解释：它查了什么，一行一次 */}
+          {trace.map((t, i) => (
+            <li key={`t${i}`} className="truncate">
+              {S.review.agentLookedAt} {t.note}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-fine text-ink-3">
+          {d.decided_by_name
+            ? S.review.agentAnsweredBy(d.decided_by_name, (d.decided_at ?? d.created_at).slice(0, 10))
+            : d.created_at.slice(0, 10)}
+        </span>
+        <div className="ml-auto flex gap-2 shrink-0">
+          {d.status === "proposed" && (
+            <>
+              <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("keep")}>
+                {S.review.keep}
+              </Button>
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => onAnswer("merge")}>
+                {S.review.merge}
+              </Button>
+            </>
+          )}
+          {d.status === "applied" && d.action === "merge" && (
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("revert")}>
+              {S.review.revert}
+            </Button>
+          )}
+          {d.status === "applied" && d.action === "keep" && (
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("merge")}>
+              {S.review.merge}
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -769,6 +943,9 @@ type Sel =
   | "violations"
   // 本体自己的自相矛盾。**与 violations 分开**：那一档看事实，这一档只看定义
   | "defects"
+  // agent 的每一笔（0025）：建议等人答，自动裁的可撤。它不是七档之一——
+  // 七档问「这条知识对不对」，这一档问「机器替你办的对不对」
+  | "agent"
   | "decisions"
   | "merges";
 
@@ -782,6 +959,7 @@ const QUEUE_FETCHED: ReviewQueue[] = [
   "violations",
   "defects",
   "merges",
+  "agent",
 ];
 
 const QUEUE_ORDER: Sel[] = [
@@ -806,6 +984,7 @@ const PAGE_SIZE: Record<Paged, number> = {
   defects: FACT_PAGE,
   merges: MERGE_PAGE,
   decisions: 20,
+  agent: 20,
 };
 
 function RailHeader({ label }: { label: string }) {
@@ -825,10 +1004,18 @@ export function Review() {
   const navigate = useNavigate();
   // 面板的争议 chip 带着 queue / item 跳过来：先落到那一档，再把那张卡点亮
   const search = useSearch({ from: "/app/kb/$kbId/review" });
+  // 深链接认七档与 agent 那一档（0025 的告警会指过来）；别的落到总览
   const [sel, setSel] = useState<Sel | null>(
-    QUEUE_ORDER.includes(search.queue as Sel) ? (search.queue as Sel) : null,
+    QUEUE_ORDER.includes(search.queue as Sel) || search.queue === "agent"
+      ? (search.queue as Sel)
+      : null,
   );
   const [page, setPage] = useState(0);
+  // 重复项的类型筛选与批量选中（#428）。选中集合按页清：翻页、换档、换筛选
+  // 之后勾着的东西已经不在眼前，留着会让「合并所选」合掉看不见的东西
+  const [types, setTypes] = useState<ReviewTypeFilter>("any");
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  useEffect(() => setPicked(new Set()), [page, sel, types]);
 
   // 队列变化经 SSE 事件流推送（useKbEvents 挂在 Shell），无需轮询。
   //
@@ -840,14 +1027,16 @@ export function Review() {
   )
     ? ((sel ?? "duplicates") as ReviewQueue)
     : "duplicates";
+  const typesForQuery = queueSel === "duplicates" ? types : "any";
   const review = useQuery({
-    queryKey: ["review", kb?.id, queueSel, page],
+    queryKey: ["review", kb?.id, queueSel, page, typesForQuery],
     queryFn: () =>
       api.review(
         kb!.id,
         queueSel,
         PAGE_SIZE[queueSel as Paged],
         page * PAGE_SIZE[queueSel as Paged],
+        typesForQuery,
       ),
     enabled: !!kb,
     // 翻页时别把上一页闪成空白——计数与骨架都还在，只有条目在换
@@ -878,6 +1067,28 @@ export function Review() {
     mutationFn: ({ id, action }: { id: string; action: "merge" | "keep" }) =>
       api.decideReview(kb!.id, id, action),
     onSettled: invalidate,
+  });
+  // 回答 agent 的一笔（0025）：走人的裁决路径，成为下一轮的先例
+  const agentAnswer = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "merge" | "keep" | "revert" }) =>
+      api.agentAnswer(kb!.id, id, action),
+    onError: (e) => toast.error((e as Error).message),
+    onSettled: invalidate,
+  });
+  // 批量裁决：一批一个动作，回来逐条说成没成；没成的留在列表里，成了的消失
+  const batch = useMutation({
+    mutationFn: ({ ids, action }: { ids: string[]; action: "merge" | "keep" }) =>
+      api.reviewBatch(kb!.id, ids, action),
+    onSuccess: (r) => {
+      const failed = r.outcomes.filter((o) => o.error).length;
+      if (failed > 0) toast.error(S.review.batchDone(r.decided, failed));
+      else toast.success(S.review.batchDone(r.decided, 0));
+    },
+    onError: (e) => toast.error((e as Error).message),
+    onSettled: () => {
+      setPicked(new Set());
+      invalidate();
+    },
   });
   const factAction = useMutation({
     mutationFn: ({
@@ -990,6 +1201,7 @@ export function Review() {
     defects: c?.defects ?? 0,
     merges: c?.merges ?? 0,
     decisions: history.data?.total ?? 0,
+    agent: c?.agent ?? 0,
   };
   // 当前这一档的一页。**服务端已经切好了**，这里只按档收窄类型——
   // 收窄错了会在渲染时露馅，而不是悄悄显示空列表
@@ -1001,6 +1213,7 @@ export function Review() {
   const asViolations = () => rows as AxiomViolation[];
   const asDefects = () => rows as OntologyDefect[];
   const asMerges = () => rows as MergeLog[];
+  const asAgent = () => rows as AgentDecision[];
   const queueEmpty = QUEUE_ORDER.every((k) => counts[k] === 0);
 
   // 没带 ?queue= 进来就落在总览上——从前是「第一个非空队列」，那等于替人
@@ -1033,6 +1246,7 @@ export function Review() {
     defects: { title: S.review.defects, hint: S.review.defectsHint },
     decisions: { title: S.review.decisionsTitle, hint: S.review.decisionsHint },
     merges: { title: S.review.mergeHistory, hint: null },
+    agent: { title: S.review.agentTitle, hint: S.review.agentHint },
   };
 
   return (
@@ -1102,6 +1316,14 @@ export function Review() {
             onClick={() => select("defects")}
           >
             {S.review.railDefects}
+          </RailItem>
+          {/* agent 的队列（0025）：徽标是等人回答的建议数 */}
+          <RailItem
+            active={active === "agent"}
+            count={counts.agent}
+            onClick={() => select("agent")}
+          >
+            {S.review.railAgent}
           </RailItem>
         </div>
         <RailHeader label={S.review.tabHistory} />
@@ -1182,17 +1404,107 @@ export function Review() {
                     {(summary.error as Error).message}
                   </p>
                 ) : summary.data ? (
-                  <ReviewOverview summary={summary.data} onPick={select} />
+                  <ReviewOverview
+                    summary={summary.data}
+                    governance={kb?.governance ?? false}
+                    onPick={select}
+                    onSettings={() =>
+                      navigate({ to: "/kb/$kbId/settings", params: { kbId } })
+                    }
+                  />
                 ) : null)}
 
               {active === "duplicates" && counts.duplicates > 0 && (
                 <div className="space-y-3">
+                  {/* 按两边类型的关系筛（#428）：同名同类那一档是人最先想一把
+                      合掉的，类型冲突那一档是绝不能合的；三档各带真实条数 */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Segmented
+                      size="sm"
+                      value={types}
+                      onChange={(v) => {
+                        setTypes(v);
+                        setPage(0);
+                      }}
+                      options={[
+                        { value: "any", label: S.review.typesAny, count: counts.duplicates },
+                        {
+                          value: "same",
+                          label: S.review.typesSame,
+                          count: c?.duplicates_same_type ?? 0,
+                        },
+                        {
+                          value: "conflict",
+                          label: S.review.typesConflict,
+                          count: c?.duplicates_type_conflict ?? 0,
+                        },
+                      ]}
+                    />
+                    {/* 批量：勾选这一页的，一个动作裁一批。按钮只在有选中时出现 */}
+                    <Checkbox
+                      className="ml-auto"
+                      checked={
+                        asDuplicates().length > 0 &&
+                        asDuplicates().every((d) => picked.has(d.id))
+                      }
+                      onChange={(e) =>
+                        setPicked(
+                          e.target.checked
+                            ? new Set(asDuplicates().map((d) => d.id))
+                            : new Set(),
+                        )
+                      }
+                      label={S.review.selectPage}
+                    />
+                    {picked.size > 0 && (
+                      <>
+                        <span className="u-num text-small text-ink-3">
+                          {S.review.selected(picked.size)}
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={batch.isPending}
+                          onClick={() =>
+                            batch.mutate({ ids: [...picked], action: "keep" })
+                          }
+                        >
+                          {S.review.keepSelected}
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={batch.isPending}
+                          onClick={() =>
+                            batch.mutate({ ids: [...picked], action: "merge" })
+                          }
+                        >
+                          {S.review.mergeSelected}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {asDuplicates().length === 0 && (
+                    <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                      {S.review.typesEmpty}
+                    </div>
+                  )}
                   {asDuplicates().map((item) => (
                     <DuplicateCard
                       key={item.id}
                       item={item}
+                      picked={picked.has(item.id)}
+                      onPick={(on) =>
+                        setPicked((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.add(item.id);
+                          else next.delete(item.id);
+                          return next;
+                        })
+                      }
                       busy={
-                        decide.isPending && decide.variables?.id === item.id
+                        (decide.isPending && decide.variables?.id === item.id) ||
+                        (batch.isPending && picked.has(item.id))
                       }
                       onDecide={(action) =>
                         decide.mutate({ id: item.id, action })
@@ -1376,6 +1688,37 @@ export function Review() {
                 </div>
               )}
 
+              {active === "agent" &&
+                ((c?.agent_rows ?? 0) === 0 ? (
+                  <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
+                    {S.review.agentEmpty}
+                    {!kb?.governance && (
+                      <>
+                        {" "}
+                        {S.review.overviewAgentOff}{" "}
+                        <LinkButton
+                          onClick={() =>
+                            navigate({ to: "/kb/$kbId/settings", params: { kbId } })
+                          }
+                        >
+                          {S.review.overviewAgentSettings}
+                        </LinkButton>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {asAgent().map((d) => (
+                      <AgentRow
+                        key={d.id}
+                        d={d}
+                        busy={agentAnswer.isPending && agentAnswer.variables?.id === d.id}
+                        onAnswer={(action) => agentAnswer.mutate({ id: d.id, action })}
+                      />
+                    ))}
+                  </div>
+                ))}
+
               {active === "merges" &&
                 (counts.merges === 0 ? (
                   <div className="glass rounded-xl p-8 text-center text-body text-ink-3">
@@ -1412,7 +1755,7 @@ export function Review() {
               {/* 单一分页：queue/merges 走客户端切片，decisions 服务端分页；总览没有页 */}
               {active !== "decisions" && active !== "overview" && (
                 <Pager
-                  total={counts[active]}
+                  total={active === "agent" ? (c?.agent_rows ?? 0) : counts[active]}
                   pageSize={PAGE_SIZE[active]}
                   page={page}
                   onPage={setPage}

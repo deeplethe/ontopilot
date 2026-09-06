@@ -107,6 +107,11 @@ export interface Kb {
   materialize_inferences: boolean;
   /** 抽取结束自动排一轮类型消解（只自动落地子树内精化的那一档） */
   auto_type_resolution: boolean;
+  /** 治理开关（0025，缺省关）：agent 按先进先出过等人的重复对，先读台账里人的
+   *  先例再裁；打开就开始，关掉就停 */
+  governance: boolean;
+  /** 这次打开治理的时刻；保险丝只数它之后的撤回 */
+  governance_since: string | null;
   /** 多久重推一次（分钟）。事实持续在变，只靠手点会让派生一直是缺的 */
   inference_interval_minutes: number;
   /** 上次推完的时间 */
@@ -436,13 +441,21 @@ export type ReviewQueue =
   | "mappings"
   | "violations"
   | "defects"
-  | "merges";
+  | "merges"
+  // agent 的每一笔（0025）：建议、自动裁决与人的回答
+  | "agent";
+
+/** 重复项按两边类型的关系筛：any 全部；same 两边都有类型且相等；conflict 都有且不等 */
+export type ReviewTypeFilter = "any" | "same" | "conflict";
 
 /** 各档的真实条数。左栏的徽标读它，不读列表长度 */
 export interface ReviewCounts {
   /** 记忆抽出、等人点头的事实（0015） */
   pending: number;
   duplicates: number;
+  /** 重复项里两边同类型 / 类型冲突的各多少（#428）；没类型的一侧哪档都不算 */
+  duplicates_same_type: number;
+  duplicates_type_conflict: number;
   conflicts: number;
   unconfirmed: number;
   lowconf: number;
@@ -450,6 +463,10 @@ export interface ReviewCounts {
   violations: number;
   defects: number;
   merges: number;
+  /** agent 写下、等人回答的建议（0025） */
+  agent: number;
+  /** agent 的全部记录（Agent 队列翻页用） */
+  agent_rows: number;
 }
 
 /** 类型消解的一条建议：一个待精化的实体、送去检索的画像、以及候选类。
@@ -512,6 +529,14 @@ export interface ReviewSide {
   top_facts: string[];
 }
 
+/** agent 在一对上留下的、还开着的建议（0025）；卡片上的裁决就是对它的回答 */
+export interface ReviewProposal {
+  id: string;
+  action: "merge" | "keep" | "unsure";
+  confidence: number;
+  reason: string | null;
+}
+
 export interface ReviewItem {
   id: string;
   score: number;
@@ -520,7 +545,45 @@ export interface ReviewItem {
   created_at: string;
   left: ReviewSide;
   right: ReviewSide;
+  proposal: ReviewProposal | null;
 }
+
+/** agent 的一笔（0025）：看了哪一对、想怎么办、凭什么、人怎么答的 */
+export interface AgentDecision {
+  id: string;
+  run_id: string;
+  target_kind: "review";
+  target_id: string;
+  action: "merge" | "keep" | "unsure";
+  confidence: number;
+  reason: string | null;
+  /** 它被给看的先例：同对 / 同名 / 撤回各一条一条，类型对的习惯是一条汇总 */
+  precedents: AgentPrecedent[];
+  status: "proposed" | "applied" | "accepted" | "overridden" | "reverted" | "superseded";
+  merge_id: string | null;
+  /** defer 留给人的那一个问题；只有 unsure 的行才有 */
+  question: string | null;
+  /** 第二层看了什么：一条一次查询 */
+  trace: { tool: string; args: Record<string, string>; note: string }[];
+  /** 第二层花的模型调用 */
+  calls: number;
+  created_at: string;
+  decided_at: string | null;
+  decided_by_name: string | null;
+  left: string | null;
+  right: string | null;
+}
+
+export type AgentPrecedent =
+  | {
+      family: "same_pair" | "same_name" | "revert";
+      event_id: string;
+      action: string;
+      left: string;
+      right: string;
+      at: string;
+    }
+  | { family: "type_pair"; merged: number; kept: number; reverted: number };
 
 /** 数据映射的一条口径：业务概念 → 数据资产定义（见 docs/decisions/0011）。
  *
@@ -712,8 +775,19 @@ export interface DecidedWindow {
   by_actor: { actor_id: string | null; label: string | null; count: number }[];
 }
 
+/** 一个时间窗口里 agent 写下的行，按现在的状态数 */
+export interface AgentWindow {
+  applied: number;
+  proposed: number;
+  accepted: number;
+  overridden: number;
+  reverted: number;
+}
+
 /** 审核台总览（#377）：等着办的、办过的、库的成色。与左栏计数同一套口径 */
 export interface ReviewSummary {
+  /** agent 在这个库里做过什么（0025） */
+  agent: { open: number; last_7d: AgentWindow; last_30d: AgentWindow };
   waiting: Record<
     "pending" | "duplicates" | "conflicts" | "unconfirmed" | "lowconf" | "violations" | "defects",
     QueueWait
@@ -1934,15 +2008,31 @@ export const api = {
 
   /** 审核队列的各档**真实条数**。与列表分开取——列表有一页的上限，数数没有。
    *  从前徽标读的是数组长度，而接口固定只回 100 条，于是 164 条写成 100。 */
-  review: (kbId: string, queue: ReviewQueue, limit: number, offset: number) =>
+  review: (
+    kbId: string,
+    queue: ReviewQueue,
+    limit: number,
+    offset: number,
+    /** 只对 duplicates 有意义：按两边类型的关系筛（#428） */
+    types: ReviewTypeFilter = "any",
+  ) =>
     request<{
       counts: ReviewCounts;
       queue: ReviewQueue;
       /** 只有当前这一档的一页。类型按档不同，调用处按 queue 收窄 */
       items: unknown[];
     }>(
-      `/api/v1/kbs/${kbId}/review?queue=${queue}&limit=${limit}&offset=${offset}`,
+      `/api/v1/kbs/${kbId}/review?queue=${queue}&limit=${limit}&offset=${offset}&types=${types}`,
     ),
+  /** 一批重复项同一个动作（#428）：每条各自裁、各自记台账，回来逐条说成没成 */
+  reviewBatch: (kbId: string, ids: string[], action: "merge" | "keep") =>
+    request<{
+      decided: number;
+      outcomes: { id: string; error: string | null }[];
+    }>(`/api/v1/kbs/${kbId}/review/batch`, {
+      method: "POST",
+      body: JSON.stringify({ ids, action }),
+    }),
   /** 闭合日期带精度（year | month | day）：写多少位就是多少精度，服务端照存 */
   closeFact: (kbId: string, factId: string, validTo: string, precision: string) =>
     request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/facts/${factId}/close`, {
@@ -2095,6 +2185,13 @@ export const api = {
     }),
   reviewSummary: (kbId: string) =>
     request<ReviewSummary>(`/api/v1/kbs/${kbId}/review/summary`),
+  /** 回答 agent 的一笔（0025）：merge / keep 答一条建议，revert 撤回一条自动合并，
+   *  merge 也能推翻一条自动分开。走的是人的裁决路径，成为新先例 */
+  agentAnswer: (kbId: string, decisionId: string, action: "merge" | "keep" | "revert") =>
+    request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/review/agent/${decisionId}`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    }),
   reviewHistory: (kbId: string, page: number, per = 20) =>
     request<{ events: ReviewHistoryEvent[]; total: number }>(
       `/api/v1/kbs/${kbId}/review/history?page=${page}&per=${per}`,

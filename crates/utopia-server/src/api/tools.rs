@@ -313,7 +313,15 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
     let at = args["at"].as_str().and_then(parse_when);
     // 记录轴（0019 / #347）：那一刻**我们持有**的事实。两根轴两个参数，绝不合成
     // 一个——合起来就会拿「三月的世界，以今天的认知」去答「三月的世界，以三月的认知」
-    let as_of = args["as_of"].as_str().and_then(parse_when);
+    // 「更正到来之前」（#416）：`before` 是 changes 里印出来的那个时刻，原样抄过来。
+    // 账本的钟是微秒，「严格早于 T」就是「不晚于 T 减一微秒」——这一步在这里做，
+    // 不让模型对着 ISO 字符串算小数秒的借位：算错一位，答的就是更正**之后**的状态，
+    // 而且看不出来（#351 那种错）。给了 before 就以它为准
+    let before = args["before"].as_str().and_then(parse_when);
+    let as_of = match before {
+        Some(t) => Some(just_before(t)),
+        None => args["as_of"].as_str().and_then(parse_when),
+    };
     let Some(id) = id else {
         return (
             "Invalid entity_id (expected the uuid returned by find_entities).".to_string(),
@@ -356,7 +364,7 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
                 lines.append(&mut derived);
                 lines.join("\n")
             };
-            let detail = entity_facts_detail(facts.len(), at, as_of);
+            let detail = entity_facts_detail(facts.len(), at, as_of, before);
             (
                 text,
                 json!({ "kind": "facts", "label": node.name, "detail": detail }),
@@ -754,19 +762,29 @@ fn record_stamp(time: chrono::DateTime<chrono::Utc>) -> String {
     crate::time_text::instant(time)
 }
 
+/// 严格早于 T，按账本的分辨率（timestamptz 是微秒）：不晚于 T − 1µs。
+/// `recorded_at <= T−1µs` 恰好是 `recorded_at < T`，`invalidated_at > T−1µs` 恰好是
+/// `invalidated_at >= T`——0019 的 held_at 一个字不用改
+fn just_before(t: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+    t - chrono::Duration::microseconds(1)
+}
+
 fn entity_facts_detail(
     count: usize,
     at: Option<chrono::DateTime<chrono::Utc>>,
     as_of: Option<chrono::DateTime<chrono::Utc>>,
+    before: Option<chrono::DateTime<chrono::Utc>>,
 ) -> String {
-    match (at, as_of) {
-        (Some(t), Some(r)) => format!(
-            "{count} facts at {}, as recorded by {}",
-            record_stamp(t),
-            record_stamp(r)
-        ),
+    // 记录轴那半句：给了 before 就说「before T」，是人问的那个时刻，不是减过一微秒的
+    let record = match (before, as_of) {
+        (Some(b), _) => Some(format!("as recorded before {}", record_stamp(b))),
+        (None, Some(r)) => Some(format!("as recorded by {}", record_stamp(r))),
+        (None, None) => None,
+    };
+    match (at, record) {
+        (Some(t), Some(r)) => format!("{count} facts at {}, {r}", record_stamp(t)),
         (Some(t), None) => format!("{count} facts as of {}", record_stamp(t)),
-        (None, Some(r)) => format!("{count} facts as recorded by {}", record_stamp(r)),
+        (None, Some(r)) => format!("{count} facts {r}"),
         (None, None) => format!("{count} facts"),
     }
 }
@@ -1063,23 +1081,39 @@ mod tests {
         }
     }
 
+    /// `before` 减的是账本分辨率的一微秒——不是一秒、不是一天；摘要里写的是人问的那个时刻
+    #[test]
+    fn before_is_the_microsecond_before_at_the_ledgers_resolution() {
+        let t0 = t("2026-09-05T02:43:53.382Z");
+        assert_eq!(just_before(t0), t("2026-09-05T02:43:53.381999Z"));
+        assert_eq!(
+            just_before(t("2026-09-05T02:43:53Z")),
+            t("2026-09-05T02:43:52.999999Z"),
+            "小数为零要向秒借位——正是不该让模型算的那一步"
+        );
+        assert_eq!(
+            entity_facts_detail(2, None, Some(just_before(t0)), Some(t0)),
+            "2 facts as recorded before 2026-09-05T02:43:53.382Z"
+        );
+    }
+
     #[test]
     fn fact_details_keep_the_record_instant_beside_the_world_date() {
         let at = Some(t("2024-08-01T00:00:00Z"));
         let as_of = Some(t("2026-09-05T02:43:53.382001Z"));
         assert_eq!(
-            entity_facts_detail(2, at, as_of),
+            entity_facts_detail(2, at, as_of, None),
             "2 facts at 2024-08-01T00:00:00Z, as recorded by 2026-09-05T02:43:53.382001Z"
         );
         assert_eq!(
-            entity_facts_detail(2, None, as_of),
+            entity_facts_detail(2, None, as_of, None),
             "2 facts as recorded by 2026-09-05T02:43:53.382001Z"
         );
         assert_eq!(
-            entity_facts_detail(2, at, None),
+            entity_facts_detail(2, at, None, None),
             "2 facts as of 2024-08-01T00:00:00Z"
         );
-        assert_eq!(entity_facts_detail(0, None, None), "0 facts");
+        assert_eq!(entity_facts_detail(0, None, None, None), "0 facts");
     }
 
     fn attribute_fact(value: serde_json::Value) -> EntityFact {

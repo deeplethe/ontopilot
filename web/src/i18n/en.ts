@@ -217,6 +217,10 @@ export const en = {
         title: "The model account cannot pay for requests",
         hint: "Extraction and embedding are stopped and will not resume on their own. Top up the account, or set an endpoint that can serve in Administration → Models.",
       },
+      "governance.tripped": {
+        title: "The agent stopped deciding on its own",
+        hint: "Two of its merges were reverted within seven days, so the switch went off. Look at what it did under Review → Agent, then turn it back on in the base settings when you want it to resume.",
+      },
     } as Record<string, { title: string; hint: string } | undefined>,
     // 没见过的 kind 也要能显示：新告警源上线时前端可能还没更新
     unknownKind: (kind: string) => kind,
@@ -1492,7 +1496,42 @@ export const en = {
     railDefects: "Ontology",
     railDecisions: "Decisions",
     railMerges: "Merges",
+    railAgent: "Agent",
     categoryEmpty: "This queue is clear.",
+    // agent 的队列（0025）
+    agentTitle: "Agent",
+    agentHint:
+      "What the agent proposed or decided for this base, from the decisions people made here before. Answering here is your decision, and it becomes precedent for the next look.",
+    agentEmpty: "The agent has not looked at anything yet.",
+    agentActions: { merge: "Merge", keep: "Keep apart", unsure: "Unsure" } as Record<string, string>,
+    agentStatus: {
+      proposed: "Proposed",
+      applied: "Applied",
+      accepted: "Accepted",
+      overridden: "Overridden",
+      reverted: "Reverted",
+      superseded: "Superseded",
+    } as Record<string, string>,
+    agentSuggests: (action: string, pct: number) => `Agent: ${action.toLowerCase()} · ${pct}%`,
+    agentPrecedents: (n: number) => (n === 1 ? "1 precedent" : `${n} precedents`),
+    agentPrecedentMerged: "merged by a person",
+    agentPrecedentKept: "kept apart by a person",
+    agentPrecedentReverted: "merge reverted by a person",
+    agentPrecedentHabit: (merged: number, kept: number, reverted: number) =>
+      `This type pair in this base: ${merged} merged, ${kept} kept apart, ${reverted} reverted`,
+    agentAnsweredBy: (name: string, date: string) => `${name} · ${date}`,
+    agentAsks: "Asks:",
+    agentLookups: (n: number) => (n === 1 ? "1 lookup" : `${n} lookups`),
+    agentLookedAt: "Looked at",
+    overviewAgent: "Agent",
+    overviewAgentOff: "Governance is off for this base.",
+    overviewAgentSettings: "Turn it on in settings",
+    overviewAgentOpen: "Waiting for your answer",
+    overviewAgentApplied: "Decided on its own",
+    overviewAgentAccepted: "Proposals you accepted",
+    overviewAgentOverridden: (n: number) =>
+      n === 1 ? "1 overridden, last 30 days" : `${n} overridden, last 30 days`,
+    overviewAgentReverted: "Reverted by you",
     // 总览（#377）
     overviewTitle: "Overview",
     overviewHint:
@@ -1542,6 +1581,8 @@ export const en = {
       escalate_no_verdict: "The adjudicator returned no verdict",
       escalate_entity_changed: "The entity changed while being adjudicated",
       escalate_unsure: "The adjudicator was not confident enough",
+      proposed: "The agent looked and left a proposal",
+      governed: "Decided by the agent from precedent",
       namesake: "Two entities with this name in one document",
       /* 画像分不开时的并列：分数是真的，所以百分比照常显示（与 namesake 的哨兵值不同） */
       namesake_tie: "Same name, and the profiles cannot tell them apart",
@@ -1562,6 +1603,25 @@ export const en = {
     noFacts: "No recorded facts",
     merge: "Merge",
     keep: "Keep separate",
+    // 重复项的类型筛选与批量裁决（#428）
+    typesAny: "All",
+    typesSame: "Same type",
+    typesConflict: "Types differ",
+    typesEmpty: "Nothing in this group.",
+    typesDiffer: (a: string, b: string) => `${a} / ${b}`,
+    typesDifferHint:
+      "The two sides are different kinds of thing. Merging them would fold one meaning into another.",
+    pickPair: "Select this pair",
+    selectPage: "Select this page",
+    selected: (n: number) => (n === 1 ? "1 selected" : `${n} selected`),
+    mergeSelected: "Merge selected",
+    keepSelected: "Keep selected apart",
+    batchDone: (ok: number, failed: number) =>
+      failed === 0
+        ? ok === 1
+          ? "1 pair decided"
+          : `${ok} pairs decided`
+        : `${ok} decided, ${failed} could not be — they stay in the queue`,
     lowConfidence: "Low-confidence facts",
     defects: "Ontology contradicts itself",
     defectsHint:
@@ -1721,6 +1781,9 @@ export const en = {
     autoResolveTypes: "Resolve entity types after extraction",
     autoResolveTypesNote:
       "After each document is extracted, run a round of type resolution on entities the engine has not looked at yet. Only refinements within the current class are applied on their own — a re-classification across the tree still waits for you on the Ontology page. Every batch is listed there and can be undone.",
+    governance: "Let the agent work the duplicates queue",
+    governanceNote:
+      "First in, first out. Before deciding a pair the agent reads what people in this base decided on the same names and the same kinds of pairs. It merges only where that history supports it, keeps apart on confidence, and leaves a proposal for everything else. Every decision is listed under Agent on the Review page and can be reverted. Turning this off stops the queue.",
     inferEvery: "Re-derive every",
     minutes: "minutes",
     lastInference: (when: string) => `last run ${when}`,

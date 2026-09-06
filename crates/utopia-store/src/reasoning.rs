@@ -853,17 +853,19 @@ fn read_span(
     from: Option<chrono::DateTime<chrono::Utc>>,
     to: Option<chrono::DateTime<chrono::Utc>>,
     to_precision: Option<&str>,
-    attested_at: chrono::DateTime<chrono::Utc>,
+    attested_from: chrono::DateTime<chrono::Utc>,
+    attested_to: Option<chrono::DateTime<chrono::Utc>>,
 ) -> (Option<i64>, Option<i64>, bool, bool) {
-    let anchor = attested_at.timestamp();
     let (f, from_anchored) = match from {
         Some(x) => (Some(x.timestamp()), false),
-        None => (Some(anchor), true),
+        None => (Some(attested_from.timestamp()), true),
     };
-    let (t, to_anchored) = match (to, to_precision) {
-        (Some(x), _) => (Some(x.timestamp()), false),
-        (None, Some(p)) if p == crate::graph::ENDED_UNKNOWN => (Some(anchor), true),
-        (None, _) => (None, false),
+    // 结束未知的行按 CHECK 必带 attested_to；万一没有，按开放读——宁可多推一点，
+    // 也不凭空造一个终点
+    let (t, to_anchored) = match (to, to_precision, attested_to) {
+        (Some(x), _, _) => (Some(x.timestamp()), false),
+        (None, Some(p), Some(a)) if p == crate::graph::ENDED_UNKNOWN => (Some(a.timestamp()), true),
+        (None, _, _) => (None, false),
     };
     (f, t, from_anchored, to_anchored)
 }
@@ -874,7 +876,7 @@ async fn timed_edges(pool: &PgPool, kb_id: Uuid) -> AppResult<TimedEdges> {
     let rows: Vec<EdgeRow> = sqlx::query_as(
         "SELECT id, predicate_id, subject_id, object_id,
                 valid_from, valid_to, valid_from_precision, valid_to_precision, confidence,
-                attested_at
+                attested_from, attested_to
            FROM facts
           WHERE kb_id = $1
             AND invalidated_at IS NULL
@@ -888,11 +890,11 @@ async fn timed_edges(pool: &PgPool, kb_id: Uuid) -> AppResult<TimedEdges> {
     let mut edges = Vec::with_capacity(rows.len());
     let mut meta: HashMap<Uuid, PremiseMeta> = HashMap::new();
     let mut spans: HashMap<Uuid, (Option<i64>, Option<i64>)> = HashMap::new();
-    for (id, pred, subj, obj, from, to, fp, tp, conf, attested) in rows {
+    for (id, pred, subj, obj, from, to, fp, tp, conf, attested_from, attested_to) in rows {
         // 按读出来的区间推（0022）：没起点的前提从最早的证据起，结束了不知哪天的
         // 到说出它的那份文档为止。读成开放的话，一条经过 "former CEO" 的链会推出
         // 一条今天还成立的边
-        let (f, t, fa, ta) = read_span(from, to, tp.as_deref(), attested);
+        let (f, t, fa, ta) = read_span(from, to, tp.as_deref(), attested_from, attested_to);
         edges.push(TimedEdge {
             edge: Edge {
                 fact: id,
@@ -1071,6 +1073,7 @@ type EdgeRow = (
     Option<String>,
     f32,
     chrono::DateTime<chrono::Utc>,
+    Option<chrono::DateTime<chrono::Utc>>,
 );
 
 type LiveRow = (
@@ -1272,6 +1275,7 @@ type AttrFactRow = (
     f32,
     Option<Uuid>,
     chrono::DateTime<chrono::Utc>,
+    Option<chrono::DateTime<chrono::Utc>>,
 );
 
 /// 属性事实：字面值通道上的活事实，连同区间与精度。
@@ -1290,7 +1294,7 @@ async fn attribute_facts(
     let rows: Vec<AttrFactRow> = sqlx::query_as(
         "SELECT f.id, f.subject_id, f.predicate_id, f.object_value,
                 f.valid_from, f.valid_to, f.valid_from_precision, f.valid_to_precision,
-                f.confidence, e.type_id, f.attested_at
+                f.confidence, e.type_id, f.attested_from, f.attested_to
            FROM facts f
            JOIN entities e ON e.id = f.subject_id
           WHERE f.kb_id = $1
@@ -1307,9 +1311,23 @@ async fn attribute_facts(
     let mut spans = HashMap::new();
     let mut meta = HashMap::new();
     let mut type_of = HashMap::new();
-    for (id, subject, predicate, value, from, to, fp, tp, conf, type_id, attested) in rows {
+    for (
+        id,
+        subject,
+        predicate,
+        value,
+        from,
+        to,
+        fp,
+        tp,
+        conf,
+        type_id,
+        attested_from,
+        attested_to,
+    ) in rows
+    {
         // 与公理那一路同一种读法（0022）：读数没日期就从它的文档起算
-        let (f, t, fa, ta) = read_span(from, to, tp.as_deref(), attested);
+        let (f, t, fa, ta) = read_span(from, to, tp.as_deref(), attested_from, attested_to);
         // 属性事实的字面值是 `{"value": …, "unit": …}`；比较的是里面那个 value。
         // 取不到就把整个对象交给求值器——它对认不出的形状一律判不满足
         let inner = value.get("value").cloned().unwrap_or_else(|| value.clone());

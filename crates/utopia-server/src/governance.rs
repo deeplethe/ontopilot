@@ -1,0 +1,627 @@
+//! 治理任务（0025）：开关开着就把等人的重复对按先进先出过一遍，先读台账再裁。
+//!
+//! 两层。第一层是攒批：队头带着它的簇进一次模型调用，先例已经在提示词里；过闸的
+//! 自己动手（合并可撤、分开可再合）。第二层（第二刀）只接第一层**判不定**的对：
+//! 逐条带工具再看一遍——一侧的全部事实、原文片段、台账里人对这个名字的决定、
+//! 同名的其他实体——看完要么 decide，要么 defer 留一个具体的问题给人。硬规则拦下
+//! 的对（类型冲突、有撤回、与人对这一对的决定相反）不进第二层：再看也不会改规则。
+//!
+//! 两簇之间看一眼开关，关掉就停在这里——「关闭后队列自动终止」就是那一行。模型
+//! 缺席时任务成功结束、什么都不动：没有依据的裁决不如不裁，队列原地等。
+//!
+//! 与攒批裁决器（`adjudication`）的分工：开关关着，那一档照旧独自判灰区对；
+//! 开着，抽取结束排的是这里，灰区对与等人的对都从这条队列走。这里不读也不写
+//! 裁决缓存——缓存键里没有先例，而这里的答案随先例变。
+
+use crate::llm_util;
+use crate::state::AppState;
+use chrono::{Duration, Utc};
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use utopia_core::models::{LlmSettings, ReviewItem, Role};
+use utopia_core::AppError;
+use utopia_extract::governor::{self, Step};
+use utopia_llm::{tool_result_message, LlmClient};
+use utopia_store::alerts;
+use utopia_store::governance::{self as gov, Gate, NewDecision, Precedents, AUTO_CONF};
+use uuid::Uuid;
+
+/// 一次模型调用带几对：队头加它的簇
+const BATCH_SIZE: i64 = 12;
+/// 一个任务最多走几轮，之后再排一个接着走——让别的库的任务也轮得上
+const MAX_ROUNDS: usize = 20;
+/// 每库每天第二层最多花几次模型调用。用完了，判不定的对照第一刀写成建议
+const LOOP_DAILY_CALLS: i64 = 300;
+/// 一次工具结果最多给模型多少字：原文片段与事实列表都可能很长
+const TOOL_OUTPUT_CHARS: usize = 3000;
+
+/// 一轮任务里到处要带的东西
+struct Ctx<'a> {
+    state: &'a AppState,
+    kb_id: Uuid,
+    run_id: Uuid,
+    client: &'a LlmClient,
+    settings: &'a Option<LlmSettings>,
+}
+
+/// 对一对的一次看法：第一层给的，或第二层看完改过的
+struct Look {
+    same: Option<bool>,
+    conf: f32,
+    why: Option<String>,
+    /// defer 留下的问题
+    question: Option<String>,
+    /// 第二层看了什么
+    trace: Vec<Value>,
+    /// 第二层花的模型调用
+    calls: i32,
+}
+
+impl Look {
+    fn from_batch(same: Option<bool>, conf: f32, why: Option<String>) -> Self {
+        Look {
+            same,
+            conf,
+            why,
+            question: None,
+            trace: Vec::new(),
+            calls: 0,
+        }
+    }
+
+    /// 第一层没定：没判决，或置信度不到线
+    fn uncertain(&self) -> bool {
+        self.same.is_none() || self.conf < AUTO_CONF
+    }
+
+    fn action(&self) -> &'static str {
+        match self.same {
+            Some(true) => "merge",
+            Some(false) => "keep",
+            None => "unsure",
+        }
+    }
+}
+
+pub async fn govern(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
+    let kb = utopia_store::kbs::get(&state.pool, kb_id).await?;
+    if !kb.governance {
+        return Ok(());
+    }
+    let settings = utopia_store::settings::get(&state.pool, kb.workspace_id).await?;
+    let Some(client) = settings.as_ref().and_then(llm_util::chat_client) else {
+        tracing::info!(%kb_id, "治理：没有配聊天模型，队列原地等");
+        return Ok(());
+    };
+    let ctx = Ctx {
+        state,
+        kb_id,
+        run_id: Uuid::now_v7(),
+        client: &client,
+        settings: &settings,
+    };
+
+    for _ in 0..MAX_ROUNDS {
+        // 关闭后队列自动终止：每一簇之前看一眼
+        if !utopia_store::kbs::get(&state.pool, kb_id).await?.governance {
+            tracing::info!(%kb_id, "治理：开关已关，停在这里");
+            return Ok(());
+        }
+        let Some(head) = gov::queue(&state.pool, kb_id, 1).await?.into_iter().next() else {
+            return Ok(());
+        };
+        let mut items = vec![head];
+        let siblings = gov::cluster_of(&state.pool, kb_id, &items[0], BATCH_SIZE - 1).await?;
+        items.extend(siblings);
+
+        let mut precedents = Vec::with_capacity(items.len());
+        for item in &items {
+            precedents.push(gov::precedents_for(&state.pool, kb_id, item).await?);
+        }
+        let pairs: Vec<utopia_extract::AdjudicationPair> = items
+            .iter()
+            .zip(&precedents)
+            .map(|(item, p)| pair_of(item, p))
+            .collect();
+        let messages = utopia_extract::build_adjudication_messages(&pairs);
+        let reply = {
+            let _permit = permit(&ctx).await;
+            // 调用/解析失败 → 任务按退避重试；重试耗尽后这些对留在队列里，人照样能裁
+            client.chat(&messages).await?
+        };
+        let verdicts = utopia_extract::parse_adjudication(&reply)?;
+        let by_i: HashMap<usize, &utopia_extract::AdjudicationVerdict> =
+            verdicts.iter().map(|v| (v.i, v)).collect();
+
+        for (idx, item) in items.iter().enumerate() {
+            let look = match by_i.get(&idx) {
+                Some(v) => Look::from_batch(
+                    match v.verdict.as_str() {
+                        "same" => Some(true),
+                        "different" => Some(false),
+                        _ => None,
+                    },
+                    v.confidence.unwrap_or(0.5).clamp(0.0, 1.0),
+                    v.why.clone(),
+                ),
+                None => Look::from_batch(None, 0.0, None),
+            };
+            settle(&ctx, item, &pairs[idx], &precedents[idx], look).await?;
+        }
+        state.emit_review(kb_id);
+    }
+
+    // 轮数用完还有积压：再排一个，下一轮从队头接着走
+    if !gov::queue(&state.pool, kb_id, 1).await?.is_empty() {
+        utopia_store::jobs::enqueue_unless_queued(&state.pool, "govern", json!({ "kb_id": kb_id }))
+            .await?;
+    }
+    Ok(())
+}
+
+async fn permit(ctx: &Ctx<'_>) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    match ctx.settings.as_ref() {
+        Some(s) => llm_util::acquire_chat(ctx.state, s).await,
+        None => None,
+    }
+}
+
+fn pair_of(item: &ReviewItem, p: &Precedents) -> utopia_extract::AdjudicationPair {
+    let side = |s: &utopia_core::models::ReviewSide| utopia_extract::AdjudicationSide {
+        name: s.name.clone(),
+        type_label: s.type_label.clone().unwrap_or_else(|| "untyped".into()),
+        facts: s.top_facts.clone(),
+    };
+    utopia_extract::AdjudicationPair {
+        left: side(&item.left),
+        right: side(&item.right),
+        precedents: gov::render_lines(p),
+    }
+}
+
+/// 一对的判决落地：第一层判不定的先进第二层再看；过闸就动手并记 applied，
+/// 否则转人工并记 proposed（带着问题与轨迹）
+async fn settle(
+    ctx: &Ctx<'_>,
+    item: &ReviewItem,
+    pair: &utopia_extract::AdjudicationPair,
+    p: &Precedents,
+    mut look: Look,
+) -> anyhow::Result<()> {
+    let pool = &ctx.state.pool;
+    let kb_id = ctx.kb_id;
+    let types_conflict = matches!(
+        (&item.left.type_label, &item.right.type_label),
+        (Some(a), Some(b)) if a != b
+    );
+
+    // 第二层：只接判不定的，硬规则拦下的不进。预算用完了照第一刀写建议
+    if gov::gate(look.same, look.conf, types_conflict, p) == Gate::Propose
+        && look.uncertain()
+        && p.reverts.is_empty()
+    {
+        let spent = gov::loop_calls_today(pool, kb_id).await?;
+        if spent < LOOP_DAILY_CALLS {
+            match investigate(ctx, item, pair, &look).await {
+                Ok(l) => look = l,
+                // 第二层失败不拖累第一层：这一对照第一层的看法写成建议
+                Err(e) => {
+                    tracing::warn!(%kb_id, review = %item.id, error = %e, "治理：第二层没跑完")
+                }
+            }
+        } else {
+            tracing::info!(%kb_id, spent, "治理：今天的循环预算用完，判不定的只写建议");
+        }
+    }
+
+    let action = look.action();
+    let precedents = gov::precedents_json(p);
+    let conf = look.conf;
+    let decision = |status: &'static str, merge_id: Option<Uuid>| NewDecision {
+        run_id: ctx.run_id,
+        target_id: item.id,
+        action,
+        confidence: conf,
+        reason: look.why.as_deref(),
+        precedents: precedents.clone(),
+        status,
+        merge_id,
+        question: look.question.as_deref(),
+        trace: Value::Array(look.trace.clone()),
+        calls: look.calls,
+    };
+
+    match gov::gate(look.same, look.conf, types_conflict, p) {
+        Gate::Apply if look.same == Some(true) => {
+            let reason = format!("governed|{conf:.2}");
+            // 同簇连锁：前一对合完，这一对的一侧可能已经并进了别人——合活着的那个
+            let (l, r) = (
+                utopia_store::resolution::survivor(pool, kb_id, item.left.id).await?,
+                utopia_store::resolution::survivor(pool, kb_id, item.right.id).await?,
+            );
+            if l == r {
+                // 两边已经是同一个实体：只剩把审核行关上
+                utopia_store::resolution::close_review_auto(pool, item.id, "merged", &reason)
+                    .await?;
+                let id = gov::record(pool, kb_id, decision("applied", None)).await?;
+                audit(ctx, "review.merge", item, conf, id).await;
+                return Ok(());
+            }
+            let (target, source) = utopia_store::resolution::merge_direction(pool, l, r).await?;
+            match utopia_store::resolution::merge_entities(
+                pool, kb_id, source, target, None, &reason,
+            )
+            .await
+            {
+                Ok(merge_id) => {
+                    utopia_store::resolution::close_review_auto(pool, item.id, "merged", &reason)
+                        .await?;
+                    let id = gov::record(pool, kb_id, decision("applied", Some(merge_id))).await?;
+                    audit(ctx, "review.merge", item, conf, id).await;
+                }
+                // 同簇连锁合并已吞掉一方：留给人，并记一条 unsure 免得下一轮又撞上
+                Err(AppError::Conflict(_)) | Err(AppError::NotFound) => {
+                    utopia_store::resolution::escalate_review(
+                        pool,
+                        item.id,
+                        "escalate_entity_changed",
+                    )
+                    .await?;
+                    gov::record(
+                        pool,
+                        kb_id,
+                        NewDecision {
+                            action: "unsure",
+                            reason: Some("one side changed while this cluster was being decided"),
+                            ..decision("proposed", None)
+                        },
+                    )
+                    .await?;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Gate::Apply => {
+            let reason = format!("governed|{conf:.2}");
+            utopia_store::resolution::close_review_auto(pool, item.id, "kept", &reason).await?;
+            let id = gov::record(pool, kb_id, decision("applied", None)).await?;
+            audit(ctx, "review.keep", item, conf, id).await;
+        }
+        Gate::Propose => {
+            utopia_store::resolution::escalate_review(pool, item.id, "proposed").await?;
+            gov::record(pool, kb_id, decision("proposed", None)).await?;
+        }
+    }
+    Ok(())
+}
+
+/// 第二层：带工具逐条再看。模型每回合要么查一样东西（查完把结果喂回去），要么
+/// decide / defer 收尾。回合数封顶；模型不用工具收尾就提醒一次，再不收尾就当没定
+async fn investigate(
+    ctx: &Ctx<'_>,
+    item: &ReviewItem,
+    pair: &utopia_extract::AdjudicationPair,
+    earlier: &Look,
+) -> anyhow::Result<Look> {
+    let tools = governor::tools();
+    let mut messages = governor::messages(
+        pair,
+        &governor::EarlierLook {
+            verdict: match earlier.same {
+                Some(true) => "same",
+                Some(false) => "different",
+                None => "unsure",
+            },
+            confidence: earlier.conf,
+            why: earlier.why.as_deref(),
+        },
+    );
+    let mut trace: Vec<Value> = Vec::new();
+    let mut calls = 0;
+    let mut nudged = false;
+
+    // 回合上限 = 查询次数 + 收尾那一次 + 一次提醒
+    for _ in 0..(governor::MAX_STEPS + 2) {
+        let turn = {
+            let _permit = permit(ctx).await;
+            ctx.client.chat_tools(&messages, &tools).await?
+        };
+        calls += 1;
+        messages.push(turn.to_message());
+        if turn.tool_calls.is_empty() {
+            if nudged {
+                break;
+            }
+            nudged = true;
+            messages.push(json!({ "role": "user", "content": governor::NUDGE }));
+            continue;
+        }
+        for call in &turn.tool_calls {
+            match governor::read_step(&call.name, &call.arguments) {
+                Step::Decide {
+                    same,
+                    confidence,
+                    why,
+                } => {
+                    return Ok(Look {
+                        same: Some(same),
+                        conf: confidence,
+                        why: Some(why).filter(|w| !w.is_empty()),
+                        question: None,
+                        trace,
+                        calls,
+                    });
+                }
+                Step::Defer { question } => {
+                    return Ok(Look {
+                        same: None,
+                        conf: 0.0,
+                        why: None,
+                        question: Some(question),
+                        trace,
+                        calls,
+                    });
+                }
+                Step::Lookup { tool, args } => {
+                    let out = if trace.len() >= governor::MAX_STEPS {
+                        "Lookup limit reached; finish with decide or defer.".to_string()
+                    } else {
+                        let (out, note) = lookup(ctx, item, &tool, &args).await?;
+                        trace.push(json!({ "tool": tool, "args": args, "note": note }));
+                        out
+                    };
+                    messages.push(tool_result_message(&call.id, &out));
+                }
+                Step::Unknown(problem) => {
+                    messages.push(tool_result_message(&call.id, &problem));
+                }
+            }
+        }
+    }
+    // 看了，没收尾：当没定，轨迹留下
+    Ok(Look {
+        same: None,
+        conf: 0.0,
+        why: Some("the agent looked but did not conclude".into()),
+        question: None,
+        trace,
+        calls,
+    })
+}
+
+/// 跑一个工具：给模型的文本，以及写进轨迹的一句话
+async fn lookup(
+    ctx: &Ctx<'_>,
+    item: &ReviewItem,
+    tool: &str,
+    args: &Value,
+) -> anyhow::Result<(String, String)> {
+    let pool = &ctx.state.pool;
+    let kb_id = ctx.kb_id;
+    let side = |s: &str| {
+        if s == "A" {
+            &item.left
+        } else {
+            &item.right
+        }
+    };
+    let clip = |s: String| {
+        if s.chars().count() > TOOL_OUTPUT_CHARS {
+            let mut t: String = s.chars().take(TOOL_OUTPUT_CHARS).collect();
+            t.push_str("\n…");
+            t
+        } else {
+            s
+        }
+    };
+    let (out, note) = match tool {
+        "facts" => {
+            let s = args["side"].as_str().unwrap_or("A");
+            let e = side(s);
+            let lines = utopia_store::resolution::entity_fact_lines(pool, kb_id, e.id, 30).await?;
+            let n = lines.len();
+            let out = if lines.is_empty() {
+                "(no recorded facts)".to_string()
+            } else {
+                lines.join("\n")
+            };
+            (out, format!("{n} facts of {s} \"{}\"", e.name))
+        }
+        "quotes" => {
+            let s = args["side"].as_str().unwrap_or("A");
+            let e = side(s);
+            let rows = gov::quotes_of(pool, kb_id, e.id, 6).await?;
+            let n = rows.len();
+            let out = if rows.is_empty() {
+                "(no source passages)".to_string()
+            } else {
+                rows.iter()
+                    .map(|(doc, q)| format!("[{doc}] {q}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            (out, format!("{n} passages about {s} \"{}\"", e.name))
+        }
+        "ledger" => {
+            let q = args["query"].as_str().unwrap_or("");
+            let rows = gov::ledger_search(pool, kb_id, q, 10).await?;
+            let n = rows.len();
+            let out = if rows.is_empty() {
+                "(no decisions by people about this name)".to_string()
+            } else {
+                rows.iter()
+                    .map(|x| {
+                        let verb = match x.action.as_str() {
+                            "merge.revert" => "merge reverted",
+                            "review.keep" => "kept apart",
+                            _ => "merged",
+                        };
+                        format!(
+                            "\"{}\" ≟ \"{}\": {verb} by a person on {}",
+                            x.left,
+                            x.right,
+                            x.at.format("%Y-%m-%d")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            (out, format!("{n} decisions about \"{q}\""))
+        }
+        "namesakes" => {
+            let q = args["query"].as_str().unwrap_or("");
+            let rows = gov::namesakes(pool, kb_id, q, 10).await?;
+            let n = rows.len();
+            let out = if rows.is_empty() {
+                "(no other entity with such a name)".to_string()
+            } else {
+                rows.iter()
+                    .map(|x| {
+                        format!(
+                            "\"{}\" ({}) · {} facts{}",
+                            x.name,
+                            x.type_label.as_deref().unwrap_or("untyped"),
+                            x.facts,
+                            if x.merged {
+                                " · merged into another"
+                            } else {
+                                ""
+                            }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            (out, format!("{n} entities named like \"{q}\""))
+        }
+        other => (
+            format!("no tool named {other}"),
+            format!("unknown tool {other}"),
+        ),
+    };
+    Ok((clip(out), note))
+}
+
+/// 决策台账：actor 为空（机器），detail 里说是治理、置信度多少、对应哪条 agent 决定
+async fn audit(ctx: &Ctx<'_>, action: &str, item: &ReviewItem, conf: f32, id: Uuid) {
+    let _ = utopia_store::audit::record_opt(
+        &ctx.state.pool,
+        Some(ctx.kb_id),
+        None,
+        action,
+        "review",
+        Some(item.id),
+        json!({
+            "left": item.left.name, "right": item.right.name, "score": item.score,
+            "confidence": conf, "via": "governor", "decision": id,
+        }),
+    )
+    .await;
+}
+
+/// 保险丝（0025 决定 9）：这次打开以来、七天之内，人撤回 agent 的自动合并到了两次，
+/// 开关自动关掉，发一条告警，台账记一笔。它替人做主做错了两回，该停下来等人再开；
+/// 人再打开时 governance_since 更新，之前的撤回不再算
+pub async fn fuse(state: &AppState, kb_id: Uuid) {
+    let pool = &state.pool;
+    let kb = match utopia_store::kbs::get(pool, kb_id).await {
+        Ok(kb) if kb.governance => kb,
+        _ => return,
+    };
+    let window = Utc::now() - Duration::days(gov::FUSE_WINDOW_DAYS);
+    let since = kb.governance_since.map_or(window, |s| s.max(window));
+    let reverts = match gov::reverts_since(pool, kb_id, since).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!(%kb_id, error = %e, "治理：数撤回失败");
+            return;
+        }
+    };
+    if reverts < gov::FUSE_REVERTS {
+        return;
+    }
+    match gov::trip(pool, kb_id).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(e) => {
+            tracing::warn!(%kb_id, error = %e, "治理：关开关失败");
+            return;
+        }
+    }
+    tracing::warn!(%kb_id, reverts, "治理：保险丝跳了，开关已关");
+    if let Err(e) = alerts::raise(
+        pool,
+        alerts::NewAlert {
+            kb_id: Some(kb_id),
+            severity: "warning",
+            kind: alerts::kind::GOVERNANCE_TRIPPED,
+            min_role: Role::Editor,
+            subject_type: Some("kb"),
+            subject_id: Some(kb_id),
+            detail: json!({
+                "kb": kb.name, "reverts": reverts, "window_days": gov::FUSE_WINDOW_DAYS,
+            }),
+        },
+    )
+    .await
+    {
+        tracing::warn!(%kb_id, error = %e, "上报 governance.tripped 失败");
+    }
+    let _ = utopia_store::audit::record_opt(
+        pool,
+        Some(kb_id),
+        None,
+        "kb.updated",
+        "kb",
+        Some(kb_id),
+        json!({ "governance": false, "via": "fuse", "reverts": reverts }),
+    )
+    .await;
+    state.emit_review(kb_id);
+}
+
+/// 人从合并历史撤回了一条合并：是 agent 自己裁的就记成 reverted，然后看保险丝
+pub async fn after_revert(state: &AppState, kb_id: Uuid, merge_id: Uuid, user_id: Uuid) {
+    match gov::settle_by_merge(&state.pool, kb_id, merge_id, user_id).await {
+        Ok(Some(_)) => fuse(state, kb_id).await,
+        Ok(None) => {}
+        Err(e) => tracing::warn!(%kb_id, merge = %merge_id, error = %e, "治理：记撤回失败"),
+    }
+}
+
+/// 人裁了一对之后：这一对上开着的建议就是被回答了（与建议相同是接受，不同是改判）；
+/// 同名或同实体的对上的建议过时、那些对回到队列；开关开着就排一轮。
+/// 人批量分开三对张伟，agent 顺着同一簇把剩下的照办——#428 要的自动处理就是这一步。
+/// `action` 为 None 时不答本对的建议（Agent 队列那条路自己已经答过了）
+pub async fn after_human_decision(
+    state: &AppState,
+    kb_id: Uuid,
+    review_ids: &[Uuid],
+    action: Option<&str>,
+    user_id: Uuid,
+) {
+    for &id in review_ids {
+        if let Some(action) = action {
+            if let Err(e) = gov::answer_open(&state.pool, kb_id, id, action, user_id).await {
+                tracing::warn!(%kb_id, review = %id, error = %e, "治理：建议回答失败");
+            }
+        }
+        if let Err(e) = gov::supersede_siblings(&state.pool, kb_id, id).await {
+            tracing::warn!(%kb_id, review = %id, error = %e, "治理：建议作废失败");
+        }
+    }
+    match utopia_store::kbs::get(&state.pool, kb_id).await {
+        Ok(kb) if kb.governance => {
+            if let Err(e) = utopia_store::jobs::enqueue_unless_queued(
+                &state.pool,
+                "govern",
+                json!({ "kb_id": kb_id }),
+            )
+            .await
+            {
+                tracing::warn!(%kb_id, error = %e, "治理任务入队失败");
+            }
+        }
+        _ => {}
+    }
+}

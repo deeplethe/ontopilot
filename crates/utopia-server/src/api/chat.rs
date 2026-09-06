@@ -313,12 +313,17 @@ pub(super) fn base_tools() -> serde_json::Value {
                         "entity_id": { "type": "string", "description": "Entity id (uuid) from find_entities." },
                         "at": {
                             "type": "string",
-                            "description": "Optional as-of date (YYYY-MM-DD). Only facts valid on \
-                                this date are returned. Omit for the full history."
+                            "description": "Optional as-of moment on the WORLD axis (YYYY, YYYY-MM, \
+                                YYYY-MM-DD, or a zoned time). Only facts valid at that moment are \
+                                returned. Omit for the full history."
                         },
                         "as_of": {
                             "type": "string",
-                            "description": "Optional RECORD-time moment (YYYY-MM-DD or RFC3339): the facts as the knowledge base held them at that moment, before later corrections, retractions and merges. Use for 'what did we think / know / have on record as of <date>' and 'before <event> arrived'. Independent of `at`: `at` is when something was true, `as_of` is when we believed it. Omit for today's understanding."
+                            "description": "Optional RECORD-time moment (YYYY-MM-DD or RFC3339): the facts as the knowledge base held them at that moment, before later corrections, retractions and merges. Use for 'what did we think / know / have on record as of <date>'. Independent of `at`: `at` is when something was true, `as_of` is when we believed it. Omit for today's understanding."
+                        },
+                        "before": {
+                            "type": "string",
+                            "description": "Optional RECORD-time instant copied exactly from a changes event: the facts as the knowledge base held them strictly before that change landed. Use it for 'before <correction / memo> arrived' — paste the event's timestamp, do not compute an earlier as_of yourself. Overrides as_of."
                         }
                     },
                     "required": ["entity_id"]
@@ -352,7 +357,7 @@ pub(super) fn base_tools() -> serde_json::Value {
             "type": "function",
             "function": {
                 "name": "changes",
-                "description": "What the graph LEARNED or REVISED in a window of record time —                     the belief axis. Answers \"what changed since X\", \"what did we get wrong\",                     \"what is new this quarter\", and needs no entity, so use it when the                     question names a period rather than a subject.                     Events: asserted (new claim), corrected (a claim replaced by a revised one),                     rejected (a claim withdrawn), merged (folded into another claim) — each with                     the document it came from.                     NOT the same axis as entity_facts(at): that asks \"what was true on date D\";                     this asks \"what did we change our mind about between D1 and D2\". A fact                     about 2019 can be recorded in 2026 — this windows on when we recorded it.                     Each event starts with its exact UTC RFC3339 record timestamp, including fractional seconds.                     For 'before a correction arrived', find that event here, then call entity_facts with as_of                     one microsecond before its timestamp. At the timestamp itself the change already applies;                     subtracting a whole day or second can skip earlier records. Keep at for the world date asked about.",
+                "description": "What the graph LEARNED or REVISED in a window of record time —                     the belief axis. Answers \"what changed since X\", \"what did we get wrong\",                     \"what is new this quarter\", and needs no entity, so use it when the                     question names a period rather than a subject.                     Events: asserted (new claim), corrected (a claim replaced by a revised one),                     rejected (a claim withdrawn), merged (folded into another claim) — each with                     the document it came from.                     NOT the same axis as entity_facts(at): that asks \"what was true on date D\";                     this asks \"what did we change our mind about between D1 and D2\". A fact                     about 2019 can be recorded in 2026 — this windows on when we recorded it.                     Each event starts with its exact UTC RFC3339 record timestamp, including fractional seconds.                     For 'before a correction arrived', find that event here and pass its timestamp, exactly as printed, to entity_facts as `before`. Keep at for the world date asked about.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -421,10 +426,9 @@ const SYSTEM_PROMPT: &str = "You are the assistant of Utopia, a temporal knowled
        `attested <time>` marks a fact with no stated start, known only from that evidence on; \
        `ended by <time>` marks one the text says is over, date not given.\n\
     2a. For 'before a correction or memo arrived', call changes to find its exact record timestamp, \
-       then call entity_facts with `as_of` one microsecond before that timestamp. At the timestamp \
-       itself the change already applies. Preserve fractional seconds: for example, before \
-       2026-09-05T02:43:53.382Z use 2026-09-05T02:43:53.381999Z. Subtracting a whole day or \
-       second can skip earlier records. Keep `at` for the world date asked about.\n\
+       then call entity_facts with `before` set to that timestamp, copied exactly as printed — the \
+       server reads the base as it stood strictly before that change. Never compute an earlier \
+       `as_of` yourself. Keep `at` for the world date asked about.\n\
     2b. For \"what changed / what is new / what did we get wrong since <date>\", call changes — \
        it needs no entity. Name the document a correction came from in plain prose. Graph tools \
        return no [n] numbers and no URLs, so never write a bracketed citation or a placeholder \

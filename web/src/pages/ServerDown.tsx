@@ -21,7 +21,7 @@ function PunishmentPage({
     <div className="min-h-screen flex items-center justify-center px-4">
       <LoginScene />
       <div className="relative z-10 text-center u-rise">
-        <h1 className="text-5xl font-normal">
+        <h1 className="u-wordmark-hero font-normal">
           <Wordmark />
         </h1>
         <p className="u-balance mt-4 text-body text-ink-2">{message}</p>

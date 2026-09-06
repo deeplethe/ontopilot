@@ -1751,8 +1751,19 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
     utopia_store::documents::set_graph_status(&state.pool, document_id, "done").await?;
     state.emit_document(doc.kb_id, document_id);
 
-    // 灰区对进了审核队列 → 触发攒批裁决任务（独立后台跑，抽取本身到此已完成）
-    if needs_adjudication {
+    // 灰区对进了审核队列 → 触发攒批裁决任务（独立后台跑，抽取本身到此已完成）。
+    // 治理开着（0025）排的是治理任务：灰区对与直接转人工的对都从那条先进先出的
+    // 队列走，先读台账再裁；同库已排着的不重复
+    if kb.governance {
+        if needs_adjudication || human_reviews_found {
+            utopia_store::jobs::enqueue_unless_queued(
+                &state.pool,
+                "govern",
+                serde_json::json!({ "kb_id": doc.kb_id }),
+            )
+            .await?;
+        }
+    } else if needs_adjudication {
         utopia_store::jobs::enqueue(
             &state.pool,
             "adjudicate_entities",
@@ -2476,7 +2487,14 @@ mod tests {
                 "a later response cannot evade A/B ambiguity by inventing a new e-handle"
             );
 
-            let reviews = utopia_store::resolution::list_reviews(&pool, kb, 10, 0).await?;
+            let reviews = utopia_store::resolution::list_reviews(
+                &pool,
+                kb,
+                utopia_store::resolution::TypeFilter::Any,
+                10,
+                0,
+            )
+            .await?;
             assert_eq!(reviews.len(), 3, "A/B, C/A and C/B");
             assert!(reviews.iter().all(|review| review.stage == "human"));
             assert!(
@@ -2574,7 +2592,14 @@ mod tests {
                 "同名并列只能等人裁，绝不该唤醒 LLM 裁决器"
             );
 
-            let reviews = utopia_store::resolution::list_reviews(&pool, kb, 10, 0).await?;
+            let reviews = utopia_store::resolution::list_reviews(
+                &pool,
+                kb,
+                utopia_store::resolution::TypeFilter::Any,
+                10,
+                0,
+            )
+            .await?;
             assert_eq!(reviews.len(), 2, "对 A、对 B 各一条审核对");
             assert!(
                 reviews.iter().all(|review| review.stage == "human"),

@@ -1,6 +1,6 @@
 # 0022 · An unknown date is not an open one
 
-- **Status**: implemented in two cuts · #394: `world_axis` beside `record_axis`, `facts.attested_at` set by every writer and backfilled, every server read and both client filters on the read interval, `holds_from` / `holds_to` on edges and entity facts, and an undated ending **closes** the dated open row it ends (`close_with_unknown_end`) · second cut: the evaluator intersects premise intervals as read (`read_span`), a derived bound that came from an anchor carries no precision (migration 0031 loosens the derived CHECK), and the violations list judges "still open" by the read end · a bare open row plus an undated ending is #393
+- **Status**: implemented in two cuts · #394: `world_axis` beside `record_axis`, `facts.attested_at` set by every writer and backfilled, every server read and both client filters on the read interval, `holds_from` / `holds_to` on edges and entity facts, and an undated ending **closes** the dated open row it ends (`close_with_unknown_end`) · second cut: the evaluator intersects premise intervals as read (`read_span`), a derived bound that came from an anchor carries no precision (migration 0031 loosens the derived CHECK), and the violations list judges "still open" by the read end · third cut (#393): a second anchor, `attested_to`, so a bare open row closes too
 - **Written**: 2026-09-06 (conventions in the [README](README.md))
 - **Related**: [0003](0003-ontology-growth-loop.md)'s graph migration gave the end of a fact three states and refused to store a document's date as an indeterminate instant; this record keeps that refusal and puts the date in a column that says what it is. [0019](0019-the-second-clock-can-be-rewound.md) put the record-axis predicate in one place (`record_axis`) and kept `at` and `as_of` apart; this record does the same for the world axis. [0017](0017-a-contradiction-points-upstream.md) gave derived rows their own precisions, and [0021](0021-a-rule-reads-attributes-and-concludes-a-type.md)'s evaluator intersects premise intervals — both inherit the rule below. From #345 and #352, both found by the temporal benchmark (#306).
 
@@ -44,21 +44,21 @@ The client never re-derives it either. Edges and entity facts gain `holds_from` 
 
 ### 2. An unknown bound reaches as far as the evidence, and no further
 
-`facts.attested_at TIMESTAMPTZ NOT NULL`: the earliest date among the documents whose observations were merged into the row. The rule:
+Two anchors, one per end (the first cut had one, `attested_at`, and #393 showed why that is one too few — see below). `facts.attested_from TIMESTAMPTZ NOT NULL`: the earliest date among the documents whose observations were merged into the row. `facts.attested_to TIMESTAMPTZ`: the date of the document that said the fact was over, present exactly when the end is `'unknown'` (a CHECK ties the two). The rule:
 
-- the lower bound is `valid_from` when stated, else `attested_at`;
-- the upper bound is `valid_to` when stated; `attested_at` when the precision says `'unknown'`; open otherwise.
+- the lower bound is `valid_from` when stated, else `attested_from`;
+- the upper bound is `valid_to` when stated; `attested_to` when the precision says `'unknown'`; open otherwise.
 
 ```sql
-COALESCE(f.valid_from, f.attested_at) <= $at
+COALESCE(f.valid_from, f.attested_from) <= $at
 AND CASE WHEN f.valid_to IS NOT NULL            THEN f.valid_to    > $at
-         WHEN f.valid_to_precision = 'unknown'  THEN f.attested_at > $at
+         WHEN f.valid_to_precision = 'unknown'  THEN f.attested_to > $at
          ELSE TRUE END
 ```
 
 The asymmetry between the two ends is kept on purpose. An open end still reads as *holds until told otherwise*: forward continuation is a convention the ledger can afford, because endings arrive as records — a later document, a person's correction — and close the row. A missing start does not read as *since always*, because backward continuation has no corrector; nothing will ever arrive to say "and in 2023 it had not started yet". So a fact holds from the moment there is evidence for it, and before that the honest answer is none: a raise approved in a note dated 2024-02-20 was approved no later than that, and nothing places it in January 2023 (#352). An ending the text states without a date bounds the fact from above at the document that states it (#345): the row says "does not hold by 2025-10-15", and now the reads say the same.
 
-A row with both ends unknown — "no longer holds X", date not recorded, start never given — holds at no moment. It is a closing statement, and reading it as one is right; the panel still lists it under history, marked ended.
+A row with no stated start that an undated ending closes holds from its first evidence to the ending's document — `[attested_from, attested_to)`; that is what the second anchor buys. A fresh row that only says "no longer holds X", date not recorded and start never given, has the same document at both ends and holds at no moment: it is a closing statement, and reading it as one is right; the panel still lists it under history, marked ended.
 
 Why the document's date and not `recorded_at`: back-filled corpora. The benchmark ingests documents about 2023–2025 in one evening; anchored on `recorded_at`, every undated fact would appear in 2026 and at no historical moment. `recorded_at` is also the other clock — 0019 separated the two and this record does not leak one into the other. `documents.doc_time` is world-axis (published, modified, or given on ingest).
 
@@ -100,6 +100,6 @@ The slider and a timed question stop returning a fact before its evidence or aft
 ## Open questions
 
 - **An ending does not close the dated row it ends.** ~~`reconcile_new_fact` returns early for any fact that has ended, so the "no longer holds" row from #352 sits beside the 2023-06-01 row that still says "holds".~~ Settled in the first cut, because the benchmark showed the read rule alone leaves #345's question failing: the ended-unknown row read correctly, and the dated open row beside it went on holding. An undated ending that meets an open row **with a stated start** of the same assertion now closes it — a superseding row with `'unknown'` at the end, anchored on the ending's document, the old row invalidated (`temporal::close_with_unknown_end`). A repeated ending reuses the closed row and only moves its anchor earlier.
-- **A bare open row cannot be closed the same way** (#393). With no stated start the one anchor would have to serve both ends — held from the first note, ended by the second. Today the exact-duplicate path in `insert_fact_inner` merges the ending into the bare row and drops it. Two anchors is the likely answer; it is a schema decision and waits for its own line.
+- **A bare open row could not be closed the same way** (#393). ~~With no stated start the one anchor would have to serve both ends — held from the first note, ended by the second. The exact-duplicate path in `insert_fact_inner` merged the ending into the bare row and dropped it.~~ Settled with a second anchor: `attested_at` became `attested_from`, and `attested_to` carries the date of the document that stated the ending, present exactly when the end is `'unknown'`. `close_with_unknown_end` now closes any open row of the assertion — stated start or not — keeping `attested_from` and setting `attested_to`; a repeated ending only moves either anchor earlier. Every superseding writer copies both; a person's own edit that marks a fact ended-unknown anchors the end at now.
 - **Retrieval is untimed.** Vector and full-text recall take `as_of` (0019) but no `at`; a chunk about 2025 answers a question about 2023 and the model is left to notice. Out of scope; noted so the benchmark's chat probe is read with that in mind.
 - **Showing the anchor.** Whether the panel should say "attested 2024-02-20" beside a blank start, so a person sees why the slider hides the edge before then. Deferred until the first cut has been looked at.

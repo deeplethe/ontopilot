@@ -64,7 +64,7 @@ export function Login() {
         className={`relative z-10 w-full max-w-sm ${leaving ? "u-depart" : ""}`}
       >
         <div className="mb-8 text-center u-rise">
-          <h1 className="text-5xl font-normal">
+          <h1 className="u-wordmark-hero font-normal">
             <Wordmark />
           </h1>
           <p className="mt-2 text-body text-ink-2">

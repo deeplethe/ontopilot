@@ -767,6 +767,17 @@ pub struct ReviewSide {
     pub top_facts: Vec<String>,
 }
 
+/// agent 在一对上留下的、还开着的建议（0025）：卡片上挂一个标签，人在卡片上
+/// 的裁决就是对它的回答
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ReviewProposal {
+    pub id: Uuid,
+    /// merge | keep | unsure
+    pub action: String,
+    pub confidence: f32,
+    pub reason: Option<String>,
+}
+
 /// 消解审核项：疑似同一实体的灰区对。
 #[derive(Debug, Clone, Serialize)]
 pub struct ReviewItem {
@@ -778,6 +789,8 @@ pub struct ReviewItem {
     pub created_at: DateTime<Utc>,
     pub left: ReviewSide,
     pub right: ReviewSide,
+    /// agent 的建议，没有就是 None
+    pub proposal: Option<ReviewProposal>,
 }
 
 /// 合并日志行（审核页历史区）。
@@ -903,6 +916,11 @@ pub struct KnowledgeBase {
     /// 抽取结束自动排一轮类型消解（0016 C2）。**只自动落地在原类子树里精化的那一档**，
     /// 跨轴的改判仍留给人。缺省开：基准上自动那一档的命中 39/41（#297），且每批可撤
     pub auto_type_resolution: bool,
+    /// 治理开关（0025，缺省关）：开着，govern 任务按先进先出过等人的重复对，
+    /// 先读台账里人的先例再裁；关掉，任务在两簇之间看到就停
+    pub governance: bool,
+    /// 这次打开治理的时刻；保险丝只数它之后的撤回（0025 决定 9）
+    pub governance_since: Option<DateTime<Utc>>,
     /// 多久重推一次（分钟）。见 `knowledge_bases.inference_interval_minutes`
     pub inference_interval_minutes: i32,
     /// 上次推完的时间。**答的是「上次看过没有」，不是「上次改过没有」**
@@ -1203,6 +1221,10 @@ pub struct ReviewCounts {
     /// 记忆抽出、等人点头的事实（0015）。排第一：它是人自己说的话
     pub pending: i64,
     pub duplicates: i64,
+    /// 重复项里两边类型相同（都有类型且相等）的——同名同类是人最先想批量合的一档（#428）
+    pub duplicates_same_type: i64,
+    /// 两边类型冲突（都有类型且不等）的——同名异义，合了就错
+    pub duplicates_type_conflict: i64,
     pub conflicts: i64,
     pub unconfirmed: i64,
     pub lowconf: i64,
@@ -1210,6 +1232,47 @@ pub struct ReviewCounts {
     pub violations: i64,
     pub defects: i64,
     pub merges: i64,
+    /// agent 写下、等人回答的建议（0025）
+    pub agent: i64,
+    /// agent 的全部记录（Agent 队列翻页用）
+    pub agent_rows: i64,
+}
+
+/// agent 的一笔（0025）：看了哪一对、想怎么办、凭什么、人怎么答的。
+/// `left` / `right` 是那一对的名字，合并之后仍按当时的实体读得出
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AgentDecisionView {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub target_kind: String,
+    pub target_id: Uuid,
+    /// merge | keep | unsure
+    pub action: String,
+    pub confidence: f32,
+    pub reason: Option<String>,
+    pub precedents: serde_json::Value,
+    /// proposed | applied | accepted | overridden | reverted | superseded
+    pub status: String,
+    pub merge_id: Option<Uuid>,
+    /// defer 留给人的那一个问题；只有 unsure 的行才有
+    pub question: Option<String>,
+    /// 它看了什么：[{tool, args, note}]
+    pub trace: serde_json::Value,
+    /// 循环里花的模型调用次数
+    pub calls: i32,
+    pub created_at: DateTime<Utc>,
+    pub decided_at: Option<DateTime<Utc>>,
+    pub decided_by_name: Option<String>,
+    pub left: Option<String>,
+    pub right: Option<String>,
+}
+
+/// 批量裁决里一条的结果：`error` 为 None 就是成功。一条失败不拖累其余的，
+/// 调用方拿到逐条说明，界面上能指着说「这两条没成，为什么」
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewBatchOutcome {
+    pub id: Uuid,
+    pub error: Option<String>,
 }
 
 /// 审核台的总览（#377）：等着办的、办过的、库的成色。
@@ -1222,6 +1285,27 @@ pub struct ReviewSummary {
     pub waiting: ReviewWaiting,
     pub decided: ReviewDecided,
     pub health: ReviewHealth,
+    pub agent: ReviewAgent,
+}
+
+/// agent 在这个库里做过什么（0025）：开着的建议，以及近期每一笔现在的状态
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ReviewAgent {
+    /// 等人回答的建议，不分时间
+    pub open: i64,
+    pub last_7d: AgentWindow,
+    pub last_30d: AgentWindow,
+}
+
+/// 一个时间窗口里 agent 写下的行，按**现在的**状态数：自动裁了还站着的、
+/// 人接受的、人改判的、人撤回的
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct AgentWindow {
+    pub applied: i64,
+    pub proposed: i64,
+    pub accepted: i64,
+    pub overridden: i64,
+    pub reverted: i64,
 }
 
 /// 一档队列里等着的：多少条、最老的一条从什么时候开始等
