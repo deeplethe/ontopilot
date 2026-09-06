@@ -737,7 +737,7 @@ export function ColorPicker({
           type="button"
           title={value}
           onClick={() => setOpen(!open)}
-          className="h-8 w-14 rounded-lg border border-line-strong hover:border-line-strong transition-colors bg-surface grid place-items-center"
+          className="h-8 w-10 rounded-lg border border-line-strong hover:border-line-strong transition-colors bg-surface grid place-items-center"
         >
           <span
             className={cn("h-3.5 w-3.5", shape === "circle" ? "rounded-full" : "scale-90")}
@@ -754,7 +754,7 @@ export function ColorPicker({
         />
       )}
       {open && (
-        // 显式宽度：绝对定位的收缩宽度会被 inline-block 触发器的 56px 容器块钳死
+        // 显式宽度：绝对定位的收缩宽度会被 inline-block 触发器的容器块钳死
         <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-xl p-3 shadow-2xl">
           <div className="grid grid-cols-8 gap-1.5 mb-2.5">
             {ENTITY_PALETTE.map((c) => (
@@ -1212,12 +1212,12 @@ export function Segmented<T extends string>({
               fill && "flex-1",
               active
                 ? "bg-surface-3 text-ink"
-                : "text-ink-3 hover:bg-surface-2 hover:text-ink-2",
+                : "text-ink-2 hover:bg-surface-2 hover:text-ink",
             )}
           >
             {o.label}
             {o.count !== undefined && o.count > 0 && (
-              <span className="u-num text-ink-3">{o.count}</span>
+              <span className="u-num">{o.count}</span>
             )}
           </button>
         );
