@@ -498,12 +498,14 @@ pub fn parse_response(raw: &str) -> anyhow::Result<Extraction> {
 // ---------------------------------------------------------------------------
 
 /// 待裁决的一侧：名字 + 类型 + 事实摘要行。
+#[derive(Debug, Clone)]
 pub struct AdjudicationSide {
     pub name: String,
     pub type_label: String,
     pub facts: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
 pub struct AdjudicationPair {
     pub left: AdjudicationSide,
     pub right: AdjudicationSide,

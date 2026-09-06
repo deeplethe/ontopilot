@@ -1,6 +1,7 @@
 //! 治理任务（0025）：开关开着就把等人的重复对按先进先出过一遍，先读台账再裁。
 //!
-//! 两层。第一层是攒批：队头带着它的簇进一次模型调用，先例已经在提示词里；过闸的
+//! 人裁过的一对（同一对实体，或名字不同的同一对名字）照人的定，不问模型。
+//! 其余两层。第一层是攒批：队头带着它的簇进一次模型调用，先例已经在提示词里；过闸的
 //! 自己动手（合并可撤、分开可再合）。第二层（第二刀）只接第一层**判不定**的对：
 //! 逐条带工具再看一遍——一侧的全部事实、原文片段、台账里人对这个名字的决定、
 //! 同名的其他实体——看完要么 decide，要么 defer 留一个具体的问题给人。硬规则拦下
@@ -30,8 +31,9 @@ use uuid::Uuid;
 const BATCH_SIZE: i64 = 12;
 /// 一个任务最多走几轮，之后再排一个接着走——让别的库的任务也轮得上
 const MAX_ROUNDS: usize = 20;
-/// 每库每天第二层最多花几次模型调用。用完了，判不定的对照第一刀写成建议
-const LOOP_DAILY_CALLS: i64 = 300;
+/// 每库每天第二层最多花几次模型调用。用完了，判不定的对照第一刀写成建议。
+/// 300 在一次 229 块的导入上第一轮就用光了（132 对花了 301 次），所以是 2000
+const LOOP_DAILY_CALLS: i64 = 2000;
 /// 一次工具结果最多给模型多少字：原文片段与事实列表都可能很长
 const TOOL_OUTPUT_CHARS: usize = 3000;
 
@@ -63,6 +65,18 @@ impl Look {
             same,
             conf,
             why,
+            question: None,
+            trace: Vec::new(),
+            calls: 0,
+        }
+    }
+
+    /// 人裁过这一对：照人的定，不问模型
+    fn from_people(merged: bool) -> Self {
+        Look {
+            same: Some(merged),
+            conf: 1.0,
+            why: Some("a person decided this same pair before".into()),
             question: None,
             trace: Vec::new(),
             calls: 0,
@@ -123,30 +137,55 @@ pub async fn govern(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
             .zip(&precedents)
             .map(|(item, p)| pair_of(item, p))
             .collect();
-        let messages = utopia_extract::build_adjudication_messages(&pairs);
-        let reply = {
-            let _permit = permit(&ctx).await;
-            // 调用/解析失败 → 任务按退避重试；重试耗尽后这些对留在队列里，人照样能裁
-            client.chat(&messages).await?
-        };
-        let verdicts = utopia_extract::parse_adjudication(&reply)?;
-        let by_i: HashMap<usize, &utopia_extract::AdjudicationVerdict> =
-            verdicts.iter().map(|v| (v.i, v)).collect();
 
+        // 人定过的直接照办，不问模型；剩下的才攒批
+        let mut asked: Vec<usize> = Vec::new();
         for (idx, item) in items.iter().enumerate() {
-            let look = match by_i.get(&idx) {
-                Some(v) => Look::from_batch(
-                    match v.verdict.as_str() {
-                        "same" => Some(true),
-                        "different" => Some(false),
-                        _ => None,
-                    },
-                    v.confidence.unwrap_or(0.5).clamp(0.0, 1.0),
-                    v.why.clone(),
-                ),
-                None => Look::from_batch(None, 0.0, None),
+            let prior =
+                gov::decided_before(&state.pool, kb_id, item.left.id, item.right.id).await?;
+            match gov::settled_by_people(&item.left.name, &item.right.name, &precedents[idx], prior)
+            {
+                Some(merged) => {
+                    settle(
+                        &ctx,
+                        item,
+                        &pairs[idx],
+                        &precedents[idx],
+                        Look::from_people(merged),
+                    )
+                    .await?
+                }
+                None => asked.push(idx),
+            }
+        }
+        if !asked.is_empty() {
+            let batch: Vec<utopia_extract::AdjudicationPair> =
+                asked.iter().map(|&i| pairs[i].clone()).collect();
+            let messages = utopia_extract::build_adjudication_messages(&batch);
+            let reply = {
+                let _permit = permit(&ctx).await;
+                // 调用/解析失败 → 任务按退避重试；重试耗尽后这些对留在队列里，人照样能裁
+                client.chat(&messages).await?
             };
-            settle(&ctx, item, &pairs[idx], &precedents[idx], look).await?;
+            let verdicts = utopia_extract::parse_adjudication(&reply)?;
+            let by_i: HashMap<usize, &utopia_extract::AdjudicationVerdict> =
+                verdicts.iter().map(|v| (v.i, v)).collect();
+
+            for (n, &idx) in asked.iter().enumerate() {
+                let look = match by_i.get(&n) {
+                    Some(v) => Look::from_batch(
+                        match v.verdict.as_str() {
+                            "same" => Some(true),
+                            "different" => Some(false),
+                            _ => None,
+                        },
+                        v.confidence.unwrap_or(0.5).clamp(0.0, 1.0),
+                        v.why.clone(),
+                    ),
+                    None => Look::from_batch(None, 0.0, None),
+                };
+                settle(&ctx, &items[idx], &pairs[idx], &precedents[idx], look).await?;
+            }
         }
         state.emit_review(kb_id);
     }
