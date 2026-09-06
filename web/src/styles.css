@@ -747,6 +747,7 @@ select.input-dark option {
 
 /* 主导航的一页：图标 + 文字，激活态下划线 */
 .u-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -764,6 +765,20 @@ select.input-dark option {
 .u-tab.is-active {
   color: var(--u-text);
   border-bottom-color: #ffffff;
+}
+/* 选中的那一页从下划线往上透一点光：白 10% 在底，到六成高处就没了——说的是
+   「光从线上来」，不是给标签涂一块底。压在文字后面，不接指针 */
+.u-tab.is-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0) 60%
+  );
+  pointer-events: none;
 }
 
 /* 一行的壳：自己不是按钮（里面还有按钮）但整行要有 hover */
