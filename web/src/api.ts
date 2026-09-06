@@ -559,6 +559,12 @@ export interface AgentDecision {
   precedents: AgentPrecedent[];
   status: "proposed" | "applied" | "accepted" | "overridden" | "reverted" | "superseded";
   merge_id: string | null;
+  /** defer 留给人的那一个问题；只有 unsure 的行才有 */
+  question: string | null;
+  /** 第二层看了什么：一条一次查询 */
+  trace: { tool: string; args: Record<string, string>; note: string }[];
+  /** 第二层花的模型调用 */
+  calls: number;
   created_at: string;
   decided_at: string | null;
   decided_by_name: string | null;

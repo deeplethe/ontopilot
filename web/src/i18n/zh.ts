@@ -1327,6 +1327,9 @@ export const zh: Strings = {
     agentPrecedentHabit: (merged, kept, reverted) =>
       `这种类型对在本库：合 ${merged}、分 ${kept}、撤回 ${reverted}`,
     agentAnsweredBy: (name, date) => `${name} · ${date}`,
+    agentAsks: "问：",
+    agentLookups: (n) => `查了 ${n} 次`,
+    agentLookedAt: "看了",
     overviewAgent: "Agent",
     overviewAgentOff: "这个库的治理没有打开。",
     overviewAgentSettings: "去设置里打开",

@@ -495,6 +495,8 @@ function AgentRow({
 }) {
   const [open, setOpen] = useState(false);
   const precedents = d.precedents ?? [];
+  const trace = d.trace ?? [];
+  const hasDetail = precedents.length > 0 || trace.length > 0;
   return (
     <div className="glass rounded-xl px-4 py-3">
       <div className="flex items-center gap-3">
@@ -509,21 +511,39 @@ function AgentRow({
           {S.review.agentStatus[d.status]}
         </Chip>
       </div>
-      {(d.reason || precedents.length > 0) && (
+      {/* defer 留下的问题（第二刀）：这是给人看的正文，不是注脚 */}
+      {d.question && (
+        <p className="mt-1 text-body text-ink">
+          <span className="text-ink-3">{S.review.agentAsks} </span>
+          {d.question}
+        </p>
+      )}
+      {(d.reason || hasDetail) && (
         <div className="mt-1 flex items-center gap-3 text-small text-ink-3">
           {d.reason && <span className="truncate min-w-0">{d.reason}</span>}
-          {precedents.length > 0 && (
+          {hasDetail && (
             <LinkButton className="shrink-0" onClick={() => setOpen((v) => !v)}>
-              {S.review.agentPrecedents(precedents.length)}
+              {[
+                precedents.length > 0 ? S.review.agentPrecedents(precedents.length) : null,
+                trace.length > 0 ? S.review.agentLookups(trace.length) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </LinkButton>
           )}
         </div>
       )}
-      {open && precedents.length > 0 && (
+      {open && hasDetail && (
         <ul className="mt-2 space-y-1 border-t border-line pt-2 text-small text-ink-3">
           {precedents.map((p, i) => (
-            <li key={i} className="truncate">
+            <li key={`p${i}`} className="truncate">
               {precedentText(p)}
+            </li>
+          ))}
+          {/* 轨迹就是解释：它查了什么，一行一次 */}
+          {trace.map((t, i) => (
+            <li key={`t${i}`} className="truncate">
+              {S.review.agentLookedAt} {t.note}
             </li>
           ))}
         </ul>

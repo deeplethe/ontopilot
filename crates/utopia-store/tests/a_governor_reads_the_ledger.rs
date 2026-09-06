@@ -284,6 +284,9 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
             precedents: governance::precedents_json(&p),
             status: "proposed",
             merge_id: None,
+            question: None,
+            trace: serde_json::json!([]),
+            calls: 0,
         },
     )
     .await?;
@@ -299,6 +302,9 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
             precedents: serde_json::json!([]),
             status: "proposed",
             merge_id: None,
+            question: None,
+            trace: serde_json::json!([]),
+            calls: 0,
         },
     )
     .await?;
@@ -328,6 +334,9 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
                 precedents: serde_json::json!([]),
                 status: "proposed",
                 merge_id: None,
+                question: None,
+                trace: serde_json::json!([]),
+                calls: 0,
             },
         )
         .await
@@ -367,6 +376,55 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
             .is_err()
     );
 
+    // 第二刀的工具：翻台账、找同名、数今天花的调用
+    let hits = governance::ledger_search(pool, s.kb, "apple", 10).await?;
+    assert_eq!(
+        hits.len(),
+        2,
+        "Apple Inc. 的合并与 Apple Records 的分开都含 apple"
+    );
+    assert!(
+        governance::ledger_search(pool, s.kb, "zhang", 10)
+            .await?
+            .iter()
+            .all(|x| x.action == "review.keep"),
+        "机器合的那条不算"
+    );
+    let alike = governance::namesakes(pool, s.kb, "zhang wei", 10).await?;
+    assert_eq!(alike.len(), 3, "三个张伟");
+    assert!(alike
+        .iter()
+        .all(|x| x.type_label.as_deref() == Some("Person") && !x.merged));
+    assert!(
+        governance::quotes_of(pool, s.kb, alike_id(pool, s.kb).await?, 6)
+            .await?
+            .is_empty(),
+        "没有事实就没有原文"
+    );
+    let looked = governance::record(
+        pool,
+        s.kb,
+        NewDecision {
+            run_id,
+            target_id: s.mercury,
+            action: "unsure",
+            confidence: 0.0,
+            reason: None,
+            precedents: serde_json::json!([]),
+            status: "proposed",
+            merge_id: None,
+            question: Some("Is the Mercury that filed the 2024 report the company or the person?"),
+            trace: serde_json::json!([{ "tool": "facts", "args": { "side": "A" }, "note": "0 facts of A" }]),
+            calls: 3,
+        },
+    )
+    .await?;
+    let d = governance::get(pool, s.kb, looked).await?;
+    assert_eq!(d.calls, 3);
+    assert!(d.question.as_deref().unwrap().starts_with("Is the Mercury"));
+    assert_eq!(d.trace[0]["tool"], "facts");
+    assert_eq!(governance::loop_calls_today(pool, s.kb).await?, 3);
+
     // 定时扫描：开关开着且有没看过的对 → 在；关了 → 不在
     assert!(governance::due(pool).await?.contains(&s.kb));
     sqlx::query("UPDATE knowledge_bases SET governance = FALSE WHERE id = $1")
@@ -375,6 +433,17 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
         .await?;
     assert!(!governance::due(pool).await?.contains(&s.kb));
     Ok(())
+}
+
+/// 随便一个张伟的 id：原文工具要一个实体
+async fn alike_id(pool: &PgPool, kb: Uuid) -> anyhow::Result<Uuid> {
+    let id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM entities WHERE kb_id = $1 AND canonical_name = 'Zhang Wei' LIMIT 1",
+    )
+    .bind(kb)
+    .fetch_one(pool)
+    .await?;
+    Ok(id)
 }
 
 #[tokio::test]

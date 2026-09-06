@@ -1252,6 +1252,12 @@ pub struct AgentDecisionView {
     /// proposed | applied | accepted | overridden | reverted | superseded
     pub status: String,
     pub merge_id: Option<Uuid>,
+    /// defer 留给人的那一个问题；只有 unsure 的行才有
+    pub question: Option<String>,
+    /// 它看了什么：[{tool, args, note}]
+    pub trace: serde_json::Value,
+    /// 循环里花的模型调用次数
+    pub calls: i32,
     pub created_at: DateTime<Utc>,
     pub decided_at: Option<DateTime<Utc>>,
     pub decided_by_name: Option<String>,

@@ -341,6 +341,12 @@ pub struct NewDecision<'a> {
     /// proposed | applied
     pub status: &'a str,
     pub merge_id: Option<Uuid>,
+    /// defer 留给人的问题（第二刀）
+    pub question: Option<&'a str>,
+    /// 循环看了什么：[{tool, args, note}]
+    pub trace: serde_json::Value,
+    /// 循环里花的模型调用
+    pub calls: i32,
 }
 
 pub async fn record(pool: &PgPool, kb_id: Uuid, d: NewDecision<'_>) -> AppResult<Uuid> {
@@ -348,8 +354,8 @@ pub async fn record(pool: &PgPool, kb_id: Uuid, d: NewDecision<'_>) -> AppResult
     sqlx::query(
         "INSERT INTO agent_decisions
             (id, kb_id, run_id, target_kind, target_id, action, confidence, reason,
-             precedents, status, merge_id)
-         VALUES ($1, $2, $3, 'review', $4, $5, $6, $7, $8, $9, $10)",
+             precedents, status, merge_id, question, trace, calls)
+         VALUES ($1, $2, $3, 'review', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
     )
     .bind(id)
     .bind(kb_id)
@@ -361,13 +367,116 @@ pub async fn record(pool: &PgPool, kb_id: Uuid, d: NewDecision<'_>) -> AppResult
     .bind(d.precedents)
     .bind(d.status)
     .bind(d.merge_id)
+    .bind(d.question)
+    .bind(d.trace)
+    .bind(d.calls)
     .execute(pool)
     .await?;
     Ok(id)
 }
 
+/// 今天这个库在循环里花了几次模型调用：每库每天的预算按它算
+pub async fn loop_calls_today(pool: &PgPool, kb_id: Uuid) -> AppResult<i64> {
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(sum(calls), 0)::bigint FROM agent_decisions
+         WHERE kb_id = $1 AND created_at >= date_trunc('day', now())",
+    )
+    .bind(kb_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
+}
+
+/// 工具：提到这个实体的原文片段——它的事实是从哪句话里抽出来的，出自哪份文档。
+/// 证据上有 quote 就用 quote，没有就截分块开头
+pub async fn quotes_of(
+    pool: &PgPool,
+    kb_id: Uuid,
+    entity_id: Uuid,
+    limit: i64,
+) -> AppResult<Vec<(String, String)>> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT DISTINCT ON (fe.chunk_id) d.filename,
+                COALESCE(NULLIF(fe.quote, ''), left(c.text, 240))
+         FROM facts f
+         JOIN fact_evidence fe ON fe.fact_id = f.id
+         JOIN chunks c ON c.id = fe.chunk_id
+         JOIN documents d ON d.id = c.document_id
+         WHERE f.kb_id = $1 AND f.invalidated_at IS NULL
+           AND (f.subject_id = $2 OR f.object_id = $2)
+         ORDER BY fe.chunk_id, f.confidence DESC
+         LIMIT $3",
+    )
+    .bind(kb_id)
+    .bind(entity_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// 工具：台账里人对某个名字做过的决定——名字包含 query 的合并、分开与撤回
+pub async fn ledger_search(
+    pool: &PgPool,
+    kb_id: Uuid,
+    query: &str,
+    limit: i64,
+) -> AppResult<Vec<Precedent>> {
+    let like = format!("%{}%", query.trim().to_lowercase());
+    let rows: Vec<Precedent> = sqlx::query_as(&format!(
+        "SELECT {COLS} FROM audit_events
+         WHERE kb_id = $1 AND actor_id IS NOT NULL
+           AND action IN ('review.merge', 'review.keep', 'merge.manual', 'merge.revert')
+           AND ({L} LIKE $2 OR {R} LIKE $2)
+         ORDER BY created_at DESC LIMIT $3"
+    ))
+    .bind(kb_id)
+    .bind(&like)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// 工具：库里名字包含 query 的其他实体——叫这个名字的有几个、各是什么、各有多少事实
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Namesake {
+    pub name: String,
+    pub type_label: Option<String>,
+    pub facts: i64,
+    pub merged: bool,
+}
+
+pub async fn namesakes(
+    pool: &PgPool,
+    kb_id: Uuid,
+    query: &str,
+    limit: i64,
+) -> AppResult<Vec<Namesake>> {
+    let like = format!("%{}%", query.trim().to_lowercase());
+    let rows: Vec<Namesake> = sqlx::query_as(
+        "SELECT e.canonical_name AS name, t.label AS type_label,
+                (SELECT count(*) FROM facts f
+                  WHERE f.invalidated_at IS NULL
+                    AND (f.subject_id = e.id OR f.object_id = e.id)) AS facts,
+                (e.merged_into IS NOT NULL) AS merged
+         FROM entities e
+         LEFT JOIN entity_types t ON t.id = e.type_id
+         WHERE e.kb_id = $1 AND lower(e.canonical_name) LIKE $2
+         ORDER BY e.merged_into IS NOT NULL, facts DESC, e.canonical_name
+         LIMIT $3",
+    )
+    .bind(kb_id)
+    .bind(&like)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 const VIEW: &str = "SELECT d.id, d.run_id, d.target_kind, d.target_id, d.action, d.confidence,
-        d.reason, d.precedents, d.status, d.merge_id, d.created_at, d.decided_at,
+        d.reason, d.precedents, d.status, d.merge_id, d.question, d.trace, d.calls,
+        d.created_at, d.decided_at,
         u.display_name AS decided_by_name,
         a.canonical_name AS \"left\", b.canonical_name AS \"right\"
     FROM agent_decisions d

@@ -1516,6 +1516,9 @@ export const en = {
     agentPrecedentHabit: (merged: number, kept: number, reverted: number) =>
       `This type pair in this base: ${merged} merged, ${kept} kept apart, ${reverted} reverted`,
     agentAnsweredBy: (name: string, date: string) => `${name} · ${date}`,
+    agentAsks: "Asks:",
+    agentLookups: (n: number) => (n === 1 ? "1 lookup" : `${n} lookups`),
+    agentLookedAt: "Looked at",
     overviewAgent: "Agent",
     overviewAgentOff: "Governance is off for this base.",
     overviewAgentSettings: "Turn it on in settings",

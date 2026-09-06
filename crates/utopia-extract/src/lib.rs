@@ -5,6 +5,8 @@ use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::Deserialize;
 use utopia_llm::ChatMessage;
 
+pub mod governor;
+
 #[derive(Debug, Deserialize)]
 pub struct Extraction {
     #[serde(default)]
