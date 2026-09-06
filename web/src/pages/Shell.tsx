@@ -117,7 +117,9 @@ export function Shell() {
       </header>
 
       {/* Tab 导航条：图标 + 文字，激活态下划线（Vercel 式） */}
-      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-stretch gap-1 px-4">
+      {/* px-2：第一个标签的图标离左缘 24，比字标（32）再靠边一点——标签自带
+          16px 内距，与字标同缩进时整行看着比字标还往里 */}
+      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-stretch gap-1 px-2">
         {TABS.map(({ to, label, Icon }) => (
           <Link
             key={to}
