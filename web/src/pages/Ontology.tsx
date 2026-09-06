@@ -390,17 +390,17 @@ export function Ontology() {
       sel?.kind === "uniqueness" ||
       sel?.kind === "rules" ? (
         <div className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
-          <div className="max-w-6xl">
+          <div>
             {sel.kind === "import" ? (
-              <div className="max-w-xl">
+              <div>
                 <ImportPanel kbId={kb.id} onChanged={refresh} onError={onError} />
               </div>
             ) : sel.kind === "refine" ? (
-              <div className="max-w-2xl">
+              <div>
                 <RefinePanel kbId={kb.id} onChanged={refresh} onError={onError} />
               </div>
             ) : sel.kind === "uniqueness" ? (
-              <div className="max-w-2xl">
+              <div>
                 <UniquenessPanel
                   kbId={kb.id}
                   candidates={overlaps}
@@ -414,7 +414,7 @@ export function Ontology() {
                 />
               </div>
             ) : sel.kind === "rules" ? (
-              <div className="max-w-2xl">
+              <div>
                 <RulesPanel
                   kbId={kb.id}
                   classes={entity_types}
@@ -423,7 +423,7 @@ export function Ontology() {
                 />
               </div>
             ) : (
-              <div className="max-w-xl">
+              <div>
                 <MissesPanel
                   kbId={kb.id}
                   misses={misses}

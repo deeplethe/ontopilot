@@ -1364,7 +1364,7 @@ export function Review() {
 
       {/* 右侧：一次只显示选中的一类，单一分页 */}
       <div className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
-        <div className="max-w-4xl">
+        <div>
           {review.isPending && (
             <p className="text-body text-ink-3">{S.nav.loading}</p>
           )}

@@ -567,8 +567,8 @@ export function Library() {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
       >
-        {/* 工作页居左：与 Review/Ontology 同规——左缘随栏起步，切页不跳 */}
-        <div className="max-w-4xl">
+        {/* 工作页铺满栏右的整个宽度：与 Review/Ontology/设置页同规，切页不跳 */}
+        <div>
           <div className="flex items-center justify-between mb-4">
             <h1 className="u-title text-title">
               {selectedSource?.name ??

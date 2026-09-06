@@ -158,190 +158,192 @@ function DeploymentAdmin() {
   const open = dep.data?.open_registration ?? true;
 
   return (
-    <div className="glass rounded-xl p-4 space-y-4">
-      <Checkbox
-        checked={open}
-        disabled={dep.isPending || save.isPending}
-        onChange={(e) => save.mutate({ open: e.target.checked })}
-        label={S.settings.deployment.openReg}
-        hint={S.settings.deployment.openRegHint}
-      />
-
-      {/* 新建库的本体语言。**不是界面语言**——界面语言是每个人自己在账户菜单里选的，
-          根本不经过后端（docs/decisions/0004）。说明里必须把这句讲出来 */}
-      <div className="flex items-start justify-between gap-4 border-t border-line pt-4">
-        <div className="min-w-0">
-          <span className="block text-body text-ink">
-            {S.settings.deployment.ontologyLang}
-          </span>
-          <span className="block text-small text-ink-3 mt-1">
-            {S.settings.deployment.ontologyLangHint}
-          </span>
-        </div>
-        <Segmented
-          size="sm"
-          className="h-fit shrink-0"
+    <div className="glass rounded-xl p-4">
+      <div className="max-w-xl space-y-4">
+        <Checkbox
+          checked={open}
           disabled={dep.isPending || save.isPending}
-          value={dep.data?.default_ontology_lang ?? "en"}
-          onChange={(l) => save.mutate({ open, ontologyLang: l })}
-          options={(["en", "zh"] as const).map((l) => ({
-            value: l,
-            label: LANG_NAMES[l],
-          }))}
+          onChange={(e) => save.mutate({ open: e.target.checked })}
+          label={S.settings.deployment.openReg}
+          hint={S.settings.deployment.openRegHint}
         />
-      </div>
 
-      <div className="flex items-start justify-between gap-4 border-t border-line pt-4">
-        <div className="min-w-0">
-          <span className="block text-body text-ink">
-            {S.settings.deployment.workers}
-          </span>
-          <span className="block text-small text-ink-3 mt-1">
-            {S.settings.deployment.workersHint}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Input size="sm" className="u-input-plain w-16 u-num text-center"
-            type="number"
-            min={1}
-            max={32}
-            value={shown}
-            disabled={dep.isPending}
-            onChange={(e) =>
-              setWorkers(Math.max(1, Math.min(32, Number(e.target.value) || 1)))
-            }
-          />
-          <Button variant="secondary" size="sm"
-            disabled={
-              save.isPending ||
-              workers === null ||
-              workers === dep.data?.worker_concurrency
-            }
-            onClick={() => save.mutate({ open, workers: shown })}
-          >
-            {S.settings.deployment.workersApply}
-          </Button>
-        </div>
-      </div>
-      {/* 按模型的并发才是真正的节流：约束来自供应商的速率限制，而那是按模型算的。
-          上面那个 worker 并发只是外层兜底，防任务无限堆积 */}
-      <div className="border-t border-line pt-4">
-        <div className="flex items-start justify-between gap-4">
+        {/* 新建库的本体语言。**不是界面语言**——界面语言是每个人自己在账户菜单里选的，
+            根本不经过后端（docs/decisions/0004）。说明里必须把这句讲出来 */}
+        <div className="flex items-start justify-between gap-4 border-t border-line pt-4">
           <div className="min-w-0">
             <span className="block text-body text-ink">
-              {S.settings.deployment.modelConcurrency}
+              {S.settings.deployment.ontologyLang}
             </span>
             <span className="block text-small text-ink-3 mt-1">
-              {S.settings.deployment.modelConcurrencyHint}
+              {S.settings.deployment.ontologyLangHint}
+            </span>
+          </div>
+          <Segmented
+            size="sm"
+            className="h-fit shrink-0"
+            disabled={dep.isPending || save.isPending}
+            value={dep.data?.default_ontology_lang ?? "en"}
+            onChange={(l) => save.mutate({ open, ontologyLang: l })}
+            options={(["en", "zh"] as const).map((l) => ({
+              value: l,
+              label: LANG_NAMES[l],
+            }))}
+          />
+        </div>
+
+        <div className="flex items-start justify-between gap-4 border-t border-line pt-4">
+          <div className="min-w-0">
+            <span className="block text-body text-ink">
+              {S.settings.deployment.workers}
+            </span>
+            <span className="block text-small text-ink-3 mt-1">
+              {S.settings.deployment.workersHint}
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-small text-ink-3">
-              {S.settings.deployment.modelDefault}
-            </span>
             <Input size="sm" className="u-input-plain w-16 u-num text-center"
               type="number"
               min={1}
-              max={256}
-              value={shownDefault}
+              max={32}
+              value={shown}
               disabled={dep.isPending}
               onChange={(e) =>
-                setModelDefault(
-                  Math.max(1, Math.min(256, Number(e.target.value) || 1)),
-                )
+                setWorkers(Math.max(1, Math.min(32, Number(e.target.value) || 1)))
               }
             />
             <Button variant="secondary" size="sm"
               disabled={
                 save.isPending ||
-                modelDefault === null ||
-                modelDefault === dep.data?.default_model_concurrency
+                workers === null ||
+                workers === dep.data?.worker_concurrency
               }
-              onClick={() => save.mutate({ open, defaultModel: shownDefault })}
+              onClick={() => save.mutate({ open, workers: shown })}
             >
               {S.settings.deployment.workersApply}
             </Button>
           </div>
         </div>
+        {/* 按模型的并发才是真正的节流：约束来自供应商的速率限制，而那是按模型算的。
+            上面那个 worker 并发只是外层兜底，防任务无限堆积 */}
+        <div className="border-t border-line pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className="block text-body text-ink">
+                {S.settings.deployment.modelConcurrency}
+              </span>
+              <span className="block text-small text-ink-3 mt-1">
+                {S.settings.deployment.modelConcurrencyHint}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-small text-ink-3">
+                {S.settings.deployment.modelDefault}
+              </span>
+              <Input size="sm" className="u-input-plain w-16 u-num text-center"
+                type="number"
+                min={1}
+                max={256}
+                value={shownDefault}
+                disabled={dep.isPending}
+                onChange={(e) =>
+                  setModelDefault(
+                    Math.max(1, Math.min(256, Number(e.target.value) || 1)),
+                  )
+                }
+              />
+              <Button variant="secondary" size="sm"
+                disabled={
+                  save.isPending ||
+                  modelDefault === null ||
+                  modelDefault === dep.data?.default_model_concurrency
+                }
+                onClick={() => save.mutate({ open, defaultModel: shownDefault })}
+              >
+                {S.settings.deployment.workersApply}
+              </Button>
+            </div>
+          </div>
 
-        {!!dep.data?.models_in_use?.length && (
-          <div className="mt-3 space-y-2">
-            {dep.data.models_in_use.map((m) => {
-              const cur =
-                dep.data?.model_limits?.find(
-                  (l) => l.base_url === m.base_url && l.model === m.model,
-                )?.max_concurrent ?? null;
-              const key = `${m.base_url}|${m.model}`;
-              const val = perModel[key] ?? cur ?? shownDefault;
-              return (
-                <div key={key} className="flex items-center gap-2 text-small">
-                  <span className="u-chip u-chip-neutral !text-fine !px-2 shrink-0">
-                    {m.kind}
-                  </span>
-                  <span className="font-mono text-ink-2 truncate">
-                    {m.model}
-                  </span>
-                  <span className="text-ink-3 truncate hidden sm:inline">
-                    {m.base_url}
-                  </span>
-                  <Input size="sm" className="u-input-plain ml-auto w-14 u-num text-center shrink-0"
-                    type="number"
-                    min={1}
-                    max={256}
-                    value={val}
-                    onChange={(e) =>
-                      setPerModel({
-                        ...perModel,
-                        [key]: Math.max(
-                          1,
-                          Math.min(256, Number(e.target.value) || 1),
-                        ),
-                      })
-                    }
-                  />
-                  <Button variant="secondary" size="sm" className="shrink-0"
-                    disabled={save.isPending || perModel[key] === undefined}
-                    onClick={() =>
-                      save.mutate({
-                        open,
-                        modelLimit: {
-                          base_url: m.base_url,
-                          model: m.model,
-                          max_concurrent: val,
-                        },
-                      })
-                    }
-                  >
-                    {S.settings.deployment.workersApply}
-                  </Button>
-                  {cur !== null && (
+          {!!dep.data?.models_in_use?.length && (
+            <div className="mt-3 space-y-2">
+              {dep.data.models_in_use.map((m) => {
+                const cur =
+                  dep.data?.model_limits?.find(
+                    (l) => l.base_url === m.base_url && l.model === m.model,
+                  )?.max_concurrent ?? null;
+                const key = `${m.base_url}|${m.model}`;
+                const val = perModel[key] ?? cur ?? shownDefault;
+                return (
+                  <div key={key} className="flex items-center gap-2 text-small">
+                    <span className="u-chip u-chip-neutral !text-fine !px-2 shrink-0">
+                      {m.kind}
+                    </span>
+                    <span className="font-mono text-ink-2 truncate">
+                      {m.model}
+                    </span>
+                    <span className="text-ink-3 truncate hidden sm:inline">
+                      {m.base_url}
+                    </span>
+                    <Input size="sm" className="u-input-plain ml-auto w-14 u-num text-center shrink-0"
+                      type="number"
+                      min={1}
+                      max={256}
+                      value={val}
+                      onChange={(e) =>
+                        setPerModel({
+                          ...perModel,
+                          [key]: Math.max(
+                            1,
+                            Math.min(256, Number(e.target.value) || 1),
+                          ),
+                        })
+                      }
+                    />
                     <Button variant="secondary" size="sm" className="shrink-0"
-                      disabled={save.isPending}
-                      title={S.settings.deployment.modelResetHint}
+                      disabled={save.isPending || perModel[key] === undefined}
                       onClick={() =>
                         save.mutate({
                           open,
                           modelLimit: {
                             base_url: m.base_url,
                             model: m.model,
-                            max_concurrent: null,
+                            max_concurrent: val,
                           },
                         })
                       }
                     >
-                      {S.settings.deployment.modelReset}
+                      {S.settings.deployment.workersApply}
                     </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    {cur !== null && (
+                      <Button variant="secondary" size="sm" className="shrink-0"
+                        disabled={save.isPending}
+                        title={S.settings.deployment.modelResetHint}
+                        onClick={() =>
+                          save.mutate({
+                            open,
+                            modelLimit: {
+                              base_url: m.base_url,
+                              model: m.model,
+                              max_concurrent: null,
+                            },
+                          })
+                        }
+                      >
+                        {S.settings.deployment.modelReset}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {save.isError && (
+          <p className="text-small text-danger">{(save.error as Error).message}</p>
         )}
       </div>
-
-      {save.isError && (
-        <p className="text-small text-danger">{(save.error as Error).message}</p>
-      )}
     </div>
   );
 }
@@ -651,32 +653,34 @@ function DataSourcesAdmin() {
         )}
       </div>
 
-      <div className="glass rounded-xl p-4 space-y-2">
-        <Input className="w-full"
-          placeholder={S.settings.datasources.name}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <Input className="w-full font-mono u-placeholder-sans"
-          placeholder={S.settings.datasources.connString}
-          value={conn}
-          onChange={(e) => setConn(e.target.value)}
-        />
-        <p className="text-fine leading-5 text-ink-3 font-mono whitespace-pre-line">
-          {S.settings.datasources.connSchemes}
-        </p>
-        <div className="flex items-center gap-3">
-          <Button variant="primary" size="sm"
-            disabled={!name.trim() || !conn.trim() || create.isPending}
-            onClick={() => create.mutate()}
-          >
-            {S.settings.datasources.add}
-          </Button>
-          {create.isError && (
-            <span className="text-small text-danger">
-              {(create.error as Error).message}
-            </span>
-          )}
+      <div className="glass rounded-xl p-4">
+        <div className="max-w-xl space-y-2">
+          <Input className="w-full"
+            placeholder={S.settings.datasources.name}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Input className="w-full font-mono u-placeholder-sans"
+            placeholder={S.settings.datasources.connString}
+            value={conn}
+            onChange={(e) => setConn(e.target.value)}
+          />
+          <p className="text-fine leading-5 text-ink-3 font-mono whitespace-pre-line">
+            {S.settings.datasources.connSchemes}
+          </p>
+          <div className="flex items-center gap-3">
+            <Button variant="primary" size="sm"
+              disabled={!name.trim() || !conn.trim() || create.isPending}
+              onClick={() => create.mutate()}
+            >
+              {S.settings.datasources.add}
+            </Button>
+            {create.isError && (
+              <span className="text-small text-danger">
+                {(create.error as Error).message}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -773,8 +777,8 @@ export function Settings() {
   const label = "block text-small font-medium text-ink-2 mb-1";
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-xl">
+    <div className="h-full overflow-y-auto u-scroll px-8 py-6">
+      <div>
         <h2 className="text-title font-semibold text-ink mb-3">
           {S.settings.title}
         </h2>
@@ -823,141 +827,143 @@ export function Settings() {
               ))}
             </div>
 
-            <div className="glass rounded-xl p-6 space-y-4">
-              <h3 className="text-body font-semibold text-ink">
-                {S.settings.chatModel}
-              </h3>
-              <div>
-                <label className={label}>{S.settings.baseUrl}</label>
-                <Input
-                  className="w-full"
-                  placeholder="https://api.deepseek.com/v1"
-                  value={form.chat_base_url}
-                  onChange={set("chat_base_url")}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+            <div className="glass rounded-xl p-6">
+              <div className="max-w-xl space-y-4">
+                <h3 className="text-body font-semibold text-ink">
+                  {S.settings.chatModel}
+                </h3>
                 <div>
-                  <label className={label}>{S.settings.model}</label>
+                  <label className={label}>{S.settings.baseUrl}</label>
                   <Input
                     className="w-full"
-                    placeholder="deepseek-chat"
-                    value={form.chat_model}
-                    onChange={set("chat_model")}
+                    placeholder="https://api.deepseek.com/v1"
+                    value={form.chat_base_url}
+                    onChange={set("chat_base_url")}
                   />
                 </div>
-                <div>
-                  <label className={label}>
-                    {S.settings.apiKey}{" "}
-                    {settings.data?.has_chat_key && (
-                      <span className="text-accent">
-                        {S.settings.keyConfigured}
-                      </span>
-                    )}
-                  </label>
-                  <Input
-                    className="w-full"
-                    type="password"
-                    placeholder="sk-…"
-                    value={form.chat_api_key}
-                    onChange={set("chat_api_key")}
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={label}>{S.settings.model}</label>
+                    <Input
+                      className="w-full"
+                      placeholder="deepseek-chat"
+                      value={form.chat_model}
+                      onChange={set("chat_model")}
+                    />
+                  </div>
+                  <div>
+                    <label className={label}>
+                      {S.settings.apiKey}{" "}
+                      {settings.data?.has_chat_key && (
+                        <span className="text-accent">
+                          {S.settings.keyConfigured}
+                        </span>
+                      )}
+                    </label>
+                    <Input
+                      className="w-full"
+                      type="password"
+                      placeholder="sk-…"
+                      value={form.chat_api_key}
+                      onChange={set("chat_api_key")}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <h3 className="text-body font-semibold text-ink pt-2">
-                {S.settings.embedModel}
-              </h3>
-              <div>
-                <label className={label}>{S.settings.baseUrl}</label>
-                <Input
-                  className="w-full"
-                  placeholder="http://localhost:11434/v1"
-                  value={form.embed_base_url}
-                  onChange={set("embed_base_url")}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+                <h3 className="text-body font-semibold text-ink pt-2">
+                  {S.settings.embedModel}
+                </h3>
                 <div>
-                  <label className={label}>{S.settings.model}</label>
+                  <label className={label}>{S.settings.baseUrl}</label>
                   <Input
                     className="w-full"
-                    placeholder="bge-m3"
-                    value={form.embed_model}
-                    onChange={set("embed_model")}
+                    placeholder="http://localhost:11434/v1"
+                    value={form.embed_base_url}
+                    onChange={set("embed_base_url")}
                   />
                 </div>
-                <div>
-                  <label className={label}>
-                    {S.settings.apiKey}{" "}
-                    {settings.data?.has_embed_key && (
-                      <span className="text-accent">
-                        {S.settings.keyConfigured}
-                      </span>
-                    )}
-                  </label>
-                  <Input
-                    className="w-full"
-                    type="password"
-                    value={form.embed_api_key}
-                    onChange={set("embed_api_key")}
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={label}>{S.settings.model}</label>
+                    <Input
+                      className="w-full"
+                      placeholder="bge-m3"
+                      value={form.embed_model}
+                      onChange={set("embed_model")}
+                    />
+                  </div>
+                  <div>
+                    <label className={label}>
+                      {S.settings.apiKey}{" "}
+                      {settings.data?.has_embed_key && (
+                        <span className="text-accent">
+                          {S.settings.keyConfigured}
+                        </span>
+                      )}
+                    </label>
+                    <Input
+                      className="w-full"
+                      type="password"
+                      value={form.embed_api_key}
+                      onChange={set("embed_api_key")}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex gap-2 pt-2">
-                <Button variant="primary" size="md"
-                  onClick={() => save.mutate()}
-                  disabled={save.isPending}
-                >
-                  {save.isPending ? S.settings.saving : S.settings.save}
-                </Button>
-                <Button variant="secondary" size="md"
-                  onClick={() => test.mutate()}
-                  disabled={test.isPending}
-                >
-                  {test.isPending ? S.settings.testing : S.settings.test}
-                </Button>
-              </div>
-
-              {save.isSuccess && (
-                <p className="text-body text-accent">
-                  {S.settings.saved}
-                </p>
-              )}
-              {save.isError && (
-                <p className="text-body text-danger">
-                  {(save.error as Error).message}
-                </p>
-              )}
-              {test.data && (
-                <div className="text-body space-y-1 pt-1">
-                  <p
-                    className={
-                      test.data.chat.ok
-                        ? "text-accent"
-                        : "text-danger"
-                    }
+                <div className="flex gap-2 pt-2">
+                  <Button variant="primary" size="md"
+                    onClick={() => save.mutate()}
+                    disabled={save.isPending}
                   >
-                    {S.settings.chatLabel}:{" "}
-                    {test.data.chat.ok
-                      ? S.settings.ok(test.data.chat.reply ?? "OK")
-                      : test.data.chat.error}
-                  </p>
-                  <p
-                    className={
-                      test.data.embed.ok
-                        ? "text-accent"
-                        : "text-ink-2"
-                    }
+                    {save.isPending ? S.settings.saving : S.settings.save}
+                  </Button>
+                  <Button variant="secondary" size="md"
+                    onClick={() => test.mutate()}
+                    disabled={test.isPending}
                   >
-                    {S.settings.embedLabel}:{" "}
-                    {test.data.embed.ok
-                      ? S.settings.okDim(test.data.embed.dim ?? 0)
-                      : test.data.embed.error}
-                  </p>
+                    {test.isPending ? S.settings.testing : S.settings.test}
+                  </Button>
                 </div>
-              )}
+
+                {save.isSuccess && (
+                  <p className="text-body text-accent">
+                    {S.settings.saved}
+                  </p>
+                )}
+                {save.isError && (
+                  <p className="text-body text-danger">
+                    {(save.error as Error).message}
+                  </p>
+                )}
+                {test.data && (
+                  <div className="text-body space-y-1 pt-1">
+                    <p
+                      className={
+                        test.data.chat.ok
+                          ? "text-accent"
+                          : "text-danger"
+                      }
+                    >
+                      {S.settings.chatLabel}:{" "}
+                      {test.data.chat.ok
+                        ? S.settings.ok(test.data.chat.reply ?? "OK")
+                        : test.data.chat.error}
+                    </p>
+                    <p
+                      className={
+                        test.data.embed.ok
+                          ? "text-accent"
+                          : "text-ink-2"
+                      }
+                    >
+                      {S.settings.embedLabel}:{" "}
+                      {test.data.embed.ok
+                        ? S.settings.okDim(test.data.embed.dim ?? 0)
+                        : test.data.embed.error}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </>
         )}

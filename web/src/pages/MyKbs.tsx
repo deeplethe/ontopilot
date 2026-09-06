@@ -43,7 +43,7 @@ export function MyKbs() {
   };
 
   return (
-    <div className="max-w-2xl p-8">
+    <div className="px-8 py-6">
       <div className="mb-6">
         <h1 className="u-title text-title">{S.account.kbsTitle}</h1>
       </div>

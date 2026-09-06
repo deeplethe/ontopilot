@@ -251,7 +251,7 @@ export function Tokens() {
   );
 
   return (
-    <div className="max-w-2xl p-8">
+    <div className="px-8 py-6">
       <h1 className="u-title text-title">{S.account.tokensTitle}</h1>
       <p className="mt-1 mb-6 text-small text-ink-3 max-w-lg">{S.account.tokensHint}</p>
 
@@ -265,75 +265,77 @@ export function Tokens() {
       )}
 
       <div className="glass rounded-xl p-6 mb-6">
-        <h2 className="text-body font-medium text-ink mb-4">{S.account.newToken}</h2>
-        {field(
-          S.account.tokenName,
-          <Input className="w-full"
-            placeholder={S.account.tokenNamePlaceholder}
-            value={name}
-            maxLength={64}
-            onChange={(e) => setName(e.target.value)}
-          />,
-        )}
-        {field(
-          S.account.tokenScope,
-          <div className="flex gap-2">
-            {(["read", "write"] as const).map((s) => (
-              <Button variant="secondary" size="sm"
-                key={s}
-                className={`u-btn px-3 py-2 text-small ${scope === s ? "u-btn-primary" : "u-btn-ghost"}`}
-                onClick={() => setScope(s)}
-              >
-                {s === "read" ? S.account.scopeRead : S.account.scopeWrite}
-              </Button>
-            ))}
-          </div>,
-          S.account.scopeHint,
-        )}
-        {field(
-          S.account.tokenKbs,
-          <div className="flex gap-2 flex-wrap">
-            {kbs.map((k) => {
-              const on = picked.has(k.id);
-              return (
+        <div className="max-w-xl">
+          <h2 className="text-body font-medium text-ink mb-4">{S.account.newToken}</h2>
+          {field(
+            S.account.tokenName,
+            <Input className="w-full"
+              placeholder={S.account.tokenNamePlaceholder}
+              value={name}
+              maxLength={64}
+              onChange={(e) => setName(e.target.value)}
+            />,
+          )}
+          {field(
+            S.account.tokenScope,
+            <div className="flex gap-2">
+              {(["read", "write"] as const).map((s) => (
                 <Button variant="secondary" size="sm"
-                  key={k.id}
-                  className={`u-btn px-3 py-1 text-small ${on ? "u-btn-primary" : "u-btn-ghost"}`}
-                  onClick={() => {
-                    const next = new Set(picked);
-                    if (on) next.delete(k.id);
-                    else next.add(k.id);
-                    setPicked(next);
-                  }}
+                  key={s}
+                  className={`u-btn px-3 py-2 text-small ${scope === s ? "u-btn-primary" : "u-btn-ghost"}`}
+                  onClick={() => setScope(s)}
                 >
-                  {k.name}
+                  {s === "read" ? S.account.scopeRead : S.account.scopeWrite}
                 </Button>
-              );
-            })}
-          </div>,
-          S.account.kbsAllHint,
-        )}
-        {field(
-          S.account.tokenExpires,
-          <div className="flex gap-2">
-            {EXPIRY_CHOICES.map((d) => (
-              <Button variant="secondary" size="sm"
-                key={d}
-                className={`u-btn px-3 py-1 text-small u-num ${days === d ? "u-btn-primary" : "u-btn-ghost"}`}
-                onClick={() => setDays(d)}
-              >
-                {d === 0 ? S.account.expiresNever : S.account.expiresDays(d)}
-              </Button>
-            ))}
-          </div>,
-        )}
-        <div className="flex justify-end">
-          <Button variant="primary" size="sm"
-            disabled={!name.trim() || issue.isPending}
-            onClick={() => issue.mutate()}
-          >
-            {S.account.issueToken}
-          </Button>
+              ))}
+            </div>,
+            S.account.scopeHint,
+          )}
+          {field(
+            S.account.tokenKbs,
+            <div className="flex gap-2 flex-wrap">
+              {kbs.map((k) => {
+                const on = picked.has(k.id);
+                return (
+                  <Button variant="secondary" size="sm"
+                    key={k.id}
+                    className={`u-btn px-3 py-1 text-small ${on ? "u-btn-primary" : "u-btn-ghost"}`}
+                    onClick={() => {
+                      const next = new Set(picked);
+                      if (on) next.delete(k.id);
+                      else next.add(k.id);
+                      setPicked(next);
+                    }}
+                  >
+                    {k.name}
+                  </Button>
+                );
+              })}
+            </div>,
+            S.account.kbsAllHint,
+          )}
+          {field(
+            S.account.tokenExpires,
+            <div className="flex gap-2">
+              {EXPIRY_CHOICES.map((d) => (
+                <Button variant="secondary" size="sm"
+                  key={d}
+                  className={`u-btn px-3 py-1 text-small u-num ${days === d ? "u-btn-primary" : "u-btn-ghost"}`}
+                  onClick={() => setDays(d)}
+                >
+                  {d === 0 ? S.account.expiresNever : S.account.expiresDays(d)}
+                </Button>
+              ))}
+            </div>,
+          )}
+          <div className="flex justify-end">
+            <Button variant="primary" size="sm"
+              disabled={!name.trim() || issue.isPending}
+              onClick={() => issue.mutate()}
+            >
+              {S.account.issueToken}
+            </Button>
+          </div>
         </div>
       </div>
 
