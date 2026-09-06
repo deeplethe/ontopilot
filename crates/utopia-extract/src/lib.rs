@@ -545,9 +545,19 @@ Names:\n\
 - The same proper name, compatible kinds, and no real contradiction: the same thing. Type \
   labels were assigned by an extractor and are noisy: Organization, Corporation, \
   ResearchOrganization, NGO and Store can all be one company; SoftwareApplication, \
-  CreativeWork, Intangible, Product and ComputerLanguage can all be one product. Only \
-  incompatible kinds count as a difference: a person against a company, a place against a \
-  product, an event against an organization.\n\
+  CreativeWork, Intangible, Product, Service, Offer and ComputerLanguage can all be one \
+  product; Place and State can be one state. Only incompatible kinds count as a difference: \
+  a person against a company, a place against a product, an event against an organization. \
+  For identical proper names answer \"different\" only when you can name the contradiction \
+  in one sentence; a type label, a missing fact, fewer facts, or different partners, \
+  products, roles or events is not one. Never treat the absence of facts as a difference.\n\
+- A surname or a first name alone against a full name that contains it, in the same \
+  documents, is the same person unless another person with that name appears: \"Pachocki\" \
+  is \"Jakub Pachocki\", \"Kwon\" is \"Jason Kwon\", \"Nadella\" is \"Satya Nadella\". A person \
+  who moved between two organizations is still one person.\n\
+- A parenthetical acronym, an expanded acronym or a fuller product designation is the same \
+  thing: \"reinforcement learning (RL)\" is \"reinforcement learning\", \"US Federal Trade \
+  Commission (FTC)\" is \"Federal Trade Commission\", \"MI450\" is the \"AMD Instinct MI450\".\n\
 - A name that is the other name with a qualifier removed from the FRONT is usually the same \
   thing abbreviated: \"Google DeepMind\" and \"DeepMind\", \"Adam D'Angelo\" and \"D'Angelo\", \
   \"Meta Platforms\" and \"Meta\", \"Altimeter Capital\" and \"Altimeter\", \"The New York \
@@ -571,9 +581,11 @@ Names:\n\
 - A common noun or generic phrase (\"employees\", \"users\", \"lawsuit\", \"investors\", \
   \"event\", \"safety\") is not a proper name. Two such records are the same only when their \
   facts show they are one specific instance; usually they are different.\n\
-- When the facts describe ownership, control or a subsidiary relation between the two \
-  records (\"OpenAI, Inc. controls the for-profit company\"), they are two entities even if \
-  one name is the other plus a corporate suffix.\n\
+- When the facts of either record describe ownership, control, a subsidiary, a holding or \
+  a parent relation between the two names, or show one of them as one legal entity among \
+  several in a group (\"OpenAI, Inc. controls the for-profit company\", \"OpenAI GP LLC \
+  controls OpenAI LP\"), they are two entities even if one name is the other plus a \
+  corporate suffix. A group and its legal entities are different records.\n\
 \n\
 Facts:\n\
 - Different facts are not contradictory facts. One company has many partnerships, investors, \

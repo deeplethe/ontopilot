@@ -165,14 +165,14 @@ function score(kb) {
   const key = (a, b) => [a.toLowerCase(), b.toLowerCase()].sort().join(" | ");
   const want = new Map(truth.pairs.map((p) => [key(p.left, p.right), p.verdict]));
   const rows = JSON.parse(psql(`SELECT COALESCE(json_agg(json_build_object(
-      'l', a.canonical_name, 'r', b.canonical_name, 'status', rr.status, 'by_person', rr.decided_by IS NOT NULL,
+      'l', a.canonical_name, 'r', b.canonical_name, 'status', rr.status, 'reason', rr.reason, 'by_person', rr.decided_by IS NOT NULL,
       'agent', (SELECT json_build_object('action', d.action, 'status', d.status, 'confidence', d.confidence, 'calls', d.calls, 'reason', d.reason)
                 FROM agent_decisions d WHERE d.target_id = rr.id ORDER BY d.created_at DESC LIMIT 1))), '[]')
     FROM resolution_reviews rr JOIN entities a ON a.id = rr.left_id JOIN entities b ON b.id = rr.right_id
     WHERE rr.kb_id = '${kb}'`));
   const c = { pairs: rows.length, labeled: 0, unlabeled: 0, unknown: 0,
     applied: 0, right: 0, wrong_merge: 0, wrong_keep: 0, applied_unknown: 0,
-    proposed: 0, proposed_same: 0, proposed_different: 0, unsure: 0, by_person: 0, unseen: 0, loop_rows: 0, loop_calls: 0 };
+    proposed: 0, proposed_same: 0, proposed_different: 0, unsure: 0, by_person: 0, unseen: 0, moot: 0, loop_rows: 0, loop_calls: 0 };
   const wrong = [], stuck = [];
   for (const r of rows) {
     const t = want.get(key(r.l, r.r));
@@ -182,6 +182,8 @@ function score(kb) {
     const d = r.agent;
     if (d?.calls > 0) { c.loop_rows++; c.loop_calls += d.calls; }
     if (r.by_person) { c.by_person++; continue; }
+    // 一侧并进了别人之后，这一对本身不存在了：库里关成 kept、reason 说明是连带的
+    if (!d && r.reason === "superseded by merge") { c.moot++; continue; }
     if (!d) { c.unseen++; continue; }
     if (d.status === "applied") {
       c.applied++;
@@ -202,8 +204,8 @@ function score(kb) {
     decided_on_its_own: c.applied, agreed_with_labels: `${c.right}/${c.applied - c.applied_unknown} (${pct(c.right, c.applied - c.applied_unknown)})`,
     wrong_merges: c.wrong_merge, wrong_keeps: c.wrong_keep,
     left_for_people: c.proposed, of_which_unsure: c.unsure, people_would_merge: c.proposed_same, people_would_keep: c.proposed_different,
-    decided_by_person: c.by_person, not_looked_at: c.unseen,
-    automatic_share: pct(c.applied, c.pairs - c.by_person),
+    decided_by_person: c.by_person, moot_after_a_merge: c.moot, not_looked_at: c.unseen,
+    automatic_share: pct(c.applied, c.pairs - c.by_person - c.moot),
     loop: `${c.loop_rows} pairs, ${c.loop_calls} calls`,
   };
   console.log(JSON.stringify(out, null, 2));

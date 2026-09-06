@@ -265,6 +265,15 @@ pub enum NameShape {
 fn norm_name(s: &str) -> String {
     let s = s.trim().to_lowercase();
     let s = s.strip_prefix("the ").unwrap_or(&s).to_string();
+    // 末尾括号里的缩写不是版本：reinforcement learning (RL)、Department of Defense (DoD)
+    let s = match (s.rfind(" ("), s.ends_with(')')) {
+        (Some(i), true)
+            if s[i + 2..s.len() - 1].chars().all(|c| c.is_alphanumeric()) && s.len() - i <= 12 =>
+        {
+            s[..i].to_string()
+        }
+        _ => s,
+    };
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -382,7 +391,9 @@ pub fn name_shape(a: &str, b: &str) -> NameShape {
         if !tail_words.is_empty() && tail_words.iter().all(|w| CORPORATE_SUFFIX.contains(w)) {
             return NameShape::Suffix;
         }
-        if phrase_marker(tail) || tail_words.len() > 2 {
+        // 尾巴两个词起就是一句话了：DeepMind Health data sharing、OpenAI Ireland Ltd、
+        // Meta Superintelligence Labs——都不是前面那个东西
+        if phrase_marker(tail) || tail_words.len() > 1 {
             return NameShape::Phrase;
         }
         return NameShape::Extension;
@@ -1182,7 +1193,33 @@ mod tests {
             name_shape("Gemini Robotics-ER", "Gemini Robotics"),
             Extension
         );
-        assert_eq!(name_shape("OpenAI Ireland Ltd", "OpenAI"), Extension);
+        assert_eq!(name_shape("OpenAI Ireland Ltd", "OpenAI"), Phrase);
+        assert_eq!(
+            name_shape("DeepMind Health data sharing", "DeepMind Health"),
+            Phrase
+        );
+        assert_eq!(
+            name_shape("reinforcement learning (RL)", "reinforcement learning"),
+            Identical
+        );
+        assert_eq!(
+            name_shape(
+                "US Securities and Exchange Commission (SEC)",
+                "Securities and Exchange Commission"
+            ),
+            Abbreviation
+        );
+        assert_eq!(
+            name_shape(
+                "United States Department of Defense (DoD)",
+                "Department of Defense"
+            ),
+            Abbreviation
+        );
+        assert_eq!(
+            name_shape("Amazon Web Services (AWS)", "Amazon Web Services"),
+            Identical
+        );
         assert_eq!(name_shape("Sam Altman's efforts", "Sam Altman"), Phrase);
         assert_eq!(
             name_shape("share sale led by Thrive Capital", "Thrive Capital"),
