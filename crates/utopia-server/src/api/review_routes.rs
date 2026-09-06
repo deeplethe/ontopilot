@@ -410,6 +410,8 @@ pub async fn agent_answer(
                 json!({ "source": l, "target": r, "agent_decision": decision_id }),
             )
             .await;
+            // 撤回 agent 的合并到了两次：保险丝
+            crate::governance::fuse(&state, kb_id).await;
         }
         ("applied", "merge") if d.action == "keep" => {
             let (left_id, right_id): (Uuid, Uuid) = sqlx::query_as(
@@ -628,6 +630,8 @@ pub async fn revert_merge(
         )
         .await;
     }
+    // 撤的是 agent 自己裁的合并：那一行记成 reverted，并看保险丝（0025）
+    crate::governance::after_revert(&state, kb_id, merge_id, user.id).await;
     state.emit_review(kb_id);
     Ok(Json(json!({ "ok": true })))
 }

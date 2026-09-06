@@ -15,12 +15,14 @@
 
 use crate::llm_util;
 use crate::state::AppState;
+use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use utopia_core::models::{LlmSettings, ReviewItem};
+use utopia_core::models::{LlmSettings, ReviewItem, Role};
 use utopia_core::AppError;
 use utopia_extract::governor::{self, Step};
 use utopia_llm::{tool_result_message, LlmClient};
+use utopia_store::alerts;
 use utopia_store::governance::{self as gov, Gate, NewDecision, Precedents, AUTO_CONF};
 use uuid::Uuid;
 
@@ -515,6 +517,76 @@ async fn audit(ctx: &Ctx<'_>, action: &str, item: &ReviewItem, conf: f32, id: Uu
         }),
     )
     .await;
+}
+
+/// 保险丝（0025 决定 9）：这次打开以来、七天之内，人撤回 agent 的自动合并到了两次，
+/// 开关自动关掉，发一条告警，台账记一笔。它替人做主做错了两回，该停下来等人再开；
+/// 人再打开时 governance_since 更新，之前的撤回不再算
+pub async fn fuse(state: &AppState, kb_id: Uuid) {
+    let pool = &state.pool;
+    let kb = match utopia_store::kbs::get(pool, kb_id).await {
+        Ok(kb) if kb.governance => kb,
+        _ => return,
+    };
+    let window = Utc::now() - Duration::days(gov::FUSE_WINDOW_DAYS);
+    let since = kb.governance_since.map_or(window, |s| s.max(window));
+    let reverts = match gov::reverts_since(pool, kb_id, since).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!(%kb_id, error = %e, "治理：数撤回失败");
+            return;
+        }
+    };
+    if reverts < gov::FUSE_REVERTS {
+        return;
+    }
+    match gov::trip(pool, kb_id).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(e) => {
+            tracing::warn!(%kb_id, error = %e, "治理：关开关失败");
+            return;
+        }
+    }
+    tracing::warn!(%kb_id, reverts, "治理：保险丝跳了，开关已关");
+    if let Err(e) = alerts::raise(
+        pool,
+        alerts::NewAlert {
+            kb_id: Some(kb_id),
+            severity: "warning",
+            kind: alerts::kind::GOVERNANCE_TRIPPED,
+            min_role: Role::Editor,
+            subject_type: Some("kb"),
+            subject_id: Some(kb_id),
+            detail: json!({
+                "kb": kb.name, "reverts": reverts, "window_days": gov::FUSE_WINDOW_DAYS,
+            }),
+        },
+    )
+    .await
+    {
+        tracing::warn!(%kb_id, error = %e, "上报 governance.tripped 失败");
+    }
+    let _ = utopia_store::audit::record_opt(
+        pool,
+        Some(kb_id),
+        None,
+        "kb.updated",
+        "kb",
+        Some(kb_id),
+        json!({ "governance": false, "via": "fuse", "reverts": reverts }),
+    )
+    .await;
+    state.emit_review(kb_id);
+}
+
+/// 人从合并历史撤回了一条合并：是 agent 自己裁的就记成 reverted，然后看保险丝
+pub async fn after_revert(state: &AppState, kb_id: Uuid, merge_id: Uuid, user_id: Uuid) {
+    match gov::settle_by_merge(&state.pool, kb_id, merge_id, user_id).await {
+        Ok(Some(_)) => fuse(state, kb_id).await,
+        Ok(None) => {}
+        Err(e) => tracing::warn!(%kb_id, merge = %merge_id, error = %e, "治理：记撤回失败"),
+    }
 }
 
 /// 人裁了一对之后：这一对上开着的建议就是被回答了（与建议相同是接受，不同是改判）；

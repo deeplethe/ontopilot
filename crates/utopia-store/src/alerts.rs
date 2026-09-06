@@ -54,6 +54,10 @@ pub mod kind {
     /// 库级：映射探索跑完了，一条口径都没提出来。`severity = info`，`min_role = editor`——
     /// 不是故障，是"你在等的那件事没有结果"，而页面上没有别的地方能说这句话（#223）
     pub const MAPPING_EXPLORATION_EMPTY: &str = "mapping.exploration_empty";
+    /// 库级：治理的保险丝跳了——七天内人撤回 agent 的自动合并两次，开关自动关掉
+    /// （0025 决定 9）。`severity = warning`，`min_role = editor`：裁重复项的人就是
+    /// 该去看 Agent 队列、决定要不要再打开的人
+    pub const GOVERNANCE_TRIPPED: &str = "governance.tripped";
 }
 
 /// 一次故障。打包成结构体不只是为了参数个数——调用点写 `severity: "error"`

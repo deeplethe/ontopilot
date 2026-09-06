@@ -122,6 +122,9 @@ pub async fn update(
              inference_interval_minutes = COALESCE($8, inference_interval_minutes),
              auto_type_resolution = COALESCE($9, auto_type_resolution),
              governance = COALESCE($10, governance),
+             -- 从关到开的那一刻记下来：保险丝只数它之后的撤回。SET 右边读的是旧值
+             governance_since = CASE WHEN $10 IS TRUE AND NOT governance THEN now()
+                                     ELSE governance_since END,
              updated_at = now()
          WHERE id = $1 RETURNING *",
     )

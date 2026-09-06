@@ -110,6 +110,8 @@ export interface Kb {
   /** 治理开关（0025，缺省关）：agent 按先进先出过等人的重复对，先读台账里人的
    *  先例再裁；打开就开始，关掉就停 */
   governance: boolean;
+  /** 这次打开治理的时刻；保险丝只数它之后的撤回 */
+  governance_since: string | null;
   /** 多久重推一次（分钟）。事实持续在变，只靠手点会让派生一直是缺的 */
   inference_interval_minutes: number;
   /** 上次推完的时间 */

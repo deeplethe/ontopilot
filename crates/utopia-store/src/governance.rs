@@ -600,6 +600,57 @@ pub async fn supersede_siblings(pool: &PgPool, kb_id: Uuid, review_id: Uuid) -> 
     Ok(n)
 }
 
+/// 保险丝（0025 决定 9）：多少天里撤回几次就跳
+pub const FUSE_WINDOW_DAYS: i64 = 7;
+pub const FUSE_REVERTS: i64 = 2;
+
+/// 从某一刻起，人撤回了 agent 的自动合并几次
+pub async fn reverts_since(pool: &PgPool, kb_id: Uuid, since: DateTime<Utc>) -> AppResult<i64> {
+    let n = sqlx::query_scalar(
+        "SELECT count(*) FROM agent_decisions
+         WHERE kb_id = $1 AND status = 'reverted' AND decided_at >= $2",
+    )
+    .bind(kb_id)
+    .bind(since)
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
+}
+
+/// 保险丝跳闸：开关开着就关掉。回 true 表示这一次真的关了——告警只发一次
+pub async fn trip(pool: &PgPool, kb_id: Uuid) -> AppResult<bool> {
+    let n = sqlx::query(
+        "UPDATE knowledge_bases SET governance = FALSE, updated_at = now()
+         WHERE id = $1 AND governance",
+    )
+    .bind(kb_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(n > 0)
+}
+
+/// 人从合并历史撤回了一条合并：如果那是 agent 自己裁的，那一行记成 reverted。
+/// 回那一行的 id；不是 agent 的合并就是 None
+pub async fn settle_by_merge(
+    pool: &PgPool,
+    kb_id: Uuid,
+    merge_id: Uuid,
+    user_id: Uuid,
+) -> AppResult<Option<Uuid>> {
+    let id = sqlx::query_scalar(
+        "UPDATE agent_decisions SET status = 'reverted', decided_at = now(), decided_by = $3
+         WHERE kb_id = $1 AND merge_id = $2 AND status = 'applied'
+         RETURNING id",
+    )
+    .bind(kb_id)
+    .bind(merge_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(id)
+}
+
 /// 开关开着、队列里还有 agent 没看过的对的库：定时扫描用
 pub async fn due(pool: &PgPool) -> AppResult<Vec<Uuid>> {
     let ids = sqlx::query_scalar(&format!(

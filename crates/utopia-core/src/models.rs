@@ -919,6 +919,8 @@ pub struct KnowledgeBase {
     /// 治理开关（0025，缺省关）：开着，govern 任务按先进先出过等人的重复对，
     /// 先读台账里人的先例再裁；关掉，任务在两簇之间看到就停
     pub governance: bool,
+    /// 这次打开治理的时刻；保险丝只数它之后的撤回（0025 决定 9）
+    pub governance_since: Option<DateTime<Utc>>,
     /// 多久重推一次（分钟）。见 `knowledge_bases.inference_interval_minutes`
     pub inference_interval_minutes: i32,
     /// 上次推完的时间。**答的是「上次看过没有」，不是「上次改过没有」**

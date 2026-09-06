@@ -425,6 +425,65 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
     assert_eq!(d.trace[0]["tool"], "facts");
     assert_eq!(governance::loop_calls_today(pool, s.kb).await?, 3);
 
+    // 保险丝（第四刀）：撤回的次数从某一刻数起；跳闸只在开着时发生、只发生一次；
+    // 合并历史里撤回 agent 的合并，那一行也记成 reverted
+    let (a, b) = (alike_id(pool, s.kb).await?, {
+        let id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM entities WHERE kb_id = $1 AND canonical_name = 'Someone' LIMIT 1",
+        )
+        .bind(s.kb)
+        .fetch_one(pool)
+        .await?;
+        id
+    });
+    let merge_id =
+        utopia_store::resolution::merge_entities(pool, s.kb, a, b, None, "governed|0.90").await?;
+    let applied = governance::record(
+        pool,
+        s.kb,
+        NewDecision {
+            run_id,
+            target_id: s.orion,
+            action: "merge",
+            confidence: 0.9,
+            reason: None,
+            precedents: serde_json::json!([]),
+            status: "applied",
+            merge_id: Some(merge_id),
+            question: None,
+            trace: serde_json::json!([]),
+            calls: 0,
+        },
+    )
+    .await?;
+    let an_hour_ago = Utc::now() - Duration::hours(1);
+    assert_eq!(governance::reverts_since(pool, s.kb, an_hour_ago).await?, 0);
+    assert_eq!(
+        governance::settle_by_merge(pool, s.kb, Uuid::now_v7(), s.user).await?,
+        None,
+        "不是 agent 的合并：没有行可记"
+    );
+    assert_eq!(
+        governance::settle_by_merge(pool, s.kb, merge_id, s.user).await?,
+        Some(applied)
+    );
+    assert_eq!(
+        governance::get(pool, s.kb, applied).await?.status,
+        "reverted"
+    );
+    assert_eq!(governance::reverts_since(pool, s.kb, an_hour_ago).await?, 1);
+    assert_eq!(
+        governance::reverts_since(pool, s.kb, Utc::now() + Duration::hours(1)).await?,
+        0,
+        "只数那一刻之后的"
+    );
+    assert!(governance::trip(pool, s.kb).await?, "开着：关了");
+    assert!(!governance::trip(pool, s.kb).await?, "已经关了：不再算跳闸");
+    sqlx::query("UPDATE knowledge_bases SET governance = TRUE WHERE id = $1")
+        .bind(s.kb)
+        .execute(pool)
+        .await?;
+
     // 定时扫描：开关开着且有没看过的对 → 在；关了 → 不在
     assert!(governance::due(pool).await?.contains(&s.kb));
     sqlx::query("UPDATE knowledge_bases SET governance = FALSE WHERE id = $1")
