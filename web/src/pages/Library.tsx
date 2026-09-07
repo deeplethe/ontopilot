@@ -741,6 +741,9 @@ export function Library() {
                     <th className="px-4 py-3 font-medium">{S.library.colGraph}</th>
                     <th className="px-4 py-3 font-medium">{S.library.colChunks}</th>
                     <th className="px-4 py-3 font-medium">{S.library.colSize}</th>
+                    {/* 动作两列都不带表头：列名说的是「这一格是什么」，
+                        而这两格是「能做什么」，标题是多出来的一行噪声 */}
+                    <th className="px-4 py-3"></th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -2244,12 +2247,6 @@ function DocRow({
         ) : (
           <Chip tone={STATUS_TONE[doc.status] ?? "neutral"}>{statusText}</Chip>
         )}
-        {/* 解析管道失败：重跑 解析→索引→嵌入（解析器升级/瞬时故障重试） */}
-        {doc.status === "failed" && (
-          <LinkButton underline className="ml-2" onClick={onReprocess}>
-            {S.library.reprocess}
-          </LinkButton>
-        )}
         {doc.missing_since && (
           <span className="ml-2 inline-block" title={doc.missing_since.slice(0, 16).replace("T", " ")}>
             <Chip tone="neutral">{S.library.notInSource}</Chip>
@@ -2276,15 +2273,27 @@ function DocRow({
             {S.library.dropsChip(dropTotal)}
           </Chip>
         )}
-        {/* done 也可重抽：本体（描述/新类）调整后强制全量重抽正是常规操作 */}
-        {doc.status === "ready" && ["none", "failed", "done"].includes(doc.graph_status) && (
-          <LinkButton underline className="ml-2" onClick={onExtract}>
-            {doc.graph_status === "done" ? S.library.reExtract : S.library.extract}
-          </LinkButton>
-        )}
       </td>
       <td className="px-4 py-3 text-ink-2">{doc.chunk_count || "—"}</td>
       <td className="px-4 py-3 text-ink-2">{formatSize(doc.size_bytes)}</td>
+      {/* 动作自成一列。徽章说的是这一行现在是什么状态，动作说的是能拿它怎么办；
+          两件事挤在一格里，读的人得先分辨哪个字是可点的。
+          这一格至多一个动作：重跑解析要 status=failed，重抽要 status=ready，
+          两者互斥——所以不必再排一次谁在前 */}
+      <td className="px-4 py-3">
+        {doc.status === "failed" ? (
+          /* 解析管道失败：重跑 解析→索引→嵌入（解析器升级/瞬时故障重试） */
+          <LinkButton underline onClick={onReprocess}>
+            {S.library.reprocess}
+          </LinkButton>
+        ) : doc.status === "ready" &&
+          ["none", "failed", "done"].includes(doc.graph_status) ? (
+          /* done 也可重抽：本体（描述/新类）调整后强制全量重抽正是常规操作 */
+          <LinkButton underline onClick={onExtract}>
+            {doc.graph_status === "done" ? S.library.reExtract : S.library.extract}
+          </LinkButton>
+        ) : null}
+      </td>
       <td className="px-4 py-3 text-right">
         <LinkButton tone="danger" onClick={onDelete}>
           {S.library.delete}
