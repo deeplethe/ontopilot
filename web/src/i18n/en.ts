@@ -93,6 +93,10 @@ export const en = {
     /* 网页标题用的短名：`Utopia | Persona` */
     titleTag: "Persona",
     profile: "Profile",
+    cancel: "Cancel",
+    colLastUsed: "Last used",
+    colCreated: "Created",
+    pickBases: "Search bases…",
     administration: "Administration",
     adminChip: "Admin",
     backToApp: "← Back to app",

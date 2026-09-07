@@ -6,17 +6,28 @@
    客户端配置一起端出来，人复制完点「完成」，之后列表里只剩前缀。 */
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound } from "lucide-react";
+import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { api, type TokenView } from "../api";
 import { S } from "../i18n";
 import { useKb } from "../kb";
 import {
   Button,
   Chip,
+  Dialog,
+  Dropdown,
+  Field,
   Input,
   Loading,
+  MultiSearchSelect,
   NativeSelect,
   PageHeader,
+  Radio,
+  Table,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
 } from "../ui";
 import { toast } from "../toast";
 
@@ -66,17 +77,16 @@ function CopyButton({ text, small }: { text: string; small?: boolean }) {
   );
 }
 
-/** 刚发出来的那一枚：明文 + 配置片段，关掉就再也看不到 */
-function IssuedPanel({
+/** 刚发出来的那一枚：明文 + 配置片段，关掉就再也看不到。
+    住在发令牌那个弹窗里——发放的下一秒就是"把它抄走"，中间不该有一次关窗 */
+function IssuedBody({
   token,
   info,
   kbs,
-  onDone,
 }: {
   token: string;
   info: TokenView;
   kbs: { id: string; name: string }[];
-  onDone: () => void;
 }) {
   // 片段默认指向令牌限定的第一个库；没限定就取列表第一个
   const candidates = info.kb_ids?.length
@@ -86,11 +96,9 @@ function IssuedPanel({
   const kb = kbs.find((k) => k.id === kbId);
   const snippet = kb ? mcpSnippet(kb.id, kb.name, token) : "";
   return (
-    <div className="glass rounded-panel p-6 mb-4 border border-warn/40">
-      <div className="text-body font-medium text-ink">{S.account.issuedTitle}</div>
-      <p className="mt-1 text-small text-ink-2">{S.account.issuedHint}</p>
-      <div className="mt-3 flex items-center gap-2">
-        <code className="flex-1 min-w-0 truncate rounded-cell bg-well px-3 py-2 font-mono text-small text-ink">
+    <div>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded-cell bg-well px-3 py-2 font-mono text-small text-ink">
           {token}
         </code>
         <CopyButton text={token} />
@@ -123,12 +131,6 @@ function IssuedPanel({
           <CopyButton text={snippet} small />
         </div>
       </div>
-
-      <div className="mt-4 flex justify-end">
-        <Button variant="primary" size="sm" onClick={onDone}>
-          {S.account.tokenDone}
-        </Button>
-      </div>
     </div>
   );
 }
@@ -151,50 +153,52 @@ function TokenRow({
     ? t.kb_ids.map(kbName).join(" · ")
     : S.account.allBases;
   return (
-    <div className={`glass rounded-panel px-4 py-3 ${revoked ? "opacity-55" : ""}`}>
-      <div className="flex items-center gap-2 flex-wrap">
-        <KeyRound size={13} className="text-ink-2 shrink-0" />
-        <span className="text-body font-medium text-ink">{t.name}</span>
-        <code className="font-mono text-fine text-ink-2">{t.token_prefix}…</code>
+    <Tr className={revoked ? "opacity-55" : undefined}>
+      <Td>
+        <div className="flex items-center gap-2">
+          <KeyRound size={13} className="shrink-0 text-ink-2" />
+          <span className="truncate text-body text-ink">{t.name}</span>
+          <code className="shrink-0 font-mono text-fine text-ink-2">
+            {t.token_prefix}…
+          </code>
+        </div>
+      </Td>
+      <Td>
         <Chip tone={t.scope === "write" ? "warn" : "neutral"}>
           {t.scope === "write" ? S.account.scopeWrite : S.account.scopeRead}
         </Chip>
-        {revoked && <Chip tone="danger">{S.account.revokedOn(ymd(t.revoked_at!))}</Chip>}
-        {!revoked && (
-          <div className="ml-auto flex gap-2">
-            {arm ? (
-              <Button variant="danger" size="sm"
-                disabled={busy}
-                onClick={onRevoke}
-                onBlur={() => setArm(false)}
-              >
-                {S.account.revokeConfirm}
-              </Button>
-            ) : (
-              <Button variant="secondary" size="sm"
-                disabled={busy}
-                onClick={() => setArm(true)}
-              >
-                {S.account.revoke}
-              </Button>
-            )}
-          </div>
+      </Td>
+      <Td className="text-small text-ink-2" title={bases}>
+        {t.kb_ids?.length ? S.account.nBases(t.kb_ids.length) : S.account.allBases}
+      </Td>
+      <Td className="u-num text-small text-ink-2">
+        {t.last_used_at ? ymd(t.last_used_at) : S.account.neverUsed}
+      </Td>
+      <Td className="u-num text-small text-ink-2">
+        {t.expires_at ? ymd(t.expires_at) : S.account.noExpiry}
+      </Td>
+      <Td className="u-num text-small text-ink-2">{ymd(t.created_at)}</Td>
+      <Td className="text-right">
+        {revoked ? (
+          <Chip tone="danger">{S.account.revokedOn(ymd(t.revoked_at!))}</Chip>
+        ) : arm ? (
+          <Button variant="danger" size="sm"
+            disabled={busy}
+            onClick={onRevoke}
+            onBlur={() => setArm(false)}
+          >
+            {S.account.revokeConfirm}
+          </Button>
+        ) : (
+          <Button variant="secondary" size="sm"
+            disabled={busy}
+            onClick={() => setArm(true)}
+          >
+            {S.account.revoke}
+          </Button>
         )}
-      </div>
-      <div className="mt-2 text-small text-ink-2 flex gap-x-3 gap-y-1 flex-wrap u-num">
-        <span title={t.kb_ids?.length ? bases : undefined}>
-          {t.kb_ids?.length ? S.account.nBases(t.kb_ids.length) : S.account.allBases}
-        </span>
-        <span>·</span>
-        <span>
-          {t.last_used_at ? S.account.lastUsed(ymd(t.last_used_at)) : S.account.neverUsed}
-        </span>
-        <span>·</span>
-        <span>{t.expires_at ? S.account.expiresOn(ymd(t.expires_at)) : S.account.noExpiry}</span>
-        <span>·</span>
-        <span>{S.account.createdOn(ymd(t.created_at))}</span>
-      </div>
-    </div>
+      </Td>
+    </Tr>
   );
 }
 
@@ -203,6 +207,8 @@ export function Tokens() {
   const { kbs } = useKb();
   const list = useQuery({ queryKey: ["tokens"], queryFn: api.tokens });
 
+  // 发令牌是个动作，不是这一页的常驻内容：表单住在弹窗里，页面上只有名单
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [scope, setScope] = useState<"read" | "write">("read");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -218,6 +224,7 @@ export function Tokens() {
         expires_in_days: days,
       }),
     onSuccess: (res) => {
+      // 同一个窗口换一副内容：发完立刻是"把它抄走"，明文只有这一次
       setIssued(res);
       setName("");
       setPicked(new Set());
@@ -243,120 +250,144 @@ export function Tokens() {
     return b.created_at.localeCompare(a.created_at);
   });
 
-  const field = (label: string, node: React.ReactNode, hint?: string) => (
-    <div className="mb-4">
-      <div className="mb-1 text-fine font-medium text-ink-2">{label}</div>
-      {node}
-      {hint && <p className="mt-1 text-fine text-ink-2">{hint}</p>}
-    </div>
-  );
+  const close = () => {
+    setCreating(false);
+    setIssued(null);
+  };
 
   return (
     <div className="px-8 py-6">
-      <PageHeader title={S.account.tokensTitle} sub={S.account.tokensHint} />
+      <PageHeader
+        title={S.account.tokensTitle}
+        sub={S.account.tokensHint}
+        actions={
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            <Plus size={12} />
+            {S.account.newToken}
+          </Button>
+        }
+      />
 
-      {issued && (
-        <IssuedPanel
-          token={issued.token}
-          info={issued.info}
-          kbs={kbs}
-          onDone={() => setIssued(null)}
-        />
-      )}
-
-      <div className="glass rounded-panel p-6 mb-6">
-        <div className="max-w-xl">
-          <h2 className="text-body font-medium text-ink mb-4">{S.account.newToken}</h2>
-          {field(
-            S.account.tokenName,
-            <Input className="w-full"
-              placeholder={S.account.tokenNamePlaceholder}
-              value={name}
-              maxLength={64}
-              onChange={(e) => setName(e.target.value)}
-            />,
-          )}
-          {field(
-            S.account.tokenScope,
-            <div className="flex gap-2">
-              {(["read", "write"] as const).map((s) => (
-                <Button variant="secondary" size="sm"
-                  key={s}
-                  className={`u-btn px-3 py-2 text-small ${scope === s ? "u-btn-primary" : "u-btn-ghost"}`}
-                  onClick={() => setScope(s)}
-                >
-                  {s === "read" ? S.account.scopeRead : S.account.scopeWrite}
-                </Button>
-              ))}
-            </div>,
-            S.account.scopeHint,
-          )}
-          {field(
-            S.account.tokenKbs,
-            <div className="flex gap-2 flex-wrap">
-              {kbs.map((k) => {
-                const on = picked.has(k.id);
-                return (
-                  <Button variant="secondary" size="sm"
-                    key={k.id}
-                    className={`u-btn px-3 py-1 text-small ${on ? "u-btn-primary" : "u-btn-ghost"}`}
-                    onClick={() => {
-                      const next = new Set(picked);
-                      if (on) next.delete(k.id);
-                      else next.add(k.id);
-                      setPicked(next);
-                    }}
-                  >
-                    {k.name}
-                  </Button>
-                );
-              })}
-            </div>,
-            S.account.kbsAllHint,
-          )}
-          {field(
-            S.account.tokenExpires,
-            <div className="flex gap-2">
-              {EXPIRY_CHOICES.map((d) => (
-                <Button variant="secondary" size="sm"
-                  key={d}
-                  className={`u-btn px-3 py-1 text-small u-num ${days === d ? "u-btn-primary" : "u-btn-ghost"}`}
-                  onClick={() => setDays(d)}
-                >
-                  {d === 0 ? S.account.expiresNever : S.account.expiresDays(d)}
-                </Button>
-              ))}
-            </div>,
-          )}
-          <div className="flex justify-end">
-            <Button variant="primary" size="sm"
-              disabled={!name.trim() || issue.isPending}
-              onClick={() => issue.mutate()}
-            >
-              {S.account.issueToken}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <h2 className="text-body font-medium text-ink mb-3">{S.account.yourTokens}</h2>
       {rows.length === 0 ? (
         <div className="glass rounded-panel p-8 text-center text-body text-ink-2">
           {S.account.noTokens}
         </div>
       ) : (
-        <div className="space-y-2">
-          {rows.map((t) => (
-            <TokenRow
-              key={t.id}
-              t={t}
-              kbName={kbName}
-              busy={revoke.isPending && revoke.variables === t.id}
-              onRevoke={() => revoke.mutate(t.id)}
-            />
-          ))}
+        <div className="glass rounded-panel overflow-hidden">
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{S.account.tokenName}</Th>
+                <Th>{S.account.tokenScope}</Th>
+                <Th>{S.account.tokenKbs}</Th>
+                <Th>{S.account.colLastUsed}</Th>
+                <Th>{S.account.tokenExpires}</Th>
+                <Th>{S.account.colCreated}</Th>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
+              {rows.map((t) => (
+                <TokenRow
+                  key={t.id}
+                  t={t}
+                  kbName={kbName}
+                  busy={revoke.isPending && revoke.variables === t.id}
+                  onRevoke={() => revoke.mutate(t.id)}
+                />
+              ))}
+            </TBody>
+          </Table>
         </div>
       )}
+
+      {/* 一个窗口两副内容：先是表单，发出来之后是那一枚明文。中间不关窗——
+          关掉就再也看不到它了 */}
+      <Dialog
+        open={creating || !!issued}
+        onOpenChange={(o) => !o && close()}
+        width={issued ? "lg" : "md"}
+        closeLabel={S.ui.close}
+        title={issued ? S.account.issuedTitle : S.account.newToken}
+        description={issued ? S.account.issuedHint : undefined}
+        footer={
+          issued ? (
+            <Button variant="primary" size="sm" onClick={close}>
+              {S.account.tokenDone}
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" size="sm" onClick={close}>
+                {S.account.cancel}
+              </Button>
+              <Button variant="primary" size="sm"
+                disabled={!name.trim() || issue.isPending}
+                onClick={() => issue.mutate()}
+              >
+                {S.account.issueToken}
+              </Button>
+            </>
+          )
+        }
+      >
+        {issued ? (
+          <IssuedBody token={issued.token} info={issued.info} kbs={kbs} />
+        ) : (
+          <div>
+            <Field label={S.account.tokenName}>
+              <Input className="w-full"
+                autoFocus
+                placeholder={S.account.tokenNamePlaceholder}
+                value={name}
+                maxLength={64}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            {/* 二选一，且两个选项都要读得到——单选按钮，不是一排按钮 */}
+            <Field label={S.account.tokenScope} hint={S.account.scopeHint}>
+              <div className="flex items-center gap-4">
+                {(["read", "write"] as const).map((s) => (
+                  <Radio
+                    key={s}
+                    name="token-scope"
+                    checked={scope === s}
+                    onChange={() => setScope(s)}
+                    label={s === "read" ? S.account.scopeRead : S.account.scopeWrite}
+                  />
+                ))}
+              </div>
+            </Field>
+            {/* 库可以很多：搜着选，选中的堆在框上面。芯片墙的高度随库数长，
+                这个不随 */}
+            <Field label={S.account.tokenKbs} hint={S.account.kbsAllHint}>
+              <MultiSearchSelect
+                className="w-full"
+                values={Array.from(picked)}
+                options={kbs.map((k) => ({ value: k.id, label: k.name }))}
+                placeholder={S.account.pickBases}
+                emptyHint={S.account.allBases}
+                onToggle={(id) => {
+                  const next = new Set(picked);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  setPicked(next);
+                }}
+              />
+            </Field>
+            <Field label={S.account.tokenExpires} className="mb-0">
+              <Dropdown
+                className="w-40"
+                value={String(days)}
+                onChange={(v) => setDays(Number(v))}
+                options={EXPIRY_CHOICES.map((d) => ({
+                  value: String(d),
+                  label: d === 0 ? S.account.expiresNever : S.account.expiresDays(d),
+                }))}
+              />
+            </Field>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }
