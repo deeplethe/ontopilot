@@ -29,8 +29,19 @@ export const MUTED_SHELL = "#151515";
    每划过一个节点就换一次，压到底会让整张画布不停明灭 */
 export const HOVER_MUTE = 0.78;
 export const PILL_BG = "rgba(12,12,12,0.9)";
-export const PILL_BORDER = "rgba(255,255,255,0.14)";
-export const PILL_TEXT = "#ededed";
+export const PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
+export const PILL_TEXT = "#ededed"; // --u-text
+
+/* 画布上的字与界面同一套刻度。**canvas 读不到 CSS 变量**，所以这里镜像一份
+   `styles.css` 的值——它是源头，改那边记得回来改这里。
+   从前这几个数是自己长出来的（节点 11、边 9、类型行 10、字色 #e5e5e5 /
+   #a1a1a1）：字号整体上移一档之后，画布成了全站唯一还在用旧刻度的地方，
+   而 9px 比界面里最小的字还小一半 */
+export const CANVAS_FONT = '"Geist", "Inter", "Noto Sans SC", sans-serif';
+export const CANVAS_TEXT = "#ededed"; // --u-text
+export const CANVAS_TEXT_2 = "#a8a8a8"; // --u-text-2
+export const CANVAS_LABEL_SIZE = 12; // --text-fine
+export const CANVAS_TITLE_SIZE = 14; // --text-body
 
 export function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
@@ -57,11 +68,13 @@ export function drawPillLabel(
   if (!data.label) return;
   // hover 时悬浮卡（drawHoverCard）接管展示，底层 pill 隐去，避免双层标签
   if (data.hideBaseLabel) return;
-  // Semantica chip: fontSize=clamp(10, size*0.25, 11), pad 6/3, radius 6, 位于节点上方，投影 blur 12
-  const size = Math.max(10, Math.min(11, data.size * 0.25));
-  ctx.font = `500 ${size}px Geist, Inter, "Noto Sans SC", sans-serif`;
+  /* 与界面上的 chip 同一副身材：字号 fine、内距 8/2、圆角 cell（4）。
+     从前字号跟着节点大小在 10–11 之间浮动——同一张图里两个节点的名字不一样大，
+     而它们是同一种东西 */
+  const size = CANVAS_LABEL_SIZE;
+  ctx.font = `500 ${size}px ${CANVAS_FONT}`;
   ctx.textBaseline = "middle";
-  const padX = 6;
+  const padX = 8;
   const padY = 3;
   const w = ctx.measureText(data.label).width + padX * 2;
   const h = size + padY * 2;
@@ -71,7 +84,7 @@ export function drawPillLabel(
   ctx.shadowColor = "rgba(0,0,0,0.6)";
   ctx.shadowBlur = 12;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 6);
+  ctx.roundRect(x, y, w, h, 4);
   ctx.fillStyle = PILL_BG;
   ctx.fill();
   ctx.shadowBlur = 0;
@@ -111,17 +124,18 @@ export function drawHoverCard(
   ctx.arc(data.x, data.y, glowR, 0, Math.PI * 2);
   ctx.fill();
 
-  // 卡片: 标题 700/13 + 类型行 500/10 大写
-  const titleSize = 13;
-  const metaSize = 10;
+  /* 卡片：标题 body/500、类型行 fine。**类型不再大写**——界面里没有一处
+     大写拉字距的小标题（表格列头除外），画布也不该自成一套 */
+  const titleSize = CANVAS_TITLE_SIZE;
+  const metaSize = CANVAS_LABEL_SIZE;
   const padX = 10;
   const padY = 7;
   const metaGap = 5;
-  const meta = String(data.typeLabel ?? "NODE").toUpperCase();
+  const meta = String(data.typeLabel ?? "");
   ctx.textBaseline = "top";
-  ctx.font = `700 ${titleSize}px Geist, Inter, "Noto Sans SC", sans-serif`;
+  ctx.font = `500 ${titleSize}px ${CANVAS_FONT}`;
   const titleW = ctx.measureText(data.label).width;
-  ctx.font = `500 ${metaSize}px Geist, Inter, sans-serif`;
+  ctx.font = `400 ${metaSize}px ${CANVAS_FONT}`;
   const metaW = ctx.measureText(meta).width;
   const w = Math.max(titleW, metaW) + padX * 2;
   const h = padY * 2 + titleSize + metaGap + metaSize;
@@ -131,7 +145,7 @@ export function drawHoverCard(
   ctx.shadowColor = "rgba(0,0,0,0.62)";
   ctx.shadowBlur = 15;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 8);
+  ctx.roundRect(x, y, w, h, 8); // --radius-panel
   ctx.fillStyle = "rgba(12,12,12,0.94)";
   ctx.fill();
   ctx.shadowBlur = 0;
@@ -139,11 +153,11 @@ export function drawHoverCard(
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  ctx.fillStyle = "#f5f5f5";
-  ctx.font = `700 ${titleSize}px Geist, Inter, "Noto Sans SC", sans-serif`;
+  ctx.fillStyle = CANVAS_TEXT;
+  ctx.font = `500 ${titleSize}px ${CANVAS_FONT}`;
   ctx.fillText(data.label, x + padX, y + padY);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.font = `500 ${metaSize}px Geist, Inter, sans-serif`;
+  ctx.fillStyle = CANVAS_TEXT_2;
+  ctx.font = `400 ${metaSize}px ${CANVAS_FONT}`;
   ctx.fillText(meta, x + padX, y + padY + titleSize + metaGap);
   ctx.restore();
 }

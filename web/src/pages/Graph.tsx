@@ -18,6 +18,10 @@ import EdgeCurveProgram from "@sigma/edge-curve";
 import { NodeSquareShellProgram } from "./squareShellProgram";
 import {
   drawHoverCard,
+  CANVAS_FONT,
+  CANVAS_LABEL_SIZE,
+  CANVAS_TEXT,
+  CANVAS_TEXT_2,
   drawPillLabel,
   drawWorldGrid,
   hexToRgb,
@@ -704,8 +708,10 @@ export function Graph() {
     );
     for (const { edge: e, curvature, alsoLabels } of placed.edges) {
       g.addEdgeWithKey(e.id, e.source, e.target, {
-        // 争议的边标签前置 ⚠：颜色之外再给一个不靠色觉的记号
-        label: (e.contested ? "⚠ " : "") + (e.label?.toUpperCase() ?? ""),
+        /* 争议的边标签前置 ⚠：颜色之外再给一个不靠色觉的记号。
+           **谓语照本体里写的样子显示**，不再大写——界面上没有一处大写拉字距，
+           而本体页列的就是「part of」这个原样 */
+        label: (e.contested ? "⚠ " : "") + (e.label ?? ""),
         size: e.blocked ? 0.7 : 1,
         color: e.blocked
           ? EDGE_GHOST
@@ -851,17 +857,19 @@ export function Graph() {
       // 边的悬停事件默认是关的。开它是为了 `enterEdge`：并进去的那些说法
       // 要有地方看得见（见 edgeReducer）
       enableEdgeEvents: true,
-      labelFont: '"Geist", "Inter", "Noto Sans SC", sans-serif',
-      labelSize: 11,
-      labelColor: { color: "#e5e5e5" },
+      labelFont: CANVAS_FONT,
+      labelSize: CANVAS_LABEL_SIZE,
+      labelColor: { color: CANVAS_TEXT },
       labelRenderedSizeThreshold: 6,
       labelDensity: 0.7,
       labelGridCellSize: 140,
       minCameraRatio: 0.04,
       maxCameraRatio: 8,
-      edgeLabelSize: 9,
-      edgeLabelColor: { color: "#a1a1a1" },
-      edgeLabelFont: '"Geist", "Inter", sans-serif',
+      /* 边的字与节点同一档（fine）、同一个次要色。从前是 9px/#a1a1a1——
+         9 比界面里最小的字还小一半，而 #a1a1a1 是上一版的 ink-2 */
+      edgeLabelSize: CANVAS_LABEL_SIZE,
+      edgeLabelColor: { color: CANVAS_TEXT_2 },
+      edgeLabelFont: CANVAS_FONT,
       defaultDrawNodeLabel: drawPillLabel,
       defaultDrawNodeHover: drawHoverCard,
       nodeReducer: (node, attrs) => {
@@ -993,9 +1001,7 @@ export function Graph() {
             selectedRef.current === s ||
             selectedRef.current === t;
           if (focused) {
-            res.label = `${attrs.label} ⁻¹ ${also
-              .map((l) => l.toUpperCase())
-              .join(" / ")}`;
+            res.label = `${attrs.label} ⁻¹ ${also.join(" / ")}`;
           }
         }
         const sk = g.getNodeAttribute(s, "typeKey") as string;
