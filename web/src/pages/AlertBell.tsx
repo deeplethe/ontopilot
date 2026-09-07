@@ -7,7 +7,7 @@
 // 「已读」逐人——一个人读过不代表别人也该从未读里消失。
 import { type Ref, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, Search, X } from "lucide-react";
+import { Bell, ChevronDown } from "lucide-react";
 
 import { api, type AlertGroup } from "../api";
 import { S } from "../i18n";
@@ -130,7 +130,7 @@ function AlertRow({
   );
 }
 
-function Panel({ panelRef }: { panelRef: Ref<HTMLDivElement> }) {
+function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: () => void }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const qc = useQueryClient();
@@ -182,33 +182,29 @@ function Panel({ panelRef }: { panelRef: Ref<HTMLDivElement> }) {
       ref={panelRef}
       className="u-menu-glass absolute right-0 top-0 w-[420px] rounded-overlay shadow-2xl z-50 overflow-hidden"
     >
-      <div className="flex items-center gap-2 pl-4 pr-8 py-3 border-b border-line">
-        <span className="text-body font-medium text-ink">
+      {/* 第一行就是关掉这张面板——同库切换器：面板从铃铛原位长出来，
+          右端那个朝上的三角正落在铃铛上，"再点一下缩回去"。
+          从前这里是一个浮在角上的关闭叉，它得跟发丝边框对齐，永远差半像素 */}
+      <div
+        onClick={onClose}
+        className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
+      >
+        <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
           {S.alerts.title}
         </span>
+        <ChevronDown size={12} className="shrink-0 rotate-180 text-ink-2" />
       </div>
 
-      {/* 跟文库的过滤框同一套：input-dark + 左侧图标 + 有值时右侧清除、Esc 清空 */}
-      <div className="px-4 py-3 border-b border-line">
-        <div className="relative">
-          <Search
-            size={13}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
-          />
-          <Input size="sm" className="w-full pl-8 pr-8"
-            placeholder={S.alerts.searchPlaceholder}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && setQ("")}
-          />
-          {q && (
-            <IconButton size="sm" label={S.ui.close} className="absolute right-2 top-1/2 -translate-y-1/2"
-              onClick={() => setQ("")}
-            >
-              <X size={12} />
-            </IconButton>
-          )}
-        </div>
+      {/* 查找与库切换器同一副样子：没有自己的框（bare），它是面板的一段，
+          不是面板里摆的一个控件；Esc 由 popoverFlip 统一关面板 */}
+      <div className="border-b border-line px-4 py-3">
+        <Input
+          bare
+          className="w-full text-body"
+          placeholder={S.alerts.searchPlaceholder}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
       </div>
 
       <div className="max-h-[420px] overflow-y-auto">
@@ -286,27 +282,8 @@ export function AlertBell() {
           <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-danger" />
         )}
       </IconButton>
-      {open && (
-        <>
-          <Panel panelRef={panelRef} />
-          {/* 关闭按钮是面板的**兄弟**，不是它的孩子：放里面的话 `right-0 top-0`
-              相对的是面板的内边距盒，而 u-menu-glass 有一条 0.667px 的发丝边框
-              （DPR 1.5 上的一个物理像素），永远差那么一点。放在这里，定位祖先
-              就是裹着铃铛的这个 div，跟铃铛同一个盒子——重合是构造出来的。
-
-              光标点开面板之后正停在这个位置，所以这儿必须是"再点一下关掉"。
-              放"全部标为已读"等于把误触做成默认动作，而它一下清掉的是
-              所有库的所有告警 */}
-          <IconButton
-            size="sm"
-            label={S.alerts.close}
-            className="absolute right-0 top-0 z-[60]"
-            onClick={close}
-          >
-            <X size={15} />
-          </IconButton>
-        </>
-      )}
+      {/* 关掉的入口在面板第一行（那儿正好压着铃铛），不再是浮在角上的一个叉 */}
+      {open && <Panel panelRef={panelRef} onClose={close} />}
     </div>
   );
 }
