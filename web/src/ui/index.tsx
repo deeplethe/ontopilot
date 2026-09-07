@@ -902,7 +902,7 @@ export function SettingsCard({
         /* 底栏只靠一条线与上面分开，不另铺一层面：surface 的三档是静止/悬停/选中，
            拿悬停那档当静止的底会让这条栏看起来一直被指着 */
         <div className="flex items-center justify-between gap-4 border-t border-line px-6 py-3">
-          <div className="min-w-0 text-small leading-relaxed text-ink-2">{note}</div>
+          <div className="min-w-0 flex-1 text-small leading-relaxed text-ink-2">{note}</div>
           <div className="flex shrink-0 items-center gap-3">{action}</div>
         </div>
       )}

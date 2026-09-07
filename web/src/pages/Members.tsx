@@ -5,6 +5,7 @@ import { S } from "../i18n";
 import { toast } from "../toast";
 import {
   Button,
+  Chip,
   DangerConfirm,
   Dropdown,
   Input,
@@ -12,6 +13,7 @@ import {
   Pager,
   pageSlice,
   SearchSelect,
+  SettingsCard,
 } from "../ui";
 
 const ROLES = ["owner", "admin", "editor", "viewer"] as const;
@@ -70,10 +72,13 @@ export function Members({ workspaceId }: { workspaceId: string }) {
   const { rows: pagedMembers, safe: safeMemberPage } = pageSlice(memberList, memberPage, MEMBER_PAGE);
 
   return (
-    <div className="glass rounded-lg p-6">
-      <div className="flex items-center gap-3 mb-3">
-        <h3 className="text-body font-semibold text-ink">{S.members.title}</h3>
-        <Input size="sm" className="ml-auto w-56"
+    /* 三张卡：名单、开账号、停用过的账号。从前是一张大面板把三件事装在一起，
+       于是「移出工作区」「停用账号」「新建用户」读起来像同一件事的三个步骤 */
+    <div className="space-y-4">
+      {/* 过滤这个名单的东西在卡外面（DESIGN.md 6）：它不是名单的内容，
+          而且筛空了的时候，那张卡要能变成空态，不能把改筛选的唯一办法一起带走 */}
+      <div className="flex items-center justify-end">
+        <Input size="sm" className="w-56"
           placeholder={S.settings.searchUsers}
           value={filter}
           onChange={(e) => {
@@ -83,33 +88,60 @@ export function Members({ workspaceId }: { workspaceId: string }) {
         />
       </div>
 
-      {error && <p className="mb-3 text-body text-danger">{error}</p>}
+      {error && <p className="text-body text-danger">{error}</p>}
 
-      <table className="w-full text-body">
-        <tbody>
+      <SettingsCard
+        title={S.members.title}
+        note={
+          /* picker 常驻。理由同 KbSettings 里那段：控件消失读作"坏了"，
+             而不是"没人可加"；空列表 SearchSelect 自己会说 */
+          <SearchSelect
+            className="w-full max-w-sm"
+            value={addUserId}
+            onChange={setAddUserId}
+            placeholder={S.members.pickUser}
+            options={addable.map((u) => ({
+              value: u.id,
+              label: u.display_name,
+              hint: u.email,
+            }))}
+          />
+        }
+        action={
+          <>
+            <Dropdown
+              className="w-28"
+              value={addRole}
+              onChange={setAddRole}
+              options={ROLE_OPTIONS}
+            />
+            <Button variant="primary" size="sm"
+              onClick={() => addUserId && setRole.mutate({ userId: addUserId, role: addRole })}
+              disabled={!addUserId}
+            >
+              {S.members.add}
+            </Button>
+          </>
+        }
+      >
+        <div className="divide-y divide-line">
           {pagedMembers.map((m) => (
-            <tr key={m.user_id} className="border-b border-line">
-              <td className="py-2 pr-3">
-                <div className="text-ink">
-                  {m.display_name}
-                  {m.is_admin && (
-                    <span className="ml-2 rounded-lg bg-[rgba(74,163,255,0.12)] px-2 py-1 text-fine text-accent">
-                      {S.members.systemAdmin}
-                    </span>
-                  )}
+            <div key={m.user_id} className="flex items-center gap-3 py-3 first:pt-0">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-body text-ink">{m.display_name}</span>
+                  {m.is_admin && <Chip tone="info">{S.members.systemAdmin}</Chip>}
                 </div>
-                <div className="text-small text-ink-2">{m.email}</div>
-              </td>
-              <td className="py-2 pr-3 text-right">
-                <Dropdown
-                  size="sm"
-                  className="w-24 ml-auto"
-                  value={m.role}
-                  onChange={(role) => setRole.mutate({ userId: m.user_id, role })}
-                  options={ROLE_OPTIONS}
-                />
-              </td>
-              <td className="py-2 text-right whitespace-nowrap">
+                <div className="truncate text-small text-ink-2">{m.email}</div>
+              </div>
+              <Dropdown
+                size="sm"
+                className="w-24"
+                value={m.role}
+                onChange={(role) => setRole.mutate({ userId: m.user_id, role })}
+                options={ROLE_OPTIONS}
+              />
+              <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
                 <LinkButton tone="danger" onClick={() => remove.mutate(m.user_id)}>
                   {S.members.remove}
                 </LinkButton>
@@ -122,53 +154,22 @@ export function Members({ workspaceId }: { workspaceId: string }) {
                     onClick={() =>
                       setDeactivating({ id: m.user_id, name: m.display_name })
                     }
-                    className="ml-3"
                     title={S.members.deactivateHint}
                   >
                     {S.members.deactivate}
                   </LinkButton>
                 )}
-              </td>
-            </tr>
+              </div>
+            </div>
           ))}
-        </tbody>
-      </table>
-      <div className="mb-4">
+        </div>
         <Pager
           total={memberList.length}
           pageSize={MEMBER_PAGE}
           page={safeMemberPage}
           onPage={setMemberPage}
         />
-      </div>
-
-      {/* picker 常驻。理由同 KbSettings 里那段：控件消失读作"坏了"，
-          而不是"没人可加"；空列表 SearchSelect 自己会说 */}
-      <div className="flex gap-2 items-center">
-          <SearchSelect
-            className="flex-1"
-            value={addUserId}
-            onChange={setAddUserId}
-            placeholder={S.members.pickUser}
-            options={addable.map((u) => ({
-              value: u.id,
-              label: u.display_name,
-              hint: u.email,
-            }))}
-          />
-          <Dropdown
-            className="w-28"
-            value={addRole}
-            onChange={setAddRole}
-            options={ROLE_OPTIONS}
-          />
-          <Button variant="primary" size="sm"
-            onClick={() => addUserId && setRole.mutate({ userId: addUserId, role: addRole })}
-            disabled={!addUserId}
-          >
-            {S.members.add}
-          </Button>
-      </div>
+      </SettingsCard>
 
       {me.data?.is_admin && <CreateUser onCreated={refresh} />}
       {me.data?.is_admin && <DeactivatedUsers onChanged={refresh} />}
@@ -189,7 +190,6 @@ export function Members({ workspaceId }: { workspaceId: string }) {
     </div>
   );
 }
-
 
 /** 已停用的账号，以及恢复它们。
  *
@@ -217,24 +217,19 @@ function DeactivatedUsers({ onChanged }: { onChanged: () => void }) {
   if (users.length === 0) return null;
 
   return (
-    <div className="mt-6">
-      <h4 className="text-body text-ink-2">
-        {S.members.deactivatedTitle}
-      </h4>
-      <p className="mt-1 text-fine leading-relaxed text-ink-2">
-        {S.members.deactivatedHint}
-      </p>
-      <div className="mt-2 space-y-1">
+    <SettingsCard
+      title={S.members.deactivatedTitle}
+      hint={S.members.deactivatedHint}
+    >
+      {/* 一人一行：恢复是每一行自己的动作，所以按钮在行里，不在底栏 */}
+      <div className="divide-y divide-line">
         {users.map((u) => (
-          <div
-            key={u.id}
-            className="flex items-center gap-2 rounded-lg border border-line px-3 py-2"
-          >
-            <span className="text-body text-ink-2">
-              {u.display_name}
-            </span>
-            <span className="text-fine text-ink-2">{u.email}</span>
-            <Button variant="secondary" size="sm" className="ml-auto"
+          <div key={u.id} className="flex items-center gap-3 py-3 first:pt-0">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-body text-ink-2">{u.display_name}</div>
+              <div className="truncate text-small text-ink-2">{u.email}</div>
+            </div>
+            <Button variant="secondary" size="sm"
               disabled={revive.isPending}
               onClick={() => revive.mutate(u.id)}
             >
@@ -243,7 +238,7 @@ function DeactivatedUsers({ onChanged }: { onChanged: () => void }) {
           </div>
         ))}
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 /** 管理员代开账号（注册关闭后的唯一入口）。 */
@@ -272,9 +267,19 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
   const valid = email.includes("@") && name.trim() && password.length >= 8;
 
   return (
-    <div className="mt-6 border-t border-line pt-4">
-      <h4 className="text-small font-semibold text-ink-2 mb-2">{S.settings.newUser}</h4>
-      <div className="grid grid-cols-2 gap-2 mb-2">
+    <SettingsCard
+      title={S.settings.newUser}
+      note={error && <span className="text-danger">{error}</span>}
+      action={
+        <Button variant="secondary" size="sm"
+          disabled={!valid || create.isPending}
+          onClick={() => create.mutate()}
+        >
+          {S.settings.createUserBtn}
+        </Button>
+      }
+    >
+      <div className="grid grid-cols-2 gap-2">
         <Input
           placeholder={S.login.email}
           value={email}
@@ -301,15 +306,6 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
           ]}
         />
       </div>
-      <div className="flex items-center gap-3">
-        <Button variant="primary" size="sm"
-          disabled={!valid || create.isPending}
-          onClick={() => create.mutate()}
-        >
-          {S.settings.createUserBtn}
-        </Button>
-        {error && <p className="text-small text-danger">{error}</p>}
-      </div>
-    </div>
+    </SettingsCard>
   );
 }

@@ -659,42 +659,19 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
   if (members.isError) return null;
 
   return (
-    <div className="glass rounded-lg p-4">
-      <p className="text-small text-ink-2 mb-3">
-        {isOpen ? S.kbset.membersHintOpen : S.kbset.membersHintRestricted}
-      </p>
-
-      {members.data && listed.length === 0 && (
-        <p className="text-small text-ink-2 mb-3">
-          {isOpen ? S.kbset.noWriters : S.kbset.noMembers}
-        </p>
-      )}
-      {listed.map((m) => (
-        <div key={m.user_id} className="flex items-center gap-3 py-2">
-          <div className="min-w-0 flex-1">
-            <span className="text-body text-ink">{m.display_name}</span>
-            <span className="ml-2 text-small text-ink-2">{m.email}</span>
-          </div>
-          <Dropdown
-            size="sm"
-            className="w-24"
-            value={m.role}
-            onChange={(role) => setMember.mutate({ userId: m.user_id, role })}
-            options={rolesFor(isOpen)}
-          />
-          <LinkButton tone="danger" onClick={() => remove.mutate(m.user_id)}>
-            {S.kbset.remove}
-          </LinkButton>
-        </div>
-      ))}
-
-      {/* **picker 常驻**，不按"有没有人可加"来显示或隐藏。
-          一个时有时无的控件比一个空着的控件更让人困惑——不见了的第一反应是
-          功能坏了，而不是"没人可加"。空列表由 SearchSelect 自己说
-          （它有 noMatches 空态），这里不必再加一句话 */}
-      <div className="mt-3 flex gap-2 items-center border-t border-line pt-3">
+    /* 一张卡：上面是名单，底栏是"加一个人"。加人是这张卡的动作，所以它在底栏，
+       与设置卡的保存同一个位置——而不是名单末尾多出来的一行（那样它读起来
+       像还没填好的第 N 个成员） */
+    <SettingsCard
+      title={S.kbset.members}
+      hint={isOpen ? S.kbset.membersHintOpen : S.kbset.membersHintRestricted}
+      note={
+        /* **picker 常驻**，不按"有没有人可加"来显示或隐藏。
+           一个时有时无的控件比一个空着的控件更让人困惑——不见了的第一反应是
+           功能坏了，而不是"没人可加"。空列表由 SearchSelect 自己说
+           （它有 noMatches 空态），这里不必再加一句话 */
         <SearchSelect
-          className="flex-1"
+          className="w-full max-w-sm"
           value={addUserId}
           onChange={setAddUserId}
           placeholder={S.kbset.addMember}
@@ -704,19 +681,52 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
             hint: u.email,
           }))}
         />
-        <Dropdown
-          className="w-24"
-          value={addRole}
-          onChange={setAddRole}
-          options={rolesFor(isOpen)}
-        />
-        <Button variant="primary" size="sm"
-          disabled={!addUserId || setMember.isPending}
-          onClick={() => setMember.mutate({ userId: addUserId, role: addRole })}
-        >
-          {S.members.add}
-        </Button>
-      </div>
-    </div>
+      }
+      action={
+        <>
+          <Dropdown
+            className="w-24"
+            value={addRole}
+            onChange={setAddRole}
+            options={rolesFor(isOpen)}
+          />
+          <Button variant="primary" size="sm"
+            disabled={!addUserId || setMember.isPending}
+            onClick={() => setMember.mutate({ userId: addUserId, role: addRole })}
+          >
+            {S.members.add}
+          </Button>
+        </>
+      }
+    >
+      {members.data && listed.length === 0 ? (
+        <p className="text-small text-ink-2">
+          {isOpen ? S.kbset.noWriters : S.kbset.noMembers}
+        </p>
+      ) : (
+        /* 一人一行，行与行之间一条线：名字与邮箱是同一个人的两件事，
+           挨着读；能改的（角色）和会拆掉的（移除）都在右边 */
+        <div className="divide-y divide-line">
+          {listed.map((m) => (
+            <div key={m.user_id} className="flex items-center gap-3 py-3 first:pt-0">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-body text-ink">{m.display_name}</div>
+                <div className="truncate text-small text-ink-2">{m.email}</div>
+              </div>
+              <Dropdown
+                size="sm"
+                className="w-24"
+                value={m.role}
+                onChange={(role) => setMember.mutate({ userId: m.user_id, role })}
+                options={rolesFor(isOpen)}
+              />
+              <LinkButton tone="danger" onClick={() => remove.mutate(m.user_id)}>
+                {S.kbset.remove}
+              </LinkButton>
+            </div>
+          ))}
+        </div>
+      )}
+    </SettingsCard>
   );
 }
