@@ -15,6 +15,7 @@ import { toast } from "../toast";
 import {
   Button,
   Chip,
+  type ChipTone,
   cn,
   IconButton,
   Input,
@@ -33,6 +34,22 @@ function line(d: AlertGroup["lines"][number]): string | null {
 
 /** 哪些告警带「再跑一遍」：故障修好之后（充值、改端点）任务不会自己回来的那几种 */
 const REQUEUE_KINDS = new Set(["llm.out_of_credit", "llm.unreachable"]);
+
+/* 轻重是服务端定的（`utopia-store/src/alerts.rs` 的 severity），一组取组里最重的
+   那一档。**告警不全是故障**：欠费、源同步失败是 error，限流、schema 没摄进来、
+   治理跳闸是 warning，而「映射探索一条口径都没提出来」是 info——它是"你等的那件
+   事没有结果"，不是坏了。从前这一栏一概不看 severity，七种告警长得一模一样。 */
+const SEVERITY_TONE: Record<string, ChipTone> = {
+  error: "danger",
+  warning: "warn",
+  info: "info",
+};
+/** 未读的那个点：**有没有点说的是读没读过，什么颜色说的是多重** */
+const SEVERITY_DOT: Record<string, string> = {
+  error: "bg-danger",
+  warning: "bg-warn",
+  info: "bg-accent",
+};
 
 function AlertRow({
   g,
@@ -78,7 +95,7 @@ function AlertRow({
       <span
         className={cn(
           "absolute left-1.5 top-5 h-1.5 w-1.5 rounded-full",
-          g.unread > 0 ? "bg-danger" : "bg-transparent",
+          g.unread > 0 ? (SEVERITY_DOT[g.severity] ?? "bg-danger") : "bg-transparent",
         )}
       />
       <div className="min-w-0">
@@ -92,7 +109,9 @@ function AlertRow({
           </span>
           {/* 次数是"这件事发生了几回"，不是一句补充说明：中性灰把它读成一个
               标签，而它说的是这条告警的分量 */}
-          {g.count > 1 && <Chip tone="danger">{g.count}</Chip>}
+          {g.count > 1 && (
+            <Chip tone={SEVERITY_TONE[g.severity] ?? "neutral"}>{g.count}</Chip>
+          )}
         </div>
         {/* 哪个库、什么时候：落款单独一行。跟在标题后面的话，标题一长就把
             它们挤到下一行，每条告警的头两行长得都不一样 */}
