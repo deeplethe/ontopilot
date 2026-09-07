@@ -52,7 +52,7 @@ The duplicate card has an input beside Keep / Merge; the batch toolbar has one i
 
 ## Open questions
 
-- **Impact, not confidence** (#357). The threshold and the sample are still about confidence. What a merge would drag along, the degree of each side, the facts that move, an earlier revert on the same names, is the next gate.
-- **An adjudicator that investigates** (#358). The batch sees names, types, top facts and now precedents; the governor's loop has tools. Whether the batch should escalate into the loop instead of into the human queue is the question.
+- **Impact, not confidence** (#357). Answered by [0027](0027-an-automatic-merge-is-gated-by-what-it-can-undo.md): a merge that would leave the graph is held for a person whatever the confidence.
+- **An adjudicator that investigates** (#358). Answered by [0028](0028-the-adjudicator-looks-before-it-asks.md): the batch escalates its unsettled pairs into the governor's loop, with governance off too.
 - **The agreement rate.** The sampled rows carry both verdicts; nothing computes the rate yet, and nothing moves `HUMAN_SAMPLE_PCT` from it.
 - **History on a merge target.** The merge shows under the withdrawals it caused in the same second, which is honest chronology and hard to read. Folding consequences under their cause is presentation, and belongs with the rationale it now has.

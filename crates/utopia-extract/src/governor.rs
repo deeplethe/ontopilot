@@ -1,7 +1,8 @@
 //! 治理的第二层（0025 第二刀）：攒批判不定的对，逐条带工具再看一遍。
 //!
 //! 模型能看的东西：一侧的全部事实、一侧的原文片段、台账里人对某个名字的决定、
-//! 库里名字相近的其他实体。结束只有两种：`decide`（same / different + 置信度 +
+//! 库里名字相近的其他实体、合并会牵动什么（0028：一致性检查会开出的矛盾、靠着
+//! 一边的派生、点过名的回答、两边的类型是不是一个大类）。结束只有两种：`decide`（same / different + 置信度 +
 //! 一句理由）或 `defer`（留给人一个具体的问题）。工具定义、提示词与回合的解析
 //! 在这里；跑循环、查库的在 server 的 governance 任务里——这里不碰库也不碰模型。
 
@@ -23,7 +24,7 @@ pub struct EarlierLook<'a> {
 /// 模型在一个回合里要的事
 #[derive(Debug, PartialEq)]
 pub enum Step {
-    /// 查一样东西：facts / quotes / ledger / namesakes
+    /// 查一样东西：facts / quotes / ledger / namesakes / consequences
     Lookup {
         tool: String,
         args: Value,
@@ -70,6 +71,10 @@ pub fn tools() -> Value {
             "description": "Other entities in this base whose name contains the query, with their type and how many facts they carry.",
             "parameters": query }},
         { "type": "function", "function": {
+            "name": "consequences",
+            "description": "What merging A and B would touch: relations that allow one value where the two sides hold different ones, derived facts resting on either side, chat answers that named either side, and whether the two types belong to one family. A merge that would touch any of these is held for a person whatever your confidence.",
+            "parameters": { "type": "object", "properties": {} } }},
+        { "type": "function", "function": {
             "name": "decide",
             "description": "Give the verdict for this pair.",
             "parameters": {
@@ -105,7 +110,11 @@ pub fn messages(pair: &AdjudicationPair, earlier: &EarlierLook) -> Vec<Value> {
          \n\
          You may look things up before answering, at most {MAX_STEPS} lookups: the facts of a \
          side, the source passages that mention a side, what people in this base decided about \
-         a name, and other entities with a similar name. People's earlier decisions are how the \
+         a name, other entities with a similar name, and what merging the two would touch (a \
+         relation that allows one value where the sides hold different ones is a contradiction, \
+         and a merge that would touch anything outside the graph is held for a person whatever \
+         your confidence: prefer to defer with the question that would settle it). People's \
+         earlier decisions are how the \
          owners of this base want such cases judged; follow them unless the facts of this pair \
          clearly differ, and never let one override a contradiction in the facts. Look only for \
          what would change your answer.\n\
@@ -173,6 +182,10 @@ pub fn read_step(name: &str, arguments: &str) -> Step {
                 args,
             },
             _ => Step::Unknown(format!("{name} needs a query")),
+        },
+        "consequences" => Step::Lookup {
+            tool: name.into(),
+            args: json!({}),
         },
         "decide" => {
             let same = match args["verdict"].as_str() {
@@ -299,7 +312,15 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["facts", "quotes", "ledger", "namesakes", "decide", "defer"]
+            [
+                "facts",
+                "quotes",
+                "ledger",
+                "namesakes",
+                "consequences",
+                "decide",
+                "defer"
+            ]
         );
     }
 }

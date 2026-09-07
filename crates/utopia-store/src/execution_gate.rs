@@ -60,6 +60,38 @@ impl Hold {
     }
 }
 
+impl Impact {
+    /// 给第二层的工具看的一段（0028）：合并会牵动什么，一行一件；什么都不牵动也说出来
+    pub fn describe(&self) -> String {
+        let mut lines = Vec::new();
+        for p in &self.contradictions {
+            lines.push(format!(
+                "- merging would put two \"{p}\" facts on one entity; \"{p}\" allows one value"
+            ));
+        }
+        if self.derived > 0 {
+            lines.push(format!(
+                "- {} derived fact(s) rest on one side and would be rewritten",
+                self.derived
+            ));
+        }
+        if self.answered > 0 {
+            lines.push(format!(
+                "- one side was named in {} chat answer(s)",
+                self.answered
+            ));
+        }
+        if lines.is_empty() {
+            "(merging would touch nothing outside the graph: no one-value relation clashes, no derived facts, no answers named either side)".to_string()
+        } else {
+            lines.join(
+                "
+",
+            )
+        }
+    }
+}
+
 /// 这一次合并该不该留给人。矛盾最先说——它会立刻开出违规；其次派生，其次答案。
 /// 什么都不牵动就是 None：把握够就照旧自动
 pub fn hold(impact: &Impact) -> Option<Hold> {
@@ -152,6 +184,22 @@ mod tests {
         };
         assert_eq!(hold(&i), Some(Hold::Contradiction("CEO of".into())));
         assert_eq!(hold(&i).unwrap().to_string(), "contradiction CEO of");
+    }
+
+    #[test]
+    fn describe_says_what_would_move_or_that_nothing_would() {
+        assert!(Impact::default()
+            .describe()
+            .contains("nothing outside the graph"));
+        let i = Impact {
+            contradictions: vec!["CEO of".into()],
+            derived: 2,
+            answered: 0,
+        };
+        let text = i.describe();
+        assert!(text.contains("two \"CEO of\" facts"));
+        assert!(text.contains("2 derived fact"));
+        assert!(!text.contains("chat answer"));
     }
 
     #[test]

@@ -3,6 +3,7 @@
 //! 高置信 same → 自动合并（可回滚），高置信 different → 自动保持分开，
 //! 其余转人工。未配模型时全部转人工——本任务失败或缺席都不影响抽取与查询。
 
+use crate::governance::{look_again, Look};
 use crate::llm_util;
 use crate::state::AppState;
 use sha2::{Digest, Sha256};
@@ -45,6 +46,74 @@ fn sampled_for_a_person(item: &ReviewItem) -> bool {
     item.id.as_u128() % 100 < HUMAN_SAMPLE_PCT
 }
 
+/// 攒批没定的对要不要带工具再看一遍（0028）：没判决或把握不到线；硬规则拦得住的不看
+/// （大类不同、版本尾巴、含名字的一句话——再看也改不了规则）；有撤回的不看，那是人的事
+fn wants_another_look(
+    item: &ReviewItem,
+    p: &gov::Precedents,
+    same: Option<bool>,
+    conf: f32,
+) -> bool {
+    let unsettled = same.is_none() || conf < AUTO_CONF;
+    let ruled = gov::types_conflict(
+        item.left.type_label.as_deref(),
+        item.right.type_label.as_deref(),
+    ) || matches!(
+        gov::name_shape(&item.left.name, &item.right.name),
+        gov::NameShape::Version | gov::NameShape::Phrase
+    );
+    unsettled && !ruled && p.reverts.is_empty()
+}
+
+/// 一次裁决落地成了什么：第二层的行按它记 applied 还是 proposed
+enum Outcome {
+    Merged(Uuid),
+    Kept,
+    Escalated,
+}
+
+/// 第二层看过的一对，记一行 `agent_decisions`（0028）：轨迹、问题、花的调用都在里面。
+/// 预算按这些行算，Agent 队列也从这里读——治理开没开，机器去看过的都看得见
+async fn record_look(
+    state: &AppState,
+    kb_id: Uuid,
+    run_id: Uuid,
+    item: &ReviewItem,
+    p: &gov::Precedents,
+    look: &Look,
+    outcome: &Outcome,
+) -> anyhow::Result<()> {
+    let action = match look.same {
+        Some(true) => "merge",
+        Some(false) => "keep",
+        None => "unsure",
+    };
+    let (status, merge_id) = match outcome {
+        Outcome::Merged(id) => ("applied", Some(*id)),
+        Outcome::Kept => ("applied", None),
+        Outcome::Escalated => ("proposed", None),
+    };
+    gov::record(
+        &state.pool,
+        kb_id,
+        gov::NewDecision {
+            run_id,
+            target_id: item.id,
+            action,
+            confidence: look.conf,
+            reason: look.why.as_deref(),
+            precedents: gov::precedents_json(p),
+            status,
+            merge_id,
+            question: look.question.as_deref(),
+            trace: serde_json::Value::Array(look.trace.clone()),
+            calls: look.calls,
+        },
+    )
+    .await?;
+    Ok(())
+}
+
 pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
     let kb = utopia_store::kbs::get(&state.pool, kb_id).await?;
     let settings = utopia_store::settings::get(&state.pool, kb.workspace_id).await?;
@@ -65,6 +134,8 @@ pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Resul
         state.emit_review(kb_id);
         return Ok(());
     };
+    // 第二层的行都挂在这一次任务上
+    let run_id = Uuid::now_v7();
 
     for _ in 0..MAX_ROUNDS {
         let items =
@@ -75,16 +146,16 @@ pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Resul
 
         // 第一层：裁决缓存。先例（人在这个库里对这些名字做过什么，连同他们写的理由）
         // 先取出来：它既进提示词也进缓存键
-        let mut to_ask: Vec<(ReviewItem, String, Vec<String>)> = Vec::new();
+        let mut to_ask: Vec<(ReviewItem, String, gov::Precedents, Vec<String>)> = Vec::new();
         for item in items {
-            let precedents =
-                gov::render_lines(&gov::precedents_for(&state.pool, kb_id, &item).await?);
+            let p = gov::precedents_for(&state.pool, kb_id, &item).await?;
+            let precedents = gov::render_lines(&p);
             let key = pair_key(&item, &precedents);
             match utopia_store::resolution::get_verdict(&state.pool, kb_id, &key).await? {
                 Some((same, conf)) => {
-                    apply_verdict(state, kb_id, &item, same, conf, "cached", None).await?
+                    apply_verdict(state, kb_id, &item, same, conf, "cached", None).await?;
                 }
-                None => to_ask.push((item, key, precedents)),
+                None => to_ask.push((item, key, p, precedents)),
             }
         }
         if to_ask.is_empty() {
@@ -94,27 +165,29 @@ pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Resul
         // 第二层：攒批 LLM 裁决
         let pairs: Vec<utopia_extract::AdjudicationPair> = to_ask
             .iter()
-            .map(|(item, _, precedents)| utopia_extract::AdjudicationPair {
-                left: utopia_extract::AdjudicationSide {
-                    name: item.left.name.clone(),
-                    type_label: item
-                        .left
-                        .type_label
-                        .clone()
-                        .unwrap_or_else(|| "untyped".into()),
-                    facts: item.left.top_facts.clone(),
+            .map(
+                |(item, _, _, precedents)| utopia_extract::AdjudicationPair {
+                    left: utopia_extract::AdjudicationSide {
+                        name: item.left.name.clone(),
+                        type_label: item
+                            .left
+                            .type_label
+                            .clone()
+                            .unwrap_or_else(|| "untyped".into()),
+                        facts: item.left.top_facts.clone(),
+                    },
+                    right: utopia_extract::AdjudicationSide {
+                        name: item.right.name.clone(),
+                        type_label: item
+                            .right
+                            .type_label
+                            .clone()
+                            .unwrap_or_else(|| "untyped".into()),
+                        facts: item.right.top_facts.clone(),
+                    },
+                    precedents: precedents.clone(),
                 },
-                right: utopia_extract::AdjudicationSide {
-                    name: item.right.name.clone(),
-                    type_label: item
-                        .right
-                        .type_label
-                        .clone()
-                        .unwrap_or_else(|| "untyped".into()),
-                    facts: item.right.top_facts.clone(),
-                },
-                precedents: precedents.clone(),
-            })
+            )
             .collect();
         let messages = utopia_extract::build_adjudication_messages(&pairs);
         // 调用/解析失败 → 任务按退避重试；重试耗尽后行停留在队列里，人工仍可定夺
@@ -128,7 +201,7 @@ pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Resul
         let by_i: HashMap<usize, &utopia_extract::AdjudicationVerdict> =
             verdicts.iter().map(|v| (v.i, v)).collect();
 
-        for (idx, (item, key, _)) in to_ask.iter().enumerate() {
+        for (idx, (item, key, p, _)) in to_ask.iter().enumerate() {
             match by_i.get(&idx) {
                 Some(v) => {
                     let same = match v.verdict.as_str() {
@@ -137,6 +210,55 @@ pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Resul
                         _ => None,
                     };
                     let conf = v.confidence.unwrap_or(0.5).clamp(0.0, 1.0);
+                    // 第二层（0028）：攒批没定的，带工具再看一遍再落地。预算用完或
+                    // 循环没跑成就照攒批的看法办
+                    if wants_another_look(item, p, same, conf) {
+                        let earlier = Look::from_batch(same, conf, v.why.clone());
+                        if let Some(look) = look_again(
+                            state,
+                            kb_id,
+                            &client,
+                            &settings,
+                            item,
+                            &pairs[idx],
+                            &earlier,
+                        )
+                        .await
+                        {
+                            let outcome = if look.same.is_some() {
+                                utopia_store::resolution::put_verdict(
+                                    &state.pool,
+                                    kb_id,
+                                    key,
+                                    look.same,
+                                    look.conf,
+                                    &model,
+                                )
+                                .await?;
+                                apply_verdict(
+                                    state,
+                                    kb_id,
+                                    item,
+                                    look.same,
+                                    look.conf,
+                                    "investigated",
+                                    look.why.as_deref(),
+                                )
+                                .await?
+                            } else {
+                                // 问了一个问题，或看了没结论：留给人，卡片上带着建议与问题
+                                utopia_store::resolution::escalate_review(
+                                    &state.pool,
+                                    item.id,
+                                    "proposed",
+                                )
+                                .await?;
+                                Outcome::Escalated
+                            };
+                            record_look(state, kb_id, run_id, item, p, &look, &outcome).await?;
+                            continue;
+                        }
+                    }
                     utopia_store::resolution::put_verdict(
                         &state.pool,
                         kb_id,
@@ -182,7 +304,7 @@ async fn apply_verdict(
     conf: f32,
     via: &str,
     why: Option<&str>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Outcome> {
     // 抽给人的那一份：机器有把握也不动手（0026）。理由写进队列那一列，
     // 界面会说"这一对是抽样给你的"，而不是让人以为裁决器没把握
     if same.is_some() && conf >= AUTO_CONF && sampled_for_a_person(item) {
@@ -197,9 +319,9 @@ async fn apply_verdict(
             &format!("escalate_sample|{verdict} {conf:.2}"),
         )
         .await?;
-        return Ok(());
+        return Ok(Outcome::Escalated);
     }
-    match same {
+    let outcome = match same {
         Some(true) if conf >= AUTO_CONF => {
             // 执行闸门（0027）：合并会立刻送出图外的东西——违规、派生、答案——留给人，
             // 把握再高也不动手。人看到的是留下的原因，不是「裁决器没把握」
@@ -217,7 +339,7 @@ async fn apply_verdict(
                     &format!("escalate_impact|{hold}"),
                 )
                 .await?;
-                return Ok(());
+                return Ok(Outcome::Escalated);
             }
             let (target, source) =
                 utopia_store::resolution::merge_direction(&state.pool, item.left.id, item.right.id)
@@ -233,7 +355,7 @@ async fn apply_verdict(
             )
             .await
             {
-                Ok(_) => {
+                Ok(merge_id) => {
                     utopia_store::resolution::close_review_auto(
                         &state.pool,
                         item.id,
@@ -258,6 +380,7 @@ async fn apply_verdict(
                         }),
                     )
                     .await;
+                    Outcome::Merged(merge_id)
                 }
                 // 同批次连锁合并可能已吞掉其中一方：转人工而不是让任务失败
                 Err(AppError::Conflict(_)) | Err(AppError::NotFound) => {
@@ -267,6 +390,7 @@ async fn apply_verdict(
                         "escalate_entity_changed",
                     )
                     .await?;
+                    Outcome::Escalated
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -293,6 +417,7 @@ async fn apply_verdict(
                 }),
             )
             .await;
+            Outcome::Kept
         }
         _ => {
             utopia_store::resolution::escalate_review(
@@ -301,7 +426,8 @@ async fn apply_verdict(
                 &format!("escalate_unsure|{via} {conf:.2}"),
             )
             .await?;
+            Outcome::Escalated
         }
-    }
-    Ok(())
+    };
+    Ok(outcome)
 }

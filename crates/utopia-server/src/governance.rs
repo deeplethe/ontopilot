@@ -48,21 +48,22 @@ struct Ctx<'a> {
     settings: &'a Option<LlmSettings>,
 }
 
-/// 对一对的一次看法：第一层给的，或第二层看完改过的
-struct Look {
-    same: Option<bool>,
-    conf: f32,
-    why: Option<String>,
+/// 对一对的一次看法：第一层给的，或第二层看完改过的。裁决器（治理关着时）也用它：
+/// 判不定的对走同一个第二层（0028）
+pub(crate) struct Look {
+    pub(crate) same: Option<bool>,
+    pub(crate) conf: f32,
+    pub(crate) why: Option<String>,
     /// defer 留下的问题
-    question: Option<String>,
+    pub(crate) question: Option<String>,
     /// 第二层看了什么
-    trace: Vec<Value>,
+    pub(crate) trace: Vec<Value>,
     /// 第二层花的模型调用
-    calls: i32,
+    pub(crate) calls: i32,
 }
 
 impl Look {
-    fn from_batch(same: Option<bool>, conf: f32, why: Option<String>) -> Self {
+    pub(crate) fn from_batch(same: Option<bool>, conf: f32, why: Option<String>) -> Self {
         Look {
             same,
             conf,
@@ -384,6 +385,27 @@ fn wants_second_look(item: &ReviewItem, p: &Precedents, look: &Look) -> bool {
         && look.uncertain())
         || doubted_split)
         && p.reverts.is_empty()
+}
+
+/// 裁决器的入口（0028）：治理关着，攒批判不定的对也带工具再看一遍——同一个循环、
+/// 同一份预算。每次调用一个 run_id：一次裁决任务就是一次 run
+pub(crate) async fn look_again(
+    state: &AppState,
+    kb_id: Uuid,
+    client: &LlmClient,
+    settings: &Option<LlmSettings>,
+    item: &ReviewItem,
+    pair: &utopia_extract::AdjudicationPair,
+    earlier: &Look,
+) -> Option<Look> {
+    let ctx = Ctx {
+        state,
+        kb_id,
+        run_id: Uuid::now_v7(),
+        client,
+        settings,
+    };
+    second_look(&ctx, item, pair, earlier).await
 }
 
 /// 第二层看一对：预算够就看，看完的看法替掉第一层的；看不成（预算用完、模型出错）回 None，
@@ -710,6 +732,24 @@ async fn lookup(
                     .join("\n")
             };
             (out, format!("{n} decisions about \"{q}\""))
+        }
+        // 合并会牵动什么（0028）：模型先看到闸门（0027）会看到的东西，再决定是裁还是问
+        "consequences" => {
+            let impact =
+                execution_gate::impact_of(pool, kb_id, item.left.id, item.right.id).await?;
+            let families = if gov::types_conflict(
+                item.left.type_label.as_deref(),
+                item.right.type_label.as_deref(),
+            ) {
+                "\n- the two types belong to different families; the rules never merge across families"
+            } else {
+                ""
+            };
+            let out = format!("{}{families}", impact.describe());
+            let held = execution_gate::hold(&impact)
+                .map(|h| h.to_string())
+                .unwrap_or_else(|| "nothing held".into());
+            (out, format!("what a merge would touch: {held}"))
         }
         "namesakes" => {
             let q = args["query"].as_str().unwrap_or("");
