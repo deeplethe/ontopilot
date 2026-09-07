@@ -213,7 +213,7 @@ export function KbSettings() {
 
       <main className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
         {/* 设置是读一列字段，不是铺一张桌子：内容居中限宽，行长不随窗口拉长 */}
-        <div className="mx-auto w-full max-w-3xl">
+        <div className="mx-auto w-full max-w-4xl">
           {/* 不缀库名：顶栏切换器已标明当前库 */}
           <PageHeader title={S.kbset.title} />
 
@@ -531,9 +531,10 @@ function KbActivity({ kbId }: { kbId: string }) {
   };
 
   return (
-    <div className="glass rounded-panel p-4">
-      <p className="text-small text-ink-2 mb-3">{S.kbset.activityHint}</p>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div className="space-y-3">
+      {/* 筛这份台账的控件在卡外面（DESIGN.md 6）：它们不是台账的内容，
+          而且筛空了的时候那张卡要能变成空态，不能把改筛选的唯一办法一起带走 */}
+      <div className="flex flex-wrap items-center gap-2">
         <NativeSelect size="sm"
           value={action}
           onChange={(e) => reset(() => setAction(e.target.value))}
@@ -575,16 +576,17 @@ function KbActivity({ kbId }: { kbId: string }) {
           {S.kbset.auditTotal(total)}
         </span>
       </div>
+      <SettingsCard title={S.kbset.activity} hint={S.kbset.activityHint}>
       {audit.isPending ? (
         <p className="text-small text-ink-2">{S.nav.loading}</p>
       ) : events.length === 0 ? (
         <p className="text-small text-ink-2">{S.kbset.activityEmpty}</p>
       ) : (
-        <div className="space-y-1">
+        <div className="divide-y divide-line">
           {events.map((e) => (
             <div
               key={e.id}
-              className="flex items-baseline gap-3 py-2 text-body"
+              className="flex items-baseline gap-3 py-2 text-body first:pt-0"
             >
               <span className="u-num shrink-0 text-fine text-ink-2">
                 {localDateTime(e.created_at)}
@@ -613,6 +615,7 @@ function KbActivity({ kbId }: { kbId: string }) {
         </div>
       )}
       <Pager total={total} pageSize={AUDIT_PAGE} page={page} onPage={setPage} />
+      </SettingsCard>
     </div>
   );
 }

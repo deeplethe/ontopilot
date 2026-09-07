@@ -781,7 +781,7 @@ export function Settings() {
   return (
     <div className="h-full overflow-y-auto u-scroll px-8 py-6">
       {/* 同 KbSettings：设置是读一列字段，居中限宽，行长不随窗口拉长 */}
-      <div className="mx-auto w-full max-w-3xl">
+      <div className="mx-auto w-full max-w-4xl">
         <PageHeader className="mb-3" title={S.settings.title} />
         <Segmented
           className="mb-6 w-fit"
