@@ -217,6 +217,8 @@ export const zh: Strings = {
   nav: {
     workspaceLabel: "工作区",
     kbLabel: "知识库",
+    findKb: "查找知识库…",
+    noKbMatch: "没有匹配的知识库",
     ask: "对话",
     askHint: "与你的知识库对话——它会记住",
     search: "检索",

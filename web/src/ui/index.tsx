@@ -148,14 +148,16 @@ export const Input = forwardRef<
     InputSize & {
       /** 左侧的语义图标（筛选框的放大镜）。给了它，className 落在外层容器上 */
       icon?: ReactNode;
+      /** 没有自己的皮：装在别的面里（切换器面板顶上那道查找） */
+      bare?: boolean;
     }
->(function Input({ className, size = "md", icon, ...props }, ref) {
+>(function Input({ className, size = "md", icon, bare, ...props }, ref) {
   const control = (
     <input
       ref={ref}
       className={cn(
-        "input-dark",
-        size === "sm" ? "u-input-sm" : "u-input-md",
+        bare ? "u-input-bare" : "input-dark",
+        bare ? null : size === "sm" ? "u-input-sm" : "u-input-md",
         // 图标槽：图标离左内缘 8px，文字从 30px 起。左栏里的输入框（盒 12）
         // 于是图标在 20、文字在 42，与左栏的行（图标 20、文字 42）同一条线
         icon ? (size === "sm" ? "pl-7" : "pl-[30px]") : null,

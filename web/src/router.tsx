@@ -205,7 +205,10 @@ const adminRoute = createRoute({
   // 深链指定页签（如 KB 数据节的"注册新连接"直达 Data sources）
   validateSearch: (
     search: Record<string, unknown>,
-  ): { tab?: "models" | "members" | "kbs" | "datasources" | "deployment" } => ({
+  ): {
+    tab?: "models" | "members" | "kbs" | "datasources" | "deployment";
+    create?: true;
+  } => ({
     tab:
       search.tab === "models" ||
       search.tab === "members" ||
@@ -214,6 +217,8 @@ const adminRoute = createRoute({
       search.tab === "deployment"
         ? search.tab
         : undefined,
+    // 建库的入口在别处（库切换器的最后一行），带着这个参数落到这里就直接开表单
+    create: search.create === true || search.create === "true" ? true : undefined,
   }),
   component: Settings,
 });

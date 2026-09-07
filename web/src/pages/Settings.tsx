@@ -350,11 +350,12 @@ function DeploymentAdmin() {
 }
 
 /** 知识库管理（部署层）：全部库总览 + 新建（建库是管理动作，切换器只切换）。 */
-function KbsAdmin() {
+/** `autoCreate`：从库切换器最后一行过来的，落地就开建库表单 */
+function KbsAdmin({ autoCreate }: { autoCreate?: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { workspace, setKb } = useKb();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(!!autoCreate);
   const list = useQuery({
     queryKey: ["myKbs", workspace?.id],
     queryFn: () => api.myKbs(workspace!.id),
@@ -726,7 +727,7 @@ const PRESETS: Record<
 
 export function Settings() {
   const { workspace } = useKb();
-  const { tab: tabParam } = useSearch({ from: "/account/admin" });
+  const { tab: tabParam, create } = useSearch({ from: "/account/admin" });
   const [tab, setTab] = useState<
     "models" | "members" | "kbs" | "datasources" | "deployment"
   >(tabParam ?? "models");
@@ -798,7 +799,7 @@ export function Settings() {
         />
 
         {tab === "members" && <Members workspaceId={workspace.id} />}
-        {tab === "kbs" && <KbsAdmin />}
+        {tab === "kbs" && <KbsAdmin autoCreate={!!create} />}
         {tab === "datasources" && <DataSourcesAdmin />}
         {tab === "deployment" && <DeploymentAdmin />}
 

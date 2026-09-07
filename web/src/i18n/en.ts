@@ -242,6 +242,8 @@ export const en = {
   nav: {
     workspaceLabel: "Workspace",
     kbLabel: "Knowledge base",
+    findKb: "Find a knowledge base…",
+    noKbMatch: "No knowledge base matches",
     ask: "Chat",
     askHint: "Converse with your knowledge base — it can remember",
     search: "Search",
