@@ -221,6 +221,9 @@ function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: 
         onClick={onClose}
         className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
       >
+        {/* 与库切换器的第一行同构：图标 + 名字 + 朝上的三角。图标是铃铛本身
+            ——这一行就是那个铃铛长出来的样子 */}
+        <Bell size={15} strokeWidth={1.8} className="shrink-0 text-ink-2" />
         <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
           {S.alerts.title}
         </span>
@@ -272,7 +275,9 @@ function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: 
               {S.alerts.markAllRead}
             </LinkButton>
           )}
+          {/* 只有一页也显示：这条底栏是固定的，分页器一藏它就成了一道空边 */}
           <Pager
+            always
             className="ml-auto"
             total={total}
             pageSize={PAGE}

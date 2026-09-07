@@ -799,6 +799,7 @@ export function Pager({
   pageSize,
   page,
   onPage,
+  always,
   /** 覆盖默认的上边距。默认 `mt-3` 适合跟在列表后面；
       放进一个已经有内边距的底栏时传 `""` 去掉它 */
   className = "mt-3",
@@ -807,11 +808,14 @@ export function Pager({
   pageSize: number;
   page: number;
   onPage: (p: number) => void;
+  /** 只有一页也照样显示。给的是**固定底栏**用：那条栏本来就在那儿，
+      分页器一藏，它就成了一道没有内容的空边 */
+  always?: boolean;
   className?: string;
 }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safe = Math.min(page, pageCount - 1);
-  if (total <= pageSize) return null;
+  if (total <= pageSize && !always) return null;
   return (
     <div className={cn("flex items-center justify-end gap-2 text-small text-ink-2", className)}>
       <span className="u-num">
