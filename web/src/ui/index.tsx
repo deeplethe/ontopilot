@@ -1085,8 +1085,9 @@ export function localDateTime(iso: string): string {
 /** 一行的类：Row 自己用；页面里必须是 <Link> 的行（跳去图谱的实例行）也用它 */
 export type RowDensity = "nav" | "list" | "menu";
 /** 行的语义色：danger = 会删东西的那一行；warn = 通往危险区的入口——只是去往，
- *  还没动手，用警示色而不是危险色 */
-export type RowTone = "danger" | "warn";
+ *  还没动手，用警示色而不是危险色；muted = 这一行是别人的名字（分组标题），
+ *  淡一档，好让它下面那些行读起来是内容 */
+export type RowTone = "danger" | "warn" | "muted";
 export function rowClass(
   active?: boolean,
   density: RowDensity = "list",
@@ -1107,7 +1108,9 @@ export function rowClass(
         ? "text-danger hover:bg-surface-2"
         : tone === "warn"
           ? "text-warn hover:bg-surface-2"
-          : "text-ink-2 hover:bg-surface-2 hover:text-ink",
+          : tone === "muted"
+            ? "text-ink-3 hover:bg-surface-2 hover:text-ink-2"
+            : "text-ink-2 hover:bg-surface-2 hover:text-ink",
   );
 }
 /** 行右端小字：静止时最淡，整行被指着时提亮一级 */
@@ -1120,6 +1123,7 @@ export function Row({
   density = "list",
   indent = 0,
   icon,
+  flush,
   trailing,
   className,
   children,
@@ -1135,6 +1139,8 @@ export function Row({
   /** 树形缩进的层级 */
   indent?: number;
   icon?: ReactNode;
+  /** 收掉图标那一格：整组行都没有图标时，那一格没有对齐对象，只是把标题往右推 */
+  flush?: boolean;
   /** 右端的东西：计数、类型小字 */
   trailing?: ReactNode;
 }) {
@@ -1147,10 +1153,10 @@ export function Row({
       {...props}
     >
       {/* 图标跟文字同色：选中变白、警示变橙都一起来。导航项没图标也留出
-          图标那一格，一列里有图标的和没图标的文字对齐 */}
+          图标那一格，一列里有图标的和没图标的文字对齐——除非整组都没有（flush） */}
       {icon ? (
         <span className="shrink-0">{icon}</span>
-      ) : density === "nav" ? (
+      ) : density === "nav" && !flush ? (
         <span className="w-3.5 shrink-0" aria-hidden />
       ) : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>

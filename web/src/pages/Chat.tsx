@@ -13,11 +13,11 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  ChevronRight,
   Database,
   GitCompareArrows,
   History,
   Layers,
-  MessageSquare,
   MoreHorizontal,
   Search,
   Search as SearchIcon,
@@ -114,6 +114,8 @@ export function Chat() {
   const [convSearch, setConvSearch] = useState("");
   // 三点菜单展开的是哪一条。同时只开一个
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // 「最近」这一组收起来没有。默认展开：左栏本来就是为了看见这些会话
+  const [recentOpen, setRecentOpen] = useState(true);
   const scopeRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -482,14 +484,34 @@ export function Chat() {
             onKeyDown={(e) => e.key === "Escape" && setConvSearch("")}
           />
         </div>
-        {/* 左栏里的一切都从 12 起：输入框的盒、行的盒；图标都在 20，文字都在 42。
-            会话行也带一个图标，不然它的标题会从 20 起，和上面两行错开 */}
+        {/* 左栏里的一切都从 12 起：输入框的盒、行的盒。新对话是个动作，带图标；
+            下面的会话是一组标题，不带——一列重复的气泡图标只是把每个标题往右
+            推 22px，而它们对齐的对象是彼此，不是上面这一行 */}
         <div className="px-3 pb-1">
-          {/* 与会话行同一套样式：左栏是一列同质的行，新对话只是第一行 */}
           <Row density="nav" icon={<SquarePen size={14} />} onClick={newChat}>
             {S.ask.newChat}
           </Row>
         </div>
+        {/* 「最近」是这一组的名字，不是一条会话：同一副行的身材、字淡一档，
+            右端的三角说明这一组收得起来（朝右=收着，朝下=开着） */}
+        <div className="px-3">
+          <Row
+            density="nav"
+            flush
+            tone="muted"
+            aria-expanded={recentOpen}
+            onClick={() => setRecentOpen((v) => !v)}
+            trailing={
+              <ChevronRight
+                size={12}
+                className={cn("u-turn", recentOpen && "rotate-90")}
+              />
+            }
+          >
+            {S.ask.recent}
+          </Row>
+        </div>
+        {recentOpen && (
         <div className="u-rail-list u-scroll flex-1 overflow-y-auto px-3 pb-3">
           {(convs.data?.conversations ?? []).map((c: ConversationRow) => (
             <div
@@ -513,8 +535,8 @@ export function Chat() {
               ) : (
                 <Row
                   density="nav"
+                  flush
                   active={c.id === activeId}
-                  icon={<MessageSquare size={14} />}
                   className="pr-8"
                   onClick={() => openConversation(c.id)}
                 >
@@ -582,11 +604,12 @@ export function Chat() {
               )}
             </div>
           ))}
-          {/* 没图标的文字从 20 起（盒 12 + 8），与行里的图标同一条线 */}
+          {/* 文字从 20 起（盒 12 + 8），与上面每条会话的标题同一条线 */}
           {convs.data?.conversations.length === 0 && (
             <p className="px-2 py-2 text-small text-ink-3">{S.ask.noConversations}</p>
           )}
         </div>
+        )}
       </aside>
 
       {/* 对话区：新对话首屏 = 问候 + 居中 composer（ChatGPT/Claude 惯例）；

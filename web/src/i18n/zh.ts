@@ -644,6 +644,7 @@ export const zh: Strings = {
     stop: "停止",
     thinking: "思考中…",
     newChat: "新对话",
+    recent: "最近",
     untitled: "未命名",
     noConversations: "还没有对话。",
     deleteConversation: "删除对话",

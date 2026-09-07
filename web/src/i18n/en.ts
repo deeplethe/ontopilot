@@ -701,6 +701,7 @@ export const en = {
     stop: "Stop",
     thinking: "Thinking…",
     newChat: "New chat",
+    recent: "Recent",
     untitled: "Untitled",
     noConversations: "No conversations yet.",
     deleteConversation: "Delete conversation",
