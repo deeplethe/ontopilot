@@ -1667,6 +1667,7 @@ export const zh: Strings = {
       "只有这里列出的人能看到这个知识库，角色决定他能改什么。" +
       "部署管理员始终有访问权。",
     addMember: "添加…",
+    addMemberTitle: "添加成员",
     roles: { viewer: "只读", editor: "编辑者", admin: "管理员" },
     remove: "移除",
     noMembers: "没有设置任何库内角色。",

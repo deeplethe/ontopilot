@@ -19,7 +19,6 @@ import {
   Input,
   Loading,
   MultiSearchSelect,
-  NativeSelect,
   PageHeader,
   Radio,
   Table,
@@ -107,19 +106,16 @@ function IssuedBody({
       <div className="mt-6 flex items-baseline justify-between gap-3 flex-wrap">
         <div className="text-body font-medium text-ink">{S.account.mcpTitle}</div>
         {candidates.length > 1 && (
-          <label className="flex items-center gap-2 text-small text-ink-2">
+          <span className="flex items-center gap-2 text-small text-ink-2">
             {S.account.mcpBase}
-            <NativeSelect size="sm"
+            <Dropdown
+              size="sm"
+              className="w-40"
               value={kbId}
-              onChange={(e) => setKbId(e.target.value)}
-            >
-              {candidates.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.name}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
+              onChange={setKbId}
+              options={candidates.map((k) => ({ value: k.id, label: k.name }))}
+            />
+          </span>
         )}
       </div>
       <p className="mt-1 text-small text-ink-2">{S.account.mcpHint}</p>

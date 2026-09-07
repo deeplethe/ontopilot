@@ -24,7 +24,6 @@ import {
   LinkButton,
   Loading,
   localDateTime,
-  NativeSelect,
   Pager,
   RAIL_CLS,
   type RowTone,
@@ -33,6 +32,8 @@ import {
   Segmented,
   SettingsCard,
   PageHeader,
+  Dialog,
+  Field,
 } from "../ui";
 
 const KB_ROLES = [
@@ -535,17 +536,16 @@ function KbActivity({ kbId }: { kbId: string }) {
       {/* 筛这份台账的控件在卡外面（DESIGN.md 6）：它们不是台账的内容，
           而且筛空了的时候那张卡要能变成空态，不能把改筛选的唯一办法一起带走 */}
       <div className="flex flex-wrap items-center gap-2">
-        <NativeSelect size="sm"
+        <Dropdown
+          size="sm"
+          className="w-48"
           value={action}
-          onChange={(e) => reset(() => setAction(e.target.value))}
-        >
-          <option value="">{S.kbset.auditAllActions}</option>
-          {actions.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </NativeSelect>
+          onChange={(v) => reset(() => setAction(v))}
+          options={[
+            { value: "", label: S.kbset.auditAllActions },
+            ...actions.map((a) => ({ value: a, label: a })),
+          ]}
+        />
         <Input size="sm" className="u-num"
           type="date"
           value={since}
@@ -627,6 +627,7 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
     queryFn: () => api.kbMembers(kbId),
   });
   const orgUsers = useQuery({ queryKey: ["orgUsers"], queryFn: api.orgUsers });
+  const [adding, setAdding] = useState(false);
   const [addUserId, setAddUserId] = useState("");
   // open 库连 viewer 这个选项都没有，默认值得跟着走
   const [addRole, setAddRole] = useState(isOpen ? "editor" : "viewer");
@@ -662,44 +663,17 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
   if (members.isError) return null;
 
   return (
-    /* 一张卡：上面是名单，底栏是"加一个人"。加人是这张卡的动作，所以它在底栏，
-       与设置卡的保存同一个位置——而不是名单末尾多出来的一行（那样它读起来
-       像还没填好的第 N 个成员） */
+    <>
+    {/* 一张卡：上面是名单，底栏是一个「加人」按钮——与部署那边的用户管理
+        同一副排法。**加人是偶尔一次的动作**，一个常驻的选人器摆在名单底下，
+        读起来像还没填好的第 N 个成员，而且它和名单本身抢同一块地方 */}
     <SettingsCard
       title={S.kbset.members}
       hint={isOpen ? S.kbset.membersHintOpen : S.kbset.membersHintRestricted}
-      note={
-        /* **picker 常驻**，不按"有没有人可加"来显示或隐藏。
-           一个时有时无的控件比一个空着的控件更让人困惑——不见了的第一反应是
-           功能坏了，而不是"没人可加"。空列表由 SearchSelect 自己说
-           （它有 noMatches 空态），这里不必再加一句话 */
-        <SearchSelect
-          className="w-full max-w-sm"
-          value={addUserId}
-          onChange={setAddUserId}
-          placeholder={S.kbset.addMember}
-          options={addable.map((u) => ({
-            value: u.id,
-            label: u.display_name,
-            hint: u.email,
-          }))}
-        />
-      }
       action={
-        <>
-          <Dropdown
-            className="w-24"
-            value={addRole}
-            onChange={setAddRole}
-            options={rolesFor(isOpen)}
-          />
-          <Button variant="primary" size="sm"
-            disabled={!addUserId || setMember.isPending}
-            onClick={() => setMember.mutate({ userId: addUserId, role: addRole })}
-          >
-            {S.members.add}
-          </Button>
-        </>
+        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+          {S.kbset.addMemberTitle}
+        </Button>
       }
     >
       {members.data && listed.length === 0 ? (
@@ -731,5 +705,55 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
         </div>
       )}
     </SettingsCard>
+
+    {/* 把一个已有账号加进这个库。**picker 在弹窗里也仍然常驻**：没人可加时
+        它自己会说（SearchSelect 有 noMatches 空态），控件消失读作"坏了" */}
+    <Dialog
+      open={adding}
+      onOpenChange={setAdding}
+      title={S.kbset.addMemberTitle}
+      closeLabel={S.ui.close}
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={() => setAdding(false)}>
+            {S.members.cancel}
+          </Button>
+          <Button variant="primary" size="sm"
+            disabled={!addUserId || setMember.isPending}
+            onClick={() => {
+              setMember.mutate({ userId: addUserId, role: addRole });
+              setAdding(false);
+            }}
+          >
+            {S.members.add}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={S.members.userLabel} className="mb-0">
+          <SearchSelect
+            className="w-full"
+            value={addUserId}
+            onChange={setAddUserId}
+            placeholder={S.kbset.addMember}
+            options={addable.map((u) => ({
+              value: u.id,
+              label: u.display_name,
+              hint: u.email,
+            }))}
+          />
+        </Field>
+        <Field label={S.members.roleLabel} className="mb-0">
+          <Dropdown
+            className="w-full"
+            value={addRole}
+            onChange={setAddRole}
+            options={rolesFor(isOpen)}
+          />
+        </Field>
+      </div>
+    </Dialog>
+    </>
   );
 }

@@ -1903,6 +1903,7 @@ export const en = {
       "Only the people listed here can see this knowledge base, and their role decides " +
       "what they can change. Deployment admins always have access.",
     addMember: "Add…",
+    addMemberTitle: "Add member",
     roles: { viewer: "Viewer", editor: "Editor", admin: "Admin" },
     remove: "Remove",
     noMembers: "No per-KB roles set.",

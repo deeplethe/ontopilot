@@ -34,7 +34,7 @@ import {
   CANVAS_LABEL_SIZE,
   CANVAS_TEXT,
   CANVAS_TEXT_2,
-  drawPillLabel,
+  drawNodeLabel,
   drawWorldGrid,
   mix,
   MUTED_SHELL,
@@ -683,16 +683,23 @@ export function OntologySchemaGraph({
       labelFont: CANVAS_FONT,
       labelSize: CANVAS_LABEL_SIZE,
       labelColor: { color: CANVAS_TEXT },
-      labelRenderedSizeThreshold: 6,
-      labelDensity: 0.7,
-      labelGridCellSize: 140,
+      /* 标签按距离出没——离得远只看形状，走近了才认名字。**试过不按距离**
+         （阈值归零、只按拥挤程度筛）：缩远之后一百多个名字铺开互相压字，
+         读不出也点不准。
+         阈值 5、每 130px 见方留 0.8 个：只比原先松半档。**放宽到 3 / 1.2 试过
+         一轮，一屏上百个名字铺开，太吵**——这里要的是「远处认得出几个地标」，
+         不是「每个点都报名字」。放大时 sigma 自己按 1/ratio² 放开这个上限
+         （见 `getLabelsToDisplay`），越走近露得越全，不封顶 */
+      labelRenderedSizeThreshold: 5,
+      labelDensity: 0.8,
+      labelGridCellSize: 130,
       minCameraRatio: 0.05,
       maxCameraRatio: 6,
       edgeLabelSize: CANVAS_LABEL_SIZE,
       // 与 /graph 的边标签同一个灰；只有关系边挂标签，有字的就是关系边
       edgeLabelColor: { color: CANVAS_TEXT_2 },
       edgeLabelFont: CANVAS_FONT,
-      defaultDrawNodeLabel: drawPillLabel,
+      defaultDrawNodeLabel: drawNodeLabel,
       defaultDrawNodeHover: drawHoverCard,
       nodeReducer: (node, attrs) => {
         const res = { ...attrs };
@@ -724,6 +731,8 @@ export function OntologySchemaGraph({
             res.size = Math.max(base * 1.02, 9.2);
             res.ringColor = mix(ownColor, "#ffffff", RING_SELECT_MIX);
             res.forceLabel = true;
+            // 选中的那一个补一块底（同 /graph）
+            res.labelSlab = true;
             res.zIndex = 3;
             return res;
           }

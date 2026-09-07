@@ -23,8 +23,6 @@ import { toast } from "../toast";
 import {
   Button,
   Checkbox,
-  Chip,
-  type ChipTone,
   cn,
   DangerConfirm,
   Dialog,
@@ -33,9 +31,9 @@ import {
   Input,
   LinkButton,
   Loading,
-  NativeSelect,
   Pager,
   Segmented,
+  StatusCell,
   Textarea,
   PageHeader,
 } from "../ui";
@@ -51,21 +49,6 @@ import {
 
 const PAGE_SIZE = 15;
 
-const STATUS_TONE: Record<string, ChipTone> = {
-  pending: "neutral",
-  parsing: "warn",
-  indexing: "warn",
-  embedding: "warn",
-  ready: "info",
-  failed: "danger",
-};
-
-const GRAPH_TONE: Record<string, ChipTone> = {
-  queued: "neutral",
-  extracting: "warn",
-  done: "violet",
-  failed: "danger",
-};
 
 /** 调度器产出的值：interval 与 cron 互斥。 */
 interface ScheduleValue {
@@ -605,20 +588,23 @@ export function Library() {
                   它是一组固定的管道状态，而「这个库现在没有失败的」正是用户
                   想通过筛一下确认的事 */}
               {selection !== "deleted" && (
-              <NativeSelect size="sm" className="shrink-0"
-                value={graphFilter}
-                onChange={(e) => {
-                  setGraphFilter(e.target.value);
-                  setPage(0);
-                }}
-              >
-                <option value="">{S.library.anyStatus}</option>
-                <option value="failed">{S.library.statusFailed}</option>
-                <option value="done">{S.library.statusDone}</option>
-                <option value="queued">{S.library.statusQueued}</option>
-                <option value="extracting">{S.library.statusExtracting}</option>
-                <option value="none">{S.library.statusNone}</option>
-              </NativeSelect>
+                <Dropdown
+                  size="sm"
+                  className="w-44 shrink-0"
+                  value={graphFilter}
+                  onChange={(v) => {
+                    setGraphFilter(v);
+                    setPage(0);
+                  }}
+                  options={[
+                    { value: "", label: S.library.anyStatus },
+                    { value: "failed", label: S.library.statusFailed },
+                    { value: "done", label: S.library.statusDone },
+                    { value: "queued", label: S.library.statusQueued },
+                    { value: "extracting", label: S.library.statusExtracting },
+                    { value: "none", label: S.library.statusNone },
+                  ]}
+                />
               )}
               {/* 一键重试。**只在真有失败时出现**——没有失败的库不该看到一个
                   点了什么都不会发生的按钮。数字写在按钮上，点之前就知道会动几篇 */}
@@ -1621,14 +1607,15 @@ function SourceModal({
               )}
               {field(
                 S.library.rssContentMode,
-                <NativeSelect
+                <Dropdown
                   className="w-full"
                   value={rssContentMode}
-                  onChange={(e) => setRssContentMode(e.target.value as RssContentMode)}
-                >
-                  <option value="full_new_items">{S.library.rssModeFull}</option>
-                  <option value="feed">{S.library.rssModeFeed}</option>
-                </NativeSelect>,
+                  onChange={(v) => setRssContentMode(v as RssContentMode)}
+                  options={[
+                    { value: "full_new_items", label: S.library.rssModeFull },
+                    { value: "feed", label: S.library.rssModeFeed },
+                  ]}
+                />,
               )}
               <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-2">
                 {rssContentMode === "full_new_items"
@@ -2010,14 +1997,15 @@ function SourceEditModal({
               )}
               {field(
                 S.library.rssContentMode,
-                <NativeSelect
+                <Dropdown
                   className="w-full"
                   value={rssContentMode}
-                  onChange={(e) => setRssContentMode(e.target.value as RssContentMode)}
-                >
-                  <option value="full_new_items">{S.library.rssModeFull}</option>
-                  <option value="feed">{S.library.rssModeFeed}</option>
-                </NativeSelect>,
+                  onChange={(v) => setRssContentMode(v as RssContentMode)}
+                  options={[
+                    { value: "full_new_items", label: S.library.rssModeFull },
+                    { value: "feed", label: S.library.rssModeFeed },
+                  ]}
+                />,
               )}
               <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-2">
                 {rssContentMode === "full_new_items"
@@ -2237,41 +2225,49 @@ function DocRow({
       )}
       <td className="px-4 py-3">
         {/* 失败可点开看原文：tooltip 会截断、也没法复制 */}
-        {doc.status === "failed" && doc.error ? (
-          <Chip
-            tone="danger"
-            onClick={() => onShowError(S.library.errorParse, doc.error!)}
-          >
-            {statusText}
-          </Chip>
-        ) : (
-          <Chip tone={STATUS_TONE[doc.status] ?? "neutral"}>{statusText}</Chip>
-        )}
+        <StatusCell
+          danger={doc.status === "failed"}
+          onClick={
+            doc.status === "failed" && doc.error
+              ? () => onShowError(S.library.errorParse, doc.error!)
+              : undefined
+          }
+        >
+          {statusText}
+        </StatusCell>
         {doc.missing_since && (
-          <span className="ml-2 inline-block" title={doc.missing_since.slice(0, 16).replace("T", " ")}>
-            <Chip tone="neutral">{S.library.notInSource}</Chip>
+          <span
+            className="ml-3 text-small text-ink-2"
+            title={doc.missing_since.slice(0, 16).replace("T", " ")}
+          >
+            {S.library.notInSource}
           </span>
         )}
       </td>
       <td className="px-4 py-3">
-        {doc.graph_status === "none" ? (
-          <span className="text-small text-ink-2">{graphText}</span>
-        ) : doc.graph_status === "failed" && doc.graph_error ? (
-          <Chip
-            tone="danger"
-            onClick={() => onShowError(S.library.errorGraph, doc.graph_error!)}
-          >
-            {graphText}
-          </Chip>
-        ) : (
-          <Chip tone={GRAPH_TONE[doc.graph_status] ?? "neutral"}>{graphText}</Chip>
-        )}
-        {/* 抽出来却没落地的事实。抽取成功不代表全须全尾，所以这个 chip 与
-            graph_status 并列而不是替代它——"done" 和 "3 dropped" 同时为真 */}
+        <StatusCell
+          danger={doc.graph_status === "failed"}
+          onClick={
+            doc.graph_status === "failed" && doc.graph_error
+              ? () => onShowError(S.library.errorGraph, doc.graph_error!)
+              : undefined
+          }
+        >
+          {graphText}
+        </StatusCell>
+        {/* 抽出来却没落地的事实。抽取成功不代表全须全尾，所以它与 graph_status
+            并列而不是替代它——"done" 和 "3 dropped" 同时为真。
+            **不给警示色**：漏掉的事实不是故障，是窄本体本来就会做的事；
+            琥珀挨着红色，会让人以为一行里坏了两件事。它只是个值得点开看看的数 */}
         {dropTotal > 0 && drops && (
-          <Chip tone="warn" className="ml-2" onClick={() => onShowDrops(drops)}>
+          /* 带下划线但不提亮：它是可以点开看的，可它不该比旁边的状态更响 */
+          <LinkButton
+            underline
+            className="ml-3 text-ink-2"
+            onClick={() => onShowDrops(drops)}
+          >
             {S.library.dropsChip(dropTotal)}
-          </Chip>
+          </LinkButton>
         )}
       </td>
       <td className="px-4 py-3 text-ink-2">{doc.chunk_count || "—"}</td>

@@ -94,7 +94,7 @@ const RULES = [
     id: "raw-control",
     // 隐藏的文件选择框不算控件（它没有样子），放行
     re: /<(button|textarea|select)\b|<input\b(?![^>]*type="file")/g,
-    why: "控件从 ui/ 来：Button / IconButton / Input / Textarea / NativeSelect（规矩 5）",
+    why: "控件从 ui/ 来：Button / IconButton / Input / Textarea / Dropdown / SearchSelect（规矩 5）",
     ui: false,
   },
   {

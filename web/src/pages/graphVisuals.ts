@@ -31,6 +31,11 @@ export const HOVER_MUTE = 0.78;
 export const PILL_BG = "rgba(12,12,12,0.9)";
 export const PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
 export const PILL_TEXT = "#ededed"; // --u-text
+/* 裸字的光晕：与画布同色（--u-ground）的一圈描边，只为把从字底下穿过的
+   连线压住。不是阴影——阴影会在一片细线里糊成一团脏 */
+export const LABEL_HALO = "rgba(10,10,10,0.92)";
+/** 浮层的面，抄 `.u-pop`（tooltip / toast 用的那一档近实底） */
+export const POP_BG = "rgba(16,16,16,0.98)";
 
 /* 画布上的字与界面同一套刻度。**canvas 读不到 CSS 变量**，所以这里镜像一份
    `styles.css` 的值——它是源头，改那边记得回来改这里。
@@ -40,8 +45,13 @@ export const PILL_TEXT = "#ededed"; // --u-text
 export const CANVAS_FONT = '"Geist", "Inter", "Noto Sans SC", sans-serif';
 export const CANVAS_TEXT = "#ededed"; // --u-text
 export const CANVAS_TEXT_2 = "#a8a8a8"; // --u-text-2
-export const CANVAS_LABEL_SIZE = 12; // --text-fine
+/* 画在节点与连线之间的字比界面的底再小一档（11）。**画布不是界面**：
+   这些字压在一片线和点上，与它们比邻的是 5–13px 的节点，不是页面上的正文；
+   12 在这里显得比它标注的东西还重。浮在画布之上的悬浮卡不算——那是 tooltip，
+   走界面的刻度（见 CANVAS_TITLE_SIZE / CANVAS_META_SIZE） */
+export const CANVAS_LABEL_SIZE = 11;
 export const CANVAS_TITLE_SIZE = 14; // --text-body
+export const CANVAS_META_SIZE = 12; // --text-fine
 
 export function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
@@ -58,41 +68,57 @@ export function mix(c1: string, c2: string, t: number): string {
   return `rgb(${f(r1, r2)},${f(g1, g2)},${f(b1, b2)})`;
 }
 
-/* 胶囊标签：深色圆角底 + 柔和文字（学 Semantica 的浮签风格） */
+/* 节点标签：**平时是一行裸字，指到或选中的那一个才补一块底**。
+   从前它一直是个胶囊（深底 + 一圈 14% 的白描边），而在界面的语汇里那副样子
+   说的是「状态」——Ready、3 dropped、System admin。节点的名字不是状态，它就是
+   这个东西本身，却穿着状态的衣服，还比周围任何一个 chip 都亮。
+   现在画布安静下来，注意力在哪儿哪儿才实——这与「悬停压暗其余、选中只留一条
+   路」是同一条逻辑。 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function drawPillLabel(
+export function drawNodeLabel(
   ctx: CanvasRenderingContext2D,
   data: any,
   _settings: any,
 ): void {
   if (!data.label) return;
-  // hover 时悬浮卡（drawHoverCard）接管展示，底层 pill 隐去，避免双层标签
+  // hover 时悬浮卡（drawHoverCard）接管展示，底层标签隐去，避免双层
   if (data.hideBaseLabel) return;
-  /* 与界面上的 chip 同一副身材：字号 fine、内距 8/2、圆角 cell（4）。
-     从前字号跟着节点大小在 10–11 之间浮动——同一张图里两个节点的名字不一样大，
-     而它们是同一种东西 */
   const size = CANVAS_LABEL_SIZE;
   ctx.font = `500 ${size}px ${CANVAS_FONT}`;
   ctx.textBaseline = "middle";
   const padX = 8;
   const padY = 3;
-  const w = ctx.measureText(data.label).width + padX * 2;
-  const h = size + padY * 2;
-  const x = data.x + Math.max(data.size * 0.7, 12);
-  const y = data.y - Math.max(data.size * 0.9, 10) - h;
+  const w = ctx.measureText(data.label).width;
+  /* 名字默认挂在节点的右上方。**贴着画布边的那些翻过来**：放大之后节点常常
+     靠在视口边缘，名字照原样画就整条落在画布外——看着就是"放大之后字没了"。
+     够不着就翻到左边 / 下边：节点在屏幕上，名字就在屏幕上 */
+  const dx = Math.max(data.size * 0.7, 12);
+  const dy = Math.max(data.size * 0.9, 10) + size / 2 + padY;
+  const dpr = window.devicePixelRatio || 1;
+  const vw = ctx.canvas.width / dpr;
+  const x = data.x + dx + w + padX > vw ? data.x - dx - w : data.x + dx;
+  const y = data.y - dy - size / 2 < 0 ? data.y + dy : data.y - dy;
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.6)";
-  ctx.shadowBlur = 12;
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 4);
-  ctx.fillStyle = PILL_BG;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = PILL_BORDER;
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  if (data.labelSlab) {
+    // 选中的那一个：一块底，圆角 cell（4）、无描边——底已经把它托起来了
+    const h = size + padY * 2;
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
+    ctx.fillStyle = PILL_BG;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  } else {
+    /* 裸字：先描一圈画布色再填字（canvas 版的 paint-order: stroke fill），
+       连线从字底下穿过时不至于糊在一起 */
+    ctx.lineWidth = 3.5;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = LABEL_HALO;
+    ctx.strokeText(data.label, x, y);
+  }
   ctx.fillStyle = PILL_TEXT;
-  ctx.fillText(data.label, x + padX, y + h / 2);
+  ctx.fillText(data.label, x, y);
   ctx.restore();
 }
 
@@ -127,7 +153,7 @@ export function drawHoverCard(
   /* 卡片：标题 body/500、类型行 fine。**类型不再大写**——界面里没有一处
      大写拉字距的小标题（表格列头除外），画布也不该自成一套 */
   const titleSize = CANVAS_TITLE_SIZE;
-  const metaSize = CANVAS_LABEL_SIZE;
+  const metaSize = CANVAS_META_SIZE;
   const padX = 10;
   const padY = 7;
   const metaGap = 5;
@@ -142,14 +168,17 @@ export function drawHoverCard(
   const x = data.x + Math.max(data.size * 0.9, 16);
   const y = data.y - Math.max(data.size * 1.1, 16) - h;
 
+  /* 皮与界面上的浮层同一副（`.u-pop`：近实底 + 一条 line-strong 的边）。
+     它就是一个 tooltip——指到才有、指开就没，只是画在 canvas 上，所以数字
+     照抄而不是自己定一套 */
   ctx.shadowColor = "rgba(0,0,0,0.62)";
   ctx.shadowBlur = 15;
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, 8); // --radius-panel
-  ctx.fillStyle = "rgba(12,12,12,0.94)";
+  ctx.fillStyle = POP_BG;
   ctx.fill();
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(255,255,255,0.16)";
+  ctx.strokeStyle = PILL_BORDER; // --u-line-strong
   ctx.lineWidth = 1;
   ctx.stroke();
 

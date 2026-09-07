@@ -22,7 +22,7 @@ import {
   CANVAS_LABEL_SIZE,
   CANVAS_TEXT,
   CANVAS_TEXT_2,
-  drawPillLabel,
+  drawNodeLabel,
   drawWorldGrid,
   hexToRgb,
   HOVER_MUTE,
@@ -76,7 +76,6 @@ import {
   HOVER_ROW,
   IconButton,
   Input,
-  NativeSelect,
   Pill,
   Radio,
   REVEAL,
@@ -88,6 +87,7 @@ import {
   cn,
   localDate,
   GroupLabel,
+  SearchSelect,
 } from "../ui";
 import { usePopoverFlip } from "../ui/popoverFlip";
 import { useKb, useKbId } from "../kb";
@@ -434,6 +434,8 @@ export function Graph() {
   const hoverRef = useRef<string | null>(null);
   /** 鼠标停在哪条边上。用来把并进它的逆关系说法亮出来 */
   const hoverEdgeRef = useRef<string | null>(null);
+  /** 近到什么程度算「贴脸看」：到了就每条边都写字（见 updateEdgeLabels） */
+  const deepZoomRef = useRef(false);
   const filterRef = useRef<{
     hiddenTypes: Set<string>;
     activeNodes: Set<string> | null;
@@ -860,9 +862,16 @@ export function Graph() {
       labelFont: CANVAS_FONT,
       labelSize: CANVAS_LABEL_SIZE,
       labelColor: { color: CANVAS_TEXT },
-      labelRenderedSizeThreshold: 6,
-      labelDensity: 0.7,
-      labelGridCellSize: 140,
+      /* 标签按距离出没——离得远只看形状，走近了才认名字。**试过不按距离**
+         （阈值归零、只按拥挤程度筛）：缩远之后一百多个名字铺开互相压字，
+         读不出也点不准。
+         阈值 5、每 130px 见方留 0.8 个：只比原先松半档。**放宽到 3 / 1.2 试过
+         一轮，一屏上百个名字铺开，太吵**——这里要的是「远处认得出几个地标」，
+         不是「每个点都报名字」。放大时 sigma 自己按 1/ratio² 放开这个上限
+         （见 `getLabelsToDisplay`），越走近露得越全，不封顶 */
+      labelRenderedSizeThreshold: 5,
+      labelDensity: 0.8,
+      labelGridCellSize: 130,
       minCameraRatio: 0.04,
       maxCameraRatio: 8,
       /* 边的字与节点同一档（fine）、同一个次要色。从前是 9px/#a1a1a1——
@@ -870,7 +879,7 @@ export function Graph() {
       edgeLabelSize: CANVAS_LABEL_SIZE,
       edgeLabelColor: { color: CANVAS_TEXT_2 },
       edgeLabelFont: CANVAS_FONT,
-      defaultDrawNodeLabel: drawPillLabel,
+      defaultDrawNodeLabel: drawNodeLabel,
       defaultDrawNodeHover: drawHoverCard,
       nodeReducer: (node, attrs) => {
         const f = filterRef.current;
@@ -930,6 +939,8 @@ export function Graph() {
             res.size = Math.max(base * 1.02, 9.2);
             res.ringColor = mix(ownColor, "#ffffff", RING_SELECT_MIX);
             res.forceLabel = true;
+            // 选中的那一个补一块底：其余都压暗了，它得读得最清楚
+            res.labelSlab = true;
             res.zIndex = 3;
             return res;
           }
@@ -985,6 +996,8 @@ export function Graph() {
         const f = filterRef.current;
         const res = { ...attrs };
         const [s, t] = g.extremities(edge);
+        // 近距离下每条画得出来的边都写字（见 updateEdgeLabels）
+        if (deepZoomRef.current) res.forceLabel = true;
         /* 并进这条边的逆关系说法，接在本名后面：`PART OF ⁻¹ CONTAINS`。
            **只在关注它的时候显示**——常驻会把标签拉长一倍，而标签太长
            正是这次要治的毛病。
@@ -1168,9 +1181,21 @@ export function Graph() {
       hoverEdgeRef.current = null;
       sigma.refresh();
     });
-    // 边标签只在放大后出现（默认视距下太密，Semantica 同样克制）
-    const updateEdgeLabels = () =>
-      sigma.setSetting("renderEdgeLabels", sigma.getCamera().ratio < 0.7);
+    /* 边标签只在放大后出现（默认视距下太密，Semantica 同样克制）。
+       **再近一档就改成"看得见的线都写字"**：sigma 挑边标签的规矩是
+       「两端的节点名都在显示，才写这条边」（`edgeLabelsToDisplayFromNodes`），
+       而放大之后两端常常都在视口外，于是屏幕当中那条线反倒没有说法——
+       正是想看清一条关系的时候它消失了。`forceLabel` 是 sigma 留的后门，
+       打上就绕开那条启发式 */
+    const updateEdgeLabels = () => {
+      const ratio = sigma.getCamera().ratio;
+      sigma.setSetting("renderEdgeLabels", ratio < 0.7);
+      const deep = ratio < 0.35;
+      if (deep !== deepZoomRef.current) {
+        deepZoomRef.current = deep;
+        sigma.refresh({ skipIndexation: true });
+      }
+    };
     sigma.getCamera().on("updated", updateEdgeLabels);
     updateEdgeLabels();
 
@@ -1956,7 +1981,13 @@ function TimeScrubber({
           setPlaying(!playing);
         }}
       >
-        {playing ? <Pause size={13} /> : <Play size={13} />}
+        {/* 实心：播放/暂停这一对是媒体键的通用记号，空心的三角看着像
+            「展开」那类折叠柄。lucide 的图标默认只描边，填色要自己给 */}
+        {playing ? (
+          <Pause size={13} fill="currentColor" stroke="none" />
+        ) : (
+          <Play size={13} fill="currentColor" stroke="none" />
+        )}
       </IconButton>
 
       {/* 步长。**播放与柱子共用它**——从前柱子按年、播放按天，
@@ -2827,18 +2858,19 @@ function EntityPanel({
             />
           </Field>
           <Field label={S.graph.editType} className="mb-2">
-            <NativeSelect
+            {/* 类可能上千个（schema.org 一装就是 1010 个）：这一格要能打字过滤，
+                所以是 SearchSelect 而不是下拉——下拉是给小而有界的枚举的 */}
+            <SearchSelect
               size="sm"
               className="w-full"
               value={draftType}
-              onChange={(ev) => setDraftType(ev.target.value)}
-            >
-              {types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </NativeSelect>
+              onChange={setDraftType}
+              options={types.map((t) => ({
+                value: t.id,
+                label: t.label,
+                hint: t.key,
+              }))}
+            />
           </Field>
           <div className="flex items-center gap-2 pt-1">
             <Button
