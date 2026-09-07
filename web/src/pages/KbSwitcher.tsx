@@ -40,7 +40,7 @@ export function KbSwitcher({
         onClick={() => (open ? close() : setOpen(true))}
       >
         <span className="truncate text-body font-medium text-ink">{name}</span>
-        <ChevronDown size={12} className="shrink-0 text-ink-3" />
+        <ChevronDown size={12} className="shrink-0 text-ink-2" />
       </Button>
 
       {open && (
@@ -58,7 +58,7 @@ export function KbSwitcher({
             <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
               {name}
             </span>
-            <ChevronDown size={12} className="shrink-0 rotate-180 text-ink-3" />
+            <ChevronDown size={12} className="shrink-0 rotate-180 text-ink-2" />
           </div>
           <div className="u-scroll max-h-80 overflow-y-auto">
             {kbs.map((k) => (

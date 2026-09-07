@@ -62,14 +62,14 @@ export function PendingFactRow({
       <p className="text-small text-ink-2 italic">“{sentence(fact.quote)}”</p>
       <div className="mt-3 flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">{fact.subject_name}</span>
-        <span className="text-small text-ink-3">
+        <span className="text-small text-ink-2">
           —{" "}
           {fact.predicate_label ? (
             <span>{fact.predicate_label}</span>
           ) : (
             /* 本体里没有这个关系：显示原话，斜体标明它不是词表里的词（0010） */
             <span
-              className="italic text-ink-3"
+              className="italic text-ink-2"
               title={S.review.pendingNoPredicate}
             >
               {fact.proposed_predicate ?? S.graph.unknownPredicate}
@@ -78,14 +78,14 @@ export function PendingFactRow({
           →
         </span>
         <span className="text-body font-medium text-ink">{objectText(fact)}</span>
-        {range && <span className="text-small text-ink-3">({range})</span>}
+        {range && <span className="text-small text-ink-2">({range})</span>}
         {!fact.predicate_label && (
           <span className="u-chip u-chip-warn ml-auto">{S.review.pendingNoPredicateChip}</span>
         )}
       </div>
       <div className="mt-3 flex items-center gap-2">
         {fact.proposed_by_name && (
-          <span className="text-fine text-ink-3">
+          <span className="text-fine text-ink-2">
             {fact.proposed_token_name
               ? S.review.pendingSaidVia(
                   fact.proposed_by_name,
@@ -138,7 +138,7 @@ export function NodCard({ kbId, chunkId }: { kbId: string; chunkId: string }) {
   if (items.length === 0) return null;
   return (
     <div className="my-2 space-y-2">
-      <div className="text-small text-ink-3">{S.review.nodCardTitle(items.length)}</div>
+      <div className="text-small text-ink-2">{S.review.nodCardTitle(items.length)}</div>
       {items.map((f) => (
         <PendingFactRow
           key={f.id}

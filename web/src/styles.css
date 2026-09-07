@@ -9,9 +9,9 @@
      它们是给任意网页的通用刻度，这个产品的密度只需要这五级，多一级就是
      一页一个样。行高跟着字号定死，页面不再写 leading-*。
      **整体上移过一档**：从前是 11/12/13/15/20，三档挤在 11–13px 之内，
-     而 1px 的字号差人眼分辨不出——层次名义上有五级，实际靠的是颜色
-     （ink / ink-2 / ink-3）。挤着还让用得最多的那档（small，216 处）
-     成了事实上的正文，长说明读起来累。现在正文 14px，层次仍由颜色承担 */
+     而 1px 的字号差人眼分辨不出——层次名义上有五级，实际靠的是颜色。
+     挤着还让用得最多的那档（small，216 处）成了事实上的正文，长说明读起来
+     累。现在正文 14px */
   --text-fine: 12px;
   --text-fine--line-height: 16px;
   --text-small: 13px;
@@ -30,7 +30,6 @@
   --color-well: var(--u-well);
   --color-ink: var(--u-text);
   --color-ink-2: var(--u-text-2);
-  --color-ink-3: var(--u-text-3);
   --color-line: var(--u-line);
   --color-line-strong: var(--u-line-strong);
   --color-surface: var(--u-surface);
@@ -78,9 +77,12 @@
   --font-brand: "Marcellus", "Georgia", "Times New Roman", serif;
 
   --u-ground: #0a0a0a;
+  /* 字色两档，不是三档。第三档（原 #7c7c7c）取消了：它承担的是"次要里的
+     更次要"——占位符、时间戳、行尾计数——可这层意思在页面上已经由位置和
+     字号交代过一遍，再淡一档换来的只是读不清。两档说得清一件事：这行是
+     内容（ink），还是关于内容的（ink-2）。 */
   --u-text: #ededed;
-  --u-text-2: #b0b0b0;
-  --u-text-3: #7c7c7c;
+  --u-text-2: #a8a8a8;
 
   /* 单色 chrome：accent 也是中性亮灰，彩色只属于数据（实体色/状态语义色） */
   --u-accent: #d4d4d4;
@@ -406,7 +408,7 @@ body::before {
     box-shadow var(--u-fast);
 }
 .input-dark::placeholder {
-  color: var(--u-text-3);
+  color: var(--u-text-2);
 }
 .input-dark:hover:not(:disabled):not(:focus) {
   border-color: var(--u-line-strong);
@@ -565,7 +567,7 @@ select.input-dark option {
 
 /* 行里的小柄（树的折叠箭头）：不是按钮——按钮里不能再嵌按钮——但要有 hover */
 .u-toggle {
-  color: var(--u-text-3);
+  color: var(--u-text-2);
   transition: color var(--u-fast);
 }
 .u-toggle:hover {
@@ -689,7 +691,7 @@ select.input-dark option {
   color: var(--u-text);
 }
 .u-linkbtn.is-danger {
-  color: var(--u-text-3);
+  color: var(--u-text-2);
 }
 .u-linkbtn.is-danger:hover:not(:disabled) {
   color: var(--u-danger);
@@ -742,7 +744,7 @@ select.input-dark option {
   color: var(--u-text);
 }
 .u-input-bare::placeholder {
-  color: var(--u-text-3);
+  color: var(--u-text-2);
 }
 
 /* 顶栏里的小链接（Docs、返回） */
@@ -754,7 +756,7 @@ select.input-dark option {
   border-radius: var(--radius-cell);
   font-size: var(--text-small);
   line-height: var(--text-small--line-height);
-  color: var(--u-text-3);
+  color: var(--u-text-2);
   transition:
     color var(--u-fast),
     background-color var(--u-fast);

@@ -144,7 +144,7 @@ function Matches({ kbId, ruleId }: { kbId: string; ruleId: string }) {
   const rows = q.data?.matches ?? [];
   const total = q.data?.total ?? 0;
   if (!rows.length) {
-    return <p className="text-small text-ink-3">{S.ontology.ruleMatchesEmpty}</p>;
+    return <p className="text-small text-ink-2">{S.ontology.ruleMatchesEmpty}</p>;
   }
   return (
     <div className="space-y-2">
@@ -152,10 +152,10 @@ function Matches({ kbId, ruleId }: { kbId: string; ruleId: string }) {
         <div key={m.derived_id} className="space-y-1">
           <div className="flex flex-wrap items-baseline gap-2">
             <span className="text-small text-ink">{m.entity}</span>
-            <span className="text-fine text-ink-3">→ {m.concluded}</span>
+            <span className="text-fine text-ink-2">→ {m.concluded}</span>
             {/* 同一个实体会因为不同时段的读数出现好几次，写出这一段才不像重复 */}
             {m.valid_from && (
-              <span className="u-num text-fine text-ink-3">
+              <span className="u-num text-fine text-ink-2">
                 {S.ontology.ruleMatchSpan(
                   m.valid_from.slice(0, 10),
                   m.valid_to ? m.valid_to.slice(0, 10) : null,
@@ -165,14 +165,14 @@ function Matches({ kbId, ruleId }: { kbId: string; ruleId: string }) {
           </div>
           {/* 前提就是「凭什么」——列表没有它就跟一串凭空的判断没区别 */}
           {m.premises.length > 0 && (
-            <p className="text-fine text-ink-3">
+            <p className="text-fine text-ink-2">
               {S.ontology.ruleMatchBecause(m.premises.join(", "))}
             </p>
           )}
         </div>
       ))}
       {total > rows.length && (
-        <p className="u-num text-fine text-ink-3">
+        <p className="u-num text-fine text-ink-2">
           {S.ontology.ruleMatchesMore(rows.length, total)}
         </p>
       )}
@@ -306,7 +306,7 @@ export function RulesPanel({
           <>
             {S.ontology.rulesTitle}
             {list.length > 0 && (
-              <span className="ml-2 u-num text-small text-ink-3">{list.length}</span>
+              <span className="ml-2 u-num text-small text-ink-2">{list.length}</span>
             )}
           </>
         }
@@ -374,21 +374,21 @@ export function RulesPanel({
             </div>
           </div>
           {r.description && (
-            <p className="text-small leading-relaxed text-ink-3">
+            <p className="text-small leading-relaxed text-ink-2">
               {r.description}
             </p>
           )}
           {/* 规则读成一句话。这一段就是它的全部语义，没有别处再藏着条件 */}
           <p className="text-small leading-relaxed text-ink-2">
-            <span className="text-ink-3">{S.ontology.ruleSubject} </span>
+            <span className="text-ink-2">{S.ontology.ruleSubject} </span>
             {r.subject_label}
-            <span className="text-ink-3"> ({S.ontology.ruleSubjectHint})</span>
-            <span className="text-ink-3">, {S.ontology.ruleConditions} </span>
+            <span className="text-ink-2"> ({S.ontology.ruleSubjectHint})</span>
+            <span className="text-ink-2">, {S.ontology.ruleConditions} </span>
             {r.conditions.map((c, i) => (
               <span key={i}>
-                {i > 0 && <span className="text-ink-3"> · </span>}
+                {i > 0 && <span className="text-ink-2"> · </span>}
                 <span className="text-ink">{c.predicate_label}</span>{" "}
-                <span className="text-ink-3">
+                <span className="text-ink-2">
                   {OPS.find((o) => o.value === c.op)?.label() ?? c.op}
                 </span>{" "}
                 <span className="u-num text-ink">
@@ -396,7 +396,7 @@ export function RulesPanel({
                 </span>
               </span>
             ))}
-            <span className="text-ink-3"> → {S.ontology.ruleConcludes} </span>
+            <span className="text-ink-2"> → {S.ontology.ruleConcludes} </span>
             <span className="text-ink">
               {r.conclusion === "typing"
                 ? r.conclude_type_label
@@ -405,7 +405,7 @@ export function RulesPanel({
           </p>
           {opened === r.id && (
             <div className="border-t border-line pt-2">
-              <p className="mb-2 text-fine text-ink-3">
+              <p className="mb-2 text-fine text-ink-2">
                 {S.ontology.ruleMatchesTitle}
               </p>
               <Matches kbId={kbId} ruleId={r.id} />
@@ -415,13 +415,13 @@ export function RulesPanel({
       ))}
 
       {!list.length && !draft && (
-        <p className="text-small text-ink-3">{S.ontology.rulesEmpty}</p>
+        <p className="text-small text-ink-2">{S.ontology.rulesEmpty}</p>
       )}
 
       {draft ? (
         <Panel className="space-y-3 p-4">
           {draft.id && (
-            <p className="text-fine text-ink-3">{S.ontology.ruleEditing}</p>
+            <p className="text-fine text-ink-2">{S.ontology.ruleEditing}</p>
           )}
           <Input
             value={draft.name}
@@ -436,7 +436,7 @@ export function RulesPanel({
             className="w-full"
           />
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-fine text-ink-3">
+            <span className="shrink-0 text-fine text-ink-2">
               {S.ontology.ruleSubject}
             </span>
             {draft.id ? (
@@ -455,7 +455,7 @@ export function RulesPanel({
           </div>
 
           <div className="space-y-2">
-            <div className="text-fine text-ink-3">
+            <div className="text-fine text-ink-2">
               {S.ontology.ruleConditions}
             </div>
             {draft.conditions.map((c, i) => (
@@ -533,7 +533,7 @@ export function RulesPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="shrink-0 text-fine text-ink-3">
+            <span className="shrink-0 text-fine text-ink-2">
               {S.ontology.ruleConcludes}
             </span>
             <Dropdown

@@ -26,11 +26,11 @@ const KIND_ICON = {
 } as const;
 
 const KIND_TONE: Record<string, string> = {
-  asserted: "text-ink-3",
+  asserted: "text-ink-2",
   corrected: "text-warn",
   rejected: "text-danger",
-  merged: "text-ink-3",
-  retyped: "text-ink-3",
+  merged: "text-ink-2",
+  retyped: "text-ink-2",
   retype_reverted: "text-warn",
 };
 
@@ -92,22 +92,22 @@ function EventRow({ e }: { e: EntityHistoryEvent }) {
           <span className="text-small font-medium text-ink-2">
             {S.graph.historyKind[e.kind] ?? e.kind}
           </span>
-          {note && <span className="u-num text-fine text-ink-3">{note}</span>}
+          {note && <span className="u-num text-fine text-ink-2">{note}</span>}
         </div>
         {/* 改类事件没有谓词也没有宾语，正文换成类的两端。
             起点为空 = 从「未分类」改过来，0009 之后最常见的一种 */}
         {e.kind === "retyped" || e.kind === "retype_reverted" ? (
           <div className="mt-1 text-body text-ink-2 truncate">
-            <span className="text-small text-ink-3">
+            <span className="text-small text-ink-2">
               {e.from_type_label ?? S.graph.untyped} →{" "}
             </span>
             <span className="text-ink">{e.to_type_label}</span>
           </div>
         ) : (
           <div className="mt-1 text-body text-ink-2 truncate">
-            <span className="text-small text-ink-3">
+            <span className="text-small text-ink-2">
               {e.direction === "in" ? "← " : ""}
-              <span className={e.predicate_label === null ? "italic text-ink-3" : undefined}>
+              <span className={e.predicate_label === null ? "italic text-ink-2" : undefined}>
                 {e.predicate_label ?? S.graph.unknownPredicate}
               </span>
               {e.direction === "in" ? "" : " →"}
@@ -115,7 +115,7 @@ function EventRow({ e }: { e: EntityHistoryEvent }) {
             <span className="text-ink">{objectText(e)}</span>
           </div>
         )}
-        <div className="mt-1 flex items-center gap-2 text-fine text-ink-3">
+        <div className="mt-1 flex items-center gap-2 text-fine text-ink-2">
           <span className="u-num">{ymd(e.at)}</span>
           <span>·</span>
           {/* 归因：人名，或引擎（抽取写入 / 时态对账自动闭合） */}
@@ -149,14 +149,14 @@ export function EntityHistory({ kbId, entityId }: { kbId: string; entityId: stri
   });
 
   const total = q.data?.total ?? 0;
-  if (q.isPending) return <p className="p-2 text-body text-ink-3">{S.nav.loading}</p>;
+  if (q.isPending) return <p className="p-2 text-body text-ink-2">{S.nav.loading}</p>;
   // 只有"一条都没有"才是空。记录轴上首次断言本身就是一次事件——
   // "我们何时、从哪份文档得知这件事"是这条轴要回答的问题的一半
-  if (total === 0) return <p className="p-2 text-small text-ink-3">{S.graph.historyEmpty}</p>;
+  if (total === 0) return <p className="p-2 text-small text-ink-2">{S.graph.historyEmpty}</p>;
 
   return (
     <div>
-      <p className="px-2 pb-2 text-fine text-ink-3">{S.graph.historyHint}</p>
+      <p className="px-2 pb-2 text-fine text-ink-2">{S.graph.historyHint}</p>
       <div className="divide-y divide-line">
         {/* key 里用 fact_id ?? at：改类事件没有 fact_id */}
         {(q.data?.events ?? []).map((e) => (

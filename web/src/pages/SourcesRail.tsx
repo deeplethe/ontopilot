@@ -95,7 +95,7 @@ export const SYNCING_KINDS = new Set([
 ]);
 
 export const SYNC_DOT: Record<SourceView["last_sync_status"], string> = {
-  never: "bg-ink-3",
+  never: "bg-ink-2",
   queued: "bg-warn",
   running: "bg-warn animate-pulse",
   ok: "bg-ok",

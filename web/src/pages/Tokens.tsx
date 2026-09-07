@@ -88,7 +88,7 @@ function IssuedPanel({
   return (
     <div className="glass rounded-lg p-6 mb-4 border border-warn/40">
       <div className="text-body font-medium text-ink">{S.account.issuedTitle}</div>
-      <p className="mt-1 text-small text-ink-3">{S.account.issuedHint}</p>
+      <p className="mt-1 text-small text-ink-2">{S.account.issuedHint}</p>
       <div className="mt-3 flex items-center gap-2">
         <code className="flex-1 min-w-0 truncate rounded-lg bg-well px-3 py-2 font-mono text-small text-ink">
           {token}
@@ -99,7 +99,7 @@ function IssuedPanel({
       <div className="mt-6 flex items-baseline justify-between gap-3 flex-wrap">
         <div className="text-body font-medium text-ink">{S.account.mcpTitle}</div>
         {candidates.length > 1 && (
-          <label className="flex items-center gap-2 text-small text-ink-3">
+          <label className="flex items-center gap-2 text-small text-ink-2">
             {S.account.mcpBase}
             <NativeSelect size="sm"
               value={kbId}
@@ -114,7 +114,7 @@ function IssuedPanel({
           </label>
         )}
       </div>
-      <p className="mt-1 text-small text-ink-3">{S.account.mcpHint}</p>
+      <p className="mt-1 text-small text-ink-2">{S.account.mcpHint}</p>
       <div className="mt-2 relative">
         <pre className="rounded-lg bg-well px-3 py-2 font-mono text-small text-ink-2 overflow-x-auto u-scroll">
           {snippet}
@@ -153,9 +153,9 @@ function TokenRow({
   return (
     <div className={`glass rounded-lg px-4 py-3 ${revoked ? "opacity-55" : ""}`}>
       <div className="flex items-center gap-2 flex-wrap">
-        <KeyRound size={13} className="text-ink-3 shrink-0" />
+        <KeyRound size={13} className="text-ink-2 shrink-0" />
         <span className="text-body font-medium text-ink">{t.name}</span>
-        <code className="font-mono text-fine text-ink-3">{t.token_prefix}…</code>
+        <code className="font-mono text-fine text-ink-2">{t.token_prefix}…</code>
         <Chip tone={t.scope === "write" ? "warn" : "neutral"}>
           {t.scope === "write" ? S.account.scopeWrite : S.account.scopeRead}
         </Chip>
@@ -181,7 +181,7 @@ function TokenRow({
           </div>
         )}
       </div>
-      <div className="mt-2 text-small text-ink-3 flex gap-x-3 gap-y-1 flex-wrap u-num">
+      <div className="mt-2 text-small text-ink-2 flex gap-x-3 gap-y-1 flex-wrap u-num">
         <span title={t.kb_ids?.length ? bases : undefined}>
           {t.kb_ids?.length ? S.account.nBases(t.kb_ids.length) : S.account.allBases}
         </span>
@@ -245,9 +245,9 @@ export function Tokens() {
 
   const field = (label: string, node: React.ReactNode, hint?: string) => (
     <div className="mb-4">
-      <div className="mb-1 text-fine font-medium text-ink-3">{label}</div>
+      <div className="mb-1 text-fine font-medium text-ink-2">{label}</div>
       {node}
-      {hint && <p className="mt-1 text-fine text-ink-3">{hint}</p>}
+      {hint && <p className="mt-1 text-fine text-ink-2">{hint}</p>}
     </div>
   );
 
@@ -341,7 +341,7 @@ export function Tokens() {
 
       <h2 className="text-body font-medium text-ink mb-3">{S.account.yourTokens}</h2>
       {rows.length === 0 ? (
-        <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+        <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
           {S.account.noTokens}
         </div>
       ) : (

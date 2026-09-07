@@ -1238,7 +1238,7 @@ export function Graph() {
   }, [data.data]);
 
   if (!kb)
-    return <div className="p-8 text-body text-ink-3">{S.nav.loading}</div>;
+    return <div className="p-8 text-body text-ink-2">{S.nav.loading}</div>;
 
   const empty = data.isSuccess && data.data.nodes.length === 0;
   const nodeCount = data.data?.nodes.length ?? 0;
@@ -1288,7 +1288,7 @@ export function Graph() {
                     />
                     <span className="truncate">{c.name}</span>
                     {c.disambiguator && (
-                      <span className="truncate text-small text-ink-3">
+                      <span className="truncate text-small text-ink-2">
                         · {c.disambiguator}
                       </span>
                     )}
@@ -1387,7 +1387,7 @@ export function Graph() {
                       与通知/用户卡片的关闭键跟触发键原位重合是同一个道理 */}
                   <Pill className="mb-2 w-full" onClick={() => legendPop.close()}>
                     {S.graph.legendMore(types.length)}
-                    <X size={11} className="ml-auto text-ink-3" />
+                    <X size={11} className="ml-auto text-ink-2" />
                   </Pill>
                   <Input
                     size="sm"
@@ -1437,7 +1437,7 @@ export function Graph() {
                             <span
                               className={cn(
                                 "truncate text-small",
-                                hiddenTypes.has(key) ? "text-ink-3 line-through" : "text-ink",
+                                hiddenTypes.has(key) ? "text-ink-2 line-through" : "text-ink",
                               )}
                             >
                               {t.label}
@@ -1459,7 +1459,7 @@ export function Graph() {
                           >
                             {S.graph.legendOnly}
                           </Button>
-                          <span className="u-num shrink-0 text-fine text-ink-3">
+                          <span className="u-num shrink-0 text-fine text-ink-2">
                             {t.count}
                           </span>
                         </div>
@@ -1468,7 +1468,7 @@ export function Graph() {
                       ([, t]) =>
                         !t.label.toLowerCase().includes(legendQ.toLowerCase()),
                     ) && (
-                      <div className="px-2 py-2 text-small text-ink-3">
+                      <div className="px-2 py-2 text-small text-ink-2">
                         {S.graph.legendNone}
                       </div>
                     )}
@@ -1517,7 +1517,7 @@ export function Graph() {
               +
             </IconButton>
           </div>
-          <div className="pointer-events-none pt-1 u-num text-fine text-ink-3">
+          <div className="pointer-events-none pt-1 u-num text-fine text-ink-2">
           {/* 画满上限时说清「画了多少 / 共多少」。**这个数从前是上限冒充规模**——
               一个上万实体的库右上角永远写着 150 */}
           {capped ? (
@@ -1971,7 +1971,7 @@ function TimeScrubber({
         }))}
       />
 
-      <span className="shrink-0 u-num text-fine text-ink-3">
+      <span className="shrink-0 u-num text-fine text-ink-2">
         {minYear}
       </span>
 
@@ -2074,7 +2074,7 @@ function TimeScrubber({
         />
       </div>
 
-      <span className="shrink-0 u-num text-fine text-ink-3">
+      <span className="shrink-0 u-num text-fine text-ink-2">
         {maxYear}
       </span>
 
@@ -2234,11 +2234,11 @@ function DerivedPanel({
 
       <dl className="mt-2 space-y-1 text-fine">
         <div className="flex justify-between gap-3">
-          <dt className="text-ink-3">{S.graph.derivedCountLabel}</dt>
+          <dt className="text-ink-2">{S.graph.derivedCountLabel}</dt>
           <dd className="u-num text-ink">{count}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-ink-3">{S.graph.derivedStateLabel}</dt>
+          <dt className="text-ink-2">{S.graph.derivedStateLabel}</dt>
           <dd className={on ? "text-ink" : "text-warn"}>
             {on
               ? S.graph.derivedOn(kb.data!.inference_interval_minutes)
@@ -2246,7 +2246,7 @@ function DerivedPanel({
           </dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-ink-3">{S.graph.derivedLastLabel}</dt>
+          <dt className="text-ink-2">{S.graph.derivedLastLabel}</dt>
           <dd className="u-num text-ink">
             {age === null ? S.graph.derivedNever : S.graph.derivedAgo(age)}
           </dd>
@@ -2322,7 +2322,7 @@ function DerivedRow({
         ) : (
           <span className="truncate text-body text-ink">{otherName}</span>
         )}
-        <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-3">
+        <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-2">
           {d.premises.length}
         </span>
         </div>
@@ -2349,7 +2349,7 @@ function ProofChain({ kbId, d }: { kbId: string; d: DerivedFact }) {
   return (
     <div>
       {proof.isPending && (
-        <p className="text-fine text-ink-3">{S.graph.proofLoading}</p>
+        <p className="text-fine text-ink-2">{S.graph.proofLoading}</p>
       )}
       {steps && <ProofSteps kbId={kbId} steps={steps} />}
       {/* 派生已失效、证明取不到：退回列表里带来的那几行文本 */}
@@ -2361,7 +2361,7 @@ function ProofChain({ kbId, d }: { kbId: string; d: DerivedFact }) {
             </li>
           ))}
           {d.premises.length === 0 && (
-            <li className="text-fine text-ink-3">{S.graph.derivedNoProof}</li>
+            <li className="text-fine text-ink-2">{S.graph.derivedNoProof}</li>
           )}
         </ol>
       )}
@@ -2376,12 +2376,12 @@ function ProofSteps({ kbId, steps }: { kbId: string; steps: ProofStep[] }) {
       {steps.map((st) => (
         <li key={st.fact_id} className="text-fine">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="u-num text-fine text-ink-3 shrink-0">
+            <span className="u-num text-fine text-ink-2 shrink-0">
               {S.graph.proofStep(st.seq + 1)}
             </span>
-            <span className={st.retracted ? "text-ink-3 line-through" : "text-ink-2"}>
+            <span className={st.retracted ? "text-ink-2 line-through" : "text-ink-2"}>
               {st.subject}
-              <span className="text-ink-3"> — {st.predicate ?? "?"} → </span>
+              <span className="text-ink-2"> — {st.predicate ?? "?"} → </span>
               {st.object ?? "?"}
             </span>
             {st.retracted && (
@@ -2395,7 +2395,7 @@ function ProofSteps({ kbId, steps }: { kbId: string; steps: ProofStep[] }) {
                 to="/kb/$kbId/doc/$docId"
                 params={{ kbId, docId: ev.document_id }}
                 search={{ chunk: ev.chunk_id }}
-                className="u-hover-ink block text-ink-3"
+                className="u-hover-ink block text-ink-2"
               >
                 <div className="line-clamp-2 italic">
                   {ev.quote ? `“${ev.quote}”` : S.graph.noQuote}
@@ -2404,7 +2404,7 @@ function ProofSteps({ kbId, steps }: { kbId: string; steps: ProofStep[] }) {
                   {S.graph.sectionRef(ev.filename, ev.seq + 1)}
                   {ev.stale && (
                     <span
-                      className="ml-2 u-num text-fine text-ink-3"
+                      className="ml-2 u-num text-fine text-ink-2"
                       title={S.graph.staleEvidenceHint}
                     >
                       {S.graph.fromVersion(ev.doc_version)}
@@ -2422,7 +2422,7 @@ function ProofSteps({ kbId, steps }: { kbId: string; steps: ProofStep[] }) {
               </Link>
             ))}
             {st.evidence.length === 0 && (
-              <p className="text-ink-3">{S.graph.noEvidence}</p>
+              <p className="text-ink-2">{S.graph.noEvidence}</p>
             )}
           </div>
         </li>
@@ -2463,8 +2463,8 @@ function BlockedRow({
       onToggle={onToggle}
       header={
         <div className="flex items-center gap-2">
-        {out ? <ArrowRight size={10} className="shrink-0 text-ink-3" /> : <ArrowLeft size={10} className="shrink-0 text-ink-3" />}
-        <span className="shrink-0 text-fine text-ink-3">{b.predicate}</span>
+        {out ? <ArrowRight size={10} className="shrink-0 text-ink-2" /> : <ArrowLeft size={10} className="shrink-0 text-ink-2" />}
+        <span className="shrink-0 text-fine text-ink-2">{b.predicate}</span>
         <span
           role="link"
           tabIndex={0}
@@ -2482,7 +2482,7 @@ function BlockedRow({
         >
           {otherName}
         </span>
-        <span className="ml-auto shrink-0 pl-2 text-fine text-ink-3">
+        <span className="ml-auto shrink-0 pl-2 text-fine text-ink-2">
           {S.graph.ruleNames[b.rule] ?? b.rule}
         </span>
         </div>
@@ -2502,7 +2502,7 @@ function BlockedRow({
               search: { queue: "violations", item: b.violation_id },
             })
           }
-          className="u-inline-link ml-auto shrink-0 text-ink-3"
+          className="u-inline-link ml-auto shrink-0 text-ink-2"
         >
           {S.graph.blockedReview} →
         </span>
@@ -2510,7 +2510,7 @@ function BlockedRow({
       {open && (
         <div>
           {proof.isPending && (
-            <p className="text-fine text-ink-3">{S.graph.proofLoading}</p>
+            <p className="text-fine text-ink-2">{S.graph.proofLoading}</p>
           )}
           {proof.data?.steps && (
             <ProofSteps kbId={kbId} steps={proof.data.steps} />
@@ -2781,7 +2781,7 @@ function EntityPanel({
                 </span>
               </div>
               {/* 消歧后缀找不到关联事实时兜底成类型标签，那就与后面的类型重复了 */}
-              <div className="mt-1 text-small text-ink-3">
+              <div className="mt-1 text-small text-ink-2">
                 {e.disambiguator && e.disambiguator !== e.type_label
                   ? `${e.disambiguator} · `
                   : ""}
@@ -2860,7 +2860,7 @@ function EntityPanel({
           <div className="flex items-start justify-between gap-2">
             <p className="text-fine text-ink-2">
               {S.graph.sameNameNote(sameName.length)}{" "}
-              <span className="text-ink-3">{S.graph.sameNameHint}</span>
+              <span className="text-ink-2">{S.graph.sameNameHint}</span>
             </p>
             <IconButton
               size="sm"
@@ -2974,7 +2974,7 @@ function EntityPanel({
               >
                 <span
                   className={
-                    gr.label === null ? "italic text-ink-3" : undefined
+                    gr.label === null ? "italic text-ink-2" : undefined
                   }
                   title={
                     gr.label && gr.inferred
@@ -3015,7 +3015,7 @@ function EntityPanel({
         )}
 {view === "derived" && (
           <>
-            <p className="px-2 pb-2 pt-1 text-fine leading-relaxed text-ink-3">
+            <p className="px-2 pb-2 pt-1 text-fine leading-relaxed text-ink-2">
               {S.graph.derivedHint}
             </p>
             {/* **与 Relations 同一个骨架**：方向箭头 + 谓词 + 条数的小标题，
@@ -3036,7 +3036,7 @@ function EntityPanel({
                   count={gr.rows.length > 1 ? gr.rows.length : undefined}
                 >
                   {gr.predicate}
-                  <span className="ml-2 font-normal text-ink-3">{gr.rule}</span>
+                  <span className="ml-2 font-normal text-ink-2">{gr.rule}</span>
                 </GroupLabel>
                 <div>
                   {gr.rows.map((d) => {
@@ -3064,7 +3064,7 @@ function EntityPanel({
                 <GroupLabel className="px-2 pb-1 pt-2" tone="contest" count={blocked.length}>
                   {S.graph.blockedTitle}
                 </GroupLabel>
-                <p className="px-2 pb-2 text-fine leading-relaxed text-ink-3">
+                <p className="px-2 pb-2 text-fine leading-relaxed text-ink-2">
                   {S.graph.blockedHint}
                 </p>
                 {blocked.map((b) => (
@@ -3089,7 +3089,7 @@ function EntityPanel({
         {view !== "history" &&
           view !== "derived" &&
           detail.data?.facts.length === 0 && (
-            <p className="text-body text-ink-3 p-2">{S.graph.noFacts}</p>
+            <p className="text-body text-ink-2 p-2">{S.graph.noFacts}</p>
           )}
       </div>
     </div>
@@ -3135,7 +3135,7 @@ function TimelineView({
           />
         ))}
         {dated.length === 0 && (
-          <p className="py-2 text-small text-ink-3">
+          <p className="py-2 text-small text-ink-2">
             {S.graph.timelineEmpty}
           </p>
         )}
@@ -3185,16 +3185,16 @@ function TimelineRow({
       title={fact.stale ? S.graph.staleFactHint : undefined}
       header={
         <>
-        <div className="flex items-center gap-2 u-num text-fine text-ink-3">
+        <div className="flex items-center gap-2 u-num text-fine text-ink-2">
           {interval || "—"}
           {fact.corrected && (
-            <span className="text-ink-3" title={S.graph.correctedHint}>
+            <span className="text-ink-2" title={S.graph.correctedHint}>
               ⟲
             </span>
           )}
           <span className="ml-auto flex items-center gap-2">
             {isOpenEnded && fact.last_evidence_time && (
-              <span className="text-ink-3">
+              <span className="text-ink-2">
                 {S.graph.lastConfirmed(localDate(fact.last_evidence_time))}
               </span>
             )}
@@ -3223,12 +3223,12 @@ function TimelineRow({
           </span>
         </div>
         <div className="mt-1 flex items-center gap-2 text-body text-ink">
-          <span className="text-ink-3 text-small">
+          <span className="text-ink-2 text-small">
             {fact.direction === "in" ? "←" : "→"}{" "}
             <span
               className={
                 fact.predicate_label === null
-                  ? "italic text-ink-3"
+                  ? "italic text-ink-2"
                   : undefined
               }
               title={
@@ -3500,7 +3500,7 @@ function FactRow({
         )}
         {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
         {interval && (
-          <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-3">
+          <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-2">
             {interval}
           </span>
         )}
@@ -3526,7 +3526,7 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
           to="/kb/$kbId/doc/$docId"
           params={{ kbId, docId: ev.document_id }}
           search={{ chunk: ev.chunk_id }}
-          className="u-hover-ink block text-small text-ink-3"
+          className="u-hover-ink block text-small text-ink-2"
         >
           {/* 原文说的谓词，只在它与事实行上显示的不同时才写出来。本体外的谓词
               事实行上已经显示原文说法（0052），相同的话再写一遍是噪声；
@@ -3544,7 +3544,7 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
             {S.graph.sectionRef(ev.filename, ev.seq + 1)}
             {ev.stale && (
               <span
-                className="ml-2 u-num text-fine text-ink-3"
+                className="ml-2 u-num text-fine text-ink-2"
                 title={S.graph.staleEvidenceHint}
               >
                 {S.graph.fromVersion(ev.doc_version)}
@@ -3562,7 +3562,7 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
         </Link>
       ))}
       {evidence.data?.evidence.length === 0 && (
-        <p className="text-small text-ink-3">{S.graph.noEvidence}</p>
+        <p className="text-small text-ink-2">{S.graph.noEvidence}</p>
       )}
       {/* 置信度只在低到值得怀疑时说话（与 Review 低置信口径一致），常规不标 */}
       {fact.confidence < 0.75 && (

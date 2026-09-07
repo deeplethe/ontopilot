@@ -701,7 +701,7 @@ function PanelHeader({
         </span>
         {builtin && <Chip tone="neutral">{S.ontology.builtin}</Chip>}
       </div>
-      {sub && <div className="mt-1 text-small text-ink-3">{sub}</div>}
+      {sub && <div className="mt-1 text-small text-ink-2">{sub}</div>}
     </>
   );
 }
@@ -720,7 +720,7 @@ function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
   const rows = q.data?.entities ?? [];
   // 这一段自己就是 Instances 那个 tab：没有实例就说一句，不顶同名的标题
   if (!q.isPending && total === 0)
-    return <p className="text-small text-ink-3">{S.ontology.schemaNoInstances}</p>;
+    return <p className="text-small text-ink-2">{S.ontology.schemaNoInstances}</p>;
 
   return (
     // 平铺在面板里：面板已经是一块面，里面不再套卡片
@@ -863,7 +863,7 @@ function RelationshipsCard({
     // 这一段自己就是 Relations 那个 tab，不再顶一个同名的标题
     <div>
       {outgoing.length === 0 && incoming.length === 0 ? (
-        <p className="mb-2 text-small text-ink-3">
+        <p className="mb-2 text-small text-ink-2">
           {S.ontology.schemaNoRelationships}
         </p>
       ) : (
@@ -903,7 +903,7 @@ function RelationshipsCard({
         </div>
       )}
       <div className="border-t border-line pt-3">
-        <p className="text-fine text-ink-3 mb-2">
+        <p className="text-fine text-ink-2 mb-2">
           {S.ontology.schemaConnectHint}
         </p>
         <div className="flex gap-2 mb-2">
@@ -981,7 +981,7 @@ export function AttributesCard({
 
   return (
     <div>
-      <p className="mb-2 text-fine text-ink-3">
+      <p className="mb-2 text-fine text-ink-2">
         {S.ontology.attributesHint}
       </p>
       <div className="divide-y divide-line">
@@ -1012,7 +1012,7 @@ export function AttributesCard({
                   {S.ontology.datatypeNames[a.datatype ?? "text"]}
                 </Chip>
                 {a.unit && (
-                  <span className="shrink-0 text-small text-ink-3">{a.unit}</span>
+                  <span className="shrink-0 text-small text-ink-2">{a.unit}</span>
                 )}
                 {a.functional && <Chip tone="info">1:1</Chip>}
               </span>
@@ -1161,7 +1161,7 @@ function AttributeForm({
         <div className="flex-1">
           <label className={lbl}>
             {S.ontology.attrUnit}{" "}
-            <span className="text-ink-3">
+            <span className="text-ink-2">
               ({S.ontology.attrUnitHint})
             </span>
           </label>
@@ -1508,7 +1508,7 @@ export function ClassForm({
           {/* key 是纯技术标识：已存在时干脆不展示，只在创建时输入 */}
           {existing?.builtin && <Chip tone="neutral">{S.ontology.builtin}</Chip>}
           {existing && (
-            <span className="ml-auto text-small text-ink-3">
+            <span className="ml-auto text-small text-ink-2">
               {S.ontology.usage(existing.usage)}
             </span>
           )}
@@ -1518,7 +1518,7 @@ export function ClassForm({
         <div>
           <label className={lbl}>
             {S.ontology.key}{" "}
-            <span className="text-ink-3">({S.ontology.keyHint})</span>
+            <span className="text-ink-2">({S.ontology.keyHint})</span>
           </label>
           <Input
             value={key}
@@ -1583,7 +1583,7 @@ export function ClassForm({
           emptyHint={S.ontology.noParent}
         />
         {parents.length > 1 && (
-          <p className="mt-1 text-fine text-ink-3">
+          <p className="mt-1 text-fine text-ink-2">
             {S.ontology.primaryParentHint}
           </p>
         )}
@@ -1593,7 +1593,7 @@ export function ClassForm({
           在这两者打架时报出「这个类永远不可能有实例」 */}
       <div>
         <label className={lbl}>{S.ontology.disjoint}</label>
-        <p className="text-fine leading-relaxed text-ink-3 mb-2">
+        <p className="text-fine leading-relaxed text-ink-2 mb-2">
           {S.ontology.disjointHint}
         </p>
         <MultiSearchSelect
@@ -1623,7 +1623,7 @@ export function ClassForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <p className="mt-1 text-fine text-ink-3">
+        <p className="mt-1 text-fine text-ink-2">
           {S.ontology.descriptionHint}
         </p>
       </div>
@@ -1805,7 +1805,7 @@ export function PropertyForm({
           </span>
           {existing?.builtin && <Chip tone="neutral">{S.ontology.builtin}</Chip>}
           {existing && (
-            <span className="ml-auto text-small text-ink-3">
+            <span className="ml-auto text-small text-ink-2">
               {S.ontology.usage(existing.usage)}
             </span>
           )}
@@ -1815,7 +1815,7 @@ export function PropertyForm({
         <div>
           <label className={lbl}>
             {S.ontology.key}{" "}
-            <span className="text-ink-3">({S.ontology.keyHint})</span>
+            <span className="text-ink-2">({S.ontology.keyHint})</span>
           </label>
           <Input
             value={key}
@@ -1837,7 +1837,7 @@ export function PropertyForm({
           与这里显示什么无关（docs/decisions/0004 定的是提示词里必须用 key） */}
       <div>
         <label className={lbl}>{S.ontology.signature}</label>
-        <p className="text-fine leading-relaxed text-ink-3 mb-2">
+        <p className="text-fine leading-relaxed text-ink-2 mb-2">
           {S.ontology.signatureHint}
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -1887,7 +1887,7 @@ export function PropertyForm({
           加边。看不出后果的开关，人只会照着直觉乱勾。 */}
       <div>
         <label className={lbl}>{S.ontology.axioms}</label>
-        <p className="text-fine leading-relaxed text-ink-3 mb-2">
+        <p className="text-fine leading-relaxed text-ink-2 mb-2">
           {S.ontology.axiomsHint}
         </p>
         <div className="space-y-2">
@@ -1951,7 +1951,7 @@ export function PropertyForm({
           ).map(([value, set, title, hint, options], i) => (
             <div key={i}>
               <div className="text-body text-ink">{title}</div>
-              <p className="text-fine leading-relaxed text-ink-3 mb-1">
+              <p className="text-fine leading-relaxed text-ink-2 mb-1">
                 {hint}
               </p>
               <SearchSelect
@@ -1967,7 +1967,7 @@ export function PropertyForm({
           {/* 选了之后当场把话说全。**这两条推出来的事实主宾未必同向**——
               逆要对调，子属性不对调，只看名字分不出来，写出来就分得出 */}
           {(inverseOf || subPropertyOf) && (
-            <div className="text-fine leading-relaxed text-ink-3 space-y-1">
+            <div className="text-fine leading-relaxed text-ink-2 space-y-1">
               {inverseOf && (
                 <div>
                   {S.ontology.linkMeansInverse(
@@ -1995,7 +1995,7 @@ export function PropertyForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <p className="mt-1 text-fine text-ink-3">
+        <p className="mt-1 text-fine text-ink-2">
           {S.ontology.descriptionHint}
         </p>
       </div>
@@ -2105,7 +2105,7 @@ function RefinePanel({
       {/* ---- 只算不写的那一步 */}
       {preview && (
         <div className="space-y-2">
-          <p className="text-small text-ink-3">
+          <p className="text-small text-ink-2">
             {preview.length === 0
               ? S.ontology.refineNothing
               : S.ontology.refineCandidates(preview.length)}
@@ -2114,7 +2114,7 @@ function RefinePanel({
             <div key={s.entity_id} className="glass rounded-lg p-3">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-body text-ink">{s.name}</span>
-                <span className="text-fine text-ink-3">
+                <span className="text-fine text-ink-2">
                   {s.coarse ?? S.graph.untyped}
                 </span>
                 {s.specific_type && (
@@ -2122,13 +2122,13 @@ function RefinePanel({
                     {S.ontology.refineModelSays(s.specific_type)}
                   </span>
                 )}
-                <span className="ml-auto u-num text-fine text-ink-3">
+                <span className="ml-auto u-num text-fine text-ink-2">
                   {S.review.factsCount(s.fact_count)}
                 </span>
               </div>
               {/* **把送去检索的那段字显示出来**：找不着的时候，第一个要看的
                   就是我们拿什么去找的，而不是猜画像还是类描述的问题 */}
-              <p className="mt-1 text-fine text-ink-3 line-clamp-2">
+              <p className="mt-1 text-fine text-ink-2 line-clamp-2">
                 {s.profile}
               </p>
               <div className="mt-2 flex flex-wrap gap-1">
@@ -2142,7 +2142,7 @@ function RefinePanel({
                   </span>
                 ))}
                 {s.candidates.length === 0 && (
-                  <span className="text-fine text-ink-3">
+                  <span className="text-fine text-ink-2">
                     {S.ontology.refineNoCandidates}
                   </span>
                 )}
@@ -2173,14 +2173,14 @@ function RefinePanel({
 
           {outcome.for_review.length > 0 && (
             <div className="space-y-2">
-              <p className="text-small text-ink-3">
+              <p className="text-small text-ink-2">
                 {S.ontology.refineForReview(outcome.for_review.length)}
               </p>
               {outcome.for_review.map((r) => (
                 <div key={r.entity_id} className="glass rounded-lg p-3">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-body text-ink">{r.name}</span>
-                    <span className="text-fine text-ink-3">
+                    <span className="text-fine text-ink-2">
                       {r.coarse ?? S.graph.untyped} → {r.choice}
                     </span>
                     {r.crosses_axis && (
@@ -2188,12 +2188,12 @@ function RefinePanel({
                         {S.ontology.refineCrossesAxis}
                       </span>
                     )}
-                    <span className="ml-auto u-num text-fine text-ink-3">
+                    <span className="ml-auto u-num text-fine text-ink-2">
                       {Math.round(r.confidence * 100)}%
                     </span>
                   </div>
                   {r.reason && (
-                    <p className="mt-1 text-fine text-ink-3">
+                    <p className="mt-1 text-fine text-ink-2">
                       {r.reason}
                     </p>
                   )}
@@ -2223,7 +2223,7 @@ function RefinePanel({
 
           {outcome.left_alone.length > 0 && (
             <div className="space-y-2">
-              <p className="text-small text-ink-3">
+              <p className="text-small text-ink-2">
                 {S.ontology.refineLeftAlone(outcome.left_alone.length)}
               </p>
               {outcome.left_alone.map((d, i) => (
@@ -2232,19 +2232,19 @@ function RefinePanel({
                     <span className="text-body text-ink">
                       {d.name}
                     </span>
-                    <span className="text-fine text-ink-3">
+                    <span className="text-fine text-ink-2">
                       {d.coarse ?? S.graph.untyped}
                     </span>
                   </div>
                   {/* 理由与头一个候选一起给：理由说不通时，看候选就知道是
                       检索没找着还是裁决没看上 */}
                   {d.reason && (
-                    <p className="mt-1 text-fine text-ink-3">
+                    <p className="mt-1 text-fine text-ink-2">
                       {d.reason}
                     </p>
                   )}
                   {d.top_candidate && (
-                    <p className="mt-1 text-fine text-ink-3">
+                    <p className="mt-1 text-fine text-ink-2">
                       {S.ontology.refineTopCandidate(d.top_candidate)}
                     </p>
                   )}
@@ -2334,9 +2334,9 @@ function UniquenessPanel({
       <PageHeader className="mb-2" title={S.ontology.uniqueness} sub={S.ontology.uniquenessHint} />
 
       {pending ? (
-        <p className="text-small text-ink-3">{S.nav.loading}</p>
+        <p className="text-small text-ink-2">{S.nav.loading}</p>
       ) : candidates.length === 0 ? (
-        <p className="text-small text-ink-3">{S.ontology.uniquenessEmpty}</p>
+        <p className="text-small text-ink-2">{S.ontology.uniquenessEmpty}</p>
       ) : (
         <div className="space-y-2">
           {candidates.map((c) => (
@@ -2346,7 +2346,7 @@ function UniquenessPanel({
             >
               <div className="flex items-center gap-2">
                 <span className="text-body text-ink">{c.label}</span>
-                <span className="font-mono text-fine text-ink-3">
+                <span className="font-mono text-fine text-ink-2">
                   {c.key}
                 </span>
                 {c.declared && (
@@ -2373,7 +2373,7 @@ function UniquenessPanel({
                 </span>
               </div>
 
-              <p className="mt-1 text-small text-ink-3">
+              <p className="mt-1 text-small text-ink-2">
                 {c.side === "subject"
                   ? S.ontology.uniquenessSubject(c.holders)
                   : S.ontology.uniquenessObject(c.holders)}
@@ -2393,12 +2393,12 @@ function UniquenessPanel({
                       <span className="shrink-0 text-ink-2">
                         {ex.holder}
                       </span>
-                      <span className="flex flex-wrap gap-x-3 gap-y-1 text-ink-3">
+                      <span className="flex flex-wrap gap-x-3 gap-y-1 text-ink-2">
                         {ex.values.map((v) => (
                           <span key={v.fact_id}>
                             {v.name ?? "—"}
                             {v.valid_from && (
-                              <span className="u-num ml-1 text-ink-3">
+                              <span className="u-num ml-1 text-ink-2">
                                 {S.ontology.uniquenessSince(
                                   v.valid_from.slice(0, 10),
                                 )}
@@ -2785,7 +2785,7 @@ function MissesPanel({
       />
 
       {misses.length === 0 ? (
-        <p className="text-body text-ink-3">{S.ontology.noMisses}</p>
+        <p className="text-body text-ink-2">{S.ontology.noMisses}</p>
       ) : (
         <div className="flex flex-wrap gap-2">
           {misses.map((m) => (
@@ -2798,7 +2798,7 @@ function MissesPanel({
                 {m.kind === "entity_type" ? "C" : "P"}
               </Chip>
               <span className="font-mono text-ink-2">{m.key}</span>
-              <span className="text-ink-3">×{m.count}</span>
+              <span className="text-ink-2">×{m.count}</span>
               <IconButton
                 size="sm"
                 label={S.ontology.dismiss}
@@ -2823,7 +2823,7 @@ function MissesPanel({
           </Button>
           {showDismissed && (
             <>
-              <p className="text-small text-ink-3 mt-2 mb-2">
+              <p className="text-small text-ink-2 mt-2 mb-2">
                 {S.ontology.dismissedHint}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -2839,7 +2839,7 @@ function MissesPanel({
                     <span className="font-mono text-ink-2 line-through">
                       {m.key}
                     </span>
-                    <span className="text-ink-3">×{m.count}</span>
+                    <span className="text-ink-2">×{m.count}</span>
                     <IconButton
                       size="sm"
                       label={S.ontology.restore}
@@ -2870,7 +2870,7 @@ function MissesPanel({
                   autoRun.data.run.facts_remapped ?? 0,
                 )}
               </p>
-              <p className="mt-1 text-fine text-ink-3">
+              <p className="mt-1 text-fine text-ink-2">
                 {S.ontology.autoRanOff}
               </p>
             </div>
@@ -2897,7 +2897,7 @@ function MissesPanel({
           <span className="text-small text-ink-2">
             {S.ontology.undoAdopt(lastAdopt.key, lastAdopt.moved)}
           </span>
-          <span className="text-fine text-ink-3">
+          <span className="text-fine text-ink-2">
             {S.ontology.undoKeepsRelation}
           </span>
           <Button
@@ -2980,7 +2980,7 @@ function MissesPanel({
                   </span>
                 )}
                 {p.reason && (
-                  <span className="text-small text-ink-3 truncate">
+                  <span className="text-small text-ink-2 truncate">
                     {p.reason}
                   </span>
                 )}
@@ -3000,7 +3000,7 @@ function MissesPanel({
                 <span className="font-mono text-ink-2">{p.key}</span>
                 <span className="text-ink">{p.label}</span>
                 {p.reason && (
-                  <span className="text-small text-ink-3 truncate">
+                  <span className="text-small text-ink-2 truncate">
                     {p.reason}
                   </span>
                 )}
@@ -3031,7 +3031,7 @@ function MissesPanel({
                   </span>
                 )}
                 {p.reason && (
-                  <span className="text-small text-ink-3 truncate">
+                  <span className="text-small text-ink-2 truncate">
                     {p.reason}
                   </span>
                 )}
@@ -3062,7 +3062,7 @@ function MissesPanel({
                   </span>
                 )}
                 {p.reason && (
-                  <span className="text-small text-ink-3 truncate">
+                  <span className="text-small text-ink-2 truncate">
                     {p.reason}
                   </span>
                 )}
@@ -3080,7 +3080,7 @@ function MissesPanel({
               proposals.relation_types.length === 0 &&
               !proposals.attribute_types?.length &&
               !proposals.map_to?.length && (
-                <p className="text-body text-ink-3">—</p>
+                <p className="text-body text-ink-2">—</p>
               )}
           </div>
         </div>
@@ -3179,14 +3179,14 @@ function ImportPanel({
         {file && (
           <span className="text-small text-ink-2 truncate">
             <span className="font-mono">{file.name}</span>
-            <span className="text-ink-3">
+            <span className="text-ink-2">
               {" "}
               · {S.ontology.importSize(file.size)}
             </span>
           </span>
         )}
         {preview.isPending && (
-          <span className="text-small text-ink-3">
+          <span className="text-small text-ink-2">
             {S.ontology.importReading}
           </span>
         )}
@@ -3194,12 +3194,12 @@ function ImportPanel({
 
       {plan && (
         <div className="mt-4">
-          <p className="u-num text-fine text-ink-3">
+          <p className="u-num text-fine text-ink-2">
             {S.ontology.importParsed(plan.format, plan.triples)}
           </p>
 
           {empty ? (
-            <p className="mt-2 text-body text-ink-3">
+            <p className="mt-2 text-body text-ink-2">
               {S.ontology.importNothing}
             </p>
           ) : (
@@ -3267,19 +3267,19 @@ function ImportPanel({
                     </>
                   }
                 >
-                  <p className="mt-2 text-fine text-ink-3">
+                  <p className="mt-2 text-fine text-ink-2">
                     {S.ontology.importUnprojectedBody}
                   </p>
                   <ul className="mt-2 space-y-1">
                     {plan.unprojected.map(([iri, n]) => (
                       <li key={iri} className="flex gap-2 text-fine">
                         <span
-                          className="font-mono text-ink-3 truncate"
+                          className="font-mono text-ink-2 truncate"
                           title={iri}
                         >
                           {shortIri(iri)}
                         </span>
-                        <span className="u-num text-ink-3 shrink-0">
+                        <span className="u-num text-ink-2 shrink-0">
                           ×{n}
                         </span>
                       </li>
@@ -3321,7 +3321,7 @@ function ImportPanel({
           {S.ontology.importHistory}
         </h4>
         {!history.data?.imports.length ? (
-          <p className="text-small text-ink-3">
+          <p className="text-small text-ink-2">
             {S.ontology.importNoHistory}
           </p>
         ) : (
@@ -3331,10 +3331,10 @@ function ImportPanel({
                 <span className="font-mono text-ink-2 truncate">
                   {im.filename}
                 </span>
-                <span className="u-num text-ink-3 shrink-0">
+                <span className="u-num text-ink-2 shrink-0">
                   {S.ontology.importSize(im.byte_size)}
                 </span>
-                <span className="ml-auto text-fine text-ink-3 shrink-0">
+                <span className="ml-auto text-fine text-ink-2 shrink-0">
                   {S.ontology.importBy(
                     im.imported_by_name ?? "—",
                     new Date(im.imported_at).toLocaleDateString(),
@@ -3438,7 +3438,7 @@ function PlanRow({
           )}
         </span>
       </div>
-      {note && <p className="mt-1 text-fine text-ink-3">{note}</p>}
+      {note && <p className="mt-1 text-fine text-ink-2">{note}</p>}
     </div>
   );
 }

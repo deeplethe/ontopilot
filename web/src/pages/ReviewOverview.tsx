@@ -45,7 +45,7 @@ function Stat({
     <div className="glass flex flex-col gap-1 rounded-lg p-4">
       <div className="u-num text-display text-ink">{value}</div>
       <div className="text-body text-ink-2">{label}</div>
-      {note && <div className="text-fine text-ink-3">{note}</div>}
+      {note && <div className="text-fine text-ink-2">{note}</div>}
       {action && (
         <div className="mt-2">
           <LinkButton onClick={action.onClick}>{action.label}</LinkButton>
@@ -75,7 +75,7 @@ function DailyBars({ days }: { days: ReviewSummary["decided"]["daily"] }) {
           />
         ))}
       </div>
-      <div className="mt-1 flex justify-between text-fine text-ink-3">
+      <div className="mt-1 flex justify-between text-fine text-ink-2">
         <span>{days[0]?.day}</span>
         <span>{days[days.length - 1]?.day}</span>
       </div>
@@ -107,7 +107,7 @@ export function ReviewOverview({
       <section>
         <SectionHead>{S.review.overviewWaiting}</SectionHead>
         {waitingTotal === 0 ? (
-          <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+          <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
             {S.review.overviewAllClear}
           </div>
         ) : (
@@ -144,15 +144,15 @@ export function ReviewOverview({
           />
         </div>
         <div className="glass mt-3 rounded-lg p-4">
-          <div className="mb-3 text-fine text-ink-3">{S.review.overviewDaily}</div>
+          <div className="mb-3 text-fine text-ink-2">{S.review.overviewDaily}</div>
           <DailyBars days={decided.daily} />
         </div>
         {decided.last_30d.total === 0 ? (
-          <p className="mt-3 text-small text-ink-3">{S.review.overviewNoDecisions}</p>
+          <p className="mt-3 text-small text-ink-2">{S.review.overviewNoDecisions}</p>
         ) : (
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <div className="glass rounded-lg p-4">
-              <div className="mb-2 text-fine text-ink-3">{S.review.overviewByAction}</div>
+              <div className="mb-2 text-fine text-ink-2">{S.review.overviewByAction}</div>
               <div className="flex flex-wrap gap-2">
                 {decided.last_30d.by_action.map((a) => (
                   <Chip key={a.action}>
@@ -162,7 +162,7 @@ export function ReviewOverview({
               </div>
             </div>
             <div className="glass rounded-lg p-4">
-              <div className="mb-2 text-fine text-ink-3">{S.review.overviewByActor}</div>
+              <div className="mb-2 text-fine text-ink-2">{S.review.overviewByActor}</div>
               <div className="space-y-1">
                 {decided.last_30d.by_actor.map((a) => (
                   <div
@@ -172,7 +172,7 @@ export function ReviewOverview({
                     <span className="truncate text-ink-2">
                       {a.actor_id === null ? S.review.aiActor : (a.label ?? a.actor_id)}
                     </span>
-                    <span className="u-num text-ink-3">{a.count}</span>
+                    <span className="u-num text-ink-2">{a.count}</span>
                   </div>
                 ))}
               </div>
@@ -186,7 +186,7 @@ export function ReviewOverview({
       <section>
         <SectionHead>{S.review.overviewAgent}</SectionHead>
         {!governance && (
-          <p className="mb-3 text-small text-ink-3">
+          <p className="mb-3 text-small text-ink-2">
             {S.review.overviewAgentOff}{" "}
             <LinkButton onClick={onSettings}>{S.review.overviewAgentSettings}</LinkButton>
           </p>
@@ -198,7 +198,7 @@ export function ReviewOverview({
             {S.review.overviewAgentRunning(agent.queue)}
           </p>
         ) : governance && agent.queue > 0 ? (
-          <p className="mb-3 text-small text-ink-3">{S.review.overviewAgentQueue(agent.queue)}</p>
+          <p className="mb-3 text-small text-ink-2">{S.review.overviewAgentQueue(agent.queue)}</p>
         ) : null}
         {(governance || agent.open > 0 || agent.last_30d.applied > 0) && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -233,7 +233,7 @@ export function ReviewOverview({
       {/* 库的成色 */}
       <section>
         <SectionHead>{S.review.overviewHealth}</SectionHead>
-        <p className="mb-3 text-small text-ink-3">{S.review.overviewFacts(health.facts)}</p>
+        <p className="mb-3 text-small text-ink-2">{S.review.overviewFacts(health.facts)}</p>
         <div className="grid grid-cols-3 gap-3">
           <Stat
             value={health.low_confidence}

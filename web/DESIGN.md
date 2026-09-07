@@ -24,7 +24,7 @@ No `text-xs`/`text-sm`, no `text-[11px]`. If a size between two steps seems nece
 
 ## 4. Colour is a token, never a value
 
-Text is `text-ink`, `text-ink-2`, `text-ink-3` — three levels, primary to faint. Lines are `border-line` and `border-line-strong`. Fills are `bg-surface` (rest), `bg-surface-2` (hover), `bg-surface-3` (selected). Meaning is `ok`, `warn`, `danger`, `contest`, `violet`, and those five appear only where they mean something — a status, a contested edge, a destructive action — never as decoration. `neutral-500`, `white/10`, `rose-400`, `[var(--u-…)]` do not appear in a page; the tokens are defined once in `styles.css` and exposed as Tailwind colours, and that is the only door.
+Text is `text-ink` or `text-ink-2` — two levels: the content, and what is said about the content. There is no third, fainter level; a caption, a timestamp or a placeholder is already marked as secondary by where it sits and how big it is, and dimming it again only makes it harder to read. Lines are `border-line` and `border-line-strong`. Fills are `bg-surface` (rest), `bg-surface-2` (hover), `bg-surface-3` (selected). Meaning is `ok`, `warn`, `danger`, `contest`, `violet`, and those five appear only where they mean something — a status, a contested edge, a destructive action — never as decoration. `neutral-500`, `white/10`, `rose-400`, `[var(--u-…)]` do not appear in a page; the tokens are defined once in `styles.css` and exposed as Tailwind colours, and that is the only door.
 
 Glass is a surface treatment, not a colour: `glass` for a panel in peripheral vision, `glass-strong` for one being read, and both go solid under the pointer (see the note above `--u-surface-strong-hover`). A page does not write `backdrop-blur`.
 

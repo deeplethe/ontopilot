@@ -98,7 +98,7 @@ export function Members({ workspaceId }: { workspaceId: string }) {
                     </span>
                   )}
                 </div>
-                <div className="text-small text-ink-3">{m.email}</div>
+                <div className="text-small text-ink-2">{m.email}</div>
               </td>
               <td className="py-2 pr-3 text-right">
                 <Dropdown
@@ -221,7 +221,7 @@ function DeactivatedUsers({ onChanged }: { onChanged: () => void }) {
       <h4 className="text-body text-ink-2">
         {S.members.deactivatedTitle}
       </h4>
-      <p className="mt-1 text-fine leading-relaxed text-ink-3">
+      <p className="mt-1 text-fine leading-relaxed text-ink-2">
         {S.members.deactivatedHint}
       </p>
       <div className="mt-2 space-y-1">
@@ -233,7 +233,7 @@ function DeactivatedUsers({ onChanged }: { onChanged: () => void }) {
             <span className="text-body text-ink-2">
               {u.display_name}
             </span>
-            <span className="text-fine text-ink-3">{u.email}</span>
+            <span className="text-fine text-ink-2">{u.email}</span>
             <Button variant="secondary" size="sm" className="ml-auto"
               disabled={revive.isPending}
               onClick={() => revive.mutate(u.id)}

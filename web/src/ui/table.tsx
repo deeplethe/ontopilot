@@ -63,7 +63,7 @@ export function Th({
   return (
     <th
       className={cn(
-        "border-b border-line-strong px-3 py-2 text-fine font-medium uppercase tracking-wider text-ink-3",
+        "border-b border-line-strong px-3 py-2 text-fine font-medium uppercase tracking-wider text-ink-2",
         className,
       )}
       {...props}

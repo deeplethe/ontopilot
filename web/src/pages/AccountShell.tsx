@@ -28,7 +28,7 @@ export function AccountShell() {
 
   if (me.isPending) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-ink-3 text-body">
+      <div className="min-h-screen flex items-center justify-center text-ink-2 text-body">
         {S.nav.loading}
       </div>
     );

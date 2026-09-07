@@ -21,7 +21,7 @@ function LegalPage({ doc }: { doc: LegalDocData }) {
       <div className="mx-auto w-full max-w-xl">
         <Link
           to="/login"
-          className="u-hover-ink text-small text-ink-3"
+          className="u-hover-ink text-small text-ink-2"
         >
           {S.legal.backToSignIn}
         </Link>
@@ -31,7 +31,7 @@ function LegalPage({ doc }: { doc: LegalDocData }) {
         >
           {doc.title}
         </h1>
-        <p className="mt-3 text-small text-ink-3">{doc.note}</p>
+        <p className="mt-3 text-small text-ink-2">{doc.note}</p>
         <div className="mt-8 space-y-8">
           {doc.sections.map((s) => (
             <section key={s.h}>
@@ -48,7 +48,7 @@ function LegalPage({ doc }: { doc: LegalDocData }) {
                       key={i}
                       className="relative pl-4 text-body leading-relaxed text-ink-2"
                     >
-                      <span className="absolute left-0 text-ink-3">–</span>
+                      <span className="absolute left-0 text-ink-2">–</span>
                       {b}
                     </li>
                   ))}

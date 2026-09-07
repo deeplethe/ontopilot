@@ -155,7 +155,7 @@ export function KbSettings() {
       </div>
     );
 
-  const lbl = "block text-small font-medium text-ink-3 mb-1";
+  const lbl = "block text-small font-medium text-ink-2 mb-1";
 
   const isDefault = kb.data.is_default;
   const sections: {
@@ -220,8 +220,8 @@ export function KbSettings() {
                     <label className={lbl}>{S.settings.kbs.visibility}</label>
                     {isDefault ? (
                       /* 默认库锁 open：说明常驻可见（藏在 hover 里等于没解释）,详情见 grid 下方整行 */
-                      <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-fine text-ink-3 cursor-not-allowed">
-                        <Lock size={11} className="shrink-0 text-ink-3" />
+                      <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-fine text-ink-2 cursor-not-allowed">
+                        <Lock size={11} className="shrink-0 text-ink-2" />
                         {S.kbset.defaultOpenLabel}
                       </div>
                     ) : (
@@ -241,7 +241,7 @@ export function KbSettings() {
                   </div>
                 </div>
                 {isDefault && (
-                  <p className="text-small leading-relaxed text-ink-3">
+                  <p className="text-small leading-relaxed text-ink-2">
                     {S.kbset.defaultOpenNote}
                   </p>
                 )}
@@ -292,7 +292,7 @@ export function KbSettings() {
                     摆在那里只会让人以为设了就会推 */}
                 {materialize && (
                   <div className="pl-6 flex items-center gap-2">
-                    <label className="text-small text-ink-3">
+                    <label className="text-small text-ink-2">
                       {S.kbset.inferEvery}
                     </label>
                     <Input size="sm" className="w-24 u-num"
@@ -302,11 +302,11 @@ export function KbSettings() {
                       value={inferMins}
                       onChange={(e) => setInferMins(Number(e.target.value))}
                     />
-                    <span className="text-small text-ink-3">
+                    <span className="text-small text-ink-2">
                       {S.kbset.minutes}
                     </span>
                     {kb.data.last_inference_at && (
-                      <span className="text-fine text-ink-3">
+                      <span className="text-fine text-ink-2">
                         {S.kbset.lastInference(
                           new Date(kb.data.last_inference_at).toLocaleString(),
                         )}
@@ -334,7 +334,7 @@ export function KbSettings() {
                   <span className="block text-body text-ink">
                     {S.kbset.ontologyLang}
                   </span>
-                  <span className="mt-1 block text-small leading-relaxed text-ink-3">
+                  <span className="mt-1 block text-small leading-relaxed text-ink-2">
                     {S.kbset.ontologyLangNote}
                   </span>
                   <Segmented
@@ -377,7 +377,7 @@ export function KbSettings() {
                 <div className="text-body font-medium text-ink">
                   {S.kbset.deleteRowTitle}
                 </div>
-                <div className="mt-1 text-small text-ink-3">
+                <div className="mt-1 text-small text-ink-2">
                   {S.kbset.deleteRowHint}
                 </div>
               </div>
@@ -455,7 +455,7 @@ function KbActivity({ kbId }: { kbId: string }) {
 
   return (
     <div className="glass rounded-lg p-4">
-      <p className="text-small text-ink-3 mb-3">{S.kbset.activityHint}</p>
+      <p className="text-small text-ink-2 mb-3">{S.kbset.activityHint}</p>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <NativeSelect size="sm"
           value={action}
@@ -474,7 +474,7 @@ function KbActivity({ kbId }: { kbId: string }) {
           title={S.kbset.auditSince}
           onChange={(e) => reset(() => setSince(e.target.value))}
         />
-        <span className="text-small text-ink-3">→</span>
+        <span className="text-small text-ink-2">→</span>
         <Input size="sm" className="u-num"
           type="date"
           value={until}
@@ -494,14 +494,14 @@ function KbActivity({ kbId }: { kbId: string }) {
             {S.kbset.auditClear}
           </Button>
         )}
-        <span className="ml-auto u-num text-fine text-ink-3">
+        <span className="ml-auto u-num text-fine text-ink-2">
           {S.kbset.auditTotal(total)}
         </span>
       </div>
       {audit.isPending ? (
-        <p className="text-small text-ink-3">{S.nav.loading}</p>
+        <p className="text-small text-ink-2">{S.nav.loading}</p>
       ) : events.length === 0 ? (
-        <p className="text-small text-ink-3">{S.kbset.activityEmpty}</p>
+        <p className="text-small text-ink-2">{S.kbset.activityEmpty}</p>
       ) : (
         <div className="space-y-1">
           {events.map((e) => (
@@ -509,7 +509,7 @@ function KbActivity({ kbId }: { kbId: string }) {
               key={e.id}
               className="flex items-baseline gap-3 py-2 text-body"
             >
-              <span className="u-num shrink-0 text-fine text-ink-3">
+              <span className="u-num shrink-0 text-fine text-ink-2">
                 {localDateTime(e.created_at)}
               </span>
               <span className="min-w-0 truncate">
@@ -521,7 +521,7 @@ function KbActivity({ kbId }: { kbId: string }) {
                         ? S.kbset.adjudicator
                         : S.kbset.engine)}
                 </span>{" "}
-                <span className="text-ink-3">
+                <span className="text-ink-2">
                   {S.kbset.auditActions[e.action] ?? e.action}
                 </span>
                 {auditDetailName(e) && (
@@ -583,12 +583,12 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
 
   return (
     <div className="glass rounded-lg p-4">
-      <p className="text-small text-ink-3 mb-3">
+      <p className="text-small text-ink-2 mb-3">
         {isOpen ? S.kbset.membersHintOpen : S.kbset.membersHintRestricted}
       </p>
 
       {members.data && listed.length === 0 && (
-        <p className="text-small text-ink-3 mb-3">
+        <p className="text-small text-ink-2 mb-3">
           {isOpen ? S.kbset.noWriters : S.kbset.noMembers}
         </p>
       )}
@@ -596,7 +596,7 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
         <div key={m.user_id} className="flex items-center gap-3 py-2">
           <div className="min-w-0 flex-1">
             <span className="text-body text-ink">{m.display_name}</span>
-            <span className="ml-2 text-small text-ink-3">{m.email}</span>
+            <span className="ml-2 text-small text-ink-2">{m.email}</span>
           </div>
           <Dropdown
             size="sm"

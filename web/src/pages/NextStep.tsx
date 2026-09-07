@@ -30,7 +30,7 @@ export function NextStep({
   action?: { label: string; to: string; params?: Record<string, string>; search?: Record<string, unknown> };
 }) {
   return (
-    <div className="text-center text-body text-ink-3 max-w-xs">
+    <div className="text-center text-body text-ink-2 max-w-xs">
       {line}
       {action && (
         <Link

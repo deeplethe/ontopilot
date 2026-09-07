@@ -197,7 +197,7 @@ export function DocsPage() {
             {/* 快捷键提示：输入中不占视线。⌘ 用 lucide 图标；
                 Ctrl 无图形符号（⌘ 是 Mac 专属键符），Windows 规范写法就是文字 */}
             {!q && (
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-lg border border-line bg-surface px-2 py-1 font-sans text-fine text-ink-3">
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-lg border border-line bg-surface px-2 py-1 font-sans text-fine text-ink-2">
                 {IS_MAC ? <Command size={9} /> : <span>Ctrl</span>}
                 <span>K</span>
               </kbd>
@@ -206,7 +206,7 @@ export function DocsPage() {
           {q.trim().length >= 2 && (
             <div className="u-menu-glass u-pop-in u-pop-in-tl absolute inset-x-0 top-full mt-2 rounded-lg shadow-2xl overflow-hidden">
               {results.length === 0 ? (
-                <p className="px-4 py-3 text-small text-ink-3">{S.docs.noResults}</p>
+                <p className="px-4 py-3 text-small text-ink-2">{S.docs.noResults}</p>
               ) : (
                 results.map((r, i) => (
                   <Row
@@ -218,7 +218,7 @@ export function DocsPage() {
                       navigate({ to: "/docs/$slug", params: { slug: r.slug } });
                     }}
                   >
-                    <div className="text-fine text-ink-3">{r.title}</div>
+                    <div className="text-fine text-ink-2">{r.title}</div>
                     <div className="text-body text-ink truncate">
                       <Highlighted text={r.snippet} q={q} />
                     </div>
@@ -308,7 +308,7 @@ export function DocsPage() {
                     className={cn(
                       "h-auto w-full justify-start whitespace-normal py-2 text-left leading-snug",
                       h.level === 3 && "pl-6",
-                      activeHeading === h.id ? "text-ink" : "text-ink-3",
+                      activeHeading === h.id ? "text-ink" : "text-ink-2",
                     )}
                   >
                     {h.text}

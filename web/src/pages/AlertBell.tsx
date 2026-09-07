@@ -90,7 +90,7 @@ function AlertRow({
           </Chip>
         </div>
         {worded && (
-          <p className="mt-1 text-small text-ink-3">{worded.hint}</p>
+          <p className="mt-1 text-small text-ink-2">{worded.hint}</p>
         )}
         {lines.length > 0 && (
           <ul className="mt-1 space-y-1">
@@ -100,14 +100,14 @@ function AlertRow({
               </li>
             ))}
             {rest > 0 && (
-              <li className="text-fine text-ink-3">
+              <li className="text-fine text-ink-2">
                 {S.alerts.andMore(rest)}
               </li>
             )}
           </ul>
         )}
         {/* 时间取组里最新的那一次 */}
-        <p className="u-num mt-2 text-fine text-ink-3">
+        <p className="u-num mt-2 text-fine text-ink-2">
           {new Date(g.latest_at).toLocaleString()}
         </p>
         {/* 修好之后接着跑：把这次故障窗口里失败的任务放回队列（#216）。
@@ -193,7 +193,7 @@ function Panel({ panelRef }: { panelRef: Ref<HTMLDivElement> }) {
         <div className="relative">
           <Search
             size={13}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none"
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
           />
           <Input size="sm" className="w-full pl-8 pr-8"
             placeholder={S.alerts.searchPlaceholder}
@@ -218,7 +218,7 @@ function Panel({ panelRef }: { panelRef: Ref<HTMLDivElement> }) {
               {q ? S.alerts.noMatch : S.alerts.empty}
             </p>
             {!q && (
-              <p className="mt-1 text-small text-ink-3">
+              <p className="mt-1 text-small text-ink-2">
                 {S.alerts.emptyHint}
               </p>
             )}

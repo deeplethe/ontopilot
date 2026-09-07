@@ -73,7 +73,7 @@ export function ToastHost() {
             )}
             <button
               onClick={() => dismiss(t.id)}
-              className="text-ink-3 hover:text-ink-2"
+              className="text-ink-2 hover:text-ink"
             >
               <X size={13} />
             </button>

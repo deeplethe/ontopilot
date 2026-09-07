@@ -406,11 +406,11 @@ export function Chat() {
               title={S.ask.scopeLabel}
               onClick={() => setScopeOpen((v) => !v)}
             >
-              <Layers size={12} className="shrink-0 text-ink-3" />
+              <Layers size={12} className="shrink-0 text-ink-2" />
               <span className="truncate">{kb?.name ?? "…"}</span>
               <ChevronDown
                 size={11}
-                className={cn("u-turn shrink-0 text-ink-3", scopeOpen && "rotate-180")}
+                className={cn("u-turn shrink-0 text-ink-2", scopeOpen && "rotate-180")}
               />
             </Button>
             {scopeOpen && (
@@ -437,7 +437,7 @@ export function Chat() {
               </div>
             )}
           </div>
-          <span className="text-fine text-ink-3 truncate">{S.ask.composerHint}</span>
+          <span className="text-fine text-ink-2 truncate">{S.ask.composerHint}</span>
         </div>
         {streaming ? (
           <IconButton
@@ -492,13 +492,13 @@ export function Chat() {
             {S.ask.newChat}
           </Row>
         </div>
-        {/* 「最近」是这一组的名字，不是一条会话：同一副行的身材、字淡一档，
-            右端的三角说明这一组收得起来（朝右=收着，朝下=开着） */}
+        {/* 「最近」是这一组的名字，不是一条会话：同一副行的身材、同一档字色
+            （字色只有两档，见 styles.css），右端的三角说明这一组收得起来
+            （朝右=收着，朝下=开着） */}
         <div className="px-3">
           <Row
             density="nav"
             flush
-            tone="muted"
             aria-expanded={recentOpen}
             onClick={() => setRecentOpen((v) => !v)}
             trailing={
@@ -606,7 +606,7 @@ export function Chat() {
           ))}
           {/* 文字从 20 起（盒 12 + 8），与上面每条会话的标题同一条线 */}
           {convs.data?.conversations.length === 0 && (
-            <p className="px-2 py-2 text-small text-ink-3">{S.ask.noConversations}</p>
+            <p className="px-2 py-2 text-small text-ink-2">{S.ask.noConversations}</p>
           )}
         </div>
         )}
@@ -732,7 +732,7 @@ function orbState(kind?: ChatStep["kind"]): OrbState {
 /** 思考指示：thinking-orbs 球体 + 当前动作（应用是深色定妆，theme 钉死 dark）。 */
 function Thinking({ step }: { step?: ChatStep }) {
   return (
-    <span className="inline-flex items-center gap-3 text-ink-3">
+    <span className="inline-flex items-center gap-3 text-ink-2">
       <ThinkingOrb state={orbState(step?.kind)} size={20} theme="dark" />
       {step && (
         <span className="text-small truncate">
@@ -776,9 +776,9 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
               {seg.steps.map((s, j) => (
                 <div key={j}>
                   <div className="flex items-center gap-2 text-small">
-                    <span className="text-ink-3">{stepIcon(s.kind)}</span>
+                    <span className="text-ink-2">{stepIcon(s.kind)}</span>
                     <span className="text-ink-2 truncate">{s.label}</span>
-                    <span className="text-ink-3 shrink-0">· {s.detail}</span>
+                    <span className="text-ink-2 shrink-0">· {s.detail}</span>
                   </div>
                   {/* remember 那一步后面跟着确认卡（0015）：这句话抽出的事实先等人点头。
                       抽取是异步的，卡片在任务完成时才长出来；回放时按同一个 chunk 重画 */}
@@ -817,10 +817,10 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
                 params={{ slug: s.slug! }}
                 hash={s.anchor || undefined}
                 title={s.excerpt}
-                className={`u-card-link flex items-center gap-2 text-small text-ink-3 px-3 py-2 ${ROW_HOVER}`}
+                className={`u-card-link flex items-center gap-2 text-small text-ink-2 px-3 py-2 ${ROW_HOVER}`}
               >
                 <span className="u-num text-accent">[{s.n}]</span>
-                <BookOpen size={11} className="shrink-0 text-ink-3" />
+                <BookOpen size={11} className="shrink-0 text-ink-2" />
                 <span className="truncate">
                   {/* 引言节 heading 即文章名，避免 "X › X" */}
                   {s.heading && s.heading !== s.filename
@@ -835,7 +835,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
                 params={{ kbId, docId: s.document_id! }}
                 search={{ chunk: s.chunk_id }}
                 title={s.excerpt}
-                className={`u-card-link block text-small text-ink-3 px-3 py-2 ${ROW_HOVER}`}
+                className={`u-card-link block text-small text-ink-2 px-3 py-2 ${ROW_HOVER}`}
               >
                 <span className="u-num text-accent">[{s.n}]</span> {s.filename} ·{" "}
                 {s.excerpt.slice(0, 60)}…

@@ -93,7 +93,7 @@ export function Mappings() {
     <div className="p-6 max-w-4xl mx-auto space-y-4">
       <div>
         <PageTitle>{S.mapping.title}</PageTitle>
-        <p className="mt-1 text-small text-ink-3">{S.mapping.hint}</p>
+        <p className="mt-1 text-small text-ink-2">{S.mapping.hint}</p>
       </div>
 
       {/* 分段控件用全站那一套（`bg-surface-3` 选中 + 静默的未选中），
@@ -137,7 +137,7 @@ export function Mappings() {
                         "u-num",
                         status === f.key
                           ? "text-ink-2"
-                          : "text-ink-3",
+                          : "text-ink-2",
                       )}
                     >
                       {f.n}
@@ -159,7 +159,7 @@ export function Mappings() {
           </div>
 
           {status === "rejected" && (
-            <p className="text-small text-ink-3">{S.mapping.rejectedHint}</p>
+            <p className="text-small text-ink-2">{S.mapping.rejectedHint}</p>
           )}
 
           {data.isPending ? (
@@ -222,9 +222,9 @@ function MappingCard({
     <div className="glass rounded-lg p-3">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-ink">{m.concept_name}</span>
-        <span className="text-fine text-ink-3">{m.source}</span>
+        <span className="text-fine text-ink-2">{m.source}</span>
         {m.unit && (
-          <span className="text-fine text-ink-3">[{m.unit}]</span>
+          <span className="text-fine text-ink-2">[{m.unit}]</span>
         )}
         {m.derived && (
           <Chip tone="warn" className="text-fine">
@@ -240,13 +240,13 @@ function MappingCard({
       <div
         className={cn(
           "mt-1 u-num text-small break-all",
-          how ? "text-ink-2" : "text-ink-3",
+          how ? "text-ink-2" : "text-ink-2",
         )}
       >
         {how ?? S.mapping.noDefinition}
       </div>
       {m.summary && (
-        <p className="mt-1 text-small text-ink-3">{m.summary}</p>
+        <p className="mt-1 text-small text-ink-2">{m.summary}</p>
       )}
 
       {editing ? (
@@ -337,7 +337,7 @@ function EditForm({
     mono = false,
   ) => (
     <label className="block">
-      <span className="text-fine text-ink-3">{label}</span>
+      <span className="text-fine text-ink-2">{label}</span>
       <Input
         size="sm"
         className={cn("mt-1 w-full", mono && "u-num")}
@@ -349,7 +349,7 @@ function EditForm({
 
   return (
     <div className="mt-3 space-y-2 border-t border-line pt-3">
-      <p className="text-fine text-ink-3">{S.mapping.editTitle}</p>
+      <p className="text-fine text-ink-2">{S.mapping.editTitle}</p>
       <div className="grid grid-cols-2 gap-2">
         {field(S.mapping.fieldTable, table, setTable, true)}
         {field(S.mapping.fieldUnit, unit, setUnit)}
@@ -410,20 +410,20 @@ function RevisionList({
   const list = revs.data?.revisions ?? [];
   return (
     <div className="mt-3 border-t border-line pt-3 space-y-2">
-      <p className="text-fine text-ink-3">{S.mapping.historyHint}</p>
+      <p className="text-fine text-ink-2">{S.mapping.historyHint}</p>
       {list.length === 0 ? (
-        <p className="text-small text-ink-3">{S.mapping.historyEmpty}</p>
+        <p className="text-small text-ink-2">{S.mapping.historyEmpty}</p>
       ) : (
         list.map((r) => {
           const b = r.before;
           const was = (b.sql ?? b.expr ?? b.table_name) as string | null;
           return (
             <div key={r.id} className="text-small">
-              <div className="text-ink-3">
+              <div className="text-ink-2">
                 {S.mapping.historyBy(
                   r.changed_by_name ?? S.mapping.historyUnknown,
                 )}
-                <span className="u-num ml-2 text-ink-3">
+                <span className="u-num ml-2 text-ink-2">
                   {r.changed_at.slice(0, 16).replace("T", " ")}
                 </span>
               </div>
@@ -508,14 +508,14 @@ function DataSources({
 
   return (
     <div className="space-y-4">
-      <p className="text-small text-ink-3">{S.mapping.sourcesHint}</p>
+      <p className="text-small text-ink-2">{S.mapping.sourcesHint}</p>
 
       <div className="glass rounded-lg divide-y divide-line">
         {(mounted.data?.data_sources ?? []).map((d) => (
           <div key={d.id} className="px-4 py-3 flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-body text-ink">{d.name}</div>
-              <div className="text-small text-ink-3 u-num truncate">
+              <div className="text-small text-ink-2 u-num truncate">
                 {d.summary}
               </div>
             </div>
@@ -536,7 +536,7 @@ function DataSources({
           </div>
         ))}
         {!hasMounted && (
-          <p className="px-4 py-6 text-body text-ink-3">
+          <p className="px-4 py-6 text-body text-ink-2">
             {S.mapping.sourcesEmpty}
           </p>
         )}
@@ -580,7 +580,7 @@ function DataSources({
         mountable.length === 0 &&
         available.data &&
         !hasMounted && (
-          <p className="text-small text-ink-3">
+          <p className="text-small text-ink-2">
             {S.mapping.sourcesNoneAvailable}
           </p>
         )
@@ -588,7 +588,7 @@ function DataSources({
 
       {hasMounted && (
         <div className="glass rounded-lg px-4 py-3 flex items-center gap-3">
-          <p className="text-small text-ink-3 flex-1">
+          <p className="text-small text-ink-2 flex-1">
             {S.mapping.exploreHint}
           </p>
           <Button variant="secondary" size="sm" className="shrink-0"

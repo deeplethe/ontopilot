@@ -62,22 +62,22 @@ export function MyKbs() {
                       {row.kb.name}
                     </span>
                     {row.kb.visibility === "restricted" ? (
-                      <span className="flex items-center gap-1 text-fine text-ink-3">
+                      <span className="flex items-center gap-1 text-fine text-ink-2">
                         <Lock size={10} />
                         {S.account.kbRestricted}
                       </span>
                     ) : (
-                      <span className="text-fine text-ink-3">{S.account.kbOpen}</span>
+                      <span className="text-fine text-ink-2">{S.account.kbOpen}</span>
                     )}
                   </div>
                   {row.kb.description && (
-                    <p className="mt-1 text-small text-ink-3 truncate">
+                    <p className="mt-1 text-small text-ink-2 truncate">
                       {row.kb.description}
                     </p>
                   )}
-                  <p className="mt-2 text-fine text-ink-3">
+                  <p className="mt-2 text-fine text-ink-2">
                     <span className="u-num">{S.account.kbStats(row.doc_count, row.member_count)}</span>
-                    <span className="mx-2 text-ink-3">·</span>
+                    <span className="mx-2 text-ink-2">·</span>
                     {joinInfo(row)}
                   </p>
                 </div>

@@ -140,7 +140,7 @@ export function Login() {
           className="mt-6 text-center u-rise"
           style={{ animationDelay: "180ms" }}
         >
-          <p className="u-balance text-fine leading-relaxed text-ink-3">
+          <p className="u-balance text-fine leading-relaxed text-ink-2">
             {S.login.agreePrefix}
             <Link
               to="/terms"
@@ -162,7 +162,7 @@ export function Login() {
             target="_blank"
             rel="noreferrer"
             title="GitHub"
-            className="u-hover-ink mt-3 inline-flex text-ink-3"
+            className="u-hover-ink mt-3 inline-flex text-ink-2"
           >
             <GithubMark size={16} />
           </a>

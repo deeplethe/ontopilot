@@ -26,7 +26,7 @@ function KbNoAccess({ status }: { status: number }) {
         <h2 className="text-title text-ink">
           {status === 404 ? S.kbScope.missingTitle : S.kbScope.deniedTitle}
         </h2>
-        <p className="mt-2 text-small leading-relaxed text-ink-3">
+        <p className="mt-2 text-small leading-relaxed text-ink-2">
           {status === 404 ? S.kbScope.missingBody : S.kbScope.deniedBody}
         </p>
         <Link

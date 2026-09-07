@@ -58,7 +58,7 @@ export function DocViewer() {
   }, [detail.data, chunk]);
 
   if (detail.isPending)
-    return <div className="p-8 text-body text-ink-3">{S.doc.loading}</div>;
+    return <div className="p-8 text-body text-ink-2">{S.doc.loading}</div>;
   if (detail.isError)
     return (
       <div className="p-8 text-body text-danger">
@@ -109,7 +109,7 @@ export function DocViewer() {
                     hit && flash ? "u-flash" : "bg-surface"
                   }`}
                 >
-                  <div className="mb-2 text-small text-ink-3">
+                  <div className="mb-2 text-small text-ink-2">
                     {S.doc.section} {c.seq + 1}
                     {hit && (
                       <span
@@ -147,8 +147,8 @@ export function DocViewer() {
                               <span
                                 className={
                                   f.predicate === null
-                                    ? "italic text-ink-3"
-                                    : "text-ink-3"
+                                    ? "italic text-ink-2"
+                                    : "text-ink-2"
                                 }
                                 title={
                                   f.predicate && f.inferred
@@ -172,7 +172,7 @@ export function DocViewer() {
                                 <span className="text-ink-2">{f.object ?? ""}</span>
                               )}
                             </div>
-                            {range && <div className="u-num text-fine text-ink-3">{range}</div>}
+                            {range && <div className="u-num text-fine text-ink-2">{range}</div>}
                           </div>
                         );
                       })}

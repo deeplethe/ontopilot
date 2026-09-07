@@ -73,12 +73,12 @@ function SideCard({ side }: { side: ReviewSide }) {
           {side.name}
         </span>
         {side.disambiguator && (
-          <span className="text-small text-ink-3 truncate">
+          <span className="text-small text-ink-2 truncate">
             · {side.disambiguator}
           </span>
         )}
       </div>
-      <div className="text-small text-ink-3 mb-2">
+      <div className="text-small text-ink-2 mb-2">
         {side.type_label ?? S.graph.untyped} ·{" "}
         {S.review.factsCount(side.degree)}
       </div>
@@ -91,7 +91,7 @@ function SideCard({ side }: { side: ReviewSide }) {
           ))}
         </ul>
       ) : (
-        <p className="text-small text-ink-3">{S.review.noFacts}</p>
+        <p className="text-small text-ink-2">{S.review.noFacts}</p>
       )}
     </div>
   );
@@ -137,7 +137,7 @@ function DuplicateCard({
           label={<span className="sr-only">{S.review.pickPair}</span>}
         />
         <SideCard side={item.left} />
-        <div className="self-center text-ink-3 text-body shrink-0">≟</div>
+        <div className="self-center text-ink-2 text-body shrink-0">≟</div>
         <SideCard side={item.right} />
       </div>
       <div className="mt-3 pt-3 flex items-center gap-3 border-t border-line">
@@ -173,12 +173,12 @@ function DuplicateCard({
           </Chip>
         )}
         {reasonCode !== "namesake" && (
-          <span className="text-small text-ink-3">
+          <span className="text-small text-ink-2">
             {S.review.similarity(Math.round(item.score * 100))}
           </span>
         )}
         {item.reason && (
-          <span className="text-small text-ink-3 truncate min-w-0">
+          <span className="text-small text-ink-2 truncate min-w-0">
             {escalationText(item.reason)}
           </span>
         )}
@@ -219,12 +219,12 @@ function FactRow({
         <span className="text-body font-medium text-ink">
           {fact.subject_name}
         </span>
-        <span className="text-small text-ink-3">
+        <span className="text-small text-ink-2">
           —{" "}
           <span
             className={
               fact.predicate_label === null
-                ? "italic text-ink-3"
+                ? "italic text-ink-2"
                 : undefined
             }
           >
@@ -235,13 +235,13 @@ function FactRow({
         <span className="text-body font-medium text-ink">
           {fact.object_name ?? "?"}
         </span>
-        {range && <span className="text-small text-ink-3">({range})</span>}
+        {range && <span className="text-small text-ink-2">({range})</span>}
         <span className="u-chip u-chip-warn ml-auto">
           {S.review.confidence(Math.round(fact.confidence * 100))}
         </span>
       </div>
       {fact.quote && (
-        <p className="mt-2 text-small text-ink-3 italic line-clamp-2">
+        <p className="mt-2 text-small text-ink-2 italic line-clamp-2">
           “{fact.quote}”
         </p>
       )}
@@ -288,27 +288,27 @@ function ConflictRow({
     <div className="glass rounded-lg p-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-body font-medium text-ink">{c.old_subject}</span>
-        <span className="text-small text-ink-3">
+        <span className="text-small text-ink-2">
           — {c.predicate_label} →
         </span>
         <span className="text-body font-medium text-ink">
           {c.old_object ?? "?"}
         </span>
         {c.old_valid_from && (
-          <span className="u-num text-small text-ink-3">
+          <span className="u-num text-small text-ink-2">
             ({S.review.conflictSince(c.old_valid_from.slice(0, 10))})
           </span>
         )}
-        <span className="text-small text-ink-3">{S.review.conflictVs}</span>
+        <span className="text-small text-ink-2">{S.review.conflictVs}</span>
         <span className="text-body font-medium text-ink">{c.new_subject}</span>
-        <span className="text-small text-ink-3">
+        <span className="text-small text-ink-2">
           — {c.predicate_label} →
         </span>
         <span className="text-body font-medium text-ink">
           {c.new_object ?? "?"}
         </span>
         {c.new_valid_from && (
-          <span className="u-num text-small text-ink-3">
+          <span className="u-num text-small text-ink-2">
             ({S.review.conflictSince(c.new_valid_from.slice(0, 10))})
           </span>
         )}
@@ -372,12 +372,12 @@ function UnconfirmedRow({
         <span className="text-body font-medium text-ink">
           {fact.subject_name}
         </span>
-        <span className="text-small text-ink-3">
+        <span className="text-small text-ink-2">
           —{" "}
           <span
             className={
               fact.predicate_label === null
-                ? "italic text-ink-3"
+                ? "italic text-ink-2"
                 : undefined
             }
           >
@@ -389,11 +389,11 @@ function UnconfirmedRow({
           {fact.object_name ?? "?"}
         </span>
         {range && (
-          <span className="u-num text-small text-ink-3">({range})</span>
+          <span className="u-num text-small text-ink-2">({range})</span>
         )}
       </div>
       {fact.quote && (
-        <p className="mt-2 text-small text-ink-3 italic line-clamp-2">
+        <p className="mt-2 text-small text-ink-2 italic line-clamp-2">
           “{fact.quote}”
         </p>
       )}
@@ -437,11 +437,11 @@ function MergeRow({
     <div className="glass rounded-lg px-4 py-3 flex items-center gap-3">
       <div className="min-w-0 flex-1">
         <div className="text-body text-ink-2 truncate">
-          <span className="text-ink-3">{merge.source_name}</span>
-          <span className="text-ink-3"> → </span>
+          <span className="text-ink-2">{merge.source_name}</span>
+          <span className="text-ink-2"> → </span>
           <span className="text-ink">{merge.target_name}</span>
         </div>
-        <div className="text-small text-ink-3 truncate">
+        <div className="text-small text-ink-2 truncate">
           {merge.merged_by_name
             ? S.review.mergedBy(merge.merged_by_name)
             : S.review.mergedByAi}
@@ -516,7 +516,7 @@ function AgentRow({
         <span className="text-body text-ink-2 truncate min-w-0">
           {d.left ?? "?"} ≟ {d.right ?? "?"}
         </span>
-        <span className="u-num text-small text-ink-3 shrink-0">
+        <span className="u-num text-small text-ink-2 shrink-0">
           {Math.round(d.confidence * 100)}%
         </span>
         <Chip tone={AGENT_STATUS_TONE[d.status]} className="ml-auto shrink-0">
@@ -526,12 +526,12 @@ function AgentRow({
       {/* defer 留下的问题（第二刀）：这是给人看的正文，不是注脚 */}
       {d.question && (
         <p className="mt-1 text-body text-ink">
-          <span className="text-ink-3">{S.review.agentAsks} </span>
+          <span className="text-ink-2">{S.review.agentAsks} </span>
           {d.question}
         </p>
       )}
       {(d.reason || hasDetail) && (
-        <div className="mt-1 flex items-center gap-3 text-small text-ink-3">
+        <div className="mt-1 flex items-center gap-3 text-small text-ink-2">
           {d.reason && <span className="truncate min-w-0">{d.reason}</span>}
           {hasDetail && (
             <LinkButton className="shrink-0" onClick={() => setOpen((v) => !v)}>
@@ -546,7 +546,7 @@ function AgentRow({
         </div>
       )}
       {open && hasDetail && (
-        <ul className="mt-2 space-y-1 border-t border-line pt-2 text-small text-ink-3">
+        <ul className="mt-2 space-y-1 border-t border-line pt-2 text-small text-ink-2">
           {precedents.map((p, i) => (
             <li key={`p${i}`} className="truncate">
               {precedentText(p)}
@@ -561,7 +561,7 @@ function AgentRow({
         </ul>
       )}
       <div className="mt-2 flex items-center gap-2">
-        <span className="text-fine text-ink-3">
+        <span className="text-fine text-ink-2">
           {d.decided_by_name
             ? S.review.agentAnsweredBy(d.decided_by_name, (d.decided_at ?? d.created_at).slice(0, 10))
             : d.created_at.slice(0, 10)}
@@ -629,16 +629,16 @@ function DecisionRow({ e }: { e: ReviewHistoryEvent }) {
       </Chip>
       <span className="text-body text-ink-2 truncate min-w-0">{text}</span>
       {typeof d.confidence === "number" && (
-        <span className="u-num text-small text-ink-3 shrink-0">
+        <span className="u-num text-small text-ink-2 shrink-0">
           {Math.round(d.confidence * 100)}%
         </span>
       )}
       {typeof d.valid_to === "string" && (
-        <span className="u-num text-small text-ink-3 shrink-0">
+        <span className="u-num text-small text-ink-2 shrink-0">
           → {d.valid_to.slice(0, 10)}
         </span>
       )}
-      <span className="ml-auto shrink-0 text-small text-ink-3">
+      <span className="ml-auto shrink-0 text-small text-ink-2">
         {e.actor_name ?? S.review.aiActor}
         {" · "}
         <span className="u-num">{e.created_at.slice(0, 10)}</span>
@@ -685,7 +685,7 @@ function DefectRow({
           <span className="text-small text-ink-2">{d.subject_label}</span>
         )}
         {d.other_label && (
-          <span className="text-small text-ink-3">↔ {d.other_label}</span>
+          <span className="text-small text-ink-2">↔ {d.other_label}</span>
         )}
       </div>
       {d.path_labels.length > 0 && (
@@ -694,7 +694,7 @@ function DefectRow({
         </div>
       )}
       {unsatisfiable && (
-        <p className="mt-1 text-small text-ink-3">
+        <p className="mt-1 text-small text-ink-2">
           {S.review.defectNeverInstantiable}
         </p>
       )}
@@ -703,12 +703,12 @@ function DefectRow({
           <div>{S.review.rulesDisagreeCount(d.detail.count ?? 0)}</div>
           {rules.map((r, i) => (
             <div key={i}>
-              <div className="text-ink-3">
+              <div className="text-ink-2">
                 {S.review.rulesDisagreeRule(r.rule_a, r.via_a, r.rule_b, r.via_b, r.axiom)}
               </div>
               {r.examples.map(([x, y], j) => (
                 <div key={j} className="pl-3 text-ink-2">
-                  {x} <span className="text-ink-3">·</span> {y}
+                  {x} <span className="text-ink-2">·</span> {y}
                 </div>
               ))}
             </div>
@@ -780,12 +780,12 @@ function ViolationRow({
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-warn">{what}</span>
         {v.predicate && (
-          <span className="text-fine text-ink-3">
+          <span className="text-fine text-ink-2">
             {S.review.violationVia(v.predicate)}
           </span>
         )}
         {v.path_len > 0 && (
-          <span className="text-fine text-ink-3">
+          <span className="text-fine text-ink-2">
             {S.review.violationPath(v.path_len)}
           </span>
         )}
@@ -866,7 +866,7 @@ function ContradictionRow({
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-contest">{what}</span>
         {v.predicate && (
-          <span className="text-fine text-ink-3">
+          <span className="text-fine text-ink-2">
             {S.review.violationVia(v.predicate)}
           </span>
         )}
@@ -875,7 +875,7 @@ function ContradictionRow({
         <div className="text-small text-ink-2">
           {S.review.derivedLine(d.subject ?? "?", d.predicate ?? "?", d.object ?? "?")}
           {d.rule && d.via_label && (
-            <span className="ml-2 text-ink-3">
+            <span className="ml-2 text-ink-2">
               {S.review.derivedBy(d.rule, d.via_label)}
             </span>
           )}
@@ -884,7 +884,7 @@ function ContradictionRow({
           {S.review.assertedLine(v.left_text)}
         </div>
       </div>
-      <p className="mt-2 text-small text-ink-3">{hint}</p>
+      <p className="mt-2 text-small text-ink-2">{hint}</p>
       <div className="mt-2 flex gap-2 flex-wrap items-center">
         {/* 不用日期选择器：它逼人给出一个日，而「那年结束的」正是这里常见的答案。
             写多少位就是多少精度（time.ts） */}
@@ -1382,7 +1382,7 @@ export function Review() {
       <div className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
         <div>
           {review.isPending && (
-            <p className="text-body text-ink-3">{S.nav.loading}</p>
+            <p className="text-body text-ink-2">{S.nav.loading}</p>
           )}
           {review.isError && (
             <p className="text-body text-danger">
@@ -1400,14 +1400,14 @@ export function Review() {
                 active !== "violations" &&
                 active !== "defects" &&
                 counts[active] === 0 && (
-                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
                     {queueEmpty ? S.review.empty : S.review.categoryEmpty}
                   </div>
                 )}
 
               {active === "overview" &&
                 (summary.isPending ? (
-                  <p className="text-body text-ink-3">{S.nav.loading}</p>
+                  <p className="text-body text-ink-2">{S.nav.loading}</p>
                 ) : summary.isError ? (
                   <p className="text-body text-danger">
                     {(summary.error as Error).message}
@@ -1467,7 +1467,7 @@ export function Review() {
                     />
                     {picked.size > 0 && (
                       <>
-                        <span className="u-num text-small text-ink-3">
+                        <span className="u-num text-small text-ink-2">
                           {S.review.selected(picked.size)}
                         </span>
                         <Button
@@ -1494,7 +1494,7 @@ export function Review() {
                     )}
                   </div>
                   {asDuplicates().length === 0 && (
-                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
                       {S.review.typesEmpty}
                     </div>
                   )}
@@ -1616,7 +1616,7 @@ export function Review() {
               {active === "defects" && (
                 <div className="space-y-3">
                   {counts.defects === 0 && (
-                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
                       {S.review.categoryEmpty}
                     </div>
                   )}
@@ -1653,7 +1653,7 @@ export function Review() {
                         : S.review.runCheck}
                     </Button>
                     {runCheck.data && (
-                      <span className="text-small text-ink-3">
+                      <span className="text-small text-ink-2">
                         {/* 三种结果说三句话。**`found` 不是要报的数**：
                             重跑会把已裁决的那些重新算出来，说「3 处矛盾」而
                             列表只剩一条，看起来像界面漏了东西 */}
@@ -1668,7 +1668,7 @@ export function Review() {
                     )}
                   </div>
                   {counts.violations === 0 && !runCheck.data && (
-                    <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+                    <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
                       {S.review.checkNeverRun}
                     </div>
                   )}
@@ -1700,7 +1700,7 @@ export function Review() {
 
               {active === "agent" &&
                 ((c?.agent_rows ?? 0) === 0 ? (
-                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
                     {S.review.agentEmpty}
                     {!kb?.governance && (
                       <>
@@ -1731,7 +1731,7 @@ export function Review() {
 
               {active === "merges" &&
                 (counts.merges === 0 ? (
-                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
                     {S.review.historyEmpty}
                   </div>
                 ) : (
@@ -1749,9 +1749,9 @@ export function Review() {
 
               {active === "decisions" &&
                 (history.isPending ? (
-                  <p className="text-body text-ink-3">{S.nav.loading}</p>
+                  <p className="text-body text-ink-2">{S.nav.loading}</p>
                 ) : (history.data?.total ?? 0) === 0 ? (
-                  <div className="glass rounded-lg p-8 text-center text-body text-ink-3">
+                  <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
                     {S.review.decisionsEmpty}
                   </div>
                 ) : (

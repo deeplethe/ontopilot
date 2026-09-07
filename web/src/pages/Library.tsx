@@ -585,7 +585,7 @@ export function Library() {
               <div className={`relative ${showHistory ? "invisible" : ""}`}>
                 <Search
                   size={13}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none"
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
                 />
                 <Input size="sm" className="w-52 pl-8 pr-8"
                   placeholder={S.library.filterPlaceholder}
@@ -691,7 +691,7 @@ export function Library() {
               <div className="mb-3 glass rounded-lg px-4 py-3">
                 <div className="flex items-center justify-between text-small text-ink-2 mb-2">
                   <span>{S.library.extractProgress(done, total)}</span>
-                  <span className="u-num text-ink-3">
+                  <span className="u-num text-ink-2">
                     {Math.round((done / Math.max(total, 1)) * 100)}%
                   </span>
                 </div>
@@ -732,7 +732,7 @@ export function Library() {
             ) : pagedDocs.length ? (
               <table className="w-full text-body">
                 <thead>
-                  <tr className="text-left text-small text-ink-3 border-b border-line">
+                  <tr className="text-left text-small text-ink-2 border-b border-line">
                     <th className="px-4 py-3 font-medium">{S.library.colFile}</th>
                     {selection === "all" && (
                       <th className="px-4 py-3 font-medium">{S.library.colSource}</th>
@@ -770,15 +770,15 @@ export function Library() {
                 </tbody>
               </table>
             ) : query || graphFilter ? (
-              <div className="py-20 text-center text-body text-ink-3">
+              <div className="py-20 text-center text-body text-ink-2">
                 {S.library.filterNoMatch}
               </div>
             ) : (
-              <div className="py-20 text-center text-body text-ink-3">
+              <div className="py-20 text-center text-body text-ink-2">
                 {canUpload ? (
                   <>
                     {S.library.dropHint}
-                    <div className="mt-2 text-small text-ink-3">{S.library.formats}</div>
+                    <div className="mt-2 text-small text-ink-2">{S.library.formats}</div>
                   </>
                 ) : (
                   S.library.emptyPull
@@ -959,7 +959,7 @@ function SourceBar({
                 : S.library.syncStatus[source.last_sync_status]}
             </span>
             {source.last_sync_at && (
-              <span className="text-ink-3 u-num whitespace-nowrap shrink-0">
+              <span className="text-ink-2 u-num whitespace-nowrap shrink-0">
                 {source.last_sync_at.slice(0, 16).replace("T", " ")}
               </span>
             )}
@@ -975,18 +975,18 @@ function SourceBar({
             )}
             {isPull && (
               <>
-                <span className="text-ink-3 truncate min-w-0">{configSummary}</span>
-                <span className="text-ink-3 shrink-0 u-num">{scheduleLabel(source)}</span>
+                <span className="text-ink-2 truncate min-w-0">{configSummary}</span>
+                <span className="text-ink-2 shrink-0 u-num">{scheduleLabel(source)}</span>
                 {source.kind === "rss" && (
                   <>
-                    <span className="text-ink-3 shrink-0" title={S.library.rssContentModeHint}>
+                    <span className="text-ink-2 shrink-0" title={S.library.rssContentModeHint}>
                       {rssMode === "full_new_items"
                         ? S.library.rssModeFullShort
                         : S.library.rssModeFeedShort}
                     </span>
                     {rssMode === "full_new_items" && (
                       <>
-                        <span className="text-ink-3 shrink-0 u-num">
+                        <span className="text-ink-2 shrink-0 u-num">
                           {S.library.rssHydrationCounts(
                             source.rss_full_content_pending_count,
                             source.rss_full_content_queued_count,
@@ -1004,7 +1004,7 @@ function SourceBar({
           </>
         )}
         {!isPull && !isApi && (
-          <span className="text-ink-3 truncate min-w-0">
+          <span className="text-ink-2 truncate min-w-0">
             {S.library.sourceKindHints[source.kind as "folder"] ?? ""}
           </span>
         )}
@@ -1115,13 +1115,13 @@ function DropsModal({
                 <span className="text-body text-ink">
                   {S.library.dropReason[r.reason] ?? r.reason}
                 </span>
-                <span className="u-num ml-auto text-small text-ink-3">×{r.count}</span>
+                <span className="u-num ml-auto text-small text-ink-2">×{r.count}</span>
               </div>
               <div className="mt-1 font-mono text-fine text-ink-2 break-all">
                 {r.detail}
               </div>
               {r.example && (
-                <div className="mt-1 text-fine text-ink-3 break-all">
+                <div className="mt-1 text-fine text-ink-2 break-all">
                   {S.library.dropsExample} {r.example}
                 </div>
               )}
@@ -1240,7 +1240,7 @@ function TokenModal({
     >
       <div className="space-y-3">
           {tokenQuery.isPending ? (
-            <p className="text-body text-ink-3">{S.nav.loading}</p>
+            <p className="text-body text-ink-2">{S.nav.loading}</p>
           ) : token ? (
             <>
               <Button
@@ -1251,11 +1251,11 @@ function TokenModal({
               >
                 {token}
               </Button>
-              <p className="text-fine leading-relaxed text-ink-3">
+              <p className="text-fine leading-relaxed text-ink-2">
                 {S.library.tokenWarning}
               </p>
               <div>
-                <p className="mb-1 text-fine text-ink-3">{S.library.tokenUsage}</p>
+                <p className="mb-1 text-fine text-ink-2">{S.library.tokenUsage}</p>
                 <Button
                   variant="secondary"
                   className="h-auto w-full justify-start whitespace-pre-wrap break-all py-2 text-left font-mono text-ink-2"
@@ -1268,7 +1268,7 @@ function TokenModal({
               </div>
             </>
           ) : (
-            <p className="text-body text-ink-3">{S.library.noToken}</p>
+            <p className="text-body text-ink-2">{S.library.noToken}</p>
           )}
       </div>
     </Dialog>
@@ -1286,9 +1286,9 @@ function RunsPanel({ kbId, sourceId }: { kbId: string; sourceId: string }) {
   return (
     <div className="glass rounded-lg">
       {runs.isLoading ? (
-        <div className="py-20 text-center text-body text-ink-3">{S.nav.loading}</div>
+        <div className="py-20 text-center text-body text-ink-2">{S.nav.loading}</div>
       ) : list.length === 0 ? (
-        <div className="py-20 text-center text-body text-ink-3">{S.library.noRuns}</div>
+        <div className="py-20 text-center text-body text-ink-2">{S.library.noRuns}</div>
       ) : (
         <div className="px-4 py-2">
           {list.map((r) => (
@@ -1308,12 +1308,12 @@ function RunsPanel({ kbId, sourceId }: { kbId: string; sourceId: string }) {
               <span className="u-num text-ink-2 whitespace-nowrap shrink-0">
                 {r.started_at.slice(0, 16).replace("T", " ")}
               </span>
-              <span className="text-ink-3 whitespace-nowrap shrink-0">
+              <span className="text-ink-2 whitespace-nowrap shrink-0">
                 {r.created_docs > 0 && S.library.runNew(r.created_docs)}
                 {r.created_docs > 0 && r.updated_docs > 0 && " · "}
                 {r.updated_docs > 0 && S.library.runUpdated(r.updated_docs)}
                 {r.status === "ok" && r.created_docs === 0 && r.updated_docs === 0 && (
-                  <span className="text-ink-3">{S.library.runNothing}</span>
+                  <span className="text-ink-2">{S.library.runNothing}</span>
                 )}
               </span>
               {r.error && (
@@ -1483,7 +1483,7 @@ function SourceModal({
   //（button 也算），导致图标网格/日程选择器悬停时第一个按钮常亮
   const field = (label: string, node: React.ReactNode) => (
     <div className="mb-3">
-      <div className="mb-1 text-fine font-medium text-ink-3">{label}</div>
+      <div className="mb-1 text-fine font-medium text-ink-2">{label}</div>
       {node}
     </div>
   );
@@ -1526,7 +1526,7 @@ function SourceModal({
                   value: k,
                   label: (
                     <span className="flex items-center gap-2">
-                      <Icon size={12} className="shrink-0 text-ink-3" />
+                      <Icon size={12} className="shrink-0 text-ink-2" />
                       {S.library.sourceKinds[k]}
                     </span>
                   ),
@@ -1535,7 +1535,7 @@ function SourceModal({
             />,
           )}
           {/* 类型自解释：一行说明；接口细节移入内置文档，弹窗只留链接 */}
-          <p className="mb-4 text-fine leading-relaxed text-ink-3">
+          <p className="mb-4 text-fine leading-relaxed text-ink-2">
             {S.library.sourceKindHints[kind]}
             {kind === "custom" && (
               <>
@@ -1630,7 +1630,7 @@ function SourceModal({
                   <option value="feed">{S.library.rssModeFeed}</option>
                 </NativeSelect>,
               )}
-              <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-3">
+              <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-2">
                 {rssContentMode === "full_new_items"
                   ? S.library.rssFullModeHint
                   : S.library.rssFeedModeHint}
@@ -1931,7 +1931,7 @@ function SourceEditModal({
   // div 而非 label：label 会把 :hover/click 转发给第一个可标记控件
   const field = (label: string, node: React.ReactNode) => (
     <div className="mb-3">
-      <div className="mb-1 text-fine font-medium text-ink-3">{label}</div>
+      <div className="mb-1 text-fine font-medium text-ink-2">{label}</div>
       {node}
     </div>
   );
@@ -1961,7 +1961,7 @@ function SourceEditModal({
       <div>
           {/* 类型只读：换类型 = 换身份，应新建来源 */}
           <div className="mb-4 flex items-center gap-2 text-small text-ink-2">
-            <KindIcon size={13} className="text-ink-3" />
+            <KindIcon size={13} className="text-ink-2" />
             {S.library.sourceKinds[kind as keyof typeof S.library.sourceKinds] ?? kind}
           </div>
 
@@ -2019,7 +2019,7 @@ function SourceEditModal({
                   <option value="feed">{S.library.rssModeFeed}</option>
                 </NativeSelect>,
               )}
-              <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-3">
+              <p className="-mt-1 mb-3 text-fine leading-relaxed text-ink-2">
                 {rssContentMode === "full_new_items"
                   ? S.library.rssFullModeHint
                   : S.library.rssFeedModeHint}
@@ -2075,7 +2075,7 @@ function SourceEditModal({
           )}
 
           {ingestChanged && (
-            <p className="mb-3 text-fine leading-relaxed text-ink-3">
+            <p className="mb-3 text-fine leading-relaxed text-ink-2">
               {S.library.editKeepNote}
             </p>
           )}
@@ -2098,11 +2098,11 @@ function SourceEditModal({
 
           {/* Danger zone：删除来源（文档保留，落回 Uploads） */}
           <div className="mt-4 pt-3 border-t border-line">
-            <div className="mb-1 text-fine font-medium text-ink-3">
+            <div className="mb-1 text-fine font-medium text-ink-2">
               {S.library.dangerZone}
             </div>
             <div className="flex items-center justify-between gap-3">
-              <span className="text-fine text-ink-3">{S.library.deleteSourceHint}</span>
+              <span className="text-fine text-ink-2">{S.library.deleteSourceHint}</span>
               {/* 同一个道理：这里只打开确认框，红色在确认框里 */}
               <Button variant="secondary" size="sm" className="shrink-0"
                 onClick={() => setConfirmingDelete(true)}
@@ -2145,13 +2145,13 @@ function DeletedTable({
 }) {
   if (!docs.length) {
     return (
-      <div className="py-20 text-center text-body text-ink-3">{S.library.deletedEmpty}</div>
+      <div className="py-20 text-center text-body text-ink-2">{S.library.deletedEmpty}</div>
     );
   }
   return (
     <table className="w-full text-body">
       <thead>
-        <tr className="text-left text-small text-ink-3 border-b border-line">
+        <tr className="text-left text-small text-ink-2 border-b border-line">
           <th className="px-4 py-3 font-medium">{S.library.colFile}</th>
           <th className="px-4 py-3 font-medium">{S.library.colSource}</th>
           <th className="px-4 py-3 font-medium">{S.library.colDeleted}</th>
@@ -2164,8 +2164,8 @@ function DeletedTable({
           return (
             <tr key={d.id} className="border-b border-line last:border-0">
               <td className="px-4 py-3 text-ink-2">{d.filename}</td>
-              <td className="px-4 py-3 text-ink-3">{src?.name ?? S.library.uploads}</td>
-              <td className="px-4 py-3 u-num text-ink-3">
+              <td className="px-4 py-3 text-ink-2">{src?.name ?? S.library.uploads}</td>
+              <td className="px-4 py-3 u-num text-ink-2">
                 {d.deleted_at ? new Date(d.deleted_at).toLocaleString() : ""}
               </td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -2230,7 +2230,7 @@ function DocRow({
       {source !== undefined && (
         <td className="px-4 py-3">
           <span className="flex items-center gap-2 text-small text-ink-2">
-            <SrcIcon size={12} className="shrink-0 text-ink-3" />
+            <SrcIcon size={12} className="shrink-0 text-ink-2" />
             <span className="truncate max-w-28">{source?.name ?? S.library.uploads}</span>
           </span>
         </td>
@@ -2255,7 +2255,7 @@ function DocRow({
       </td>
       <td className="px-4 py-3">
         {doc.graph_status === "none" ? (
-          <span className="text-small text-ink-3">{graphText}</span>
+          <span className="text-small text-ink-2">{graphText}</span>
         ) : doc.graph_status === "failed" && doc.graph_error ? (
           <Chip
             tone="danger"

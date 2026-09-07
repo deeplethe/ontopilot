@@ -46,7 +46,7 @@ export function Account() {
 
   const field = (label: string, node: React.ReactNode) => (
     <div className="mb-4">
-      <div className="mb-1 text-fine font-medium text-ink-3">{label}</div>
+      <div className="mb-1 text-fine font-medium text-ink-2">{label}</div>
       {node}
     </div>
   );
@@ -59,7 +59,7 @@ export function Account() {
         <div className="max-w-xl">
           <div className="flex items-center gap-4 mb-6">
             <Avatar name={me.data.display_name} size={56} />
-            <p className="text-small text-ink-3">{S.account.avatarHint}</p>
+            <p className="text-small text-ink-2">{S.account.avatarHint}</p>
           </div>
 
           {field(

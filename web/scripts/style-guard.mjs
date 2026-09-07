@@ -59,7 +59,7 @@ const RULES = [
       `\\b(text|bg|border|ring|outline|from|to|via|decoration|divide|placeholder)-(${PALETTE})-[0-9]+\\b`,
       "g",
     ),
-    why: "颜色只用令牌：ink / ink-2 / ink-3 / line / surface / ok / warn / danger…（规矩 4）",
+    why: "颜色只用令牌：ink / ink-2 / line / surface / ok / warn / danger…（规矩 4）",
     ui: true,
   },
   {
