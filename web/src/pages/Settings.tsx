@@ -277,51 +277,56 @@ function DeploymentAdmin() {
                   <span className="text-ink-2 truncate hidden sm:inline">
                     {m.base_url}
                   </span>
-                  <Input size="sm" className="u-input-plain ml-auto w-14 u-num text-center shrink-0"
-                    type="number"
-                    min={1}
-                    max={256}
-                    value={val}
-                    onChange={(e) =>
-                      setPerModel({
-                        ...perModel,
-                        [key]: Math.max(1, Math.min(256, Number(e.target.value) || 1)),
-                      })
-                    }
-                  />
-                  <Button variant="secondary" size="sm" className="shrink-0"
-                    disabled={save.isPending || perModel[key] === undefined}
-                    onClick={() =>
-                      save.mutate({
-                        open,
-                        modelLimit: {
-                          base_url: m.base_url,
-                          model: m.model,
-                          max_concurrent: val,
-                        },
-                      })
-                    }
-                  >
-                    {S.settings.deployment.workersApply}
-                  </Button>
-                  {cur !== null && (
-                    <Button variant="secondary" size="sm" className="shrink-0"
-                      disabled={save.isPending}
-                      title={S.settings.deployment.modelResetHint}
+                  {/* 数字框与按钮包成一组，**和底栏那一组同一副几何**
+                      （w-16、gap-3）：右缘都顶到卡的内距，间距一差 4px，
+                      同一列上下两个框的左缘就错开，看着就是内距没对齐 */}
+                  <div className="ml-auto flex shrink-0 items-center gap-3">
+                    <Input size="sm" className="u-input-plain w-16 u-num text-center"
+                      type="number"
+                      min={1}
+                      max={256}
+                      value={val}
+                      onChange={(e) =>
+                        setPerModel({
+                          ...perModel,
+                          [key]: Math.max(1, Math.min(256, Number(e.target.value) || 1)),
+                        })
+                      }
+                    />
+                    <Button variant="secondary" size="sm"
+                      disabled={save.isPending || perModel[key] === undefined}
                       onClick={() =>
                         save.mutate({
                           open,
                           modelLimit: {
                             base_url: m.base_url,
                             model: m.model,
-                            max_concurrent: null,
+                            max_concurrent: val,
                           },
                         })
                       }
                     >
-                      {S.settings.deployment.modelReset}
+                      {S.settings.deployment.workersApply}
                     </Button>
-                  )}
+                    {cur !== null && (
+                      <Button variant="secondary" size="sm"
+                        disabled={save.isPending}
+                        title={S.settings.deployment.modelResetHint}
+                        onClick={() =>
+                          save.mutate({
+                            open,
+                            modelLimit: {
+                              base_url: m.base_url,
+                              model: m.model,
+                              max_concurrent: null,
+                            },
+                          })
+                        }
+                      >
+                        {S.settings.deployment.modelReset}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               );
             })}
