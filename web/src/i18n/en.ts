@@ -998,6 +998,27 @@ export const en = {
         "databricks://:TOKEN@host/sql/1.0/warehouses/ID?catalog=main\n" +
         "snowflake://:TOKEN@account.snowflakecomputing.com/DB/SCHEMA?warehouse=WH",
       add: "Add data source",
+      newTitle: "New data source",
+      engine: "Engine",
+      engineRaw: "Connection string",
+      optional: "(optional)",
+      testConn: "Test connection",
+      testing: "Testing…",
+      colConn: "Connection",
+      colStatus: "Status",
+      grantsNoneShort: "Not granted",
+      grantsCount: (n: number) => (n === 1 ? "1 workspace" : `${n} workspaces`),
+      fHost: "Host",
+      fPort: "Port",
+      fDatabase: "Database",
+      fUser: "User",
+      fPassword: "Password",
+      fCatalog: "Catalog",
+      fSchema: "Schema",
+      fToken: "Token",
+      fWarehouse: "Warehouse",
+      fWarehouseId: "Warehouse ID",
+      fAccount: "Account host",
       test: "Test",
       testOk: "Connected",
       testFail: "Failed",
@@ -1006,7 +1027,7 @@ export const en = {
       empty: "No data sources registered yet. Register one below.",
       grants: "Available to",
       grantsHint:
-        "Which workspaces may use this source. **Once granted, KB admins in those workspaces choose whether to mount it** — " +
+        "Which workspaces may use this source. Once granted, KB admins in those workspaces choose whether to mount it — " +
         "this controls what they can reach, not what they have mounted.",
       grantsNone:
         "Not granted to any workspace — no knowledge base can mount it.",

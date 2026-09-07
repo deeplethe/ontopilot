@@ -1437,6 +1437,13 @@ export const api = {
     request<{ ok: boolean }>(`/api/v1/admin/data-sources/${id}`, {
       method: "DELETE",
     }),
+  /** 存之前先试一次：**不落库**。回来的是 ok，连不上时还有一句原因——
+   *  密码错、库名拼错、端口不通是三件不同的事 */
+  adminTestConnString: (conn_string: string) =>
+    request<{ ok: boolean; engine?: string; error?: string }>(
+      "/api/v1/admin/data-sources/test",
+      { method: "POST", body: JSON.stringify({ conn_string }) },
+    ),
   adminTestDataSource: (id: string) =>
     request<{ ok: boolean }>(`/api/v1/admin/data-sources/${id}/test`, {
       method: "POST",

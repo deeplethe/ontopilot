@@ -122,6 +122,11 @@ pub fn router(state: AppState, cfg: &AppConfig) -> Router {
             "/admin/data-sources/{id}",
             axum::routing::delete(datasource_routes::delete),
         )
+        // 静态段排在 `{id}` 前面：存之前先试一次连接，不落库
+        .route(
+            "/admin/data-sources/test",
+            post(datasource_routes::test_conn),
+        )
         .route(
             "/admin/data-sources/{id}/test",
             post(datasource_routes::test),

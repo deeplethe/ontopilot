@@ -96,6 +96,42 @@ pub async fn delete(
     Ok(Json(json!({ "ok": true })))
 }
 
+#[derive(Deserialize)]
+pub struct TestConnBody {
+    pub conn_string: String,
+}
+
+/// 存之前先试一次。**这一步不落库**：登记表单里那个「测试连接」按的是它。
+///
+/// 从前只能先存下来再测，测不通还得回头把这条删掉；而 [`test`] 只回 `ok: false`，
+/// 连为什么不通都不说。这里把引擎的报错原样带回去——密码错、库名拼错、
+/// 端口不通，是三件不同的事，人得知道是哪一件。
+pub async fn test_conn(
+    AuthUser(user): AuthUser,
+    Json(body): Json<TestConnBody>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require_admin(&user)?;
+    let engine = crate::query_engine::engine_from_conn(&body.conn_string).ok_or_else(|| {
+        AppError::invalid(
+            "unsupported_conn_scheme",
+            format!(
+                "Connection string must start with one of: postgres://, mysql://, trino://, databricks://, snowflake:// (engines: {})",
+                crate::query_engine::ENGINES.join(", ")
+            ),
+        )
+    })?;
+    // 连接串的形状（缺令牌、缺 warehouse……）与连得上连不上分开报：前者是写错了，
+    // 后者是环境问题，两句话对人的下一步动作不一样
+    let eng = crate::query_engine::engine_for(engine, &body.conn_string)
+        .map_err(|e| AppError::invalid("bad_conn_string", e.to_string()))?;
+    match eng.test().await {
+        Ok(()) => Ok(Json(json!({ "ok": true, "engine": engine }))),
+        Err(e) => Ok(Json(
+            json!({ "ok": false, "engine": engine, "error": e.to_string() }),
+        )),
+    }
+}
+
 pub async fn test(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
