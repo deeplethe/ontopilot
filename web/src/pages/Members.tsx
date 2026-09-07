@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { api } from "../api";
 import { S } from "../i18n";
 import {
@@ -15,7 +15,12 @@ import {
   Pager,
   pageSlice,
   SearchSelect,
-  SettingsCard,
+  Table,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
 } from "../ui";
 
 const ROLES = ["owner", "admin", "editor", "viewer"] as const;
@@ -42,6 +47,10 @@ export function Members({ workspaceId }: { workspaceId: string }) {
   const [status, setStatus] = useState<"all" | "active" | "deactivated">("active");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
+  // 角色平时是一行字，点了才变成下拉——同时只有一行在编辑
+  const [editingRole, setEditingRole] = useState<string | null>(null);
+  // 按角色筛
+  const [role, setRole] = useState("all");
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +74,7 @@ export function Members({ workspaceId }: { workspaceId: string }) {
   };
   const onError = (e: unknown) => setError((e as Error).message);
 
-  const setRole = useMutation({
+  const setRole_ = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
       api.setMemberRole(workspaceId, userId, role),
     onSuccess: refresh,
@@ -118,6 +127,7 @@ export function Members({ workspaceId }: { workspaceId: string }) {
   const q = filter.trim().toLowerCase();
   const memberList = people
     .filter((p) => status === "all" || (status === "deactivated") === p.deactivated)
+    .filter((p) => role === "all" || p.role === role)
     .filter(
       (p) =>
         !q ||
@@ -128,27 +138,37 @@ export function Members({ workspaceId }: { workspaceId: string }) {
     .sort((a, b) => Number(a.deactivated) - Number(b.deactivated));
   const { rows: pagedMembers, safe: safeMemberPage } = pageSlice(memberList, memberPage, MEMBER_PAGE);
 
+  const reset = (fn: () => void) => {
+    fn();
+    setMemberPage(0);
+  };
+
   return (
     <div className="space-y-4">
-      {/* 筛这份名单的东西在卡外面（DESIGN.md 6）：它们不是名单的内容，
-          而且筛空了的时候，那张卡要能变成空态，不能把改筛选的唯一办法一起带走 */}
-      <div className="flex items-center gap-2">
-        <Input size="sm" className="w-56"
+      {/* 筛这份名单的东西在表格外面（DESIGN.md 6）：三个筛子同一副身材——
+          带放大镜的中号输入框 + 两个下拉，与图谱、文库那几页的筛选条一致 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          icon={<Search size={13} />}
+          className="w-64"
           placeholder={S.settings.searchUsers}
           value={filter}
-          onChange={(e) => {
-            setFilter(e.target.value);
-            setMemberPage(0);
-          }}
+          onChange={(e) => reset(() => setFilter(e.target.value))}
+        />
+        <Dropdown
+          className="w-32"
+          value={role}
+          onChange={(v) => reset(() => setRole(v))}
+          options={[
+            { value: "all", label: S.members.filterAllRoles },
+            ...ROLE_OPTIONS,
+          ]}
         />
         {me.data?.is_admin && (
           <Dropdown
             className="w-36"
             value={status}
-            onChange={(v) => {
-              setStatus(v as typeof status);
-              setMemberPage(0);
-            }}
+            onChange={(v) => reset(() => setStatus(v as typeof status))}
             options={[
               { value: "active", label: S.members.filterActive },
               { value: "deactivated", label: S.members.filterDeactivated },
@@ -156,61 +176,72 @@ export function Members({ workspaceId }: { workspaceId: string }) {
             ]}
           />
         )}
-        {me.data?.is_admin && (
-          <Button variant="primary" size="sm" className="ml-auto"
-            onClick={() => setCreating(true)}
-          >
-            <Plus size={12} />
-            {S.settings.newUser}
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+            {S.members.addExisting}
           </Button>
-        )}
+          {me.data?.is_admin && (
+            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+              <Plus size={12} />
+              {S.settings.newUser}
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-body text-danger">{error}</p>}
 
-      <SettingsCard
-        title={S.members.title}
-        // 为什么停用的账号还留着：只在看它们的时候说
-        hint={status === "deactivated" ? S.members.deactivatedHint : undefined}
-        /* 底栏从「常驻的选人器 + 角色 + Add」收成一个按钮：**上面已经有一个
-           搜索框了**，两个长得一样的框摆在同一张卡里，第一眼分不出哪个是筛
-           哪个是加。加人是偶尔一次的动作，藏进弹窗，让这张卡只剩名单 */
-        action={
-          <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
-            {S.members.addExisting}
-          </Button>
-        }
-      >
-        {memberList.length === 0 ? (
-          <p className="text-small text-ink-2">{S.ui.noMatches}</p>
-        ) : (
-          <div className="divide-y divide-line">
+      {/* 一张表：每一列宽度定死，角色、动作都在自己那一列里，不再随名字长短漂移 */}
+      <div className="glass rounded-panel overflow-hidden">
+        <Table>
+          <THead>
+            <Tr>
+              <Th>{S.members.userLabel}</Th>
+              <Th>{S.members.roleLabel}</Th>
+              <Th>{S.members.statusLabel}</Th>
+              <Th />
+            </Tr>
+          </THead>
+          <TBody>
             {pagedMembers.map((m) => (
-              <div
-                key={m.user_id}
-                className={`flex items-center gap-3 py-3 first:pt-0 ${m.deactivated ? "opacity-55" : ""}`}
-              >
-                <div className="min-w-0 flex-1">
+              <Tr key={m.user_id} className={m.deactivated ? "opacity-55" : undefined}>
+                <Td>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-body text-ink">{m.display_name}</span>
                     {m.is_admin && <Chip tone="info">{S.members.systemAdmin}</Chip>}
-                    {/* 停用是这一行的状态，不是另一张表 */}
-                    {m.deactivated && (
-                      <Chip tone="danger">{S.members.filterDeactivated}</Chip>
-                    )}
                   </div>
                   <div className="truncate text-small text-ink-2">{m.email}</div>
-                </div>
-                {!m.deactivated && (
-                  <Dropdown
-                    size="sm"
-                    className="w-24"
-                    value={m.role}
-                    onChange={(role) => setRole.mutate({ userId: m.user_id, role })}
-                    options={ROLE_OPTIONS}
-                  />
-                )}
-                <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
+                </Td>
+                <Td>
+                  {/* 静态文字，点一下才变成下拉：一列下拉框会把一张只读的名单
+                      看成一张待填的表，而改角色是偶尔为之 */}
+                  {m.deactivated ? (
+                    <span className="text-small text-ink-2">—</span>
+                  ) : editingRole === m.user_id ? (
+                    <Dropdown
+                      size="sm"
+                      className="w-24"
+                      value={m.role}
+                      onChange={(r) => {
+                        setEditingRole(null);
+                        if (r !== m.role) setRole_.mutate({ userId: m.user_id, role: r });
+                      }}
+                      options={ROLE_OPTIONS}
+                    />
+                  ) : (
+                    <LinkButton onClick={() => setEditingRole(m.user_id)}>
+                      {S.members.roles[m.role as keyof typeof S.members.roles] ?? m.role}
+                    </LinkButton>
+                  )}
+                </Td>
+                <Td>
+                  {m.deactivated ? (
+                    <Chip tone="danger">{S.members.filterDeactivated}</Chip>
+                  ) : (
+                    <span className="text-small text-ink-2">{S.members.filterActive}</span>
+                  )}
+                </Td>
+                <Td className="text-right whitespace-nowrap">
                   {m.deactivated ? (
                     <Button variant="secondary" size="sm"
                       disabled={revive.isPending}
@@ -219,7 +250,7 @@ export function Members({ workspaceId }: { workspaceId: string }) {
                       {S.members.reactivate}
                     </Button>
                   ) : (
-                    <>
+                    <span className="flex items-center justify-end gap-3">
                       <LinkButton tone="danger" onClick={() => remove.mutate(m.user_id)}>
                         {S.members.remove}
                       </LinkButton>
@@ -237,20 +268,23 @@ export function Members({ workspaceId }: { workspaceId: string }) {
                           {S.members.deactivate}
                         </LinkButton>
                       )}
-                    </>
+                    </span>
                   )}
-                </div>
-              </div>
+                </Td>
+              </Tr>
             ))}
-          </div>
+          </TBody>
+        </Table>
+        {memberList.length === 0 && (
+          <p className="px-4 py-6 text-body text-ink-2">{S.ui.noMatches}</p>
         )}
-        <Pager
-          total={memberList.length}
-          pageSize={MEMBER_PAGE}
-          page={safeMemberPage}
-          onPage={setMemberPage}
-        />
-      </SettingsCard>
+      </div>
+      <Pager
+        total={memberList.length}
+        pageSize={MEMBER_PAGE}
+        page={safeMemberPage}
+        onPage={setMemberPage}
+      />
 
       {/* 把一个**已有账号**加进这个工作区。与「开账号」是两件事：那个凭空造
           一个人，这个只是给已经存在的人一个角色 */}
@@ -265,9 +299,9 @@ export function Members({ workspaceId }: { workspaceId: string }) {
               {S.members.cancel}
             </Button>
             <Button variant="primary" size="sm"
-              disabled={!addUserId || setRole.isPending}
+              disabled={!addUserId || setRole_.isPending}
               onClick={() => {
-                setRole.mutate({ userId: addUserId, role: addRole });
+                setRole_.mutate({ userId: addUserId, role: addRole });
                 setAdding(false);
               }}
             >

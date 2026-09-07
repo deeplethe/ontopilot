@@ -102,6 +102,7 @@ export const zh: Strings = {
     language: "语言",
     kbsNav: "知识库",
     kbsTitle: "知识库",
+    kbsFilter: "按名字筛选…",
     kbOpen: "公开",
     kbRestricted: "受限",
     kbStats: (docs: number, members: number) =>

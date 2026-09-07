@@ -113,6 +113,7 @@ export const en = {
     language: "Language",
     kbsNav: "Knowledge bases",
     kbsTitle: "Knowledge bases",
+    kbsFilter: "Filter by name…",
     kbOpen: "Open",
     kbRestricted: "Restricted",
     kbStats: (docs: number, members: number) =>

@@ -32,6 +32,11 @@ export function KbSwitcher({
   // 建库要系统管理员或工作区 Admin+（见 api/kbs.rs create）：没这个权限的人
   // 看不到入口，省得点进去吃一个 403
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
+  const wsRole = useQuery({
+    queryKey: ["workspaceRole", kb?.workspace_id],
+    queryFn: () => api.workspaceRole(kb!.workspace_id),
+    enabled: !!kb?.workspace_id,
+  });
 
   // 关掉就把查找词丢掉：下次打开是从头挑，不是接着上次的筛选结果
   const dismiss = () => {
@@ -115,16 +120,18 @@ export function KbSwitcher({
               <p className="px-4 py-3 text-body text-ink-2">{S.nav.noKbMatch}</p>
             )}
           </div>
-          {/* 新建钉在最下面，不混在列里：它不是一个库。去的是建库那一页，
-              带上 create——落地就是表单，不用在设置页里再找一次按钮 */}
-          {me.data?.is_admin && (
+          {/* 新建钉在最下面，不混在列里：它不是一个库。去的是「我的知识库」，
+              带上 create——落地就是表单，不用到了那一页再找一次按钮 */}
+          {(me.data?.is_admin ||
+            wsRole.data?.role === "admin" ||
+            wsRole.data?.role === "owner") && (
             <Row
               density="menu"
               className="gap-3 border-t border-line px-4 py-3 text-body"
               icon={<Plus size={14} />}
               onClick={() => {
                 dismiss();
-                navigate({ to: "/admin", search: { tab: "kbs", create: true } });
+                navigate({ to: "/account/kbs", search: { create: true } });
               }}
             >
               {S.settings.kbs.newKb}

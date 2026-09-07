@@ -189,6 +189,10 @@ const accountRoute = createRoute({
 const myKbsRoute = createRoute({
   getParentRoute: () => accountShellRoute,
   path: "/account/kbs",
+  // 建库的入口在别处（顶栏的库切换器最后一行），带着这个参数落地就直接开表单
+  validateSearch: (search: Record<string, unknown>): { create?: true } => ({
+    create: search.create === true || search.create === "true" ? true : undefined,
+  }),
   component: MyKbs,
 });
 
@@ -205,20 +209,14 @@ const adminRoute = createRoute({
   // 深链指定页签（如 KB 数据节的"注册新连接"直达 Data sources）
   validateSearch: (
     search: Record<string, unknown>,
-  ): {
-    tab?: "models" | "members" | "kbs" | "datasources" | "deployment";
-    create?: true;
-  } => ({
+  ): { tab?: "models" | "members" | "datasources" | "deployment" } => ({
     tab:
       search.tab === "models" ||
       search.tab === "members" ||
-      search.tab === "kbs" ||
       search.tab === "datasources" ||
       search.tab === "deployment"
         ? search.tab
         : undefined,
-    // 建库的入口在别处（库切换器的最后一行），带着这个参数落到这里就直接开表单
-    create: search.create === true || search.create === "true" ? true : undefined,
   }),
   component: Settings,
 });

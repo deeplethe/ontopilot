@@ -1283,6 +1283,12 @@ export const api = {
   revokeToken: (tokenId: string) =>
     request<{ ok: boolean }>(`/api/v1/me/tokens/${tokenId}`, { method: "DELETE" }),
   workspaces: () => request<Workspace[]>("/api/v1/workspaces"),
+  /** 这个工作区，以及**我在里面是什么角色**。建库要 Admin+（见 api/kbs.rs
+   *  的 create），而 `GET /workspaces` 那份列表不带角色 */
+  workspaceRole: (workspaceId: string) =>
+    request<{ workspace: Workspace; role: string }>(
+      `/api/v1/workspaces/${workspaceId}`,
+    ),
 
   kbs: (workspaceId: string) =>
     request<Kb[]>(`/api/v1/workspaces/${workspaceId}/kbs`),

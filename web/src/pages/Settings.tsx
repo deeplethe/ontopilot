@@ -1,20 +1,17 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Lock, Plus, X } from "lucide-react";
-import { api, DEFAULT_ONTOLOGY_PACKS } from "../api";
+import { useSearch } from "@tanstack/react-router";
+import { X } from "lucide-react";
+import { api } from "../api";
 import { LANG_NAMES, S } from "../i18n";
 import { useKb } from "../kb";
 import { toast } from "../toast";
 import {
   Button,
   Checkbox,
-  Dialog,
-  Field,
   IconButton,
   Input,
   LinkButton,
-  MultiSearchSelect,
   Pill,
   SearchSelect,
   Segmented,
@@ -31,7 +28,6 @@ import { Members } from "./Members";
 export const ADMIN_TABS = [
   { key: "models", label: () => S.settings.tabModels },
   { key: "members", label: () => S.settings.tabMembers },
-  { key: "kbs", label: () => S.settings.tabKbs },
   { key: "datasources", label: () => S.settings.datasources.tab },
   { key: "deployment", label: () => S.settings.tabDeployment },
 ] as const;
@@ -355,200 +351,6 @@ function DeploymentAdmin() {
 }
 
 /** 知识库管理（部署层）：全部库总览 + 新建（建库是管理动作，切换器只切换）。 */
-/** `autoCreate`：从库切换器最后一行过来的，落地就开建库表单 */
-function KbsAdmin({ autoCreate }: { autoCreate?: boolean }) {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { workspace, setKb } = useKb();
-  const [creating, setCreating] = useState(!!autoCreate);
-  const list = useQuery({
-    queryKey: ["myKbs", workspace?.id],
-    queryFn: () => api.myKbs(workspace!.id),
-    enabled: !!workspace,
-  });
-  const rows = list.data?.kbs ?? [];
-
-  return (
-    <div className="space-y-4">
-      {/* 新建在名单**上面**：动作在内容之前，与 Users 那一节同一副排法 */}
-      <div className="flex items-start gap-4">
-        <p className="min-w-0 flex-1 text-small text-ink-2">{S.settings.kbs.hint}</p>
-        <Button variant="primary" size="sm" className="shrink-0"
-          onClick={() => setCreating(true)}
-        >
-          <Plus size={12} />
-          {S.settings.kbs.newKb}
-        </Button>
-      </div>
-
-      <div className="glass rounded-panel divide-y divide-line">
-        {rows.map(({ kb, doc_count, member_count }) => (
-          <div key={kb.id} className="px-4 py-3 flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-body text-ink truncate">
-                  {kb.name}
-                </span>
-                {kb.is_default && (
-                  <span className="u-chip u-chip-neutral !text-fine">
-                    {S.settings.kbs.defaultChip}
-                  </span>
-                )}
-                {kb.visibility === "restricted" && (
-                  <span className="flex items-center gap-1 text-fine text-ink-2">
-                    <Lock size={10} />
-                    {S.settings.kbs.visRestricted}
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 text-small text-ink-2">
-                <span className="u-num">
-                  {S.account.kbStats(doc_count, member_count)}
-                </span>
-              </div>
-            </div>
-            <Button variant="secondary" size="sm" className="shrink-0"
-              onClick={() => {
-                setKb(kb.id);
-                navigate({ to: "/kb/$kbId/settings", params: { kbId: kb.id } });
-              }}
-            >
-              {S.settings.kbs.openSettings}
-            </Button>
-          </div>
-        ))}
-        {!list.isPending && rows.length === 0 && (
-          <p className="px-4 py-6 text-body text-ink-2">{S.settings.kbs.empty}</p>
-        )}
-      </div>
-
-      {creating && workspace && (
-        <NewKbModal
-          workspaceId={workspace.id}
-          onDone={(id) => {
-            setCreating(false);
-            queryClient.invalidateQueries({
-              queryKey: ["myKbs", workspace.id],
-            });
-            queryClient.invalidateQueries({ queryKey: ["kbs", workspace.id] });
-            // 建完直达库设置：下一步几乎总是邀人/配置
-            if (id) {
-              setKb(id);
-              navigate({ to: "/kb/$kbId/settings", params: { kbId: id } });
-            }
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-/** 新建知识库弹窗（管理员）：缺省 restricted，不污染全员切换器。 */
-function NewKbModal({
-  workspaceId,
-  onDone,
-}: {
-  workspaceId: string;
-  onDone: (id?: string) => void;
-}) {
-  const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
-  const [restricted, setRestricted] = useState(true);
-  // schema.org 默认勾选，可反选（0009）。删掉内置类之后不选任何包的库是真的空，
-  // 而空库仍然能用——但绝大多数人要的是一个已经能认出人、组织、产品的起点。
-  // 一秒装完（0008 的批量插入），所以默认装得起
-  const [packs, setPacks] = useState<string[]>([...DEFAULT_ONTOLOGY_PACKS]);
-
-  const available = useQuery({
-    queryKey: ["ontologyPacks"],
-    queryFn: api.ontologyPacks,
-  });
-
-  // 勾选顺序即安装顺序：第一个包的类会认领同名的种子类，
-  // 后面的撞名才查得到对齐表。所以取消再勾会排到末尾——这是对的
-  const toggle = (id: string) =>
-    setPacks((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id],
-    );
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.createKb(workspaceId, {
-        name: name.trim(),
-        description: desc.trim() || null,
-        visibility: restricted ? "restricted" : "open",
-        ontology_packs: packs,
-      }),
-    onSuccess: (kb) => onDone(kb.id),
-  });
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => !o && onDone()}
-      title={S.settings.kbs.newKb}
-      closeLabel={S.ui.close}
-      width="sm"
-      footer={
-        <>
-          <Button variant="secondary" size="sm" onClick={() => onDone()}>
-            {S.library.cancel}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!name.trim() || create.isPending}
-            onClick={() => create.mutate()}
-          >
-            {S.settings.kbs.create}
-          </Button>
-        </>
-      }
-    >
-      <div>
-        <Input className="w-full mb-2"
-          autoFocus
-          placeholder={S.settings.kbs.name}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <Input className="w-full mb-3"
-          placeholder={S.settings.kbs.description}
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-        />
-        <Checkbox
-          className="mb-4"
-          checked={restricted}
-          onChange={(e) => setRestricted(e.target.checked)}
-          label={S.settings.kbs.visRestricted}
-        />
-
-        {/* 包是可选的，而且**多半只装一个**：五张卡片铺开占了这张弹窗一多半，
-            换成搜着选——说明与规模挪进下拉里的次要文案，选中的堆在框上面 */}
-        <Field label={S.settings.kbs.packsLabel} hint={S.settings.kbs.packsHint}>
-          <MultiSearchSelect
-            className="w-full"
-            values={packs}
-            options={(available.data?.packs ?? []).map((p) => ({
-              value: p.id,
-              label: p.name,
-              hint: `${p.summary} · ${S.settings.kbs.packsCount(p.classes, p.properties)}`,
-            }))}
-            placeholder={S.settings.kbs.packsPick}
-            emptyHint={S.settings.kbs.packsNone}
-            onToggle={toggle}
-          />
-        </Field>
-        {create.isError && (
-          <p className="text-small text-danger mb-2">
-            {(create.error as Error).message}
-          </p>
-        )}
-      </div>
-    </Dialog>
-  );
-}
 
 /** 系统层数据源注册（问数）：凭据只进不出，列表只显示 host:port/db 摘要。 */
 function DataSourcesAdmin() {
@@ -717,7 +519,7 @@ export function Settings() {
   /* 人在哪一节，**地址说了算**：左栏第二层是一组 Link（见 AccountShell），
      刷新、回退、把链接发给同事都落回同一节。从前这里另存一份 state，
      于是地址与页面各说各的 */
-  const { tab: tabParam, create } = useSearch({ from: "/account/admin" });
+  const { tab: tabParam } = useSearch({ from: "/account/admin" });
   const tab = tabParam ?? "models";
   const queryClient = useQueryClient();
   const settings = useQuery({
@@ -794,7 +596,6 @@ export function Settings() {
         />
 
         {tab === "members" && <Members workspaceId={workspace.id} />}
-        {tab === "kbs" && <KbsAdmin autoCreate={!!create} />}
         {tab === "datasources" && <DataSourcesAdmin />}
         {tab === "deployment" && <DeploymentAdmin />}
 
