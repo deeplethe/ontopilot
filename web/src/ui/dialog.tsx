@@ -36,7 +36,7 @@ export function Dialog({
         <RadixDialog.Overlay className="u-modal-scrim fixed inset-0 z-50 grid place-items-center overflow-y-auto p-4">
           <RadixDialog.Content
             className={cn(
-              "u-modal-panel u-modal-in max-w-full rounded-lg p-6 shadow-2xl outline-none",
+              "u-modal-panel u-modal-in max-w-full rounded-overlay p-6 shadow-2xl outline-none",
               w,
             )}
           >

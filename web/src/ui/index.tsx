@@ -1,6 +1,6 @@
 /* Utopia UI 组件库 — 页面只用这里的组件与 styles.css 语义类，不写颜色字面量。
    规矩在 web/DESIGN.md，守卫在 scripts/style-guard.mjs：字号五档、间距六档、
-   圆角两档、颜色只认令牌、状态（hover/focus/disabled/动效）只在这里定。
+   圆角四档、颜色只认令牌、状态（hover/focus/disabled/动效）只在这里定。
    Dialog / DangerConfirm / Tooltip / Table / Field 各在自己的文件里，从这里再导出。 */
 import { forwardRef, useEffect, useRef, useState } from "react";
 import type {
@@ -297,7 +297,7 @@ export function Dropdown({
         <div
           className={cn(
             // 与告警面板、用户菜单同一张皮（u-menu-glass）：浮在页面上的面只有一种
-            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden",
+            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay shadow-2xl overflow-hidden",
           )}
         >
           {menuLabel && (
@@ -440,7 +440,7 @@ export function SearchSelect({
         }}
       />
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay shadow-2xl overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -553,7 +553,7 @@ export function MultiSearchSelect({
               key={o.value}
               type="button"
               onClick={() => onToggle(o.value)}
-              className="group flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-0.5 text-fine text-ink transition-colors duration-fast hover:bg-surface-3"
+              className="group flex items-center gap-1 rounded-cell bg-surface-2 px-2 py-0.5 text-fine text-ink transition-colors duration-fast hover:bg-surface-3"
               title={o.hint ?? o.label}
             >
               {o.label}
@@ -609,7 +609,7 @@ export function MultiSearchSelect({
         />
       </div>
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-lg shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay shadow-2xl overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -737,7 +737,7 @@ export function ColorPicker({
           type="button"
           title={value}
           onClick={() => setOpen(!open)}
-          className="h-8 w-10 rounded-lg border border-line-strong hover:border-line-strong transition-colors bg-surface grid place-items-center"
+          className="h-8 w-10 rounded-control border border-line-strong hover:border-line-strong transition-colors bg-surface grid place-items-center"
         >
           <span
             className={cn("h-3.5 w-3.5", shape === "circle" ? "rounded-full" : "scale-90")}
@@ -749,13 +749,13 @@ export function ColorPicker({
           type="button"
           title={value}
           onClick={() => setOpen(!open)}
-          className="h-8 w-14 rounded-lg border border-line-strong hover:border-line-strong transition-colors"
+          className="h-8 w-14 rounded-control border border-line-strong hover:border-line-strong transition-colors"
           style={{ background: valid ? value : ENTITY_PALETTE[0] }}
         />
       )}
       {open && (
         // 显式宽度：绝对定位的收缩宽度会被 inline-block 触发器的容器块钳死
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-lg p-3 shadow-2xl">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-overlay p-3 shadow-2xl">
           <div className="grid grid-cols-8 gap-1.5 mb-2.5">
             {ENTITY_PALETTE.map((c) => (
               <button
@@ -821,14 +821,14 @@ export function Pager({
       <button
         onClick={() => onPage(safe - 1)}
         disabled={safe === 0}
-        className="u-btn u-btn-ghost h-7 w-7 grid place-items-center rounded-lg"
+        className="u-btn u-btn-ghost h-7 w-7 grid place-items-center"
       >
         <ChevronLeft size={13} />
       </button>
       <button
         onClick={() => onPage(safe + 1)}
         disabled={safe >= pageCount - 1}
-        className="u-btn u-btn-ghost h-7 w-7 grid place-items-center rounded-lg"
+        className="u-btn u-btn-ghost h-7 w-7 grid place-items-center"
       >
         <ChevronRight size={13} />
       </button>
@@ -859,7 +859,7 @@ export function Panel({
 }) {
   return (
     <div
-      className={cn(strong ? "glass-strong" : "glass", "rounded-lg", className)}
+      className={cn(strong ? "glass-strong" : "glass", "rounded-panel", className)}
     >
       {children}
     </div>
@@ -979,7 +979,7 @@ export function EmptyState({
 }) {
   return (
     <div className="text-center">
-      <div className="glass mx-auto mb-4 h-14 w-14 rounded-lg grid place-items-center text-title font-bold text-ink-2">
+      <div className="glass mx-auto mb-4 h-14 w-14 rounded-panel grid place-items-center text-title font-bold text-ink-2">
         {icon}
       </div>
       <div className="text-body text-ink-3 whitespace-pre-line">
@@ -1094,7 +1094,7 @@ export function rowClass(
 ): string {
   return cn(
     "group flex w-full items-center gap-2 text-left transition-colors duration-fast",
-    density === "menu" ? "rounded-none" : "rounded-lg",
+    density === "menu" ? "rounded-none" : "rounded-cell",
     // 左栏导航项 32 高（py 6）：36 在一列十几条里显得松
     density === "nav"
       ? "px-2 py-1.5 text-body font-medium"
@@ -1228,7 +1228,7 @@ export function Segmented<T extends string>({
     <div
       role="tablist"
       className={cn(
-        "flex gap-1 rounded-lg bg-surface p-1",
+        "flex gap-1 rounded-control bg-surface p-1",
         fill && "w-full",
         disabled && "opacity-40",
         className,
@@ -1246,7 +1246,7 @@ export function Segmented<T extends string>({
             disabled={disabled}
             onClick={() => onChange(o.value)}
             className={cn(
-              "flex items-center justify-center gap-1 rounded-lg font-medium transition-colors duration-fast",
+              "flex items-center justify-center gap-1 rounded-control font-medium transition-colors duration-fast",
               size === "sm" ? "px-2 py-1 text-fine" : "px-3 py-1 text-small",
               fill && "flex-1",
               active
@@ -1321,7 +1321,7 @@ export function ToolTower({
   return (
     <div
       className={cn(
-        "u-tower group glass-strong flex flex-col overflow-hidden rounded-lg shadow-xl",
+        "u-tower group glass-strong flex flex-col overflow-hidden rounded-panel shadow-xl",
         className,
       )}
     >
@@ -1477,7 +1477,7 @@ export function ExpandCard({
 /** 复合行的外壳：一行里有两个按钮时不能是 Row（按钮里不能嵌按钮），
     外层 div 用它拿到 hover 与 group */
 export const HOVER_ROW =
-  "group flex items-center gap-2 rounded-lg px-2 py-1 transition-colors duration-fast hover:bg-surface-2";
+  "group flex items-center gap-2 rounded-cell px-2 py-1 transition-colors duration-fast hover:bg-surface-2";
 /** 指针停在所在行（.group）上才现身的东西；加 is-on 常显 */
 export const REVEAL = "u-reveal";
 
