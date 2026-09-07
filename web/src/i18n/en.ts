@@ -134,8 +134,7 @@ export const en = {
     tokenScope: "Scope",
     scopeRead: "Read",
     scopeWrite: "Write",
-    scopeHint:
-      "Effective rights are your own role ∩ this scope. Write is a ceiling, not a grant: a viewer's write token still cannot write.",
+    scopeHint: "A ceiling, not a grant — a token never does more than you can.",
     tokenKbs: "Knowledge bases",
     kbsAllHint: "Nothing selected means every base you can open.",
     tokenExpires: "Expires",

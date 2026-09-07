@@ -122,8 +122,7 @@ export const zh: Strings = {
     tokenScope: "范围",
     scopeRead: "只读",
     scopeWrite: "可写",
-    scopeHint:
-      "有效权限 = 你自己的角色 ∩ 这个范围。可写是上限不是授权：只读成员的可写令牌照样写不了。",
+    scopeHint: "是上限，不是授权——令牌永远不会比你自己能做的更多。",
     tokenKbs: "知识库",
     kbsAllHint: "一个都不选 = 你能进的全部库。",
     tokenExpires: "过期",

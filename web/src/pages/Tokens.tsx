@@ -343,23 +343,39 @@ export function Tokens() {
                 onChange={(e) => setName(e.target.value)}
               />
             </Field>
-            {/* 二选一，且两个选项都要读得到——单选按钮，不是一排按钮 */}
-            <Field label={S.account.tokenScope} hint={S.account.scopeHint}>
-              <div className="flex items-center gap-4">
-                {(["read", "write"] as const).map((s) => (
-                  <Radio
-                    key={s}
-                    name="token-scope"
-                    checked={scope === s}
-                    onChange={() => setScope(s)}
-                    label={s === "read" ? S.account.scopeRead : S.account.scopeWrite}
-                  />
-                ))}
-              </div>
-            </Field>
+            {/* 范围与有效期并排：两个都是一眼扫过去就定下来的小选择，
+                各占一整行只是把这张表拉长 */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* 二选一，且两个选项都要读得到——单选按钮，不是一排按钮 */}
+              <Field label={S.account.tokenScope} hint={S.account.scopeHint}>
+                <div className="flex h-8 items-center gap-4">
+                  {(["read", "write"] as const).map((s) => (
+                    <Radio
+                      key={s}
+                      name="token-scope"
+                      checked={scope === s}
+                      onChange={() => setScope(s)}
+                      label={s === "read" ? S.account.scopeRead : S.account.scopeWrite}
+                    />
+                  ))}
+                </div>
+              </Field>
+              <Field label={S.account.tokenExpires}>
+                <Dropdown
+                  className="w-full"
+                  value={String(days)}
+                  onChange={(v) => setDays(Number(v))}
+                  options={EXPIRY_CHOICES.map((d) => ({
+                    value: String(d),
+                    label: d === 0 ? S.account.expiresNever : S.account.expiresDays(d),
+                  }))}
+                />
+              </Field>
+            </div>
             {/* 库可以很多：搜着选，选中的堆在框上面。芯片墙的高度随库数长，
-                这个不随 */}
-            <Field label={S.account.tokenKbs} hint={S.account.kbsAllHint}>
+                这个不随。**不再另写一句「不选就是全部」**——控件自己就写着
+                「All bases」，同一件事说两遍只是把表单拉长 */}
+            <Field label={S.account.tokenKbs} className="mb-0">
               <MultiSearchSelect
                 className="w-full"
                 values={Array.from(picked)}
@@ -372,17 +388,6 @@ export function Tokens() {
                   else next.add(id);
                   setPicked(next);
                 }}
-              />
-            </Field>
-            <Field label={S.account.tokenExpires} className="mb-0">
-              <Dropdown
-                className="w-40"
-                value={String(days)}
-                onChange={(v) => setDays(Number(v))}
-                options={EXPIRY_CHOICES.map((d) => ({
-                  value: String(d),
-                  label: d === 0 ? S.account.expiresNever : S.account.expiresDays(d),
-                }))}
               />
             </Field>
           </div>
