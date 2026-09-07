@@ -1326,13 +1326,14 @@ pub async fn decide_reviews(
     ids: &[Uuid],
     action: &str,
     user_id: Uuid,
+    rationale: Option<&str>,
 ) -> AppResult<Vec<ReviewBatchOutcome>> {
     if action != "merge" && action != "keep" {
         return Err(AppError::Validation("action must be merge or keep".into()));
     }
     let mut out = Vec::with_capacity(ids.len());
     for &id in ids {
-        let error = decide_review(pool, kb_id, id, action, user_id)
+        let error = decide_review(pool, kb_id, id, action, user_id, rationale)
             .await
             .err()
             .map(|e| e.to_string());
@@ -1397,13 +1398,18 @@ pub async fn close_review_auto(
 }
 
 /// 人工定夺。merge 方向：度数高（事实多）的一方作为存活目标，平局取更早创建的。
+/// `rationale`：人拍板时写的那一句（0026）。**空着是允许的**——问的是「什么让你
+/// 这么定」，不是一张必填的表；但只要写了，它就跟着这一行和台账一起留下，
+/// 下一次裁决器和 agent 读先例时读到的就不只是结果。
 pub async fn decide_review(
     pool: &PgPool,
     kb_id: Uuid,
     review_id: Uuid,
     action: &str,
     user_id: Uuid,
+    rationale: Option<&str>,
 ) -> AppResult<()> {
+    let rationale = rationale.map(str::trim).filter(|s| !s.is_empty());
     let row: Option<ReviewRow> = sqlx::query_as(
         "SELECT id, left_id, right_id, score, reason, stage, created_at
          FROM resolution_reviews WHERE id = $1 AND kb_id = $2 AND status = 'pending'",
@@ -1431,32 +1437,37 @@ pub async fn decide_review(
             );
             if l != r {
                 let (target, source) = merge_direction(pool, l, r).await?;
+                // 合并日志的 reason 也记这一句：Review › Merges 那一列读的是它
                 merge_entities(
                     pool,
                     kb_id,
                     source,
                     target,
                     Some(user_id),
-                    "review decision",
+                    rationale.unwrap_or("review decision"),
                 )
                 .await?;
             }
             sqlx::query(
-                "UPDATE resolution_reviews SET status = 'merged', decided_at = now(), decided_by = $2
+                "UPDATE resolution_reviews
+                 SET status = 'merged', decided_at = now(), decided_by = $2, rationale = $3
                  WHERE id = $1",
             )
             .bind(review_id)
             .bind(user_id)
+            .bind(rationale)
             .execute(pool)
             .await?;
         }
         "keep" => {
             sqlx::query(
-                "UPDATE resolution_reviews SET status = 'kept', decided_at = now(), decided_by = $2
+                "UPDATE resolution_reviews
+                 SET status = 'kept', decided_at = now(), decided_by = $2, rationale = $3
                  WHERE id = $1",
             )
             .bind(review_id)
             .bind(user_id)
+            .bind(rationale)
             .execute(pool)
             .await?;
         }

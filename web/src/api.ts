@@ -586,6 +586,8 @@ export type AgentPrecedent =
       left: string;
       right: string;
       at: string;
+      /** 人拍板时写的那一句（0026）；0026 之前的决定没有 */
+      why?: string | null;
     }
   | { family: "type_pair"; merged: number; kept: number; reverted: number };
 
@@ -2047,13 +2049,15 @@ export const api = {
       `/api/v1/kbs/${kbId}/review?queue=${queue}&limit=${limit}&offset=${offset}&types=${types}`,
     ),
   /** 一批重复项同一个动作（#428）：每条各自裁、各自记台账，回来逐条说成没成 */
-  reviewBatch: (kbId: string, ids: string[], action: "merge" | "keep") =>
+  /** `rationale`：人拍板时写的那一句（0026）——什么让你这么定。可不写；写了就跟着
+   *  决定一起进台账，下一次裁决器和 agent 读到的先例就不只是结果 */
+  reviewBatch: (kbId: string, ids: string[], action: "merge" | "keep", rationale?: string) =>
     request<{
       decided: number;
       outcomes: { id: string; error: string | null }[];
     }>(`/api/v1/kbs/${kbId}/review/batch`, {
       method: "POST",
-      body: JSON.stringify({ ids, action }),
+      body: JSON.stringify({ ids, action, rationale: rationale || null }),
     }),
   /** 闭合日期带精度（year | month | day）：写多少位就是多少精度，服务端照存 */
   closeFact: (kbId: string, factId: string, validTo: string, precision: string) =>
@@ -2084,10 +2088,10 @@ export const api = {
       `/api/v1/kbs/${kbId}/review/pending/${pendingId}`,
       { method: "POST", body: JSON.stringify({ action }) },
     ),
-  decideReview: (kbId: string, reviewId: string, action: "merge" | "keep") =>
+  decideReview: (kbId: string, reviewId: string, action: "merge" | "keep", rationale?: string) =>
     request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/review/${reviewId}`, {
       method: "POST",
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, rationale: rationale || null }),
     }),
   /** 对一条数据映射口径表态（0011）。改状态不删行——拒绝留痕，下一轮探索不再提议它 */
   decideMapping: (
@@ -2131,10 +2135,10 @@ export const api = {
    *  第一个要看的就是「我们拿什么去找的」 */
   /** 手动合并：把 source 并进 target。**方向要紧**——source 消失，
    *  它的事实搬到 target 上；合并可整体回滚（entity_merges 记着快照） */
-  mergeEntities: (kbId: string, source: string, target: string) =>
+  mergeEntities: (kbId: string, source: string, target: string, rationale?: string) =>
     request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/entities/merge`, {
       method: "POST",
-      body: JSON.stringify({ source, target }),
+      body: JSON.stringify({ source, target, rationale: rationale || null }),
     }),
   typeResolutionPreview: (kbId: string) =>
     request<{ items: TypeSuggestion[] }>(
@@ -2209,10 +2213,15 @@ export const api = {
     request<ReviewSummary>(`/api/v1/kbs/${kbId}/review/summary`),
   /** 回答 agent 的一笔（0025）：merge / keep 答一条建议，revert 撤回一条自动合并，
    *  merge 也能推翻一条自动分开。走的是人的裁决路径，成为新先例 */
-  agentAnswer: (kbId: string, decisionId: string, action: "merge" | "keep" | "revert") =>
+  agentAnswer: (
+    kbId: string,
+    decisionId: string,
+    action: "merge" | "keep" | "revert",
+    rationale?: string,
+  ) =>
     request<{ ok: boolean }>(`/api/v1/kbs/${kbId}/review/agent/${decisionId}`, {
       method: "POST",
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, rationale: rationale || null }),
     }),
   reviewHistory: (kbId: string, page: number, per = 20) =>
     request<{ events: ReviewHistoryEvent[]; total: number }>(

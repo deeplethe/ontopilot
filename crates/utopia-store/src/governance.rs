@@ -34,6 +34,9 @@ pub struct Precedent {
     pub left: String,
     pub right: String,
     pub at: DateTime<Utc>,
+    /// 人拍板时写的那一句（0026）。**先例带着理由才是先例**：只有结果的话，
+    /// 一次错误的合并会被读成"这类该合"，错误洗成政策。老行没有这一列，为空
+    pub why: Option<String>,
 }
 
 impl Precedent {
@@ -68,7 +71,8 @@ const R: &str = "lower(COALESCE(detail->>'right', detail->>'target', ''))";
 const COLS: &str = "id AS event_id, action,
          COALESCE(detail->>'left', detail->>'source', '') AS \"left\",
          COALESCE(detail->>'right', detail->>'target', '') AS \"right\",
-         created_at AS at";
+         created_at AS at,
+         NULLIF(detail->>'why', '') AS why";
 
 pub async fn precedents_for(
     pool: &PgPool,
@@ -184,21 +188,30 @@ async fn type_pair_stats(
 pub fn render_lines(p: &Precedents) -> Vec<String> {
     let verb = |x: &Precedent| if x.merged() { "merged" } else { "kept apart" };
     let day = |t: &DateTime<Utc>| t.format("%Y-%m-%d").to_string();
+    // 人写了理由就带上：模型该学的是「凭什么」，不是「多半怎么判」
+    let because = |x: &Precedent| {
+        x.why
+            .as_deref()
+            .map(|w| format!("; they wrote: \"{w}\""))
+            .unwrap_or_default()
+    };
     let mut out = Vec::new();
     for x in &p.same_pair {
         out.push(format!(
-            "this same pair was {} by a person on {}",
+            "this same pair was {} by a person on {}{}",
             verb(x),
-            day(&x.at)
+            day(&x.at),
+            because(x)
         ));
     }
     for x in &p.same_name {
         out.push(format!(
-            "\"{}\" against \"{}\" was {} by a person on {}",
+            "\"{}\" against \"{}\" was {} by a person on {}{}",
             x.left,
             x.right,
             verb(x),
-            day(&x.at)
+            day(&x.at),
+            because(x)
         ));
     }
     if let Some(t) = &p.type_pair {
@@ -211,10 +224,11 @@ pub fn render_lines(p: &Precedents) -> Vec<String> {
     }
     for x in &p.reverts {
         out.push(format!(
-            "a merge of \"{}\" into \"{}\" was reverted by a person on {}",
+            "a merge of \"{}\" into \"{}\" was reverted by a person on {}{}",
             x.left,
             x.right,
-            day(&x.at)
+            day(&x.at),
+            because(x)
         ));
     }
     out
@@ -227,7 +241,7 @@ pub fn precedents_json(p: &Precedents) -> serde_json::Value {
             .map(|x| {
                 serde_json::json!({
                     "family": family, "event_id": x.event_id, "action": x.action,
-                    "left": x.left, "right": x.right, "at": x.at,
+                    "left": x.left, "right": x.right, "at": x.at, "why": x.why,
                 })
             })
             .collect::<Vec<_>>()
@@ -1061,6 +1075,7 @@ mod tests {
             left: "a".into(),
             right: "b".into(),
             at: Utc::now(),
+            why: None,
         }
     }
 
