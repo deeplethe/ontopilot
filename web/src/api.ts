@@ -1126,12 +1126,36 @@ export interface ImportPlan {
   functional_relations: number;
 }
 
+/** 一次导入记下的账。**键与 `owl_import.rs` 写进 `summary` 的一一对应**；
+ *  全是可选的——老记录可能缺字段，界面按缺失处理而不是显示 0 */
+export interface OntologyImportSummary {
+  classes_created?: number;
+  classes_updated?: number;
+  classes_key_taken?: number;
+  classes_without_description?: number;
+  relations_seen?: number;
+  relations_created?: number;
+  relations_updated?: number;
+  functional_relations?: number;
+  /** 逆属性 / 父属性连上了几条——目标 IRI 不在这个库里时会静默跳过 */
+  inverse_linked?: number;
+  sub_property_linked?: number;
+  attributes_seen?: number;
+  attributes_created?: number;
+  /** **按原因分组的计数**，不是一个数：`{no_domain: 3, unknown_domain: 1}`。
+   *  跳过一个属性的理由不止一种，而理由才是人下一步要处理的东西 */
+  attributes_skipped?: Record<string, number>;
+  /** 没投影下来的 IRI 与出现次数（服务端最多记 30 条） */
+  unprojected?: [string, number][];
+  triples?: number;
+}
+
 export interface OntologyImportView {
   id: string;
   filename: string;
   format: string;
   byte_size: number;
-  summary: Record<string, unknown>;
+  summary: OntologyImportSummary;
   imported_by_name: string | null;
   imported_at: string;
 }

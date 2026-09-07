@@ -25,6 +25,7 @@ import {
   api,
   type EntityTypeView,
   type ImportPlan,
+  type OntologyImportView,
   type OntologyMiss,
   type PlannedItem,
   type OntologyProposals,
@@ -63,6 +64,15 @@ import {
   pageSlice,
   GroupLabel,
   PageHeader,
+  Dialog,
+  LinkButton,
+  Table,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+  localDateTime,
 } from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
@@ -2332,11 +2342,6 @@ function ImportPanel({
   const pick = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
-  const history = useQuery({
-    queryKey: ["ontology-imports", kbId],
-    queryFn: () => api.ontologyImports(kbId),
-  });
-
   const preview = useMutation({
     mutationFn: (f: File) => api.previewOntologyImport(kbId, f),
     onError: (e) => {
@@ -2539,36 +2544,206 @@ function ImportPanel({
         </div>
       )}
 
-      {/* 导入历史：谁在什么时候拿哪个文件动过本体。原文按 sha256 存着 */}
-      <div className="mt-6 border-t border-line pt-3">
-        <h4 className="text-small font-medium text-ink-2 mb-2">
-          {S.ontology.importHistory}
-        </h4>
-        {!history.data?.imports.length ? (
-          <p className="text-small text-ink-2">
-            {S.ontology.importNoHistory}
+      {/* 谁在什么时候拿哪个文件动过本体，以及那一次到底进来了什么 */}
+      <ImportHistory kbId={kbId} />
+    </div>
+  );
+}
+
+/** 导入历史：**服务端每次导入记下的是一整本账**——建了几个类、更新了几个、
+ *  几个键被占、逆属性连上了几条、属性跳过了几个、多少三元组、哪些 IRI 没投影
+ *  下来。从前这一段只印「文件名 · 大小 · 谁在哪天」，其余全落在地上：
+ *  导完之后想知道「到底进来了什么」，界面上没有一个地方说得出。
+ *
+ *  所以这里是一张表（每行一次导入的账），细账在行末的详情里——那些数只有
+ *  出问题时才有人读，不该占着表宽。 */
+function ImportHistory({ kbId }: { kbId: string }) {
+  const [detail, setDetail] = useState<OntologyImportView | null>(null);
+  const history = useQuery({
+    queryKey: ["ontology-imports", kbId],
+    queryFn: () => api.ontologyImports(kbId),
+  });
+  const rows = history.data?.imports ?? [];
+
+  return (
+    <div className="mt-6">
+      <h4 className="mb-2 text-small font-medium text-ink-2">
+        {S.ontology.importHistory}
+      </h4>
+      {!rows.length ? (
+        <p className="text-small text-ink-2">{S.ontology.importNoHistory}</p>
+      ) : (
+        <div className="glass overflow-hidden rounded-panel">
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{S.ontology.importColFile}</Th>
+                <Th>{S.ontology.importClasses}</Th>
+                <Th>{S.ontology.importRelations}</Th>
+                <Th>{S.ontology.importAttributes}</Th>
+                <Th>{S.ontology.importColTriples}</Th>
+                <Th>{S.ontology.importColWhen}</Th>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
+              {rows.map((im) => {
+                const s = im.summary ?? {};
+                return (
+                  <Tr key={im.id}>
+                    <Td>
+                      <div className="max-w-48 truncate font-mono text-small text-ink" title={im.filename}>
+                        {im.filename}
+                      </div>
+                      <div className="u-num text-fine text-ink-2">
+                        {im.format} · {S.ontology.importSize(im.byte_size)}
+                      </div>
+                    </Td>
+                    <Td className="text-small text-ink-2">
+                      <Counts
+                        created={s.classes_created}
+                        updated={s.classes_updated}
+                        taken={s.classes_key_taken}
+                      />
+                    </Td>
+                    <Td className="text-small text-ink-2">
+                      <Counts created={s.relations_created} updated={s.relations_updated} />
+                    </Td>
+                    <Td className="text-small text-ink-2">
+                      <Counts
+                        created={s.attributes_created}
+                        skipped={sumCounts(s.attributes_skipped)}
+                      />
+                    </Td>
+                    <Td className="u-num text-small text-ink-2">{s.triples ?? "—"}</Td>
+                    <Td className="text-small text-ink-2 whitespace-nowrap">
+                      {S.ontology.importBy(
+                        im.imported_by_name ?? "—",
+                        localDateTime(im.imported_at).slice(0, 16),
+                      )}
+                    </Td>
+                    <Td className="text-right">
+                      <LinkButton onClick={() => setDetail(im)}>
+                        {S.ontology.importDetail}
+                      </LinkButton>
+                    </Td>
+                  </Tr>
+                );
+              })}
+            </TBody>
+          </Table>
+        </div>
+      )}
+
+      {/* 细账：只有出了问题才有人读，所以收在这里，而不是摊在表上 */}
+      <Dialog
+        open={!!detail}
+        onOpenChange={(o) => !o && setDetail(null)}
+        width="lg"
+        closeLabel={S.ui.close}
+        title={detail?.filename ?? ""}
+        description={
+          detail
+            ? S.ontology.importBy(
+                detail.imported_by_name ?? "—",
+                localDateTime(detail.imported_at),
+              )
+            : undefined
+        }
+      >
+        {detail && <ImportDetail im={detail} />}
+      </Dialog>
+    </div>
+  );
+}
+
+/** `{no_domain: 3, unknown_domain: 1}` → 4。缺就是 0 */
+function sumCounts(m: Record<string, number> | undefined): number {
+  return Object.values(m ?? {}).reduce((a, b) => a + b, 0);
+}
+
+/** 表里一格：建了几个 / 更新了几个 / 占了几个键 / 跳过几个。全零就是一横 */
+function Counts({
+  created,
+  updated,
+  taken,
+  skipped,
+}: {
+  created?: number;
+  updated?: number;
+  taken?: number;
+  skipped?: number;
+}) {
+  const parts = [
+    created ? S.ontology.importCreatedN(created) : null,
+    updated ? S.ontology.importUpdatedN(updated) : null,
+    skipped ? S.ontology.importSkippedN(skipped) : null,
+    taken ? S.ontology.importTakenN(taken) : null,
+  ].filter(Boolean);
+  return <>{parts.length ? parts.join(" · ") : "—"}</>;
+}
+
+function ImportDetail({ im }: { im: OntologyImportView }) {
+  const s = im.summary ?? {};
+  const stat = (label: string, n: number | undefined) =>
+    n === undefined ? null : (
+      <div key={label} className="flex items-baseline justify-between gap-3 py-1">
+        <span className="text-small text-ink-2">{label}</span>
+        <span className="u-num text-small text-ink">{n}</span>
+      </div>
+    );
+  const L = S.ontology;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-x-6">
+        <div className="divide-y divide-line">
+          {stat(L.statClassesCreated, s.classes_created)}
+          {stat(L.statClassesUpdated, s.classes_updated)}
+          {stat(L.statClassesTaken, s.classes_key_taken)}
+          {stat(L.statClassesNoDesc, s.classes_without_description)}
+          {stat(L.statTriples, s.triples)}
+        </div>
+        <div className="divide-y divide-line">
+          {stat(L.statRelationsSeen, s.relations_seen)}
+          {stat(L.statRelationsCreated, s.relations_created)}
+          {stat(L.statRelationsUpdated, s.relations_updated)}
+          {stat(L.statFunctional, s.functional_relations)}
+          {stat(L.statInverseLinked, s.inverse_linked)}
+          {stat(L.statSubPropertyLinked, s.sub_property_linked)}
+          {stat(L.statAttributesSeen, s.attributes_seen)}
+          {stat(L.statAttributesCreated, s.attributes_created)}
+          {/* 跳过的属性**按理由分**：数字只说"少了几个"，理由才说得出下一步
+              该改本体的哪里（域没写、域不在这个库里、值域用不了…） */}
+          {Object.entries(s.attributes_skipped ?? {}).map(([reason, n]) =>
+            stat(
+              `${L.statAttributesSkipped} · ${S.ontology.skipReason[reason] ?? reason}`,
+              n,
+            ),
+          )}
+        </div>
+      </div>
+
+      {/* 没投影下来的 IRI：引用外部词汇表是常态，可「少连了多少」得说得出来 */}
+      {!!s.unprojected?.length && (
+        <div>
+          <p className="mb-1 text-small font-medium text-ink-2">
+            {S.ontology.importUnprojected} ({s.unprojected.length})
           </p>
-        ) : (
-          <ul className="space-y-2">
-            {history.data.imports.map((im) => (
-              <li key={im.id} className="flex items-baseline gap-2 text-small">
-                <span className="font-mono text-ink-2 truncate">
-                  {im.filename}
+          <p className="mb-2 text-fine leading-relaxed text-ink-2">
+            {S.ontology.importUnprojectedBody}
+          </p>
+          <ul className="u-scroll max-h-48 space-y-1 overflow-y-auto">
+            {s.unprojected.map(([iri, n]) => (
+              <li key={iri} className="flex gap-2 text-fine">
+                <span className="min-w-0 truncate font-mono text-ink-2" title={iri}>
+                  {shortIri(iri)}
                 </span>
-                <span className="u-num text-ink-2 shrink-0">
-                  {S.ontology.importSize(im.byte_size)}
-                </span>
-                <span className="ml-auto text-fine text-ink-2 shrink-0">
-                  {S.ontology.importBy(
-                    im.imported_by_name ?? "—",
-                    new Date(im.imported_at).toLocaleDateString(),
-                  )}
-                </span>
+                <span className="u-num shrink-0 text-ink-2">×{n}</span>
               </li>
             ))}
           </ul>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
