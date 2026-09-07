@@ -69,29 +69,38 @@ function AlertRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" && g.unread > 0) onRead(g);
       }}
-      className="u-row-shell flex w-full cursor-pointer gap-3 border-b border-line px-4 py-3 text-left last:border-b-0"
+      className="u-row-shell relative w-full cursor-pointer border-b border-line px-4 py-3 text-left last:border-b-0"
     >
       {/* 未读就是一个红点。整行描边或底色会让面板在告警多时变成一片红，
-          而红点只占它该占的那一点地方，读过就没了 */}
+          而红点只占它该占的那一点地方，读过就没了。
+          **点在内距里，不占文字那一列**：排在文字左边的话，每条告警的正文
+          就比面板标题和上面那道查找往右缩 18px，一张面板里三种左缘 */}
       <span
         className={cn(
-          "mt-[7px] h-1.5 w-1.5 rounded-full shrink-0",
+          "absolute left-1.5 top-5 h-1.5 w-1.5 rounded-full",
           g.unread > 0 ? "bg-danger" : "bg-transparent",
         )}
       />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* 标题一直是正文色：读过只是不再加粗。淡下去那一档现在与提示、
-              明细同色，一条读过的告警整条糊成一片，扫不出它在说什么 */}
-          <span className={cn("text-body text-ink", g.unread > 0 && "font-medium")}>
+      <div className="min-w-0">
+        {/* 标题行只放标题和次数。标题一直是正文色：读过只是不再加粗——
+            淡下去那一档现在与提示、明细同色，一条读过的告警整条糊成一片 */}
+        <div className="flex items-center gap-2">
+          <span
+            className={cn("min-w-0 flex-1 text-body text-ink", g.unread > 0 && "font-medium")}
+          >
             {worded?.title ?? S.alerts.unknownKind(g.kind)}
           </span>
-          {g.count > 1 && <Chip tone="neutral">{g.count}</Chip>}
+          {/* 次数是"这件事发生了几回"，不是一句补充说明：中性灰把它读成一个
+              标签，而它说的是这条告警的分量 */}
+          {g.count > 1 && <Chip tone="danger">{g.count}</Chip>}
+        </div>
+        {/* 哪个库、什么时候：落款单独一行。跟在标题后面的话，标题一长就把
+            它们挤到下一行，每条告警的头两行长得都不一样 */}
+        <div className="mt-1 flex items-center gap-2">
           <Chip tone={g.kb_name ? "neutral" : "violet"}>
             {g.kb_name ?? S.alerts.system}
           </Chip>
-          {/* 时刻挂在标题行右端，不另占一行：它是这条告警的落款，
-              而一行落款乘以八条就是面板里最占地方的东西。取组里最新的那一次 */}
+          {/* 取组里最新的那一次 */}
           <span className="u-num ml-auto shrink-0 text-fine text-ink-2">
             {new Date(g.latest_at).toLocaleString()}
           </span>
