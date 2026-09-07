@@ -197,14 +197,14 @@ export function DocsPage() {
             {/* 快捷键提示：输入中不占视线。⌘ 用 lucide 图标；
                 Ctrl 无图形符号（⌘ 是 Mac 专属键符），Windows 规范写法就是文字 */}
             {!q && (
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-lg border border-line bg-surface px-2 py-1 font-sans text-fine text-ink-2">
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-cell border border-line bg-surface px-2 py-1 font-sans text-fine text-ink-2">
                 {IS_MAC ? <Command size={9} /> : <span>Ctrl</span>}
                 <span>K</span>
               </kbd>
             )}
           </div>
           {q.trim().length >= 2 && (
-            <div className="u-menu-glass u-pop-in u-pop-in-tl absolute inset-x-0 top-full mt-2 rounded-lg shadow-2xl overflow-hidden">
+            <div className="u-menu-glass u-pop-in u-pop-in-tl absolute inset-x-0 top-full mt-2 rounded-overlay shadow-2xl overflow-hidden">
               {results.length === 0 ? (
                 <p className="px-4 py-3 text-small text-ink-2">{S.docs.noResults}</p>
               ) : (

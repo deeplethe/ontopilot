@@ -688,7 +688,7 @@ export function Library() {
             const total = (docs.data?.ready ?? 0) + pending;
             const done = total - pending;
             return (
-              <div className="mb-3 glass rounded-lg px-4 py-3">
+              <div className="mb-3 glass rounded-panel px-4 py-3">
                 <div className="flex items-center justify-between text-small text-ink-2 mb-2">
                   <span>{S.library.extractProgress(done, total)}</span>
                   <span className="u-num text-ink-2">
@@ -720,7 +720,7 @@ export function Library() {
           <>
           {/* 这块是拖放区，不是可点对象：真反馈是 dragging 时的 u-highlight。
               常态下指针经过时亮一下边框，等于对一个不接受点击的槽做交互暗示 */}
-          <div className={`glass rounded-lg ${dragging ? "u-highlight" : ""}`}>
+          <div className={`glass rounded-panel ${dragging ? "u-highlight" : ""}`}>
             {selection === "deleted" ? (
               <DeletedTable
                 docs={pagedDocs}
@@ -944,7 +944,7 @@ function SourceBar({
     cfg.content_mode === "full_new_items" ? "full_new_items" : "feed";
 
   return (
-    <div className="glass rounded-lg mb-3">
+    <div className="glass rounded-panel mb-3">
       <div className="px-4 py-3 flex items-center gap-3 text-small">
         {/* api 与拉取型同一状态语汇：点 + 状态 + 时刻 + 产出/错误；
             端点是一次性集成信息，放 Token 弹窗，不占常驻条 */}
@@ -1174,7 +1174,7 @@ function ErrorModal({
         </>
       }
     >
-      <pre className="u-scroll max-h-72 overflow-auto rounded-lg border border-line bg-surface p-3 text-small leading-relaxed text-ink-2 whitespace-pre-wrap break-words">
+      <pre className="u-scroll max-h-72 overflow-auto rounded-panel border border-line bg-surface p-3 text-small leading-relaxed text-ink-2 whitespace-pre-wrap break-words">
         {text}
       </pre>
     </Dialog>
@@ -1284,7 +1284,7 @@ function RunsPanel({ kbId, sourceId }: { kbId: string; sourceId: string }) {
   const list = runs.data?.runs ?? [];
 
   return (
-    <div className="glass rounded-lg">
+    <div className="glass rounded-panel">
       {runs.isLoading ? (
         <div className="py-20 text-center text-body text-ink-2">{S.nav.loading}</div>
       ) : list.length === 0 ? (

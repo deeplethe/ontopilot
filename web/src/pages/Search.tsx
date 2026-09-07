@@ -89,7 +89,7 @@ export function Search() {
         )}
 
         {/* 一个面板装多行（DESIGN.md 6）：悬停归行，槽不响应指针 */}
-        <div className="glass rounded-lg divide-y divide-line">
+        <div className="glass rounded-panel divide-y divide-line">
           {pageSlice(results.data?.results ?? [], page, RESULT_PAGE).rows.map((r) => (
             <Link
               key={r.id}

@@ -50,7 +50,7 @@ export function MyKbs() {
       {/* 一个面板装多行，不是一行一张卡片（DESIGN.md 6）。卡片阵列会让页面上
           平铺七八个盒子、层级全平，而且每张卡片既是面板又是可点对象——面板于是
           需要悬停反馈，可槽本来不该响应指针。收成一个槽之后，悬停归行所有 */}
-      <div className="glass rounded-lg divide-y divide-line">
+      <div className="glass rounded-panel divide-y divide-line">
         {rows.map((row) => {
           const canManage = row.my_role === "admin" || row.my_role === "owner";
           return (

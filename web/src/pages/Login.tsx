@@ -74,7 +74,7 @@ export function Login() {
         </div>
 
         <div
-          className="u-card-opaque rounded-lg p-6 u-rise"
+          className="u-card-opaque rounded-panel p-6 u-rise"
           style={{ animationDelay: "90ms" }}
         >
           <Segmented

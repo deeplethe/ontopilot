@@ -1268,7 +1268,7 @@ export function Graph() {
             }}
           />
           {searchQ && searchHits.length > 0 && (
-            <div className="glass-strong absolute mt-1 w-full rounded-lg shadow-xl overflow-hidden">
+            <div className="glass-strong absolute mt-1 w-full rounded-overlay shadow-xl overflow-hidden">
               {searchHits.map((c) => (
                 <Row
                   key={c.id}
@@ -1380,7 +1380,7 @@ export function Graph() {
               {legendPop.open && (
                 <div
                   ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-lg p-2 shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-overlay p-2 shadow-2xl"
                 >
                   {/* 面板盖在 chip 原位，所以**第一行就长成那个 chip 的样子**，
                       点它收回去——「哪儿展开的就从哪儿收回去」，
@@ -1484,7 +1484,7 @@ export function Graph() {
             外壳保持中性——这一片是 chrome，彩色只属于数据 */}
         <div className="ml-auto flex flex-col items-end gap-1">
           <div className="flex items-start gap-2">
-            <div className="pointer-events-auto flex items-center overflow-hidden rounded-lg border border-line">
+            <div className="pointer-events-auto flex items-center overflow-hidden rounded-control border border-line">
             <IconButton
               size="sm"
               label={S.graph.nodeBudgetLess}
@@ -1931,7 +1931,7 @@ function TimeScrubber({
        仍夹在视口内（calc 那一项），窄屏不会顶出去。
        实测宽度：年 320 / 月 648 / 日 760。 */
     <div
-      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-lg px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
+      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-overlay px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
       style={{ width: `min(${trackW}px, calc(100vw - 4rem))` }}
     >
       <IconButton
@@ -1980,7 +1980,7 @@ function TimeScrubber({
         ref={trackRef}
         onMouseEnter={() => setTrackHover(true)}
         onMouseLeave={() => setTrackHover(false)}
-        className="relative h-9 min-w-[150px] flex-1 overflow-hidden rounded-lg bg-surface"
+        className="relative h-9 min-w-[150px] flex-1 overflow-hidden rounded-control bg-surface"
       >
         {/* 演完由 **React** 卸载，**别自己 `remove()`**。
             从前是 `onAnimationEnd={(e) => e.currentTarget.remove()}`——
@@ -2170,11 +2170,11 @@ function DerivedPanel({
     : null;
 
   // **盖在触发器原位往右上长开**（bottom-0 left-0），而不是在旁边挂一扇窗。
-  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-lg
+  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-panel
   return (
     <div
       ref={panelRef}
-      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-lg px-3 pb-3 pt-3 shadow-2xl"
+      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-overlay px-3 pb-3 pt-3 shadow-2xl"
     >
       {/* items-center 而不是 baseline：标题旁边站着一个按钮和一个关闭键，
           按基线对齐会让那两个看着往上飘 */}
@@ -2209,7 +2209,7 @@ function DerivedPanel({
       {/* 问句 + 两个目标。**取消排在前面**：从「跑」那一下移过来最先碰到的
           是取消，误触的代价小的那个该更近 */}
       {armed && (
-        <div className="mt-2 rounded-lg bg-surface p-2">
+        <div className="mt-2 rounded-panel bg-surface p-2">
           <p className="text-fine leading-relaxed text-ink-2">
             {S.graph.derivedRunAsk}
           </p>
@@ -2272,7 +2272,7 @@ function DerivedPanel({
 /** 推出来的一条边。**行式样与 FactRow 对齐**：同样的圆角行、同样的
  *  chevron 展开、同样的 role="link" 跳转（避免按钮套按钮）。
  *
- *  从前这里是一张 `glass rounded-lg p-3` 卡片、证明常驻展开——在一列
+ *  从前这里是一张 `glass rounded-panel p-3` 卡片、证明常驻展开——在一列
  *  Relations/Timeline/History 的紧凑行里显得是另一个产品的东西，而且十几条
  *  推导堆起来是一面墙。证明是「问了才看」的东西，收进展开区正合适。 */
 function DerivedRow({
@@ -2759,7 +2759,7 @@ function EntityPanel({
 
   return (
     <div
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-lg shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-overlay shadow-2xl flex flex-col`}
     >
       <div className="flex items-start justify-between px-4 py-4 border-b border-line">
         <div>
@@ -2856,7 +2856,7 @@ function EntityPanel({
 
       {/* 同名不是错误——两个张伟可以并存。只提示，判定是不是同一个是人的事 */}
       {sameName.length > 0 && !editing && (
-        <div className="mx-4 mt-3 rounded-lg border border-line bg-surface px-3 py-2">
+        <div className="mx-4 mt-3 rounded-panel border border-line bg-surface px-3 py-2">
           <div className="flex items-start justify-between gap-2">
             <p className="text-fine text-ink-2">
               {S.graph.sameNameNote(sameName.length)}{" "}
@@ -3216,7 +3216,7 @@ function TimelineRow({
                   setEditing((v) => !v);
                 }
               }}
-              className={cn(REVEAL, "cursor-pointer rounded-lg p-1", editing && "is-on")}
+              className={cn(REVEAL, "cursor-pointer rounded-cell p-1", editing && "is-on")}
             >
               <Pencil size={10} />
             </span>
@@ -3353,7 +3353,7 @@ function TimeEditor({
 
   return (
     <div
-      className="mb-2 rounded-lg border border-line bg-surface p-3"
+      className="mb-2 rounded-panel border border-line bg-surface p-3"
       onClick={(ev) => ev.stopPropagation()}
     >
       <div className="flex items-center gap-2">

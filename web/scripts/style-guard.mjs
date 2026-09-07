@@ -76,9 +76,11 @@ const RULES = [
   },
   {
     id: "radius",
-    // rounded-none 不是第三档，是"这一条要顶到边"（下拉里撑满的行），放行
-    re: /\brounded(-(sm|md|xl|2xl|3xl|\[[^\]]+\]))?(?=[\s"'`}])/g,
-    why: "圆角一档：rounded-lg 给一切有角的东西，rounded-full 只给圆的（规矩 3）",
+    // rounded-none 不是一档，是"这一条要顶到边"（下拉里撑满的行），放行
+    re: /\brounded(-(sm|md|lg|xl|2xl|3xl|\[[^\]]+\]))?(?=[\s"'`}])/g,
+    why:
+      "圆角按角色分四档：rounded-cell / control / panel / overlay；" +
+      "rounded-full 只给真圆的（规矩 3）",
     ui: true,
   },
   {

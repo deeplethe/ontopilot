@@ -649,7 +649,7 @@ function DockedPanel({
     <div
       // 与图谱页的实体面板同一副壳：同宽（w-96）、同一个顶部起点（给顶上那排
       // 药丸让位），同一个头部解剖。两页并排看是同一件东西
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-lg shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-overlay shadow-2xl flex flex-col`}
     >
       <div className="shrink-0 flex items-start justify-between gap-2 px-4 py-4 border-b border-line">
         <div className="min-w-0">{header}</div>
@@ -2111,7 +2111,7 @@ function RefinePanel({
               : S.ontology.refineCandidates(preview.length)}
           </p>
           {preview.map((s) => (
-            <div key={s.entity_id} className="glass rounded-lg p-3">
+            <div key={s.entity_id} className="glass rounded-panel p-3">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-body text-ink">{s.name}</span>
                 <span className="text-fine text-ink-2">
@@ -2177,7 +2177,7 @@ function RefinePanel({
                 {S.ontology.refineForReview(outcome.for_review.length)}
               </p>
               {outcome.for_review.map((r) => (
-                <div key={r.entity_id} className="glass rounded-lg p-3">
+                <div key={r.entity_id} className="glass rounded-panel p-3">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-body text-ink">{r.name}</span>
                     <span className="text-fine text-ink-2">
@@ -2227,7 +2227,7 @@ function RefinePanel({
                 {S.ontology.refineLeftAlone(outcome.left_alone.length)}
               </p>
               {outcome.left_alone.map((d, i) => (
-                <div key={i} className="glass rounded-lg px-3 py-2">
+                <div key={i} className="glass rounded-panel px-3 py-2">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-body text-ink">
                       {d.name}
@@ -2342,7 +2342,7 @@ function UniquenessPanel({
           {candidates.map((c) => (
             <div
               key={`${c.predicate_id}-${c.side}`}
-              className="rounded-lg border border-line bg-surface px-3 py-3"
+              className="rounded-panel border border-line bg-surface px-3 py-3"
             >
               <div className="flex items-center gap-2">
                 <span className="text-body text-ink">{c.label}</span>
@@ -2791,7 +2791,7 @@ function MissesPanel({
           {misses.map((m) => (
             <span
               key={`${m.kind}:${m.key}`}
-              className="glass rounded-lg px-3 py-1 text-small flex items-center gap-2"
+              className="glass rounded-cell px-3 py-1 text-small flex items-center gap-2"
               title={m.example ?? ""}
             >
               <Chip tone={m.kind === "entity_type" ? "info" : "violet"}>
@@ -2830,7 +2830,7 @@ function MissesPanel({
                 {dismissedMisses.map((m) => (
                   <span
                     key={`d:${m.kind}:${m.key}`}
-                    className="glass rounded-lg px-3 py-1 text-small flex items-center gap-2 opacity-60"
+                    className="glass rounded-cell px-3 py-1 text-small flex items-center gap-2 opacity-60"
                     title={m.example ?? ""}
                   >
                     <Chip tone={m.kind === "entity_type" ? "info" : "violet"}>
@@ -2858,7 +2858,7 @@ function MissesPanel({
       {/* 系统自己动了本体，必须让人看见——只记在审计台账里不算可见。
           默认开启的前提是它的动作可见且可退，这条横幅是"可见"那一半 */}
       {autoRun.data?.run && !lastAdopt && (
-        <div className="mt-3 rounded-lg border border-line-strong bg-surface px-3 py-3">
+        <div className="mt-3 rounded-panel border border-line-strong bg-surface px-3 py-3">
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <p className="text-small text-ink">
@@ -2893,7 +2893,7 @@ function MissesPanel({
 
       {/* 采纳改写了成批事实——没有回头路的话没人敢点第一下 */}
       {lastAdopt && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+        <div className="mt-3 flex items-center gap-2 rounded-panel border border-line bg-surface px-3 py-2">
           <span className="text-small text-ink-2">
             {S.ontology.undoAdopt(lastAdopt.key, lastAdopt.moved)}
           </span>
@@ -3379,7 +3379,7 @@ function Warning({
   return (
     <div
       className={cn(
-        "mt-3 rounded-lg border px-3 py-3",
+        "mt-3 rounded-panel border px-3 py-3",
         tone === "danger"
           ? "border-danger/25 bg-danger/[0.06]"
           : "border-warn/25 bg-warn/[0.06]",
@@ -3419,7 +3419,7 @@ function PlanRow({
   const n = (d: PlannedItem["disposition"]) =>
     items.filter((i) => i.disposition === d).length;
   return (
-    <div className="rounded-lg bg-surface px-3 py-2">
+    <div className="rounded-panel bg-surface px-3 py-2">
       <div className="flex items-center gap-2">
         <span className="text-small text-ink-2">{label}</span>
         <span className="ml-auto flex items-center gap-2">

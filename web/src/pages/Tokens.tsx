@@ -86,11 +86,11 @@ function IssuedPanel({
   const kb = kbs.find((k) => k.id === kbId);
   const snippet = kb ? mcpSnippet(kb.id, kb.name, token) : "";
   return (
-    <div className="glass rounded-lg p-6 mb-4 border border-warn/40">
+    <div className="glass rounded-panel p-6 mb-4 border border-warn/40">
       <div className="text-body font-medium text-ink">{S.account.issuedTitle}</div>
       <p className="mt-1 text-small text-ink-2">{S.account.issuedHint}</p>
       <div className="mt-3 flex items-center gap-2">
-        <code className="flex-1 min-w-0 truncate rounded-lg bg-well px-3 py-2 font-mono text-small text-ink">
+        <code className="flex-1 min-w-0 truncate rounded-cell bg-well px-3 py-2 font-mono text-small text-ink">
           {token}
         </code>
         <CopyButton text={token} />
@@ -116,7 +116,7 @@ function IssuedPanel({
       </div>
       <p className="mt-1 text-small text-ink-2">{S.account.mcpHint}</p>
       <div className="mt-2 relative">
-        <pre className="rounded-lg bg-well px-3 py-2 font-mono text-small text-ink-2 overflow-x-auto u-scroll">
+        <pre className="rounded-panel bg-well px-3 py-2 font-mono text-small text-ink-2 overflow-x-auto u-scroll">
           {snippet}
         </pre>
         <div className="absolute top-1.5 right-1.5">
@@ -151,7 +151,7 @@ function TokenRow({
     ? t.kb_ids.map(kbName).join(" · ")
     : S.account.allBases;
   return (
-    <div className={`glass rounded-lg px-4 py-3 ${revoked ? "opacity-55" : ""}`}>
+    <div className={`glass rounded-panel px-4 py-3 ${revoked ? "opacity-55" : ""}`}>
       <div className="flex items-center gap-2 flex-wrap">
         <KeyRound size={13} className="text-ink-2 shrink-0" />
         <span className="text-body font-medium text-ink">{t.name}</span>
@@ -264,7 +264,7 @@ export function Tokens() {
         />
       )}
 
-      <div className="glass rounded-lg p-6 mb-6">
+      <div className="glass rounded-panel p-6 mb-6">
         <div className="max-w-xl">
           <h2 className="text-body font-medium text-ink mb-4">{S.account.newToken}</h2>
           {field(
@@ -341,7 +341,7 @@ export function Tokens() {
 
       <h2 className="text-body font-medium text-ink mb-3">{S.account.yourTokens}</h2>
       {rows.length === 0 ? (
-        <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
+        <div className="glass rounded-panel p-8 text-center text-body text-ink-2">
           {S.account.noTokens}
         </div>
       ) : (

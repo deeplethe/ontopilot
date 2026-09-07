@@ -18,9 +18,11 @@ No `text-xs`/`text-sm`, no `text-[11px]`. If a size between two steps seems nece
 
 `1 2 3 4 6 8` (4, 8, 12, 16, 24, 32 px), for padding, margin and gap alike. No half steps, no pixels. Values of `12` and above are layout, not rhythm — clearance under a floating bar, a footer's breathing room — and are allowed for that. Controls carry their own padding — a page never sets padding on a button or an input. Page gutters are `6` or `8`; the gap between two related controls is `2`; between two groups, `4`; between two sections, `6`.
 
-## 3. One radius
+## 3. Four radii, named by role
 
-`rounded-lg` (8 px) on everything that has corners — a button, an input, a panel, a popover, a dialog, a card, a chip, a pill. `rounded-full` only on things that are circles: an avatar, a status dot, a colour swatch, a graph node. Nothing else — no 12 px surfaces, no pill-shaped rectangles.
+A corner is `rounded-cell` (4 px), `rounded-control` (6 px), `rounded-panel` (8 px) or `rounded-overlay` (12 px), and which one it is follows from what the thing is: a chip, a table cell, a `kbd`, a small icon target is a cell; a button, an input, a select, a segmented group is a control; a card, a list, a dialog body, a code block is a panel; a menu, a popover, a toast, a floating dock — anything that hovers over the page — is an overlay. `rounded-full` only on things that are actually circles: an avatar, a status dot, a colour swatch, a graph node.
+
+The names are the point. `rounded-panel` says what the box is, the way `text-ink-2` says what the grey is for, and that is what the guard can check — a number cannot be wrong, only a role can. Four rather than one because the same absolute radius is not the same roundness at every size: 8 px reads as generously rounded on a 24 px chip and as nearly square on a 300 px panel. Nested corners go inwards, never outwards: a control (6) inside a panel (8), a panel inside an overlay (12).
 
 ## 4. Colour is a token, never a value
 

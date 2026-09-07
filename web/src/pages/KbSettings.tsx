@@ -449,7 +449,7 @@ export function KbSettings() {
           {section === "activity" && <KbActivity kbId={kbId} />}
 
           {section === "danger" && (
-            <div className="glass rounded-lg px-6 py-4 flex items-center justify-between gap-4">
+            <div className="glass rounded-panel px-6 py-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-body font-medium text-ink">
                   {S.kbset.deleteRowTitle}
@@ -531,7 +531,7 @@ function KbActivity({ kbId }: { kbId: string }) {
   };
 
   return (
-    <div className="glass rounded-lg p-4">
+    <div className="glass rounded-panel p-4">
       <p className="text-small text-ink-2 mb-3">{S.kbset.activityHint}</p>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <NativeSelect size="sm"

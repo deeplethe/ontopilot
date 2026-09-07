@@ -99,7 +99,7 @@ export function Mappings() {
       {/* 分段控件用全站那一套（`bg-surface-3` 选中 + 静默的未选中），
           不是 `u-btn-primary`——那是主操作的实心白，用在这里每个标签都像
           一个行动号召 */}
-      <div className="flex w-fit rounded-lg overflow-hidden border border-line">
+      <div className="flex w-fit rounded-control overflow-hidden border border-line">
         {(["definitions", "sources"] as const).map((t) => (
           <Button
             variant={tab === t ? "primary" : "ghost"}
@@ -119,7 +119,7 @@ export function Mappings() {
       ) : (
         <>
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex rounded-lg overflow-hidden border border-line">
+            <div className="flex rounded-control overflow-hidden border border-line">
               {FILTERS.map((f) => (
                 <Button
                   variant={status === f.key ? "primary" : "ghost"}
@@ -219,7 +219,7 @@ function MappingCard({
 
   const how = howComputed(m);
   return (
-    <div className="glass rounded-lg p-3">
+    <div className="glass rounded-panel p-3">
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-body text-ink">{m.concept_name}</span>
         <span className="text-fine text-ink-2">{m.source}</span>
@@ -510,7 +510,7 @@ function DataSources({
     <div className="space-y-4">
       <p className="text-small text-ink-2">{S.mapping.sourcesHint}</p>
 
-      <div className="glass rounded-lg divide-y divide-line">
+      <div className="glass rounded-panel divide-y divide-line">
         {(mounted.data?.data_sources ?? []).map((d) => (
           <div key={d.id} className="px-4 py-3 flex items-center gap-3">
             <div className="min-w-0 flex-1">
@@ -587,7 +587,7 @@ function DataSources({
       )}
 
       {hasMounted && (
-        <div className="glass rounded-lg px-4 py-3 flex items-center gap-3">
+        <div className="glass rounded-panel px-4 py-3 flex items-center gap-3">
           <p className="text-small text-ink-2 flex-1">
             {S.mapping.exploreHint}
           </p>

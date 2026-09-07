@@ -414,7 +414,7 @@ export function Chat() {
               />
             </Button>
             {scopeOpen && (
-              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-lg shadow-2xl overflow-hidden">
+              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-overlay shadow-2xl overflow-hidden">
                 <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
                   {S.ask.scopeLabel}
                 </div>
@@ -569,7 +569,7 @@ export function Chat() {
                     className="fixed inset-0 z-10"
                     onClick={() => setMenuFor(null)}
                   />
-                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-lg py-1 shadow-xl">
+                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 shadow-xl">
                     <Row
                       density="menu"
                       onClick={() => {
@@ -748,7 +748,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   if (turn.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="u-bubble-user max-w-[85%] rounded-lg px-4 py-2 text-body whitespace-pre-wrap text-ink">
+        <div className="u-bubble-user max-w-[85%] rounded-panel px-4 py-2 text-body whitespace-pre-wrap text-ink">
           {turn.content}
         </div>
       </div>
@@ -807,7 +807,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
           不是过程的一部分——过程已经由上面的轨迹交代了 */}
       {/* 一个面板装多行（DESIGN.md 6）：引用是同构的一组，悬停归行 */}
       {!live && turn.sources && turn.sources.length > 0 && (
-        <div className="mt-2 glass rounded-lg divide-y divide-line">
+        <div className="mt-2 glass rounded-panel divide-y divide-line">
           {turn.sources.map((s) =>
             s.kind === "charter" ? (
               /* 手册引用：视觉上与数据引用隔离（BookOpen），跳排版好的 /docs 小节 */

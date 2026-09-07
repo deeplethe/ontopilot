@@ -42,7 +42,7 @@ function Stat({
   action?: { label: string; onClick: () => void };
 }) {
   return (
-    <div className="glass flex flex-col gap-1 rounded-lg p-4">
+    <div className="glass flex flex-col gap-1 rounded-panel p-4">
       <div className="u-num text-display text-ink">{value}</div>
       <div className="text-body text-ink-2">{label}</div>
       {note && <div className="text-fine text-ink-2">{note}</div>}
@@ -107,7 +107,7 @@ export function ReviewOverview({
       <section>
         <SectionHead>{S.review.overviewWaiting}</SectionHead>
         {waitingTotal === 0 ? (
-          <div className="glass rounded-lg p-8 text-center text-body text-ink-2">
+          <div className="glass rounded-panel p-8 text-center text-body text-ink-2">
             {S.review.overviewAllClear}
           </div>
         ) : (
@@ -143,7 +143,7 @@ export function ReviewOverview({
             note={S.review.overviewAutomatic(decided.last_30d.automatic)}
           />
         </div>
-        <div className="glass mt-3 rounded-lg p-4">
+        <div className="glass mt-3 rounded-panel p-4">
           <div className="mb-3 text-fine text-ink-2">{S.review.overviewDaily}</div>
           <DailyBars days={decided.daily} />
         </div>
@@ -151,7 +151,7 @@ export function ReviewOverview({
           <p className="mt-3 text-small text-ink-2">{S.review.overviewNoDecisions}</p>
         ) : (
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <div className="glass rounded-lg p-4">
+            <div className="glass rounded-panel p-4">
               <div className="mb-2 text-fine text-ink-2">{S.review.overviewByAction}</div>
               <div className="flex flex-wrap gap-2">
                 {decided.last_30d.by_action.map((a) => (
@@ -161,7 +161,7 @@ export function ReviewOverview({
                 ))}
               </div>
             </div>
-            <div className="glass rounded-lg p-4">
+            <div className="glass rounded-panel p-4">
               <div className="mb-2 text-fine text-ink-2">{S.review.overviewByActor}</div>
               <div className="space-y-1">
                 {decided.last_30d.by_actor.map((a) => (
