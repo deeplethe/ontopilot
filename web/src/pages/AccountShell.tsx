@@ -1,7 +1,7 @@
 /* 账户层壳：Profile / Administration 的宿主。
    与 KB 无关，所以没有 KB 切换器、没有 tab 导航——只有字标、返回、用户菜单。 */
 import { useQuery } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { usePageTitle } from "../useTitle";
 import {
   KeyRound,
@@ -16,11 +16,25 @@ import {
   rowClass,
   SectionMark,
 } from "../ui";
+
+/** 管理页的五节。**它们是左栏的第二层，不是正文顶上的一条 tab 带**——
+    与上面四项是同一种东西（去哪儿），只是矮一级；地址里是 `?tab=`，
+    刷新、回退、分享链接都落回同一节 */
+const ADMIN_TABS = [
+  ["models", () => S.settings.tabModels],
+  ["members", () => S.settings.tabMembers],
+  ["kbs", () => S.settings.tabKbs],
+  ["datasources", () => S.settings.datasources.tab],
+  ["deployment", () => S.settings.tabDeployment],
+] as const;
 import { ServerDown } from "./ServerDown";
 import { HeaderActions } from "./HeaderActions";
 
 export function AccountShell() {
   const navigate = useNavigate();
+  const loc = useLocation();
+  const onAdmin = loc.pathname === "/admin";
+  const adminTab = (loc.search as { tab?: string }).tab ?? "models";
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, staleTime: Infinity });
   // 标题：`Utopia | Persona`——账户区整体一个名字，不逐页细分
@@ -79,10 +93,29 @@ export function AccountShell() {
             {S.account.tokensNav}
           </Link>
           {me.data.is_admin && (
-            <Link to="/admin" className={rail} activeProps={{ className: railActive }}>
-              <ShieldCheck size={14} />
-              {S.account.administration}
-            </Link>
+            <>
+              {/* 在管理页时父行不再反白：下面已经有一条亮着，两条一起亮反而
+                  说不清人在哪儿 */}
+              <Link
+                to="/admin"
+                className={rail}
+                activeProps={onAdmin ? {} : { className: railActive }}
+              >
+                <ShieldCheck size={14} />
+                {S.account.administration}
+              </Link>
+              {onAdmin &&
+                ADMIN_TABS.map(([key, label]) => (
+                  <Link
+                    key={key}
+                    to="/admin"
+                    search={{ tab: key }}
+                    className={rowClass(adminTab === key, "nav", undefined, true)}
+                  >
+                    {label()}
+                  </Link>
+                ))}
+            </>
           )}
         </aside>
         <main className="flex-1 min-w-0 overflow-y-auto u-scroll">

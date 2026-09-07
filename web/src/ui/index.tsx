@@ -1143,10 +1143,15 @@ export function rowClass(
   active?: boolean,
   density: RowDensity = "list",
   tone?: RowTone,
+  /** 二级：左栏里挂在某一项下面的那几条。文字缩到父行标签的位置
+      （内距 12 + 图标 14 + 间距 8 = 34），底色仍然铺满整行——
+      缩的是字，不是那一格 */
+  sub?: boolean,
 ): string {
   return cn(
     "group flex w-full items-center gap-2 text-left transition-colors duration-fast",
     density === "menu" ? "rounded-none" : "rounded-cell",
+    sub && "pl-[34px]",
     // 左栏导航项 32 高（py 6）：36 在一列十几条里显得松
     density === "nav"
       ? "px-3 py-1.5 text-body font-medium"

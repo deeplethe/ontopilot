@@ -713,10 +713,11 @@ const PRESETS: Record<
 
 export function Settings() {
   const { workspace } = useKb();
+  /* 人在哪一节，**地址说了算**：左栏第二层是一组 Link（见 AccountShell），
+     刷新、回退、把链接发给同事都落回同一节。从前这里另存一份 state，
+     于是地址与页面各说各的 */
   const { tab: tabParam, create } = useSearch({ from: "/account/admin" });
-  const [tab, setTab] = useState<
-    "models" | "members" | "kbs" | "datasources" | "deployment"
-  >(tabParam ?? "models");
+  const tab = tabParam ?? "models";
   const queryClient = useQueryClient();
   const settings = useQuery({
     queryKey: ["settings", workspace?.id],
@@ -785,21 +786,7 @@ export function Settings() {
     <div className="h-full overflow-y-auto u-scroll px-8 py-6">
       {/* 同 KbSettings：设置是读一列字段，居中限宽，行长不随窗口拉长 */}
       <div className="mx-auto w-full max-w-4xl">
-        <PageHeader className="mb-3" title={S.settings.title} />
-        <Segmented
-          className="mb-6 w-fit"
-          value={tab}
-          onChange={setTab}
-          options={(
-            [
-              ["models", S.settings.tabModels],
-              ["members", S.settings.tabMembers],
-              ["kbs", S.settings.tabKbs],
-              ["datasources", S.settings.datasources.tab],
-              ["deployment", S.settings.tabDeployment],
-            ] as const
-          ).map(([key, tabLabel]) => ({ value: key, label: tabLabel }))}
-        />
+        <PageHeader title={S.settings.title} />
 
         {tab === "members" && <Members workspaceId={workspace.id} />}
         {tab === "kbs" && <KbsAdmin autoCreate={!!create} />}
