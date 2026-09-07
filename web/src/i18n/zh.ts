@@ -1295,6 +1295,7 @@ export const zh: Strings = {
     schemaLegendInheritance: "继承",
     schemaLegendRelation: "关系",
     schemaLegendDisjoint: "互斥",
+    schemaLegendRule: "业务规则",
     schemaUnscoped: (n: number) => `未限定的属性（${n}）`,
     schemaUnscopedHint: "没有限定在具体的类上，画到画布上的连线会是本体没说过的话。选一个来查看或编辑。",
     schemaMoreClasses: (n) => `+${n} 个类`,

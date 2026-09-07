@@ -48,7 +48,7 @@ import {
   TRANSPARENT,
 } from "./graphVisuals";
 import { Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
-import type { EntityTypeView, RelationTypeView } from "../api";
+import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
 import {
   Pill,
@@ -80,12 +80,19 @@ const EDGE_RELATION = "rgba(128,128,128,0.3)";
 const EDGE_RELATION_FOCUS = "rgba(255,255,255,0.6)";
 const EDGE_DISJOINT = "rgba(255,157,175,0.45)"; // --u-danger
 const EDGE_DISJOINT_FOCUS = "rgba(255,157,175,0.9)";
+/* 业务规则：紫（--u-violet）。**推出来的东西全站都是这个色**——图谱页的派生边、
+   文库里抽取完成的徽章都用它，所以「这条边上的类不是抽取来的，是规则算出来的」
+   不必再学一遍。弧线：规则的结论多半正是主类的子类，那对类之间已经有一条继承
+   边，直线会与它重叠 */
+const EDGE_RULE = "rgba(196,165,255,0.5)";
+const EDGE_RULE_FOCUS = "rgba(196,165,255,0.95)";
 const EDGE_DIM = "rgba(48,48,48,0.4)";
 
 /** 三种边各自的语义——驱动颜色/暗淡/可点选，与「用哪个 sigma 程序画」分开管 */
 const SUBCLASS_KIND = "subclass";
 const RELATION_KIND = "relation";
 const DISJOINT_KIND = "disjoint";
+const RULE_KIND = "rule";
 
 /** sigma 的渲染派发键。**故意与上面的语义分开**：关系边有直的也有弯的
  *  （只有一条就是直的，平行才弯），但两种都是「relation 语义」；早先把
@@ -103,6 +110,10 @@ const EDGE_TYPE_CURVED_LINE = "curvedLine"; // 弧线，无箭头（EdgeCurvePro
  *  调粗关系边，视觉突出与「点得中」是同一个改动 */
 const SUBCLASS_EDGE_SIZE = 0.9;
 const DISJOINT_EDGE_SIZE = 0.8;
+/** 与关系边同粗（2）。**粗细就是点选的命中带宽**——sigma 用渲染出来的几何体
+ *  做拾取，细线在真实鼠标操作下几乎点不中（关系边当初调粗就是为这个）。
+ *  实测 1.6 时反复点不中那条弧 */
+const RULE_EDGE_SIZE = 2;
 const RELATION_EDGE_SIZE = 2;
 /** 同一对类、同一个方向上超过这么多条关系，就并成一条带计数的边。schema.org
  *  里 Person→Organization 有二十几条（worksFor、memberOf、affiliation……），
@@ -221,6 +232,9 @@ export function buildSchemaGraph(
   relationTypes: RelationTypeView[],
   /** 取景（见 schemaScope）：只有这些类进画布；null 全画 */
   drawn: ReadonlySet<string> | null = null,
+  /** 业务规则：**一条得出类的规则就是两个类之间的一条边**——主类 → 结论类，
+   *  条件写在规则里。得出属性值的那种没有目标节点，不画（它在规则表里） */
+  rules: BusinessRule[] = [],
 ): SchemaGraphResult {
   const graph = new Graphology({ multi: true });
   const byId = new Map(entityTypes.map((t) => [t.id, t]));
@@ -314,6 +328,24 @@ export function buildSchemaGraph(
         else pairs.set(key, { d, rg, rels: [r] });
       }
     }
+  }
+
+  /* 规则边。**关掉的规则也画**，只是暗一档——「这条推理现在停着」本身是
+     读图的人要知道的事；从图上消失会让人以为从来没有过这条规则 */
+  for (const r of rules) {
+    if (r.conclusion !== "typing" || !r.conclude_type_id) continue;
+    if (!graph.hasNode(r.subject_type_id) || !graph.hasNode(r.conclude_type_id))
+      continue;
+    if (r.subject_type_id === r.conclude_type_id) continue;
+    graph.addEdgeWithKey(`rule:${r.id}`, r.subject_type_id, r.conclude_type_id, {
+      kind: RULE_KIND,
+      ruleId: r.id,
+      type: EDGE_TYPE_CURVED_ARROW,
+      curvature: 0.35,
+      label: r.name,
+      size: RULE_EDGE_SIZE,
+      enabled: r.enabled,
+    });
   }
 
   // 先按有向类对归堆再画：少的各画各的，多的并成一条带计数的边（见 BUNDLE_ABOVE）。
@@ -530,15 +562,19 @@ function focusNode(sigma: Sigma, id: string): void {
 export type SchemaSelection =
   | { kind: "class"; id: string }
   | { kind: "relation"; id: string }
+  | { kind: "rule"; id: string }
   | null;
 
 export function OntologySchemaGraph({
   entityTypes,
   relationTypes,
+  rules = [],
   selected,
   onSelect,
 }: {
   entityTypes: EntityTypeView[];
+  /** 业务规则：画成主类 → 结论类的一条紫弧，点它打开规则那一页 */
+  rules?: BusinessRule[];
   /** 全量关系（含 attribute）：图只画 kind === "relation"，attribute 在这里
    *  单纯被忽略——它们的宾语是字面值，不是类，不进类图，也不用在这个文件里
    *  另外筛出来，展示 attribute 是 Ontology.tsx 停靠面板的事 */
@@ -586,8 +622,8 @@ export function OntologySchemaGraph({
   // 本体没变就不重建图——依赖数组只看 entityTypes/relationTypes 的引用与
   // 取景，选中/悬停都是别的状态，不会触发这里
   const schema = useMemo(
-    () => buildSchemaGraph(entityTypes, objectRelations, scope.drawn),
-    [entityTypes, objectRelations, scope.drawn],
+    () => buildSchemaGraph(entityTypes, objectRelations, scope.drawn, rules),
+    [entityTypes, objectRelations, scope.drawn, rules],
   );
 
   /** 把一个类带到眼前：还在取景之外就先揭开、重建之后再对焦；画着但在视口
@@ -777,18 +813,26 @@ export function OntologySchemaGraph({
             ? EDGE_SUBCLASS
             : kind === DISJOINT_KIND
               ? EDGE_DISJOINT
-              : EDGE_RELATION;
+              : kind === RULE_KIND
+                ? EDGE_RULE
+                : EDGE_RELATION;
         const focus =
           kind === SUBCLASS_KIND
             ? EDGE_SUBCLASS_FOCUS
             : kind === DISJOINT_KIND
               ? EDGE_DISJOINT_FOCUS
-              : EDGE_RELATION_FOCUS;
+              : kind === RULE_KIND
+                ? EDGE_RULE_FOCUS
+                : EDGE_RELATION_FOCUS;
         res.color = base;
+        // 关掉的规则：画着，但压到暗一档——「这条推理停着」要看得见，
+        // 从图上消失会让人以为从来没有过它
+        if (kind === RULE_KIND && attrs.enabled === false) res.color = EDGE_DIM;
         // 结构性的边（继承/互斥）不挂标签；关系边挂——但一大张图上,全部常显
         // 会变成一堵读不动的字墙，交给 renderEdgeLabels 按缩放开关（见下方
         // updateEdgeLabels）,选中的那条在检查器里说得明明白白，不用画布保证
-        if (kind !== RELATION_KIND) res.label = "";
+        // 规则边挂名字：那是它唯一说得出自己是谁的地方（条件在规则表里）
+        if (kind !== RELATION_KIND && kind !== RULE_KIND) res.label = "";
 
         const [s, t] = g.extremities(edge);
         const hov = hoverRef.current;
@@ -800,7 +844,9 @@ export function OntologySchemaGraph({
             ? sel.id === s || sel.id === t
             : sel?.kind === "relation"
               ? (relIds?.includes(sel.id) ?? false)
-              : false;
+              : sel?.kind === "rule"
+                ? attrs.ruleId === sel.id
+                : false;
 
         if (selHit || hoverHit || hoverEdgeHit) {
           res.color = focus;
@@ -820,6 +866,11 @@ export function OntologySchemaGraph({
 
     sigma.on("clickNode", ({ node }) => onSelect({ kind: "class", id: node }));
     sigma.on("clickEdge", ({ edge }) => {
+      const ruleId = g.getEdgeAttribute(edge, "ruleId") as string | undefined;
+      if (ruleId) {
+        onSelect({ kind: "rule", id: ruleId });
+        return;
+      }
       const ids = g.getEdgeAttribute(edge, "relationIds") as string[] | undefined;
       if (!ids?.length) return;
       // 单独一条：选中它；并起来的一捆：选中 domain 那个类，属性页里一条条看
@@ -940,13 +991,18 @@ export function OntologySchemaGraph({
       {/* 顶部悬浮条：图例 + 取景 + 未限定关系入口。没有搜索框——找东西走左栏 */}
       <div className="absolute top-3 left-3 right-3 z-10 flex items-start gap-2 pointer-events-none">
         <div className="pointer-events-auto flex flex-wrap gap-2">
-          {/* 静态图例：三种边各自的说法，不是可切换的过滤器——本体的边远比
-              实例图少，藏一种边省下的空间不值得多一层交互 */}
+          {/* 静态图例：几种边各自的说法，不是可切换的过滤器——本体的边远比
+              实例图少，藏一种边省下的空间不值得多一层交互。
+              规则那一条只在真有规则时出现：没有规则的库不该看到一个解释
+              不存在的东西的图例 */}
           {(
             [
               [S.ontology.schemaLegendInheritance, EDGE_SUBCLASS_FOCUS],
               [S.ontology.schemaLegendRelation, EDGE_RELATION_FOCUS],
               [S.ontology.schemaLegendDisjoint, EDGE_DISJOINT_FOCUS],
+              ...(rules.length
+                ? ([[S.ontology.schemaLegendRule, EDGE_RULE_FOCUS]] as const)
+                : []),
             ] as const
           ).map(([label, color]) => (
             <span

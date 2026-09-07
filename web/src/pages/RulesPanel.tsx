@@ -21,6 +21,7 @@ import {
 import { S } from "../i18n";
 import {
   Button,
+  cn,
   Chip,
   DangerConfirm,
   Dropdown,
@@ -206,11 +207,14 @@ function Matches({ kbId, ruleId }: { kbId: string; ruleId: string }) {
 
 export function RulesPanel({
   kbId,
+  focusId,
   classes,
   attributes,
   onError,
 }: {
   kbId: string;
+  /** 从模式图上点一条规则边过来时，那一行点亮——省得在一页规则里再找一遍 */
+  focusId?: string;
   classes: EntityTypeView[];
   /** kind='attribute' 的谓词——规则只读实体自己的字面值 */
   attributes: RelationTypeView[];
@@ -392,7 +396,13 @@ export function RulesPanel({
             </THead>
             <TBody>
               {list.map((r) => (
-                <Tr key={r.id} className={r.enabled ? undefined : "opacity-55"}>
+                <Tr
+                  key={r.id}
+                  className={cn(
+                    !r.enabled && "opacity-55",
+                    r.id === focusId && "u-picked bg-surface-2",
+                  )}
+                >
                   <Td>
                     <div className="text-body text-ink">{r.name}</div>
                     <RuleSentence rule={r} />

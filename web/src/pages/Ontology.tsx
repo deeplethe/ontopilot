@@ -96,8 +96,9 @@ type Sel =
   | { kind: "relation"; id: string }
   | { kind: "misses" }
   | { kind: "uniqueness" }
-  // 类型消解：把「大致对」的类换成更具体的那个
-  | { kind: "rules" }
+  // 业务规则那一页。**focusId 是从模式图上点一条规则边过来的**——那一行高亮，
+  // 不必在一页规则里再找一遍
+  | { kind: "rules"; focusId?: string }
   | { kind: "refine" }
   | { kind: "import" }
   // 模式图无选中：看整张图,不停靠表单
@@ -179,6 +180,13 @@ export function Ontology() {
     enabled: !!kb,
   });
   const overlaps = uniqueness.data?.candidates ?? [];
+  /* 业务规则：模式图要把它们画成边，规则页要列出来——同一个 query key
+     取一次，两处共用缓存 */
+  const rules = useQuery({
+    queryKey: ["rules", kb?.id],
+    queryFn: () => api.rules(kb!.id),
+    enabled: !!kb,
+  });
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["ontology", kb?.id] });
@@ -437,6 +445,7 @@ export function Ontology() {
               <div>
                 <RulesPanel
                   kbId={kb.id}
+                  focusId={sel.kind === "rules" ? sel.focusId : undefined}
                   classes={entity_types}
                   attributes={relation_types.filter((r) => r.kind === "attribute")}
                   onError={onError}
@@ -460,6 +469,7 @@ export function Ontology() {
           <OntologySchemaGraph
             entityTypes={entity_types}
             relationTypes={relation_types}
+            rules={rules.data?.rules ?? []}
             selected={
               sel?.kind === "class" || sel?.kind === "relation"
                 ? ({ kind: sel.kind, id: sel.id } as SchemaSelection)
@@ -467,7 +477,16 @@ export function Ontology() {
             }
             // 点空白处取消选中走的也是 closePanel：不然点画布关掉的面板没有
             // 退场动画，而点画布正是最常用的那种关法
-            onSelect={(next) => (next ? setSel(next) : closePanel())}
+            // 点一条规则边：切到业务规则那一页，并把那一行点亮
+            onSelect={(next) =>
+              next
+                ? setSel(
+                    next.kind === "rule"
+                      ? { kind: "rules", focusId: next.id }
+                      : next,
+                  )
+                : closePanel()
+            }
           />
           {selectedClass && (
             <DockedPanel
