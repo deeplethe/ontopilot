@@ -20,16 +20,28 @@ const KIND_ICON = {
   rejected: Undo2,
   // 并入不是撤回：内容一字未少地进了另一条断言
   merged: Merge,
+  /* 实体合并：这条轴上最大的一次认识改变——从此它和另一个实体算同一个东西。
+     两个方向共用一个图标，方向写在正文里（"←" 是别人并进来） */
+  merged_in: Merge,
+  merged_away: Merge,
+  merge_reverted: Undo2,
   // 改类不是事实变更：图上的节点换了个类，事实一条没动
   retyped: Tag,
   retype_reverted: Undo2,
 } as const;
+
+/** 实体合并那三种：正文换成对方实体，而不是谓词 + 宾语 */
+const MERGE_KINDS = new Set(["merged_in", "merged_away", "merge_reverted"]);
 
 const KIND_TONE: Record<string, string> = {
   asserted: "text-ink-2",
   corrected: "text-warn",
   rejected: "text-danger",
   merged: "text-ink-2",
+  merged_in: "text-ink-2",
+  merged_away: "text-ink-2",
+  // 撤销与「改类被撤销」同一档：做过、又收回了
+  merge_reverted: "text-warn",
   retyped: "text-ink-2",
   retype_reverted: "text-warn",
 };
@@ -102,6 +114,15 @@ function EventRow({ e }: { e: EntityHistoryEvent }) {
               {e.from_type_label ?? S.graph.untyped} →{" "}
             </span>
             <span className="text-ink">{e.to_type_label}</span>
+          </div>
+        ) : MERGE_KINDS.has(e.kind) ? (
+          /* 合并事件的正文只有对方。**箭头指方向**：并进来是「←」，
+             并出去是「→」，与上面事实那一行的读法一致 */
+          <div className="mt-1 text-body text-ink-2 truncate">
+            <span className="text-small text-ink-2">
+              {e.kind === "merged_away" ? "→ " : "← "}
+            </span>
+            <span className="text-ink">{e.other_name ?? S.graph.historyGoneEntity}</span>
           </div>
         ) : (
           <div className="mt-1 text-body text-ink-2 truncate">

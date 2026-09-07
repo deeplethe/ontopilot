@@ -907,6 +907,11 @@ export interface EntityHistoryEvent {
     | "corrected"
     | "rejected"
     | "merged"
+    /** 别人并进了它：事实搬到它名下 */
+    | "merged_in"
+    /** 它并进了别人：这个 id 从此不再单独存在 */
+    | "merged_away"
+    | "merge_reverted"
     | "retyped"
     | "retype_reverted";
   direction: "out" | "in" | null;

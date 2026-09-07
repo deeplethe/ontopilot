@@ -1218,6 +1218,35 @@ pub async fn entity_history(
             LEFT JOIN entity_types tf ON tf.id = r.from_type_id
             JOIN entity_types tt ON tt.id = r.to_type_id
             WHERE r.kb_id = $1 AND r.entity_id = $2 AND r.reverted_at IS NOT NULL
+        ),
+        /* 合并也是这个实体身上的一次认识改变，而且是最大的一次：从此它和另一个
+           实体算同一个东西。**从前这条轴看不见它**——只看得见合并顺手作废的那些
+           事实（`merged`），于是界面在说结果，不说发生了什么。#337 之后
+           `entity_merges` 有了自己的时钟（created_at / reverted_at），接进来即可。
+
+           两个方向分开记：`merged_in` = 别人并进了它（事实搬到它名下），
+           `merged_away` = 它并进了别人（这个 id 从此不再单独存在）。同一句话
+           说两件事会让「谁吸收了谁」读不出来，而回滚正是按方向做的。 */
+        mg AS (
+            SELECT m.created_at AS at,
+                   CASE WHEN m.target_id = $2 THEN 'merged_in' ELSE 'merged_away' END AS kind,
+                   m.merged_by AS actor_id,
+                   CASE WHEN m.target_id = $2 THEN m.source_id ELSE m.target_id END AS other_id
+            FROM entity_merges m
+            WHERE m.kb_id = $1 AND (m.source_id = $2 OR m.target_id = $2)
+            UNION ALL
+            -- 撤销的归因**不能借合并那一行的 merged_by**：撤的人常常不是当初合的人，
+            -- 而自动合并那一行本来就是 NULL。撤销写审计（`merge.revert`，target 是
+            -- 这次合并），从那儿取才对得上人
+            SELECT m.reverted_at, 'merge_reverted',
+                   (SELECT a.actor_id FROM audit_events a
+                     WHERE a.kb_id = $1 AND a.action = 'merge.revert'
+                       AND a.target_id = m.id
+                     ORDER BY a.created_at DESC LIMIT 1),
+                   CASE WHEN m.target_id = $2 THEN m.source_id ELSE m.target_id END
+            FROM entity_merges m
+            WHERE m.kb_id = $1 AND (m.source_id = $2 OR m.target_id = $2)
+              AND m.reverted_at IS NOT NULL
         )";
     let rows: Vec<EntityHistoryEvent> = sqlx::query_as(&format!(
         "{EVENTS}
@@ -1283,6 +1312,20 @@ pub async fn entity_history(
                 NULL::uuid, NULL::text, NULL::text,
                 rt.from_type_label, rt.to_type_label
          FROM rt LEFT JOIN users u ON u.id = rt.actor_id
+         UNION ALL
+         -- 合并事件：没有谓词、没有区间、没有证据行，对方是另一个实体。
+         -- 被合并掉的那一头仍留在 entities 里（revert_merge 要按原路搬回去），
+         -- 所以这里拿得到名字；LEFT JOIN 只是防库被清理过
+         SELECT NULL::uuid, mg.at, mg.kind, NULL::text,
+                NULL::text, o.canonical_name,
+                NULL::jsonb, NULL::timestamptz, NULL::text,
+                NULL::timestamptz, NULL::text,
+                NULL::real, u.display_name, NULL::text,
+                NULL::uuid, NULL::text, NULL::text,
+                NULL::text, NULL::text
+         FROM mg
+         LEFT JOIN entities o ON o.id = mg.other_id
+         LEFT JOIN users u ON u.id = mg.actor_id
          ) x
          ORDER BY x.at DESC, x.fact_id
          LIMIT $3 OFFSET $4"
@@ -1293,9 +1336,9 @@ pub async fn entity_history(
     .bind(offset)
     .fetch_all(pool)
     .await?;
-    // 总数把改类那一支也算上，否则分页会少一截
+    // 总数把改类、合并那两支也算上，否则分页会少一截
     let (total,): (i64,) = sqlx::query_as(&format!(
-        "{EVENTS} SELECT (SELECT count(*) FROM ev) + (SELECT count(*) FROM rt)"
+        "{EVENTS} SELECT (SELECT count(*) FROM ev) + (SELECT count(*) FROM rt)                        + (SELECT count(*) FROM mg)"
     ))
     .bind(kb_id)
     .bind(entity_id)

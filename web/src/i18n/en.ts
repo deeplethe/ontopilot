@@ -862,10 +862,17 @@ export const en = {
       rejected: "Withdrawn",
       /* 并入另一条断言：内容一字未少，不是撤回 */
       merged: "Merged into an existing fact",
+      /* 实体合并。**两个方向分开说**——「吸收了谁」和「被谁吸收」在图上
+         是两件事，回滚也是按方向做的 */
+      merged_in: "Another entity was merged into this one",
+      merged_away: "Merged into another entity",
+      merge_reverted: "Merge undone",
       /* 改的是节点上的类,一条事实都没动 */
       retyped: "Type changed",
       retype_reverted: "Type change undone",
     } as Record<string, string>,
+    /* 对方实体已经不在了（库被清理过）：合并事件仍然要列出来 */
+    historyGoneEntity: "an entity that is gone",
     historyEngine: "engine",
     /* 有效区间的变化：修正后区间闭合到某个时点 */
     historyClosedAt: (t: string) => `closed at ${t}`,
