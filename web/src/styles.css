@@ -1304,13 +1304,13 @@ a:hover > .u-mark-arrow {
 .u-chat-prose code {
   font-size: 0.85em;
   background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
+  border-radius: var(--radius-cell);
   padding: 0.1em 0.35em;
 }
 .u-chat-prose pre {
   background: rgba(0, 0, 0, 0.45);
   border: 1px solid var(--u-line);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   padding: 0.6em 0.8em;
   overflow-x: auto;
   margin: 0.5em 0;
@@ -1353,7 +1353,9 @@ a:hover > .u-mark-arrow {
   overflow: hidden;
   white-space: nowrap;
   opacity: 0;
-  font-size: 11px;
+  /* 字号走令牌，不写死：从前是 11px，字号整体上移一档之后它没跟上，
+     成了全站唯一一处旧刻度 */
+  font-size: var(--text-fine);
   line-height: 1;
   /* 图标与文字之间的空当用 **margin**，既不能用按钮上的 gap，也不能用 padding：
      gap 对宽度为 0 的项目照样生效；而 padding 不会被 max-width 压缩
@@ -1380,6 +1382,14 @@ a:hover > .u-mark-arrow {
   .u-tower-label {
     transition: none;
   }
+}
+
+/* 顶栏左上角的字标。同 hero：**品牌不是界面文字**，所以不走五档字号——
+   从前它写的是 text-display，字号整体上移一档之后跟着涨到 24，比同一顶栏里
+   的分区字标（text-title）大了一半，压着旁边的导航。20 是它原本的大小 */
+.u-wordmark-top {
+  font-size: 20px;
+  line-height: 28px;
 }
 
 /* 登录页与故障页正中的字标。它是品牌元素，不是界面文字，所以不在五档字号里——

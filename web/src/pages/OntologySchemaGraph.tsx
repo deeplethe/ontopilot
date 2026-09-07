@@ -916,7 +916,7 @@ export function OntologySchemaGraph({
     <div className="h-full relative">
       {/* 顶部悬浮条：图例 + 取景 + 未限定关系入口。没有搜索框——找东西走左栏 */}
       <div className="absolute top-3 left-3 right-3 z-10 flex items-start gap-2 pointer-events-none">
-        <div className="pointer-events-auto flex flex-wrap gap-2 pt-1">
+        <div className="pointer-events-auto flex flex-wrap gap-2">
           {/* 静态图例：三种边各自的说法，不是可切换的过滤器——本体的边远比
               实例图少，藏一种边省下的空间不值得多一层交互 */}
           {(

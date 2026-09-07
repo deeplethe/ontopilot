@@ -1327,7 +1327,8 @@ export function Graph() {
         {/* 图例（点击切换类型显隐）。**只摆前 LEGEND_MAX 个**，其余收进
             「+N 个类」——那一排横着长，类一多就换行把画布顶下去；而且十几个
             一模一样的胶囊排开，谁重要也读不出来 */}
-        <div className="pointer-events-auto flex flex-wrap gap-2 pt-1">
+        {/* 与搜索框顶齐：药丸和输入框都是 32 高，这里再垫 4 就矮一截 */}
+        <div className="pointer-events-auto flex flex-wrap gap-2">
           {legendShown.map(([key, t]) => (
             <Pill
               key={key}

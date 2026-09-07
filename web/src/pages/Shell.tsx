@@ -100,7 +100,7 @@ export function Shell() {
           两行同一套节奏 */}
       <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-6 px-8">
         {/* 字标：逐字母淡入，hover 浮出 ↗，点击去官网 */}
-        <Wordmark className="text-display" />
+        <Wordmark className="u-wordmark-top" />
         {/* 知识库切换器紧跟字标，中间不画斜杠——它不是面包屑的第二级，就是
             「现在在哪个库」。Workspace 已从概念层折叠为部署级隐形管道
             （settings/members 仍经它走 API，如 organizations 之于单租户）。
