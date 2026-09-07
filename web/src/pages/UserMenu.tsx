@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Check,
+  ChevronDown,
   Languages,
   Layers,
   LogOut,
@@ -97,6 +98,9 @@ export function UserMenu({ user }: { user: User }) {
                 {user.email}
               </div>
             </div>
+            {/* 朝上的三角：说明这一行是收回去的地方，同库切换器与告警面板。
+                三个面板都从各自的胶囊原地长出来，也都从第一行原地缩回去 */}
+            <ChevronDown size={12} className="shrink-0 rotate-180 text-ink-2" />
           </div>
 
           <div>
