@@ -16,19 +16,9 @@ import {
   rowClass,
   SectionMark,
 } from "../ui";
-
-/** 管理页的五节。**它们是左栏的第二层，不是正文顶上的一条 tab 带**——
-    与上面四项是同一种东西（去哪儿），只是矮一级；地址里是 `?tab=`，
-    刷新、回退、分享链接都落回同一节 */
-const ADMIN_TABS = [
-  ["models", () => S.settings.tabModels],
-  ["members", () => S.settings.tabMembers],
-  ["kbs", () => S.settings.tabKbs],
-  ["datasources", () => S.settings.datasources.tab],
-  ["deployment", () => S.settings.tabDeployment],
-] as const;
 import { ServerDown } from "./ServerDown";
 import { HeaderActions } from "./HeaderActions";
+import { ADMIN_TABS } from "./Settings";
 
 export function AccountShell() {
   const navigate = useNavigate();
@@ -105,7 +95,7 @@ export function AccountShell() {
                 {S.account.administration}
               </Link>
               {onAdmin &&
-                ADMIN_TABS.map(([key, label]) => (
+                ADMIN_TABS.map(({ key, label }) => (
                   <Link
                     key={key}
                     to="/admin"

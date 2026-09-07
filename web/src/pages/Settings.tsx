@@ -23,6 +23,19 @@ import {
 } from "../ui";
 import { Members } from "./Members";
 
+/** 管理页的五节。**它们是左栏的第二层，不是正文顶上的一条 tab 带**——
+    与账户栏那四项是同一种东西（去哪儿），只是矮一级；地址里是 `?tab=`，
+    刷新、回退、分享链接都落回同一节。左栏（AccountShell）与这一页的标题
+    读的是同一份，名字只有一处。**label 是函数**：界面语言在运行时可切，
+    模块顶上取值会把第一次加载时的那门语言焊死 */
+export const ADMIN_TABS = [
+  { key: "models", label: () => S.settings.tabModels },
+  { key: "members", label: () => S.settings.tabMembers },
+  { key: "kbs", label: () => S.settings.tabKbs },
+  { key: "datasources", label: () => S.settings.datasources.tab },
+  { key: "deployment", label: () => S.settings.tabDeployment },
+] as const;
+
 /** 一个源授权给了哪些工作区（0014）。
  *
  * **授权与挂载是两层**：这里说「这个源可以给谁用」，KB 管理员再在授权过的
@@ -774,7 +787,11 @@ export function Settings() {
     <div className="h-full overflow-y-auto u-scroll px-8 py-6">
       {/* 同 KbSettings：设置是读一列字段，居中限宽，行长不随窗口拉长 */}
       <div className="mx-auto w-full max-w-4xl">
-        <PageHeader title={S.settings.title} />
+        {/* 标题是这一节的名字，不是「Administration」——左栏已经说了人在
+            管理区，页顶再说一遍等于每一节的标题都一样 */}
+        <PageHeader
+          title={ADMIN_TABS.find((t) => t.key === tab)?.label() ?? S.settings.title}
+        />
 
         {tab === "members" && <Members workspaceId={workspace.id} />}
         {tab === "kbs" && <KbsAdmin autoCreate={!!create} />}
