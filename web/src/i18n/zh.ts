@@ -1678,6 +1678,8 @@ export const zh: Strings = {
     filterDeactivated: "已停用",
     deactivateConfirm: (name: string) =>
       `停用 ${name}？他将无法再登录任何地方，但过往的决定仍然留痕。`,
+    addExisting: "添加已有用户",
+    userLabel: "用户",
     pickUser: "选择要添加的用户…",
     add: "添加",
     roles: {

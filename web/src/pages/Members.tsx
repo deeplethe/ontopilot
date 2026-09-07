@@ -41,6 +41,7 @@ export function Members({ workspaceId }: { workspaceId: string }) {
   // 看在用的、看停用的，还是都看。缺省只看在用的：那是这一页平时的问题
   const [status, setStatus] = useState<"all" | "active" | "deactivated">("active");
   const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState(false);
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
   const [error, setError] = useState<string | null>(null);
 
@@ -171,36 +172,13 @@ export function Members({ workspaceId }: { workspaceId: string }) {
         title={S.members.title}
         // 为什么停用的账号还留着：只在看它们的时候说
         hint={status === "deactivated" ? S.members.deactivatedHint : undefined}
-        note={
-          /* picker 常驻。理由同 KbSettings 里那段：控件消失读作"坏了"，
-             而不是"没人可加"；空列表 SearchSelect 自己会说 */
-          <SearchSelect
-            className="w-full max-w-sm"
-            value={addUserId}
-            onChange={setAddUserId}
-            placeholder={S.members.pickUser}
-            options={addable.map((u) => ({
-              value: u.id,
-              label: u.display_name,
-              hint: u.email,
-            }))}
-          />
-        }
+        /* 底栏从「常驻的选人器 + 角色 + Add」收成一个按钮：**上面已经有一个
+           搜索框了**，两个长得一样的框摆在同一张卡里，第一眼分不出哪个是筛
+           哪个是加。加人是偶尔一次的动作，藏进弹窗，让这张卡只剩名单 */
         action={
-          <>
-            <Dropdown
-              className="w-28"
-              value={addRole}
-              onChange={setAddRole}
-              options={ROLE_OPTIONS}
-            />
-            <Button variant="primary" size="sm"
-              onClick={() => addUserId && setRole.mutate({ userId: addUserId, role: addRole })}
-              disabled={!addUserId}
-            >
-              {S.members.add}
-            </Button>
-          </>
+          <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+            {S.members.addExisting}
+          </Button>
         }
       >
         {memberList.length === 0 ? (
@@ -273,6 +251,56 @@ export function Members({ workspaceId }: { workspaceId: string }) {
           onPage={setMemberPage}
         />
       </SettingsCard>
+
+      {/* 把一个**已有账号**加进这个工作区。与「开账号」是两件事：那个凭空造
+          一个人，这个只是给已经存在的人一个角色 */}
+      <Dialog
+        open={adding}
+        onOpenChange={setAdding}
+        title={S.members.addExisting}
+        closeLabel={S.ui.close}
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setAdding(false)}>
+              {S.members.cancel}
+            </Button>
+            <Button variant="primary" size="sm"
+              disabled={!addUserId || setRole.isPending}
+              onClick={() => {
+                setRole.mutate({ userId: addUserId, role: addRole });
+                setAdding(false);
+              }}
+            >
+              {S.members.add}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={S.members.userLabel} className="mb-0">
+            {/* 空列表由 SearchSelect 自己说（它有 noMatches 空态） */}
+            <SearchSelect
+              className="w-full"
+              value={addUserId}
+              onChange={setAddUserId}
+              placeholder={S.members.pickUser}
+              options={addable.map((u) => ({
+                value: u.id,
+                label: u.display_name,
+                hint: u.email,
+              }))}
+            />
+          </Field>
+          <Field label={S.members.roleLabel} className="mb-0">
+            <Dropdown
+              className="w-full"
+              value={addRole}
+              onChange={setAddRole}
+              options={ROLE_OPTIONS}
+            />
+          </Field>
+        </div>
+      </Dialog>
 
       {me.data?.is_admin && (
         <CreateUserDialog
@@ -378,6 +406,7 @@ function CreateUserDialog({
         <Field label={S.settings.initialPassword} className="mb-0">
           <Input className="w-full"
             type="password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />

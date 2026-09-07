@@ -1914,6 +1914,8 @@ export const en = {
     filterDeactivated: "Deactivated",
     deactivateConfirm: (name: string) =>
       `Deactivate ${name}? They lose access everywhere. Their past decisions stay on record.`,
+    addExisting: "Add existing user",
+    userLabel: "User",
     pickUser: "Select a user to add…",
     add: "Add",
     roles: {
