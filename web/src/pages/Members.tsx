@@ -355,16 +355,22 @@ function CreateUserDialog({
         </>
       }
     >
+      {/* 这是**给别人开账号**，不是登录：浏览器看见「邮箱 + 密码」就把当前
+          登录的人填进来（管理员打开它，看到的是自己的名字和一串圆点）。
+          `new-password` 让 Chrome 认出这是设新密码而不是回填旧凭据，
+          上面两格一并关掉自动填充 */}
       <div className="grid grid-cols-2 gap-3">
         <Field label={S.login.email} className="mb-0">
           <Input className="w-full"
             autoFocus
+            autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
         <Field label={S.login.displayName} className="mb-0">
           <Input className="w-full"
+            autoComplete="off"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
