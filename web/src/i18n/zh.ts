@@ -1422,6 +1422,7 @@ export const zh: Strings = {
       escalate_entity_changed: "裁决过程中实体发生了变化",
       escalate_unsure: "裁决的把握不够",
       escalate_sample: "抽给人看的一份；裁决器本有把握",
+      escalate_impact: "留给人；这次合并不会只留在图里",
       proposed: "agent 看过了，留了一条建议",
       governed: "agent 按先例裁的",
       namesake: "同一篇文档里有两个同名实体",
@@ -1432,6 +1433,11 @@ export const zh: Strings = {
       auto_merged: "AI 裁决已自动合并",
       kept_apart: "AI 裁决认为不是同一个",
     } as Record<string, string>,
+    impact: {
+      contradiction: (p) => `合了会让一个实体有两条“${p}”`,
+      derived: (n) => `有 ${n} 条派生事实靠着一边`,
+      answered: (n) => `有一边在 ${n} 个回答里被点过名`,
+    } as Record<string, (v: string) => string>,
     duplicates: "可能重复",
     duplicatesHint:
       "同名，但上下文不同。AI 在后台裁决明确的情形；其余等你。合并永远可撤销。",

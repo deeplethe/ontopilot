@@ -201,6 +201,24 @@ async fn apply_verdict(
     }
     match same {
         Some(true) if conf >= AUTO_CONF => {
+            // 执行闸门（0027）：合并会立刻送出图外的东西——违规、派生、答案——留给人，
+            // 把握再高也不动手。人看到的是留下的原因，不是「裁决器没把握」
+            let impact = utopia_store::execution_gate::impact_of(
+                &state.pool,
+                kb_id,
+                item.left.id,
+                item.right.id,
+            )
+            .await?;
+            if let Some(hold) = utopia_store::execution_gate::hold(&impact) {
+                utopia_store::resolution::escalate_review(
+                    &state.pool,
+                    item.id,
+                    &format!("escalate_impact|{hold}"),
+                )
+                .await?;
+                return Ok(());
+            }
             let (target, source) =
                 utopia_store::resolution::merge_direction(&state.pool, item.left.id, item.right.id)
                     .await?;

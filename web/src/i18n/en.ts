@@ -1624,6 +1624,8 @@ export const en = {
       escalate_unsure: "The adjudicator was not confident enough",
       /* 抽给人看的一份（0026）：机器有把握也不动手，detail 是它本来的答案 */
       escalate_sample: "Sampled for a person; the adjudicator was confident",
+      /* 执行闸门（0027）：合并会立刻送出图外的东西，把握再高也留给人 */
+      escalate_impact: "Held for a person; the merge would not stay in the graph",
       proposed: "The agent looked and left a proposal",
       governed: "Decided by the agent from precedent",
       namesake: "Two entities with this name in one document",
@@ -1636,6 +1638,12 @@ export const en = {
       auto_merged: "Merged by the AI adjudicator",
       kept_apart: "The AI adjudicator judged these different",
     } as Record<string, string>,
+    /** 闸门留下的原因，按 kind 措辞；value 是谓词标签或一个数 */
+    impact: {
+      contradiction: (p: string) => `it would put two “${p}” facts on one entity`,
+      derived: (n: string) => `${n} derived facts rest on one side`,
+      answered: (n: string) => `one side was named in ${n} answers`,
+    } as Record<string, (v: string) => string>,
     duplicates: "Possible duplicates",
     duplicatesHint:
       "Same name, different context. The AI adjudicates clear cases in the background; the rest wait for you. Merging is always reversible.",

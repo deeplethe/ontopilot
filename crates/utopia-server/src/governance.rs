@@ -25,6 +25,7 @@ use utopia_core::AppError;
 use utopia_extract::governor::{self, Step};
 use utopia_llm::{tool_result_message, LlmClient};
 use utopia_store::alerts;
+use utopia_store::execution_gate;
 use utopia_store::governance::{self as gov, Gate, NewDecision, Precedents, AUTO_CONF};
 use uuid::Uuid;
 
@@ -456,6 +457,31 @@ async fn apply(ctx: &Ctx<'_>, item: &ReviewItem, p: &Precedents, look: Look) -> 
                     .await?;
                 let id = gov::record(pool, kb_id, decision("applied", None)).await?;
                 audit(ctx, "review.merge", item, conf, id).await;
+                return Ok(());
+            }
+            // 执行闸门（0027）：合并会立刻送出图外的东西——违规、派生、答案——留给人，
+            // 把握再高也不动手。agent 的看法照记成建议，理由前面写明是闸门留下的
+            let impact = execution_gate::impact_of(pool, kb_id, l, r).await?;
+            if let Some(hold) = execution_gate::hold(&impact) {
+                utopia_store::resolution::escalate_review(
+                    pool,
+                    item.id,
+                    &format!("escalate_impact|{hold}"),
+                )
+                .await?;
+                let held = match look.why.as_deref() {
+                    Some(why) => format!("held for a person: {}; {why}", hold.explain()),
+                    None => format!("held for a person: {}", hold.explain()),
+                };
+                gov::record(
+                    pool,
+                    kb_id,
+                    NewDecision {
+                        reason: Some(&held),
+                        ..decision("proposed", None)
+                    },
+                )
+                .await?;
                 return Ok(());
             }
             let (target, source) = utopia_store::resolution::merge_direction(pool, l, r).await?;

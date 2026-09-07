@@ -53,6 +53,12 @@ function escalationText(reason: string): string {
   const [code, detail] = reason.split("|");
   const worded = S.review.escalated[code];
   if (!worded) return reason;
+  // 执行闸门（0027）留下的：detail 是 `kind value`，按 kind 措辞，不把裸代码给人看
+  if (code === "escalate_impact" && detail) {
+    const [kind, ...rest] = detail.split(" ");
+    const said = S.review.impact[kind]?.(rest.join(" "));
+    if (said) return `${worded} — ${said}`;
+  }
   return detail ? S.errDetail(worded, detail) : worded;
 }
 

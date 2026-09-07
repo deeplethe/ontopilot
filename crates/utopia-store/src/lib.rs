@@ -10,6 +10,7 @@ pub mod conversations;
 pub mod datasources;
 pub mod db;
 pub mod documents;
+pub mod execution_gate;
 pub mod export;
 pub mod extraction_drops;
 pub mod governance;
