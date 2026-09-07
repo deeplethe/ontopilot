@@ -76,102 +76,105 @@ export function MyKbs() {
 
   return (
     <div className="px-8 py-6">
-      <PageHeader
-        title={S.account.kbsTitle}
-        actions={
-          canCreate && (
-            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-              <Plus size={12} />
-              {S.settings.kbs.newKb}
-            </Button>
-          )
-        }
-      />
-
-      {/* 筛这份名单的东西在面板外面（DESIGN.md 6） */}
-      <div className="mb-4">
-        <Input
-          icon={<Search size={13} />}
-          className="w-72"
-          placeholder={S.account.kbsFilter}
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+      {/* 与管理页同一副身材：内容居中限宽，行长不随窗口拉长 */}
+      <div className="mx-auto w-full max-w-4xl">
+        <PageHeader
+          title={S.account.kbsTitle}
+          actions={
+            canCreate && (
+              <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+                <Plus size={12} />
+                {S.settings.kbs.newKb}
+              </Button>
+            )
+          }
         />
-      </div>
 
-      {/* 一个面板装多行，不是一行一张卡片（DESIGN.md 6）。一行说清三件事：
-          这是哪个库、里面有多少东西、我在里面是什么身份 */}
-      <div className="glass rounded-panel divide-y divide-line">
-        {rows.map((row) => {
-          const canManage = row.my_role === "admin" || row.my_role === "owner";
-          return (
-            <div key={row.kb.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-body text-ink">{row.kb.name}</span>
-                  {row.kb.is_default && (
-                    <Chip tone="neutral">{S.settings.kbs.defaultChip}</Chip>
-                  )}
-                  {row.kb.visibility === "restricted" && (
-                    <span className="flex items-center gap-1 text-fine text-ink-2">
-                      <Lock size={10} />
-                      {S.account.kbRestricted}
+        {/* 筛这份名单的东西在面板外面（DESIGN.md 6） */}
+        <div className="mb-4">
+          <Input
+            icon={<Search size={13} />}
+            className="w-72"
+            placeholder={S.account.kbsFilter}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </div>
+
+        {/* 一个面板装多行，不是一行一张卡片（DESIGN.md 6）。一行说清三件事：
+            这是哪个库、里面有多少东西、我在里面是什么身份 */}
+        <div className="glass rounded-panel divide-y divide-line">
+          {rows.map((row) => {
+            const canManage = row.my_role === "admin" || row.my_role === "owner";
+            return (
+              <div key={row.kb.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-body text-ink">{row.kb.name}</span>
+                    {row.kb.is_default && (
+                      <Chip tone="neutral">{S.settings.kbs.defaultChip}</Chip>
+                    )}
+                    {row.kb.visibility === "restricted" && (
+                      <span className="flex items-center gap-1 text-fine text-ink-2">
+                        <Lock size={10} />
+                        {S.account.kbRestricted}
+                      </span>
+                    )}
+                    {row.my_role && (
+                      <Chip tone={canManage ? "info" : "neutral"}>
+                        {S.account.roleNames[row.my_role] ?? row.my_role}
+                      </Chip>
+                    )}
+                  </div>
+                  <div className="mt-1 truncate text-small text-ink-2">
+                    <span className="u-num">
+                      {S.account.kbStats(row.doc_count, row.member_count)}
                     </span>
-                  )}
-                  {row.my_role && (
-                    <Chip tone={canManage ? "info" : "neutral"}>
-                      {S.account.roleNames[row.my_role] ?? row.my_role}
-                    </Chip>
-                  )}
+                    <span className="mx-2">·</span>
+                    {joinInfo(row)}
+                  </div>
                 </div>
-                <div className="mt-1 truncate text-small text-ink-2">
-                  <span className="u-num">
-                    {S.account.kbStats(row.doc_count, row.member_count)}
-                  </span>
-                  <span className="mx-2">·</span>
-                  {joinInfo(row)}
-                </div>
-              </div>
-              {/* 设置在前、打开在后：不是每一行都有设置（要 admin），把总是在的
-                  那个放右端，一列按钮的右缘才不会一行一个样 */}
-              <div className="flex shrink-0 items-center gap-2">
-                {canManage && (
-                  <Button variant="secondary" size="sm"
-                    onClick={() => {
-                      setKb(row.kb.id);
-                      navigate({ to: "/kb/$kbId/settings", params: { kbId: row.kb.id } });
-                    }}
-                  >
-                    {S.account.kbSettingsBtn}
+                {/* 设置在前、打开在后：不是每一行都有设置（要 admin），把总是在的
+                    那个放右端，一列按钮的右缘才不会一行一个样 */}
+                <div className="flex shrink-0 items-center gap-2">
+                  {canManage && (
+                    <Button variant="secondary" size="sm"
+                      onClick={() => {
+                        setKb(row.kb.id);
+                        navigate({ to: "/kb/$kbId/settings", params: { kbId: row.kb.id } });
+                      }}
+                    >
+                      {S.account.kbSettingsBtn}
+                    </Button>
+                  )}
+                  <Button variant="secondary" size="sm" onClick={() => openKb(row.kb.id)}>
+                    {S.account.openKb}
                   </Button>
-                )}
-                <Button variant="secondary" size="sm" onClick={() => openKb(row.kb.id)}>
-                  {S.account.openKb}
-                </Button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-        {rows.length === 0 && (
-          <p className="px-4 py-6 text-body text-ink-2">{S.ui.noMatches}</p>
+            );
+          })}
+          {rows.length === 0 && (
+            <p className="px-4 py-6 text-body text-ink-2">{S.ui.noMatches}</p>
+          )}
+        </div>
+
+        {creating && (
+          <NewKbModal
+            workspaceId={workspace.id}
+            onDone={(id) => {
+              setCreating(false);
+              queryClient.invalidateQueries({ queryKey: ["myKbs", workspace.id] });
+              queryClient.invalidateQueries({ queryKey: ["kbs", workspace.id] });
+              // 建完直达库设置：下一步几乎总是邀人/配置
+              if (id) {
+                setKb(id);
+                navigate({ to: "/kb/$kbId/settings", params: { kbId: id } });
+              }
+            }}
+          />
         )}
       </div>
-
-      {creating && (
-        <NewKbModal
-          workspaceId={workspace.id}
-          onDone={(id) => {
-            setCreating(false);
-            queryClient.invalidateQueries({ queryKey: ["myKbs", workspace.id] });
-            queryClient.invalidateQueries({ queryKey: ["kbs", workspace.id] });
-            // 建完直达库设置：下一步几乎总是邀人/配置
-            if (id) {
-              setKb(id);
-              navigate({ to: "/kb/$kbId/settings", params: { kbId: id } });
-            }
-          }}
-        />
-      )}
     </div>
   );
 }

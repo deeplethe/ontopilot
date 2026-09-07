@@ -257,142 +257,145 @@ export function Tokens() {
 
   return (
     <div className="px-8 py-6">
-      <PageHeader
-        title={S.account.tokensTitle}
-        sub={S.account.tokensHint}
-        actions={
-          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-            <Plus size={12} />
-            {S.account.newToken}
-          </Button>
-        }
-      />
-
-      {rows.length === 0 ? (
-        <div className="glass rounded-panel p-8 text-center text-body text-ink-2">
-          {S.account.noTokens}
-        </div>
-      ) : (
-        <div className="glass rounded-panel overflow-hidden">
-          <Table>
-            <THead>
-              <Tr>
-                <Th>{S.account.tokenName}</Th>
-                <Th>{S.account.tokenScope}</Th>
-                <Th>{S.account.tokenKbs}</Th>
-                <Th>{S.account.colLastUsed}</Th>
-                <Th>{S.account.tokenExpires}</Th>
-                <Th>{S.account.colCreated}</Th>
-                <Th />
-              </Tr>
-            </THead>
-            <TBody>
-              {rows.map((t) => (
-                <TokenRow
-                  key={t.id}
-                  t={t}
-                  kbName={kbName}
-                  busy={revoke.isPending && revoke.variables === t.id}
-                  onRevoke={() => revoke.mutate(t.id)}
-                />
-              ))}
-            </TBody>
-          </Table>
-        </div>
-      )}
-
-      {/* 一个窗口两副内容：先是表单，发出来之后是那一枚明文。中间不关窗——
-          关掉就再也看不到它了 */}
-      <Dialog
-        open={creating || !!issued}
-        onOpenChange={(o) => !o && close()}
-        width={issued ? "lg" : "md"}
-        closeLabel={S.ui.close}
-        title={issued ? S.account.issuedTitle : S.account.newToken}
-        description={issued ? S.account.issuedHint : undefined}
-        footer={
-          issued ? (
-            <Button variant="primary" size="sm" onClick={close}>
-              {S.account.tokenDone}
+      {/* 与管理页同一副身材：内容居中限宽，行长不随窗口拉长 */}
+      <div className="mx-auto w-full max-w-4xl">
+        <PageHeader
+          title={S.account.tokensTitle}
+          sub={S.account.tokensHint}
+          actions={
+            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+              <Plus size={12} />
+              {S.account.newToken}
             </Button>
-          ) : (
-            <>
-              <Button variant="secondary" size="sm" onClick={close}>
-                {S.account.cancel}
-              </Button>
-              <Button variant="primary" size="sm"
-                disabled={!name.trim() || issue.isPending}
-                onClick={() => issue.mutate()}
-              >
-                {S.account.issueToken}
-              </Button>
-            </>
-          )
-        }
-      >
-        {issued ? (
-          <IssuedBody token={issued.token} info={issued.info} kbs={kbs} />
+          }
+        />
+
+        {rows.length === 0 ? (
+          <div className="glass rounded-panel p-8 text-center text-body text-ink-2">
+            {S.account.noTokens}
+          </div>
         ) : (
-          <div>
-            <Field label={S.account.tokenName}>
-              <Input className="w-full"
-                autoFocus
-                placeholder={S.account.tokenNamePlaceholder}
-                value={name}
-                maxLength={64}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </Field>
-            {/* 范围与有效期并排：两个都是一眼扫过去就定下来的小选择，
-                各占一整行只是把这张表拉长 */}
-            <div className="grid grid-cols-2 gap-4">
-              {/* 二选一，且两个选项都要读得到——单选按钮，不是一排按钮 */}
-              <Field label={S.account.tokenScope} hint={S.account.scopeHint}>
-                <div className="flex h-8 items-center gap-4">
-                  {(["read", "write"] as const).map((s) => (
-                    <Radio
-                      key={s}
-                      name="token-scope"
-                      checked={scope === s}
-                      onChange={() => setScope(s)}
-                      label={s === "read" ? S.account.scopeRead : S.account.scopeWrite}
-                    />
-                  ))}
-                </div>
+          <div className="glass rounded-panel overflow-hidden">
+            <Table>
+              <THead>
+                <Tr>
+                  <Th>{S.account.tokenName}</Th>
+                  <Th>{S.account.tokenScope}</Th>
+                  <Th>{S.account.tokenKbs}</Th>
+                  <Th>{S.account.colLastUsed}</Th>
+                  <Th>{S.account.tokenExpires}</Th>
+                  <Th>{S.account.colCreated}</Th>
+                  <Th />
+                </Tr>
+              </THead>
+              <TBody>
+                {rows.map((t) => (
+                  <TokenRow
+                    key={t.id}
+                    t={t}
+                    kbName={kbName}
+                    busy={revoke.isPending && revoke.variables === t.id}
+                    onRevoke={() => revoke.mutate(t.id)}
+                  />
+                ))}
+              </TBody>
+            </Table>
+          </div>
+        )}
+
+        {/* 一个窗口两副内容：先是表单，发出来之后是那一枚明文。中间不关窗——
+            关掉就再也看不到它了 */}
+        <Dialog
+          open={creating || !!issued}
+          onOpenChange={(o) => !o && close()}
+          width={issued ? "lg" : "md"}
+          closeLabel={S.ui.close}
+          title={issued ? S.account.issuedTitle : S.account.newToken}
+          description={issued ? S.account.issuedHint : undefined}
+          footer={
+            issued ? (
+              <Button variant="primary" size="sm" onClick={close}>
+                {S.account.tokenDone}
+              </Button>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" onClick={close}>
+                  {S.account.cancel}
+                </Button>
+                <Button variant="primary" size="sm"
+                  disabled={!name.trim() || issue.isPending}
+                  onClick={() => issue.mutate()}
+                >
+                  {S.account.issueToken}
+                </Button>
+              </>
+            )
+          }
+        >
+          {issued ? (
+            <IssuedBody token={issued.token} info={issued.info} kbs={kbs} />
+          ) : (
+            <div>
+              <Field label={S.account.tokenName}>
+                <Input className="w-full"
+                  autoFocus
+                  placeholder={S.account.tokenNamePlaceholder}
+                  value={name}
+                  maxLength={64}
+                  onChange={(e) => setName(e.target.value)}
+                />
               </Field>
-              <Field label={S.account.tokenExpires}>
-                <Dropdown
+              {/* 范围与有效期并排：两个都是一眼扫过去就定下来的小选择，
+                  各占一整行只是把这张表拉长 */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* 二选一，且两个选项都要读得到——单选按钮，不是一排按钮 */}
+                <Field label={S.account.tokenScope} hint={S.account.scopeHint}>
+                  <div className="flex h-8 items-center gap-4">
+                    {(["read", "write"] as const).map((s) => (
+                      <Radio
+                        key={s}
+                        name="token-scope"
+                        checked={scope === s}
+                        onChange={() => setScope(s)}
+                        label={s === "read" ? S.account.scopeRead : S.account.scopeWrite}
+                      />
+                    ))}
+                  </div>
+                </Field>
+                <Field label={S.account.tokenExpires}>
+                  <Dropdown
+                    className="w-full"
+                    value={String(days)}
+                    onChange={(v) => setDays(Number(v))}
+                    options={EXPIRY_CHOICES.map((d) => ({
+                      value: String(d),
+                      label: d === 0 ? S.account.expiresNever : S.account.expiresDays(d),
+                    }))}
+                  />
+                </Field>
+              </div>
+              {/* 库可以很多：搜着选，选中的堆在框上面。芯片墙的高度随库数长，
+                  这个不随。**不再另写一句「不选就是全部」**——控件自己就写着
+                  「All bases」，同一件事说两遍只是把表单拉长 */}
+              <Field label={S.account.tokenKbs} className="mb-0">
+                <MultiSearchSelect
                   className="w-full"
-                  value={String(days)}
-                  onChange={(v) => setDays(Number(v))}
-                  options={EXPIRY_CHOICES.map((d) => ({
-                    value: String(d),
-                    label: d === 0 ? S.account.expiresNever : S.account.expiresDays(d),
-                  }))}
+                  values={Array.from(picked)}
+                  options={kbs.map((k) => ({ value: k.id, label: k.name }))}
+                  placeholder={S.account.pickBases}
+                  emptyHint={S.account.allBases}
+                  onToggle={(id) => {
+                    const next = new Set(picked);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    setPicked(next);
+                  }}
                 />
               </Field>
             </div>
-            {/* 库可以很多：搜着选，选中的堆在框上面。芯片墙的高度随库数长，
-                这个不随。**不再另写一句「不选就是全部」**——控件自己就写着
-                「All bases」，同一件事说两遍只是把表单拉长 */}
-            <Field label={S.account.tokenKbs} className="mb-0">
-              <MultiSearchSelect
-                className="w-full"
-                values={Array.from(picked)}
-                options={kbs.map((k) => ({ value: k.id, label: k.name }))}
-                placeholder={S.account.pickBases}
-                emptyHint={S.account.allBases}
-                onToggle={(id) => {
-                  const next = new Set(picked);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  setPicked(next);
-                }}
-              />
-            </Field>
-          </div>
-        )}
-      </Dialog>
+          )}
+        </Dialog>
+      </div>
     </div>
   );
 }
