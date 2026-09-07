@@ -995,6 +995,9 @@ export const zh: Strings = {
       "规则得出的结论是派生的：它不会盖掉断言，它带着让它成立的那几条读数，读数变了它自己退场。",
     rulesEmpty: "还没有规则。",
     ruleNew: "新建规则",
+    ruleNeedsAttribute:
+      "规则判的是属性的值，而这个本体还没有属性。先打开一个类，在「属性」里加一个。",
+    ruleNeedsClass: "先建一个类——规则得出的就是一个类。",
     ruleName: "名称",
     ruleNamePlaceholder: "含气井",
     ruleDescription: "它是什么意思（选填）",

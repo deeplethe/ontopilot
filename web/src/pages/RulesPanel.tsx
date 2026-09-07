@@ -514,22 +514,30 @@ export function RulesPanel({
                 </IconButton>
               </div>
             ))}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                setDraft({
-                  ...draft,
-                  conditions: [
-                    ...draft.conditions,
-                    { predicate_id: attributes[0]?.id ?? "", op: "gt", text: "" },
-                  ],
-                })
-              }
-            >
-              <Plus size={11} />
-              {S.ontology.ruleAddCondition}
-            </Button>
+            {/* 一个条件判的是属性的值。没有属性时，「加一个条件」只会加出一行
+                选不了东西的空条件——所以这里说清缺的是什么，按钮不摆 */}
+            {attributes.length === 0 ? (
+              <p className="text-small text-ink-2">
+                {S.ontology.ruleNeedsAttribute}
+              </p>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    conditions: [
+                      ...draft.conditions,
+                      { predicate_id: attributes[0].id, op: "gt", text: "" },
+                    ],
+                  })
+                }
+              >
+                <Plus size={11} />
+                {S.ontology.ruleAddCondition}
+              </Button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -579,17 +587,30 @@ export function RulesPanel({
             <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
               {S.graph.editCancel}
             </Button>
-            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+            {/* 保存的门槛与服务端同一条：名字、主类、至少一个条件。
+                空合取恒真，会把整个类归进去（business_rules.rs 也是这么挡的） */}
+            <Button
+              size="sm"
+              onClick={() => save.mutate()}
+              disabled={
+                save.isPending ||
+                !draft.name.trim() ||
+                !draft.subject_type_id ||
+                !draft.conditions.length
+              }
+            >
               {S.ontology.ruleSave}
             </Button>
           </div>
         </Panel>
       ) : (
+        /* **入口不设门槛。** 缺属性时从前这个按钮是灰的，人在门口就被拦下，
+           连规则长什么样都没看见。现在它总能点开：缺什么由表单在缺的那一处说，
+           拦的是最后那一下「保存」——那是表单本来就该做的事 */
         <Button
           size="sm"
           variant="ghost"
           onClick={() => setDraft(emptyDraft(classes, attributes))}
-          disabled={!classes.length || !attributes.length}
         >
           <Plus size={12} />
           {S.ontology.ruleNew}

@@ -1114,6 +1114,11 @@ export const en = {
       "What a rule concludes is derived: it never replaces an asserted fact, it carries the readings that made it true, and it retires by itself when they change.",
     rulesEmpty: "No rules yet.",
     ruleNew: "New rule",
+    /* 按不下去时必须说清为什么。**一条规则判的是属性的值**，没有属性就无从写起——
+       而一个灰着的按钮不解释，读者只会以为坏了 */
+    ruleNeedsAttribute:
+      "A rule tests an attribute's value, and this ontology has none yet. Open a class and add one under Attributes.",
+    ruleNeedsClass: "Add a class first — a rule concludes one.",
     ruleName: "Name",
     ruleNamePlaceholder: "Gas-bearing well",
     ruleDescription: "What it means (optional)",
