@@ -9,11 +9,12 @@ import { toast } from "../toast";
 import {
   Button,
   Checkbox,
-  ChoiceCard,
   Dialog,
+  Field,
   IconButton,
   Input,
   LinkButton,
+  MultiSearchSelect,
   Pill,
   SearchSelect,
   Segmented,
@@ -351,7 +352,16 @@ function KbsAdmin({ autoCreate }: { autoCreate?: boolean }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-small text-ink-2">{S.settings.kbs.hint}</p>
+      {/* 新建在名单**上面**：动作在内容之前，与 Users 那一节同一副排法 */}
+      <div className="flex items-start gap-4">
+        <p className="min-w-0 flex-1 text-small text-ink-2">{S.settings.kbs.hint}</p>
+        <Button variant="primary" size="sm" className="shrink-0"
+          onClick={() => setCreating(true)}
+        >
+          <Plus size={12} />
+          {S.settings.kbs.newKb}
+        </Button>
+      </div>
 
       <div className="glass rounded-panel divide-y divide-line">
         {rows.map(({ kb, doc_count, member_count }) => (
@@ -393,13 +403,6 @@ function KbsAdmin({ autoCreate }: { autoCreate?: boolean }) {
           <p className="px-4 py-6 text-body text-ink-2">{S.settings.kbs.empty}</p>
         )}
       </div>
-
-      <Button variant="primary" size="sm" className="flex items-center gap-2"
-        onClick={() => setCreating(true)}
-      >
-        <Plus size={12} />
-        {S.settings.kbs.newKb}
-      </Button>
 
       {creating && workspace && (
         <NewKbModal
@@ -503,42 +506,22 @@ function NewKbModal({
           label={S.settings.kbs.visRestricted}
         />
 
-        <div className="mb-4">
-          <div className="text-small text-ink-2 mb-1">
-            {S.settings.kbs.packsLabel}
-          </div>
-          <p className="text-fine leading-relaxed text-ink-2 mb-2">
-            {S.settings.kbs.packsHint}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {available.data?.packs.map((p) => {
-              const on = packs.includes(p.id);
-              return (
-                <ChoiceCard
-                  key={p.id}
-                  checked={on}
-                  onChange={() => toggle(p.id)}
-                  label={p.name}
-                >
-                  <span className="block text-small text-ink">
-                    {p.name}
-                  </span>
-                  <span className="block text-fine leading-snug text-ink-2">
-                    {p.summary}
-                  </span>
-                  <span className="mt-1 block text-fine text-ink-2">
-                    {S.settings.kbs.packsCount(p.classes, p.properties)}
-                  </span>
-                </ChoiceCard>
-              );
-            })}
-          </div>
-          {packs.length === 0 && (
-            <p className="text-fine text-ink-2 mt-2">
-              {S.settings.kbs.packsNone}
-            </p>
-          )}
-        </div>
+        {/* 包是可选的，而且**多半只装一个**：五张卡片铺开占了这张弹窗一多半，
+            换成搜着选——说明与规模挪进下拉里的次要文案，选中的堆在框上面 */}
+        <Field label={S.settings.kbs.packsLabel} hint={S.settings.kbs.packsHint}>
+          <MultiSearchSelect
+            className="w-full"
+            values={packs}
+            options={(available.data?.packs ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+              hint: `${p.summary} · ${S.settings.kbs.packsCount(p.classes, p.properties)}`,
+            }))}
+            placeholder={S.settings.kbs.packsPick}
+            emptyHint={S.settings.kbs.packsNone}
+            onToggle={toggle}
+          />
+        </Field>
         {create.isError && (
           <p className="text-small text-danger mb-2">
             {(create.error as Error).message}

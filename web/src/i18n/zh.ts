@@ -913,8 +913,8 @@ export const zh: Strings = {
       defaultChip: "默认",
       newKb: "新建知识库",
       packsLabel: "预置本体",
-      packsHint:
-        "可不选。包里的谓语带方向声明，主宾颠倒进不来。之后还能再导入。",
+      packsHint: "可不选，之后还能再导入。",
+      packsPick: "搜索本体包…",
       packsNone: "不选 —— 从十个种子关系起步",
       packsCount: (c: number, p: number) => `${c} 个类 · ${p} 个属性`,
       name: "名称",

@@ -1024,8 +1024,8 @@ export const en = {
       defaultChip: "Default",
       newKb: "New knowledge base",
       packsLabel: "Bundled ontologies",
-      packsHint:
-        "Optional. Packs declare direction, so subject and object cannot come out reversed. More can be imported later.",
+      packsHint: "Optional, and more can be imported later.",
+      packsPick: "Search packs…",
       packsNone: "None — start from the ten seed relations",
       packsCount: (c: number, p: number) => `${c} classes · ${p} properties`,
       name: "Name",
