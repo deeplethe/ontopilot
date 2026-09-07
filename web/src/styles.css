@@ -7,17 +7,21 @@
 
   /* 字号五档（web/DESIGN.md 规矩 1）。Tailwind 的 xs/sm/lg 一律不用：
      它们是给任意网页的通用刻度，这个产品的密度只需要这五级，多一级就是
-     一页一个样。行高跟着字号定死，页面不再写 leading-* */
-  --text-fine: 11px;
+     一页一个样。行高跟着字号定死，页面不再写 leading-*。
+     **整体上移过一档**：从前是 11/12/13/15/20，三档挤在 11–13px 之内，
+     而 1px 的字号差人眼分辨不出——层次名义上有五级，实际靠的是颜色
+     （ink / ink-2 / ink-3）。挤着还让用得最多的那档（small，216 处）
+     成了事实上的正文，长说明读起来累。现在正文 14px，层次仍由颜色承担 */
+  --text-fine: 12px;
   --text-fine--line-height: 16px;
-  --text-small: 12px;
-  --text-small--line-height: 18px;
-  --text-body: 13px;
-  --text-body--line-height: 20px;
-  --text-title: 15px;
-  --text-title--line-height: 22px;
-  --text-display: 20px;
-  --text-display--line-height: 28px;
+  --text-small: 13px;
+  --text-small--line-height: 20px;
+  --text-body: 14px;
+  --text-body--line-height: 22px;
+  --text-title: 16px;
+  --text-title--line-height: 24px;
+  --text-display: 24px;
+  --text-display--line-height: 32px;
 
   /* 颜色令牌（规矩 4）：全部指向下面 :root 的 --u-*，这是页面拿颜色的
      **唯一**入口——text-ink-2、border-line、bg-surface-2、text-danger。
