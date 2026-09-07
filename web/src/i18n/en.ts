@@ -1119,6 +1119,20 @@ export const en = {
     ruleNeedsAttribute:
       "A rule tests an attribute's value, and this ontology has none yet. Open a class and add one under Attributes.",
     ruleNeedsClass: "Add a class first — a rule concludes one.",
+    ruleColRule: "Rule",
+    ruleColDerived: "Derived",
+    ruleColStatus: "Status",
+    /* 条件之间是合取。**写「并且」而不是一个点号**——符号读不出「全都要成立」，
+       而那正是规则最容易被误读的地方 */
+    ruleAnd: "and",
+    ruleWhere: "where",
+    ruleDropCondition: "Remove this condition",
+    ruleOperandPlaceholder: (kind: string): string =>
+      kind === "set"
+        ? "gas anomaly, post-effect gas anomaly"
+        : kind === "range"
+          ? "8 - 12"
+          : "12.0",
     ruleName: "Name",
     ruleNamePlaceholder: "Gas-bearing well",
     ruleDescription: "What it means (optional)",

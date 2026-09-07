@@ -998,6 +998,14 @@ export const zh: Strings = {
     ruleNeedsAttribute:
       "规则判的是属性的值，而这个本体还没有属性。先打开一个类，在「属性」里加一个。",
     ruleNeedsClass: "先建一个类——规则得出的就是一个类。",
+    ruleColRule: "规则",
+    ruleColDerived: "推出",
+    ruleColStatus: "状态",
+    ruleAnd: "并且",
+    ruleWhere: "满足",
+    ruleDropCondition: "删掉这个条件",
+    ruleOperandPlaceholder: (kind: string) =>
+      kind === "set" ? "气测异常, 效应后气测异常" : kind === "range" ? "8 - 12" : "12.0",
     ruleName: "名称",
     ruleNamePlaceholder: "含气井",
     ruleDescription: "它是什么意思（选填）",

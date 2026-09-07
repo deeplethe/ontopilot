@@ -27,8 +27,15 @@ import {
   IconButton,
   Input,
   LinkButton,
-  Panel,
   PageHeader,
+  Dialog,
+  Field,
+  Table,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
 } from "../ui";
 import { toast } from "../toast";
 
@@ -282,9 +289,11 @@ export function RulesPanel({
   });
 
   const list = rules.data?.rules ?? [];
+  /** 命中列表看的是哪一条。一次一条——两份长列表并排读不了 */
+  const opening = list.find((r) => r.id === opened) ?? null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {doomed && (
         <DangerConfirm
           title={S.ontology.ruleDelete}
@@ -301,207 +310,307 @@ export function RulesPanel({
       )}
 
       <PageHeader
-        className="mb-0"
-        title={
-          <>
-            {S.ontology.rulesTitle}
-            {list.length > 0 && (
-              <span className="ml-2 u-num text-small text-ink-2">{list.length}</span>
-            )}
-          </>
-        }
+        className="mb-2"
+        title={S.ontology.rulesTitle}
         sub={S.ontology.rulesHint}
         actions={
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => run.mutate()}
-            disabled={run.isPending || !list.length}
-          >
-            <Play size={12} />
-            {run.isPending ? S.ontology.ruleRunning : S.ontology.ruleRun}
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => run.mutate()}
+              disabled={run.isPending || !list.length}
+            >
+              <Play size={12} />
+              {run.isPending ? S.ontology.ruleRunning : S.ontology.ruleRun}
+            </Button>
+            {/* 入口不设门槛：缺属性时表单自己会在缺的那一处说 */}
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => setDraft(emptyDraft(classes, attributes))}
+            >
+              <Plus size={12} />
+              {S.ontology.ruleNew}
+            </Button>
+          </>
         }
       />
 
-      {list.map((r) => (
-        <Panel key={r.id} className="space-y-2 p-4">
-          <div className="flex items-center gap-2">
-            <span className="text-body font-medium text-ink">{r.name}</span>
-            {/* 此刻凭它成立的结论条数。**点得动**——二十个实体还能一个个点开
-                看，两百个就只能靠这份列表 */}
-            {r.derived_count > 0 && (
-              <LinkButton
-                className="u-num text-fine"
-                onClick={() => setOpened(opened === r.id ? null : r.id)}
-                aria-expanded={opened === r.id}
-              >
-                {S.ontology.ruleDerivedCount(r.derived_count)}
-              </LinkButton>
-            )}
-            {/* 展不完的组合：常驻，不只在跑完那一刻的提示里。少推几条与
-                「不满足」在结果里长得一样，读的人得随时看得见 */}
-            {r.capped > 0 && (
-              <Chip tone="warn" title={S.ontology.ruleCappedHint}>
-                {S.ontology.ruleCappedChip}
-              </Chip>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              {/* 开关是个动作，所以是 Button；启用与否用 variant 区分，
-                  而不是拿 Chip 当按钮——Chip 是状态标签，不接受点击 */}
-              <Button
-                size="sm"
-                variant={r.enabled ? "secondary" : "ghost"}
-                onClick={() => toggle.mutate(r)}
-                aria-pressed={r.enabled}
-              >
-                {r.enabled ? S.ontology.ruleEnabled : S.ontology.ruleDisabled}
-              </Button>
-              <IconButton
-                label={S.ontology.ruleEdit}
-                size="sm"
-                onClick={() => setDraft(draftOf(r))}
-              >
-                <Pencil size={12} />
-              </IconButton>
-              <IconButton
-                label={S.ontology.ruleDelete}
-                size="sm"
-                onClick={() => setDoomed(r)}
-              >
-                <Trash2 size={12} />
-              </IconButton>
-            </div>
-          </div>
-          {r.description && (
-            <p className="text-small leading-relaxed text-ink-2">
-              {r.description}
-            </p>
-          )}
-          {/* 规则读成一句话。这一段就是它的全部语义，没有别处再藏着条件 */}
-          <p className="text-small leading-relaxed text-ink-2">
-            <span className="text-ink-2">{S.ontology.ruleSubject} </span>
-            {r.subject_label}
-            <span className="text-ink-2"> ({S.ontology.ruleSubjectHint})</span>
-            <span className="text-ink-2">, {S.ontology.ruleConditions} </span>
-            {r.conditions.map((c, i) => (
-              <span key={i}>
-                {i > 0 && <span className="text-ink-2"> · </span>}
-                <span className="text-ink">{c.predicate_label}</span>{" "}
-                <span className="text-ink-2">
-                  {OPS.find((o) => o.value === c.op)?.label() ?? c.op}
-                </span>{" "}
-                <span className="u-num text-ink">
-                  {operandText(c.op, c.operand)}
-                </span>
-              </span>
-            ))}
-            <span className="text-ink-2"> → {S.ontology.ruleConcludes} </span>
-            <span className="text-ink">
-              {r.conclusion === "typing"
-                ? r.conclude_type_label
-                : `${r.conclude_predicate_label} = ${JSON.stringify(r.conclude_value)}`}
-            </span>
-          </p>
-          {opened === r.id && (
-            <div className="border-t border-line pt-2">
-              <p className="mb-2 text-fine text-ink-2">
-                {S.ontology.ruleMatchesTitle}
-              </p>
-              <Matches kbId={kbId} ruleId={r.id} />
-            </div>
-          )}
-        </Panel>
-      ))}
-
-      {!list.length && !draft && (
+      {!list.length ? (
         <p className="text-small text-ink-2">{S.ontology.rulesEmpty}</p>
+      ) : (
+        /* 一张表，不是一条一张卡片（DESIGN.md 6）。**第一列仍然是那句话**——
+           规则的全部语义就在那句话里，收进详情等于把规则本身藏起来；其余几列
+           是扫一眼要的答案：推出什么、此刻成立几条、开着没有 */
+        <div className="glass overflow-hidden rounded-panel">
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{S.ontology.ruleColRule}</Th>
+                <Th>{S.ontology.ruleConcludes}</Th>
+                <Th>{S.ontology.ruleColDerived}</Th>
+                <Th>{S.ontology.ruleColStatus}</Th>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
+              {list.map((r) => (
+                <Tr key={r.id} className={r.enabled ? undefined : "opacity-55"}>
+                  <Td>
+                    <div className="text-body text-ink">{r.name}</div>
+                    <RuleSentence rule={r} />
+                    {r.description && (
+                      <div className="mt-1 text-fine text-ink-2">
+                        {r.description}
+                      </div>
+                    )}
+                  </Td>
+                  <Td className="text-small text-ink">
+                    {r.conclusion === "typing"
+                      ? r.conclude_type_label
+                      : `${r.conclude_predicate_label} = ${JSON.stringify(r.conclude_value)}`}
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    {/* 此刻凭它成立的结论条数。**点得动**——二十个实体还能一个个
+                        点开看，两百个就只能靠这份列表 */}
+                    {r.derived_count > 0 ? (
+                      <LinkButton
+                        className="u-num"
+                        onClick={() => setOpened(r.id)}
+                      >
+                        {S.ontology.ruleDerivedCount(r.derived_count)}
+                      </LinkButton>
+                    ) : (
+                      <span className="text-small text-ink-2">—</span>
+                    )}
+                    {/* 展不完的组合：常驻，不只在跑完那一刻的提示里。少推几条与
+                        「不满足」在结果里长得一样 */}
+                    {r.capped > 0 && (
+                      <Chip
+                        tone="warn"
+                        className="ml-2"
+                        title={S.ontology.ruleCappedHint}
+                      >
+                        {S.ontology.ruleCappedChip}
+                      </Chip>
+                    )}
+                  </Td>
+                  <Td>
+                    {/* 开关是个动作，所以是 Button；启用与否用 variant 区分，
+                        而不是拿 Chip 当按钮——Chip 是状态标签，不接受点击 */}
+                    <Button
+                      size="sm"
+                      variant={r.enabled ? "secondary" : "ghost"}
+                      onClick={() => toggle.mutate(r)}
+                      aria-pressed={r.enabled}
+                    >
+                      {r.enabled ? S.ontology.ruleEnabled : S.ontology.ruleDisabled}
+                    </Button>
+                  </Td>
+                  <Td className="whitespace-nowrap text-right">
+                    <IconButton
+                      label={S.ontology.ruleEdit}
+                      size="sm"
+                      onClick={() => setDraft(draftOf(r))}
+                    >
+                      <Pencil size={12} />
+                    </IconButton>
+                    <IconButton
+                      label={S.ontology.ruleDelete}
+                      size="sm"
+                      className="ml-1"
+                      onClick={() => setDoomed(r)}
+                    >
+                      <Trash2 size={12} />
+                    </IconButton>
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
+        </div>
       )}
 
-      {draft ? (
-        <Panel className="space-y-3 p-4">
-          {draft.id && (
-            <p className="text-fine text-ink-2">{S.ontology.ruleEditing}</p>
+      {/* 命中：这一条此刻推出了哪些结论 */}
+      <Dialog
+        open={!!opening}
+        onOpenChange={(o) => !o && setOpened(null)}
+        closeLabel={S.ui.close}
+        title={opening?.name ?? ""}
+        description={S.ontology.ruleMatchesTitle}
+      >
+        {opening && <Matches kbId={kbId} ruleId={opening.id} />}
+      </Dialog>
+
+      {draft && (
+        <RuleDialog
+          draft={draft}
+          setDraft={setDraft}
+          classes={classes}
+          attributes={attributes}
+          busy={save.isPending}
+          onSave={() => save.mutate()}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 规则读成一句话。**这一段就是它的全部语义**，没有别处再藏着条件。
+    条件之间是合取——所以中间写的是「并且」，不是一个点号：符号读不出
+    「全都要成立」，而这正是规则最容易被误读的地方。 */
+function RuleSentence({ rule }: { rule: BusinessRule }) {
+  return (
+    <p className="text-small leading-relaxed text-ink-2">
+      <span>{rule.subject_label}</span>
+      <span> {S.ontology.ruleWhere} </span>
+      {rule.conditions.map((c, i) => (
+        <span key={i}>
+          {i > 0 && (
+            <span className="text-ink-2"> {S.ontology.ruleAnd} </span>
           )}
-          <Input
-            value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            placeholder={S.ontology.ruleNamePlaceholder}
-            className="w-full"
-          />
-          <Input
-            value={draft.description}
-            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-            placeholder={S.ontology.ruleDescription}
-            className="w-full"
-          />
-          <div className="flex items-center gap-2">
-            <span className="shrink-0 text-fine text-ink-2">
-              {S.ontology.ruleSubject}
-            </span>
+          <span className="text-ink">{c.predicate_label}</span>{" "}
+          <span>{OPS.find((o) => o.value === c.op)?.label() ?? c.op}</span>{" "}
+          <span className="u-num text-ink">{operandText(c.op, c.operand)}</span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** 写一条规则。**与全站其他表单同一副样子**：弹窗、Field 标签、底栏两个按钮。
+    从前它是页面里长出来的一张卡，与新建令牌、登记数据源各说各的。 */
+function RuleDialog({
+  draft,
+  setDraft,
+  classes,
+  attributes,
+  busy,
+  onSave,
+}: {
+  draft: Draft;
+  setDraft: (d: Draft | null) => void;
+  classes: EntityTypeView[];
+  attributes: RelationTypeView[];
+  busy: boolean;
+  onSave: () => void;
+}) {
+  const ready =
+    !!draft.name.trim() && !!draft.subject_type_id && draft.conditions.length > 0;
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && setDraft(null)}
+      width="lg"
+      closeLabel={S.ui.close}
+      title={draft.id ? S.ontology.ruleEditing : S.ontology.ruleNew}
+      footer={
+        <>
+          <Button size="sm" variant="secondary" onClick={() => setDraft(null)}>
+            {S.graph.editCancel}
+          </Button>
+          {/* 保存的门槛与服务端同一条：名字、主类、至少一个条件。空合取恒真，
+              会把整个类归进去（business_rules.rs 也是这么挡的） */}
+          <Button size="sm" variant="primary" onClick={onSave} disabled={busy || !ready}>
+            {S.ontology.ruleSave}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={S.ontology.ruleName} className="mb-0">
+            <Input
+              autoFocus
+              className="w-full"
+              placeholder={S.ontology.ruleNamePlaceholder}
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            />
+          </Field>
+          <Field
+            label={S.ontology.ruleSubject}
+            hint={S.ontology.ruleSubjectHint}
+            className="mb-0"
+          >
             {draft.id ? (
               // 改一条已有规则时主类固定：换主类等于换一条规则，
               // 而它推出来的结论全挂在旧主类上
-              <span className="text-small text-ink-2">
+              <p className="py-1 text-body text-ink">
                 {classes.find((c) => c.id === draft.subject_type_id)?.label}
-              </span>
+              </p>
             ) : (
               <Dropdown
+                className="w-full"
                 value={draft.subject_type_id}
                 onChange={(v) => setDraft({ ...draft, subject_type_id: v })}
                 options={classes.map((c) => ({ value: c.id, label: c.label }))}
               />
             )}
-          </div>
+          </Field>
+        </div>
 
+        <Field label={S.ontology.ruleDescription} className="mb-0">
+          <Input
+            className="w-full"
+            value={draft.description}
+            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+          />
+        </Field>
+
+        <Field label={S.ontology.ruleConditions} className="mb-0">
           <div className="space-y-2">
-            <div className="text-fine text-ink-2">
-              {S.ontology.ruleConditions}
-            </div>
             {draft.conditions.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
+                {/* 合取写在行首而不是行尾：读的人先知道「还要同时成立」，
+                    再读这一行说了什么 */}
+                <span className="w-10 shrink-0 text-right text-fine text-ink-2">
+                  {i === 0 ? "" : S.ontology.ruleAnd}
+                </span>
                 <Dropdown
+                  className="flex-1"
                   value={c.predicate_id}
-                  onChange={(v) => {
-                    const next = [...draft.conditions];
-                    next[i] = { ...c, predicate_id: v };
-                    setDraft({ ...draft, conditions: next });
-                  }}
-                  options={attributes.map((a) => ({
-                    value: a.id,
-                    label: a.label,
-                  }))}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      conditions: draft.conditions.map((x, j) =>
+                        j === i ? { ...x, predicate_id: v } : x,
+                      ),
+                    })
+                  }
+                  options={attributes.map((a) => ({ value: a.id, label: a.label }))}
                 />
                 <Dropdown
+                  className="w-32"
                   value={c.op}
-                  onChange={(v) => {
-                    const next = [...draft.conditions];
-                    next[i] = { ...c, op: v, text: "" };
-                    setDraft({ ...draft, conditions: next });
-                  }}
-                  options={OPS.map((o) => ({
-                    value: o.value,
-                    label: o.label(),
-                  }))}
+                  onChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      conditions: draft.conditions.map((x, j) =>
+                        j === i ? { ...x, op: v, text: "" } : x,
+                      ),
+                    })
+                  }
+                  options={OPS.map((o) => ({ value: o.value, label: o.label() }))}
                 />
                 {operandKind(c.op) !== "none" && (
                   <Input
+                    className="w-40"
+                    placeholder={S.ontology.ruleOperandPlaceholder(operandKind(c.op))}
                     value={c.text}
-                    onChange={(e) => {
-                      const next = [...draft.conditions];
-                      next[i] = { ...c, text: e.target.value };
-                      setDraft({ ...draft, conditions: next });
-                    }}
-                    placeholder={
-                      operandKind(c.op) === "set"
-                        ? S.ontology.ruleOperandSet
-                        : S.ontology.ruleOperandNumber
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        conditions: draft.conditions.map((x, j) =>
+                          j === i ? { ...x, text: e.target.value } : x,
+                        ),
+                      })
                     }
-                    className="u-num flex-1"
                   />
                 )}
                 <IconButton
-                  label={S.ontology.ruleDelete}
+                  label={S.ontology.ruleDropCondition}
                   size="sm"
                   onClick={() =>
                     setDraft({
@@ -539,12 +648,12 @@ export function RulesPanel({
               </Button>
             )}
           </div>
+        </Field>
 
+        <Field label={S.ontology.ruleConcludes} className="mb-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="shrink-0 text-fine text-ink-2">
-              {S.ontology.ruleConcludes}
-            </span>
             <Dropdown
+              className="w-40"
               value={draft.conclusion}
               onChange={(v) =>
                 setDraft({ ...draft, conclusion: v as "typing" | "attribute" })
@@ -556,6 +665,7 @@ export function RulesPanel({
             />
             {draft.conclusion === "typing" ? (
               <Dropdown
+                className="w-48"
                 value={draft.conclude_type_id}
                 onChange={(v) => setDraft({ ...draft, conclude_type_id: v })}
                 options={classes.map((c) => ({ value: c.id, label: c.label }))}
@@ -563,59 +673,23 @@ export function RulesPanel({
             ) : (
               <>
                 <Dropdown
+                  className="w-48"
                   value={draft.conclude_predicate_id}
-                  onChange={(v) =>
-                    setDraft({ ...draft, conclude_predicate_id: v })
-                  }
-                  options={attributes.map((a) => ({
-                    value: a.id,
-                    label: a.label,
-                  }))}
+                  onChange={(v) => setDraft({ ...draft, conclude_predicate_id: v })}
+                  options={attributes.map((a) => ({ value: a.id, label: a.label }))}
                 />
                 <Input
+                  className="w-40"
                   value={draft.conclude_value}
                   onChange={(e) =>
                     setDraft({ ...draft, conclude_value: e.target.value })
                   }
-                  className="flex-1"
                 />
               </>
             )}
           </div>
-
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
-              {S.graph.editCancel}
-            </Button>
-            {/* 保存的门槛与服务端同一条：名字、主类、至少一个条件。
-                空合取恒真，会把整个类归进去（business_rules.rs 也是这么挡的） */}
-            <Button
-              size="sm"
-              onClick={() => save.mutate()}
-              disabled={
-                save.isPending ||
-                !draft.name.trim() ||
-                !draft.subject_type_id ||
-                !draft.conditions.length
-              }
-            >
-              {S.ontology.ruleSave}
-            </Button>
-          </div>
-        </Panel>
-      ) : (
-        /* **入口不设门槛。** 缺属性时从前这个按钮是灰的，人在门口就被拦下，
-           连规则长什么样都没看见。现在它总能点开：缺什么由表单在缺的那一处说，
-           拦的是最后那一下「保存」——那是表单本来就该做的事 */
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setDraft(emptyDraft(classes, attributes))}
-        >
-          <Plus size={12} />
-          {S.ontology.ruleNew}
-        </Button>
-      )}
-    </div>
+        </Field>
+      </div>
+    </Dialog>
   );
 }
