@@ -44,6 +44,8 @@ A list is **one panel with rows**, not one card per item. Cards per item put sev
 
 Controls that operate on a panel's contents — filter, search, sort, pagination — sit **outside** it, in the page header or above it. They are not content, and when a filter empties the list the panel has to become an empty state without taking the only way to change the filter with it.
 
+The other thing a panel may be is **the reach of one action**: a settings card (`SettingsCard`) whose footer holds the Save that applies to exactly what the border encloses, and nothing else. The border earns its keep by answering "what does this button send?" — so a page of them is a page of small independent saves, not one long form with a single button at the bottom that quietly ships every field on the screen. A page with only one such card does not need it; the page is already the boundary.
+
 Settings and other read-a-column-of-fields pages are centred and width-limited (`mx-auto max-w-3xl`), not stretched to the window.
 
 Exempt: the floating panels on Graph and Ontology. Those are `glass-strong` surfaces over a canvas, and their job is to hold the canvas down so they can be read — a different problem from this one.

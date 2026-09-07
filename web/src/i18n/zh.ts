@@ -1573,6 +1573,14 @@ export const zh: Strings = {
     failedJobs: (n: number) => `${n} 个失败的任务`,
     requeue: "再跑一遍",
     requeued: (n: number) => `${n} 个任务回到队列`,
+    cardIdentity: "名字与描述",
+    cardIdentityNote: "最长 64 个字符。切换器和这个库每一页的顶上用的都是它。",
+    cardVisibilityNote:
+      "Open 是部署里的所有人都读得到；Restricted 只有成员名单上的人读得到。",
+    cardVisibilityFoot: "改完立刻生效。成员名单上授过的角色两种情况下都留着。",
+    cardAutomation: "自动跑的那几件事",
+    cardAutomationNote: "从下一次抽取起生效。它们做的每一步都记着，可以撤回。",
+    cardJobs: "后台任务",
     ontologyLang: "本体的语言",
     ontologyLangNote:
       "类与关系的描述用哪种语言写。它们会被原样送进抽取提示词，" +

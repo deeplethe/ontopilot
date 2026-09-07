@@ -868,6 +868,48 @@ export function Panel({
   );
 }
 
+/* ---------- SettingsCard（一个保存单位） ----------
+   设置页里的一张卡：标题、一句说明、字段，底下一条横栏——左边是约束或代价，
+   右边是这张卡自己的保存。**边框圈的是这个按钮管到哪儿**：改了名字点保存，
+   不该把下面四个开关一起送上去（DESIGN.md 6）。
+   保存用 secondary：一屏最多一个 primary（规矩 5），而设置页上每张卡都有一个。 */
+export function SettingsCard({
+  title,
+  /** 标题下的一句：这个设置是什么 */
+  hint,
+  /** 底栏左边的一句：约束、代价、什么时候生效 */
+  note,
+  /** 底栏右边：通常是这张卡的保存按钮 */
+  action,
+  className,
+  children,
+}: {
+  title: ReactNode;
+  hint?: ReactNode;
+  note?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <section className={cn("glass overflow-hidden rounded-panel", className)}>
+      <div className="p-6">
+        <h2 className="text-title text-ink">{title}</h2>
+        {hint && <p className="mt-1 text-small leading-relaxed text-ink-2">{hint}</p>}
+        {children && <div className="mt-4">{children}</div>}
+      </div>
+      {(note || action) && (
+        /* 底栏只靠一条线与上面分开，不另铺一层面：surface 的三档是静止/悬停/选中，
+           拿悬停那档当静止的底会让这条栏看起来一直被指着 */
+        <div className="flex items-center justify-between gap-4 border-t border-line px-6 py-3">
+          <div className="min-w-0 text-small leading-relaxed text-ink-2">{note}</div>
+          <div className="flex shrink-0 items-center gap-3">{action}</div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ---------- Chip（状态胶囊） ---------- */
 export type ChipTone =
   "neutral" | "info" | "success" | "warn" | "danger" | "violet";

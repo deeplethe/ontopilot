@@ -31,6 +31,7 @@ import {
   Row,
   SearchSelect,
   Segmented,
+  SettingsCard,
   PageHeader,
 } from "../ui";
 
@@ -55,6 +56,22 @@ function rolesFor(isOpen: boolean) {
 }
 
 type Section = "general" | "members" | "activity" | "danger";
+
+/** 一张设置卡的保存：**只送自己那几项**。PATCH 本来就是部分更新，把整张表
+    一起送过去，等于用改名字的那一下覆盖别人刚改的开关。四张卡各自一个
+    mutation，于是"在存""存好了"也各是各的。 */
+function useKbPatch(kbId: string, onError: (m: string | null) => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Record<string, unknown>) => api.updateKb(kbId, patch),
+    onSuccess: () => {
+      onError(null);
+      queryClient.invalidateQueries({ queryKey: ["kbOne", kbId] });
+      queryClient.invalidateQueries({ queryKey: ["kbs"] });
+    },
+    onError: (e) => onError((e as Error).message),
+  });
+}
 
 export function KbSettings() {
   const navigate = useNavigate();
@@ -113,30 +130,11 @@ export function KbSettings() {
     }
   }, [kb.data]);
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["kbOne", kbId] });
-    queryClient.invalidateQueries({ queryKey: ["kbs"] });
-  };
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.updateKb(kbId!, {
-        name: name.trim(),
-        description: desc.trim() || null,
-        visibility,
-        auto_extend_ontology: autoExtend,
-        materialize_inferences: materialize,
-        auto_type_resolution: autoResolve,
-        governance,
-        inference_interval_minutes: inferMins,
-        ontology_lang: ontoLang,
-      }),
-    onSuccess: () => {
-      setError(null);
-      invalidate();
-    },
-    onError: (e) => setError((e as Error).message),
-  });
+  // 四张卡，四个保存：改名字那一下不该把下面的开关一起送上去
+  const saveIdentity = useKbPatch(kbId!, setError);
+  const saveVisibility = useKbPatch(kbId!, setError);
+  const saveAutomation = useKbPatch(kbId!, setError);
+  const saveLang = useKbPatch(kbId!, setError);
 
   const removeKb = useMutation({
     mutationFn: () => api.deleteKb(kbId!),
@@ -156,6 +154,20 @@ export function KbSettings() {
     );
 
   const lbl = "block text-small font-medium text-ink-2 mb-1";
+
+  /* 每张卡自己的"改过没有"：按钮亮不亮说的是这张卡里的东西动没动，
+     所以拿本地状态跟服务端最新的那份逐项比，而不是记一个全局的脏位 */
+  const identityDirty =
+    name.trim() !== kb.data.name ||
+    desc.trim() !== (kb.data.description ?? "");
+  const visibilityDirty = visibility !== kb.data.visibility;
+  const automationDirty =
+    autoExtend !== kb.data.auto_extend_ontology ||
+    materialize !== kb.data.materialize_inferences ||
+    autoResolve !== kb.data.auto_type_resolution ||
+    governance !== kb.data.governance ||
+    inferMins !== kb.data.inference_interval_minutes;
+  const langDirty = ontoLang !== kb.data.ontology_lang;
 
   const isDefault = kb.data.is_default;
   const sections: {
@@ -206,9 +218,35 @@ export function KbSettings() {
           <PageHeader title={S.kbset.title} />
 
           {section === "general" && (
-            <div>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
+            /* Vercel 设置页那种排法：一张卡是一个保存单位。从前这一节是一张
+               长表加末尾一个保存——改个名字要连着四个开关一起送上去，而
+               "存好了"也说不清存的是哪一件 */
+            <div className="space-y-4">
+              <SettingsCard
+                title={S.kbset.cardIdentity}
+                note={S.kbset.cardIdentityNote}
+                action={
+                  <>
+                    {saveIdentity.isSuccess && !identityDirty && (
+                      <span className="text-small text-ink-2">{S.kbset.saved}</span>
+                    )}
+                    <Button variant="secondary" size="sm"
+                      disabled={!name.trim() || !identityDirty || saveIdentity.isPending}
+                      onClick={() =>
+                        saveIdentity.mutate({
+                          name: name.trim(),
+                          // 空串才是"清空描述"：null 在服务端是 COALESCE 的
+                          // "这项不改"，把描述删干净会悄悄地什么都没发生
+                          description: desc.trim(),
+                        })
+                      }
+                    >
+                      {S.kbset.save}
+                    </Button>
+                  </>
+                }
+              >
+                <div className="space-y-3">
                   <div>
                     <label className={lbl}>{S.settings.kbs.name}</label>
                     <Input className="w-full"
@@ -217,151 +255,190 @@ export function KbSettings() {
                     />
                   </div>
                   <div>
-                    <label className={lbl}>{S.settings.kbs.visibility}</label>
-                    {isDefault ? (
-                      /* 默认库锁 open：说明常驻可见（藏在 hover 里等于没解释）,详情见 grid 下方整行 */
-                      <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-fine text-ink-2 cursor-not-allowed">
-                        <Lock size={11} className="shrink-0 text-ink-2" />
-                        {S.kbset.defaultOpenLabel}
-                      </div>
-                    ) : (
-                      <Segmented
-                        fill
-                        size="sm"
-                        value={visibility}
-                        onChange={setVisibility}
-                        options={(
-                          [
-                            ["open", "Open"],
-                            ["restricted", S.settings.kbs.visRestricted],
-                          ] as const
-                        ).map(([v, label]) => ({ value: v, label, title: label }))}
-                      />
-                    )}
+                    <label className={lbl}>{S.settings.kbs.description}</label>
+                    <Input className="w-full"
+                      value={desc}
+                      onChange={(e) => setDesc(e.target.value)}
+                    />
                   </div>
                 </div>
-                {isDefault && (
-                  <p className="text-small leading-relaxed text-ink-2">
-                    {S.kbset.defaultOpenNote}
-                  </p>
+              </SettingsCard>
+
+              {/* 默认库的可见性是锁死的：卡还在（这个库确实有可见性这件事），
+                  但底栏没有保存——没有可改的东西就不摆一个按钮 */}
+              <SettingsCard
+                title={S.settings.kbs.visibility}
+                hint={isDefault ? S.kbset.defaultOpenNote : S.kbset.cardVisibilityNote}
+                note={isDefault ? undefined : S.kbset.cardVisibilityFoot}
+                action={
+                  isDefault ? undefined : (
+                    <>
+                      {saveVisibility.isSuccess && !visibilityDirty && (
+                        <span className="text-small text-ink-2">{S.kbset.saved}</span>
+                      )}
+                      <Button variant="secondary" size="sm"
+                        disabled={!visibilityDirty || saveVisibility.isPending}
+                        onClick={() => saveVisibility.mutate({ visibility })}
+                      >
+                        {S.kbset.save}
+                      </Button>
+                    </>
+                  )
+                }
+              >
+                {isDefault ? (
+                  <div className="flex w-fit items-center gap-2 rounded-control border border-line px-3 py-2 text-fine text-ink-2">
+                    <Lock size={11} className="shrink-0 text-ink-2" />
+                    {S.kbset.defaultOpenLabel}
+                  </div>
+                ) : (
+                  <Segmented
+                    size="sm"
+                    className="w-fit"
+                    value={visibility}
+                    onChange={setVisibility}
+                    options={(
+                      [
+                        ["open", "Open"],
+                        ["restricted", S.settings.kbs.visRestricted],
+                      ] as const
+                    ).map(([v, label]) => ({ value: v, label, title: label }))}
+                  />
                 )}
-                <div>
-                  <label className={lbl}>{S.settings.kbs.description}</label>
-                  <Input className="w-full"
-                    value={desc}
-                    onChange={(e) => setDesc(e.target.value)}
+              </SettingsCard>
+
+              <SettingsCard
+                title={S.kbset.cardAutomation}
+                note={S.kbset.cardAutomationNote}
+                action={
+                  <>
+                    {saveAutomation.isSuccess && !automationDirty && (
+                      <span className="text-small text-ink-2">{S.kbset.saved}</span>
+                    )}
+                    <Button variant="secondary" size="sm"
+                      disabled={!automationDirty || saveAutomation.isPending}
+                      onClick={() =>
+                        saveAutomation.mutate({
+                          auto_extend_ontology: autoExtend,
+                          materialize_inferences: materialize,
+                          auto_type_resolution: autoResolve,
+                          governance,
+                          inference_interval_minutes: inferMins,
+                        })
+                      }
+                    >
+                      {S.kbset.save}
+                    </Button>
+                  </>
+                }
+              >
+                <div className="space-y-3">
+                  {/* 自动扩本体：默认开，因为新库的十个默认关系不是任何人选的。
+                      说明里要讲清关掉之后失去的**只是**代劳，不是留意 */}
+                  <Checkbox
+                    checked={autoExtend}
+                    onChange={(e) => setAutoExtend(e.target.checked)}
+                    label={S.kbset.autoExtend}
+                    hint={S.kbset.autoExtendNote}
+                  />
+                  {/* 物化推理：**默认关**，与上面那个相反。自动扩本体动的是词表，
+                      这个动的是账本——它按公理往图里写事实，而声明可能是错的 */}
+                  <Checkbox
+                    checked={materialize}
+                    onChange={(e) => setMaterialize(e.target.checked)}
+                    label={S.kbset.materialize}
+                    hint={S.kbset.materializeNote}
+                  />
+                  {/* 重推间隔。**只在开着的时候露出来**——关着时它不影响任何事，
+                      摆在那里只会让人以为设了就会推 */}
+                  {materialize && (
+                    <div className="pl-6 flex flex-wrap items-center gap-2">
+                      <label className="text-small text-ink-2">
+                        {S.kbset.inferEvery}
+                      </label>
+                      <Input size="sm" className="w-24 u-num"
+                        type="number"
+                        min={5}
+                        max={10080}
+                        value={inferMins}
+                        onChange={(e) => setInferMins(Number(e.target.value))}
+                      />
+                      <span className="text-small text-ink-2">{S.kbset.minutes}</span>
+                      {kb.data.last_inference_at && (
+                        <span className="text-fine text-ink-2">
+                          {S.kbset.lastInference(
+                            new Date(kb.data.last_inference_at).toLocaleString(),
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* 类型消解自动跑：抽完排一轮，只自动改子树内精化的那一档，跨轴的仍留给人 */}
+                  <Checkbox
+                    checked={autoResolve}
+                    onChange={(e) => setAutoResolve(e.target.checked)}
+                    label={S.kbset.autoResolveTypes}
+                    hint={S.kbset.autoResolveTypesNote}
+                  />
+                  {/* 治理（0025）：agent 按先进先出过等人的重复对，先读台账里人的先例再裁。
+                      说明里要讲清三件事：读的是这个库的人的决定、合并要有先例撑着、
+                      关掉队列就停 */}
+                  <Checkbox
+                    checked={governance}
+                    onChange={(e) => setGovernance(e.target.checked)}
+                    label={S.kbset.governance}
+                    hint={S.kbset.governanceNote}
                   />
                 </div>
-                {/* 自动扩本体：默认开，因为新库的十个默认关系不是任何人选的。
-                    说明里要讲清关掉之后失去的**只是**代劳，不是留意 */}
-                <Checkbox
-                  className="pt-1"
-                  checked={autoExtend}
-                  onChange={(e) => setAutoExtend(e.target.checked)}
-                  label={S.kbset.autoExtend}
-                  hint={S.kbset.autoExtendNote}
-                />
-                {/* 物化推理：**默认关**，与上面那个相反。自动扩本体动的是词表，
-                    这个动的是账本——它按公理往图里写事实，而声明可能是错的 */}
-                <Checkbox
-                  className="pt-1"
-                  checked={materialize}
-                  onChange={(e) => setMaterialize(e.target.checked)}
-                  label={S.kbset.materialize}
-                  hint={S.kbset.materializeNote}
-                />
-                {/* 类型消解自动跑：抽完排一轮，只自动改子树内精化的那一档，跨轴的仍留给人 */}
-                <Checkbox
-                  className="pt-1"
-                  checked={autoResolve}
-                  onChange={(e) => setAutoResolve(e.target.checked)}
-                  label={S.kbset.autoResolveTypes}
-                  hint={S.kbset.autoResolveTypesNote}
-                />
-                {/* 治理（0025）：agent 按先进先出过等人的重复对，先读台账里人的先例再裁。
-                    说明里要讲清三件事：读的是这个库的人的决定、合并要有先例撑着、
-                    关掉队列就停 */}
-                <Checkbox
-                  className="pt-1"
-                  checked={governance}
-                  onChange={(e) => setGovernance(e.target.checked)}
-                  label={S.kbset.governance}
-                  hint={S.kbset.governanceNote}
-                />
-                {/* 重推间隔。**只在开着的时候露出来**——关着时它不影响任何事，
-                    摆在那里只会让人以为设了就会推 */}
-                {materialize && (
-                  <div className="pl-6 flex items-center gap-2">
-                    <label className="text-small text-ink-2">
-                      {S.kbset.inferEvery}
-                    </label>
-                    <Input size="sm" className="w-24 u-num"
-                      type="number"
-                      min={5}
-                      max={10080}
-                      value={inferMins}
-                      onChange={(e) => setInferMins(Number(e.target.value))}
-                    />
-                    <span className="text-small text-ink-2">
-                      {S.kbset.minutes}
-                    </span>
-                    {kb.data.last_inference_at && (
-                      <span className="text-fine text-ink-2">
-                        {S.kbset.lastInference(
-                          new Date(kb.data.last_inference_at).toLocaleString(),
-                        )}
-                      </span>
+              </SettingsCard>
+
+              {/* 语料语言。**不是界面语言**——类描述逐字进抽取提示词，
+                  读者是正在读这些文档的模型，所以它跟文档走不跟读者走 */}
+              <SettingsCard
+                title={S.kbset.ontologyLang}
+                hint={S.kbset.ontologyLangNote}
+                action={
+                  <>
+                    {saveLang.isSuccess && !langDirty && (
+                      <span className="text-small text-ink-2">{S.kbset.saved}</span>
                     )}
-                  </div>
-                )}
-                {/* 失败的任务（#216）：有才露出来。「再跑一遍」把这个库里全部 failed 放回队列 */}
-                {failedJobs.data && failedJobs.data.failed > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-small text-ink-2">
-                      {S.kbset.failedJobs(failedJobs.data.failed)}
-                    </span>
+                    <Button variant="secondary" size="sm"
+                      disabled={!langDirty || saveLang.isPending}
+                      onClick={() => saveLang.mutate({ ontology_lang: ontoLang })}
+                    >
+                      {S.kbset.save}
+                    </Button>
+                  </>
+                }
+              >
+                <Segmented
+                  size="sm"
+                  className="w-fit"
+                  value={ontoLang}
+                  onChange={setOntoLang}
+                  options={(["en", "zh"] as const).map((l) => ({
+                    value: l,
+                    label: LANG_NAMES[l],
+                  }))}
+                />
+              </SettingsCard>
+
+              {/* 失败的任务（#216）：有才露出来。这张卡没有"保存"——它不是设置，
+                  是一个动作：把这个库里全部 failed 放回队列 */}
+              {failedJobs.data && failedJobs.data.failed > 0 && (
+                <SettingsCard
+                  title={S.kbset.cardJobs}
+                  note={S.kbset.failedJobs(failedJobs.data.failed)}
+                  action={
                     <Button variant="secondary" size="sm"
                       disabled={requeue.isPending}
                       onClick={() => requeue.mutate()}
                     >
                       {S.kbset.requeue}
                     </Button>
-                  </div>
-                )}
-                {/* 语料语言。**不是界面语言**——类描述逐字进抽取提示词，
-                    读者是正在读这些文档的模型，所以它跟文档走不跟读者走 */}
-                <div className="pt-1">
-                  <span className="block text-body text-ink">
-                    {S.kbset.ontologyLang}
-                  </span>
-                  <span className="mt-1 block text-small leading-relaxed text-ink-2">
-                    {S.kbset.ontologyLangNote}
-                  </span>
-                  <Segmented
-                    size="sm"
-                    className="mt-2 w-fit"
-                    value={ontoLang}
-                    onChange={setOntoLang}
-                    options={(["en", "zh"] as const).map((l) => ({
-                      value: l,
-                      label: LANG_NAMES[l],
-                    }))}
-                  />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button variant="primary" size="sm"
-                    disabled={!name.trim() || save.isPending}
-                    onClick={() => save.mutate()}
-                  >
-                    {S.kbset.save}
-                  </Button>
-                  {save.isSuccess && (
-                    <span className="text-small text-ink-2">
-                      {S.kbset.saved}
-                    </span>
-                  )}
-                </div>
-              </div>
+                  }
+                />
+              )}
             </div>
           )}
 

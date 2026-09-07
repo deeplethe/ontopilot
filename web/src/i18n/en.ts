@@ -1800,6 +1800,16 @@ export const en = {
     requeued: (n: number) =>
       n === 1 ? "1 job back in the queue" : `${n} jobs back in the queue`,
     /* 语料语言。措辞要把"这不是界面语言"讲清楚，否则一定有人当成界面开关 */
+    cardIdentity: "Name and description",
+    cardIdentityNote:
+      "Up to 64 characters. This is the name in the switcher and at the top of every page of this base.",
+    cardVisibilityNote:
+      "Open means everyone in the deployment can read this base. Restricted means only the people listed under Members.",
+    cardVisibilityFoot: "Takes effect immediately. Roles granted under Members are kept either way.",
+    cardAutomation: "What runs on its own",
+    cardAutomationNote:
+      "Applies from the next extraction on. Everything these do is listed and can be undone.",
+    cardJobs: "Background jobs",
     ontologyLang: "Language of this ontology",
     ontologyLangNote:
       "Which language class and relation descriptions are written in. Those go straight " +
