@@ -251,7 +251,7 @@ export function DocsPage() {
         className="flex-1 min-h-0 overflow-y-auto u-scroll"
       >
         <div className="flex items-start">
-          <aside className="w-64 shrink-0 sticky top-0 h-[calc(100vh-3.5rem)] glass-strong border-y-0 border-l-0 p-3 space-y-1">
+          <aside className="w-64 shrink-0 sticky top-0 h-[calc(100vh-3.5rem)] glass-strong border-y-0 border-l-0 px-2 py-3 space-y-1">
             {DOCS.map((d) => (
               <Link
                 key={d.slug}

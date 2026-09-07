@@ -158,9 +158,8 @@ export const Input = forwardRef<
       className={cn(
         bare ? "u-input-bare" : "input-dark",
         bare ? null : size === "sm" ? "u-input-sm" : "u-input-md",
-        // 图标槽：图标离左内缘 8px，文字从 30px 起。左栏里的输入框（盒 12）
-        // 于是图标在 20、文字在 42，与左栏的行（图标 20、文字 42）同一条线
-        icon ? (size === "sm" ? "pl-7" : "pl-[30px]") : null,
+        // 图标槽：中号图标离左内缘 12px、文字从 34px 起；小号窄一档（8 / 28）
+        icon ? (size === "sm" ? "pl-7" : "pl-[34px]") : null,
         icon ? "w-full" : className,
       )}
       {...props}
@@ -169,10 +168,12 @@ export const Input = forwardRef<
   if (!icon) return control;
   return (
     <div className={cn("relative", className)}>
+      {/* 图标离盒左缘 12——与 nav 行的内距同一个数，于是左栏里输入框的放大镜
+          与下面每一行的图标落在同一条竖线上（盒 8 / 图标 20 / 文字 42） */}
       <span
         className={cn(
           "pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-2",
-          "left-2",
+          size === "sm" ? "left-2" : "left-3",
         )}
       >
         {icon}
@@ -1141,7 +1142,7 @@ export function rowClass(
     density === "menu" ? "rounded-none" : "rounded-cell",
     // 左栏导航项 32 高（py 6）：36 在一列十几条里显得松
     density === "nav"
-      ? "px-2 py-1.5 text-body font-medium"
+      ? "px-3 py-1.5 text-body font-medium"
       : density === "menu"
         ? "px-3 py-2 text-small"
         : "px-2 py-1 text-body",

@@ -223,7 +223,7 @@ export function Ontology() {
       <aside className={`${RAIL_CLS} flex flex-col`}>
         {/* 与图谱页的搜索框同一副身材、同一个角落（左上各 12px、中号、232 宽）：
             两个标签页切来切去，框留在原地 */}
-        <div className="px-3 pt-3 pb-1">
+        <div className="px-2 pt-3 pb-1">
           <Input
             icon={<Search size={12} />}
             placeholder={S.ontology.filter}
@@ -234,7 +234,7 @@ export function Ontology() {
         {/* 模式图：本体结构的主视图,不是 Import/Refine/Unmatched 那种管理性操作——
             放在筛选框正下方、列表上方,与那三个钉在底部的按钮拉开位置,
             视觉上就说明了「这是浏览本体的另一种方式」而不是「这是一项维护动作」 */}
-        <div className="px-3 pb-1">
+        <div className="px-2 pb-1">
           <Row
             density="nav"
             active={sel?.kind === "schema"}
@@ -248,7 +248,7 @@ export function Ontology() {
             过滤时列表例外：两节混排同时给出命中 */}
         {/* 撑满的东西不能再带外边距：w-full 是按父容器算的，mx-3 只会把它往右
             推出侧栏 12px。缩进交给外层 */}
-        <div className="px-3 pb-1">
+        <div className="px-2 pb-1">
           <Segmented
             fill
             value={railTab}
@@ -261,7 +261,7 @@ export function Ontology() {
         </div>
         <div
           ref={listRef}
-          className="flex-1 min-h-0 overflow-hidden px-3 pb-2 flex flex-col"
+          className="flex-1 min-h-0 overflow-hidden px-2 pb-2 flex flex-col"
         >
           {/* 新建行置顶：随当前段建类/建关系 */}
           {!filter.trim() && (
@@ -328,7 +328,7 @@ export function Ontology() {
         {/* 底部常驻：关于本体的几个入口——从外部拿一份本体、业务规则、类型消解，
             以及数据顶回来的两种信号。一条分隔线说明它们是钉住的，行本身与上面
             列表里的行同一副样子 */}
-        <div className="u-rail-list shrink-0 border-t border-line px-3 py-2">
+        <div className="u-rail-list shrink-0 border-t border-line px-2 py-2">
         <RailItem
           active={sel?.kind === "import"}
           icon={<Upload size={14} />}

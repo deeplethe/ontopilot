@@ -1002,7 +1002,7 @@ const PAGE_SIZE: Record<Paged, number> = {
 function RailHeader({ label }: { label: string }) {
   return (
     // 文字从 20 起，与行里的图标同一条线（盒 12 + 行内 8）
-    <GroupLabel className="mx-3 px-2 pt-4 pb-2">{label}</GroupLabel>
+    <GroupLabel className="mx-2 px-3 pt-4 pb-2">{label}</GroupLabel>
   );
 }
 
@@ -1272,7 +1272,7 @@ export function Review() {
       <aside className={`${RAIL_CLS} flex flex-col overflow-y-auto u-scroll`}>
         {/* 总览在最上面，七档队列直接排在它下面，不另起标题——「队列」这个词
             说的是它们是什么，而人要的是它们有多少 */}
-        <div className="u-rail-list px-3 pt-3">
+        <div className="u-rail-list px-2 pt-3">
           <RailItem
             active={active === "overview"}
             icon={<LayoutDashboard size={14} />}
@@ -1281,7 +1281,7 @@ export function Review() {
             {S.review.railOverview}
           </RailItem>
         </div>
-        <div className="u-rail-list px-3 pt-1">
+        <div className="u-rail-list px-2 pt-1">
           <RailItem
             active={active === "pending"}
             count={counts.pending}
@@ -1342,7 +1342,7 @@ export function Review() {
           </RailItem>
         </div>
         <RailHeader label={S.review.tabHistory} />
-        <div className="u-rail-list px-3">
+        <div className="u-rail-list px-2">
           <RailItem
             active={active === "decisions"}
                         onClick={() => select("decisions")}
@@ -1364,7 +1364,7 @@ export function Review() {
             而口径的决定从来不进 `review_history`（它只捞 review./fact./
             conflict./merge.，口径记的是 mapping.decided）。
             **计数留着**——收件箱该说「有几条等你」，但活在有上下文的那一页干 */}
-        <div className="mt-auto border-t border-line px-3 py-2">
+        <div className="mt-auto border-t border-line px-2 py-2">
           <RailItem
             active={false}
             count={counts.mappings}

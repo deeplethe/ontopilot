@@ -196,7 +196,7 @@ export function KbSettings() {
   return (
     <div className="h-full flex">
       {/* 分节导航：未来的抽取设置/保留策略/令牌等在此扩展 */}
-      <aside className={`${RAIL_CLS} u-rail-list p-3`}>
+      <aside className={`${RAIL_CLS} u-rail-list px-2 py-3`}>
         {sections.map(({ key, label, Icon, tone }) => (
           <Row
             key={key}
