@@ -49,6 +49,11 @@ function AlertRow({
   // 而"有条告警但我不认识它"远好过"什么都不显示"
   const worded = S.alerts.kinds[g.kind];
   const lines = g.lines.map(line).filter((l): l is string => !!l);
+  /* 同一句报错重复五遍，读者第二遍就不再读了，可它照样把面板撑高一截：
+     一模一样的行并成一条，右边记个次数。**并的是显示，不是计数**——
+     下面「还有 N 条」用的仍是原始条数 */
+  const tally = new Map<string, number>();
+  for (const l of lines) tally.set(l, (tally.get(l) ?? 0) + 1);
   // count 数的是整组，lines 只带回前几条——差额是"还有 N 条"
   const rest = g.count - lines.length;
   return (
@@ -76,27 +81,30 @@ function AlertRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span
-            className={cn(
-              "text-body",
-              g.unread > 0 ? "font-medium text-ink" : "text-ink-2",
-            )}
-          >
+          {/* 标题一直是正文色：读过只是不再加粗。淡下去那一档现在与提示、
+              明细同色，一条读过的告警整条糊成一片，扫不出它在说什么 */}
+          <span className={cn("text-body text-ink", g.unread > 0 && "font-medium")}>
             {worded?.title ?? S.alerts.unknownKind(g.kind)}
           </span>
           {g.count > 1 && <Chip tone="neutral">{g.count}</Chip>}
           <Chip tone={g.kb_name ? "neutral" : "violet"}>
             {g.kb_name ?? S.alerts.system}
           </Chip>
+          {/* 时刻挂在标题行右端，不另占一行：它是这条告警的落款，
+              而一行落款乘以八条就是面板里最占地方的东西。取组里最新的那一次 */}
+          <span className="u-num ml-auto shrink-0 text-fine text-ink-2">
+            {new Date(g.latest_at).toLocaleString()}
+          </span>
         </div>
         {worded && (
           <p className="mt-1 text-small text-ink-2">{worded.hint}</p>
         )}
         {lines.length > 0 && (
           <ul className="mt-1 space-y-1">
-            {lines.map((l, i) => (
-              <li key={i} className="text-fine text-ink-2 break-words">
+            {[...tally].map(([l, n]) => (
+              <li key={l} className="text-fine text-ink-2 break-words">
                 {l}
+                {n > 1 && <span className="u-num text-ink-2"> ×{n}</span>}
               </li>
             ))}
             {rest > 0 && (
@@ -106,10 +114,6 @@ function AlertRow({
             )}
           </ul>
         )}
-        {/* 时间取组里最新的那一次 */}
-        <p className="u-num mt-2 text-fine text-ink-2">
-          {new Date(g.latest_at).toLocaleString()}
-        </p>
         {/* 修好之后接着跑：把这次故障窗口里失败的任务放回队列（#216）。
             余额耗尽是唯一一种「人做完一件具体的事就想让活继续」的失败，
             动作长在告警上，闭环就在这里，不必另建一个队列页 */}
