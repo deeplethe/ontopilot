@@ -55,7 +55,14 @@ pub async fn counts(pool: &PgPool, kb_id: Uuid) -> AppResult<ReviewCounts> {
            (SELECT count(*) FROM entity_merges WHERE kb_id = $1) AS merges,
            (SELECT count(*) FROM agent_decisions
              WHERE kb_id = $1 AND status = 'proposed') AS agent,
-           (SELECT count(*) FROM agent_decisions WHERE kb_id = $1) AS agent_rows",
+           (SELECT count(*) FROM agent_decisions WHERE kb_id = $1) AS agent_rows,
+           EXISTS (SELECT 1 FROM jobs j WHERE j.kind = 'govern' AND j.status = 'running'
+                     AND j.payload->>'kb_id' = $1::text) AS agent_running,
+           (SELECT count(*) FROM resolution_reviews rr
+             WHERE rr.kb_id = $1 AND rr.status = 'pending'
+               AND NOT EXISTS (SELECT 1 FROM agent_decisions d
+                                WHERE d.target_kind = 'review' AND d.target_id = rr.id
+                                  AND d.status = 'proposed')) AS agent_queue",
         unconfirmed = UNCONFIRMED_FACT,
         same = crate::resolution::TypeFilter::Same.clause(),
         conflict = crate::resolution::TypeFilter::Conflict.clause(),

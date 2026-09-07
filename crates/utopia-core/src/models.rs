@@ -1236,6 +1236,10 @@ pub struct ReviewCounts {
     pub agent: i64,
     /// agent 的全部记录（Agent 队列翻页用）
     pub agent_rows: i64,
+    /// 这个库的 govern 任务此刻在跑
+    pub agent_running: bool,
+    /// 等 agent 看的对：等人的重复对里还没有建议的
+    pub agent_queue: i64,
 }
 
 /// agent 的一笔（0025）：看了哪一对、想怎么办、凭什么、人怎么答的。
@@ -1291,6 +1295,10 @@ pub struct ReviewSummary {
 /// agent 在这个库里做过什么（0025）：开着的建议，以及近期每一笔现在的状态
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ReviewAgent {
+    /// 此刻在跑
+    pub running: bool,
+    /// 还没轮到 agent 看的对
+    pub queue: i64,
     /// 等人回答的建议，不分时间
     pub open: i64,
     pub last_7d: AgentWindow,

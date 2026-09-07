@@ -7,7 +7,7 @@
 
 use serde_json::{json, Value};
 
-use crate::AdjudicationPair;
+use crate::{AdjudicationPair, IDENTITY_RULES};
 
 /// 一对最多查几次再表态。够看两侧的事实与原文各一次、翻一次台账，还剩一次
 pub const MAX_STEPS: usize = 6;
@@ -101,13 +101,7 @@ pub fn messages(pair: &AdjudicationPair, earlier: &EarlierLook) -> Vec<Value> {
          records that an earlier, quicker look could not settle. Decide whether the two records \
          refer to the SAME real-world entity or are namesakes.\n\
          \n\
-         Judge by the facts: employer or affiliation, role, time ranges, connected entities. \
-         Identical names alone are NEVER sufficient evidence of sameness. Contradictory \
-         affiliations in overlapping time periods mean different entities; non-overlapping \
-         periods can be one person who changed jobs. One name containing the other is usually \
-         the longer one abbreviated (documents drop the qualifier after first mention), unless \
-         the longer one adds a noun or a phrase at the end: a project, a programme, a team or a \
-         component is its own record.\n\
+         {IDENTITY_RULES}\n\
          \n\
          You may look things up before answering, at most {MAX_STEPS} lookups: the facts of a \
          side, the source passages that mention a side, what people in this base decided about \

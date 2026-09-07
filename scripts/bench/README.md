@@ -43,6 +43,35 @@ node scripts/bench/run.mjs --corpus pharma --ontology /tmp/schemaorg.ttl --label
   因为 `supersedes` 只在同一条目的相邻快照之间发生，随机抽块会把时态那根轴废掉。
 - `subset.mjs` —— 把 schema.org 的 TTL 切成前 N 个类，给退化曲线用。
 
+## 治理的测量台（0025）
+
+`govern.mjs` 量的是 agent 替人裁重复项裁得对不对、还剩多少等人。真值在
+`truth/ai-timeline.duplicates.json`：把八篇互相咬合的条目（OpenAI 那场风波、Anthropic、
+DeepMind、Mistral、Inflection、SSI、ChatGPT）灌进一个治理开着的新库，消解器提出的
+615 对、411 个名字对，2026-09-07 按两侧的事实与原文逐对手标：`same` 同一个东西；
+`different` 两个东西，含版本、部门、子公司、只是含着这个名字的一句话；`unknown` 一侧
+没有事实、名字本身定不了的（光秃秃的「judge」「Time」），人也定不了。按两个名字键
+（不分左右、不分大小写）；同名的一对只有在那次导入里每一对都同一个答案时才带标签。
+
+```
+node scripts/bench/govern.mjs --fresh                 # 新库、灌语料、跑完打分（约一小时）
+node scripts/bench/govern.mjs --kb <id>               # 已有的库：撤掉 agent 的决定、再跑、打分（约二十分钟）
+node scripts/bench/govern.mjs --kb <id> --score       # 只打分
+node scripts/bench/govern.mjs --kb <id> --score --stuck   # 连留给人的那些一起列出来
+```
+
+`--kb` 那条路不重新抽取：`--reset` 用 `revert_merge` 同一套还原把 agent（和模拟的人）做的
+合并撤掉、分开的重开、建议删掉，直接在库里做而不经 API——经 API 会在台账上留下
+`merge.revert`，下一轮 agent 会把它当成人的先例。所以改一次判断、二十分钟出一次数。
+
+读数：`decided_on_its_own` 是它自己裁的；`agreed_with_labels` 是其中与标注一致的；
+`wrong_merges` 是最要紧的那个数——合错了要人去撤；`left_for_people` 是留给人的建议，
+后面跟着按标注人会合几对、分几对；`unlabeled` 是这次导入抽出来、真值里没有的名字对，
+不算对也不算错。语料重抽一次名字会略有出入，那一栏不为零是正常的。
+
+同一份语料上的对照（2026-09-06，闸门还是「没先例不合」那版）：治理关着老裁决器自动合
+146、留 50 给人；治理开着一对不合、留 200。这个数就是记录 0025 决定 4 修订的起因。
+
 ## 读数怎么算
 
 - `prompt_tokens_est` 是**本体段**的估算，不是整个提示词。实测 4.0 字符 ≈ 1 token

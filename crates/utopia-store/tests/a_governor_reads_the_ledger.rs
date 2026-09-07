@@ -233,9 +233,24 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
     assert!(p.reverts.is_empty());
     let t = p.type_pair.clone().expect("两边都有类型");
     assert_eq!((t.merged, t.kept, t.reverted), (1, 3, 0));
-    assert_eq!(governance::gate(Some(false), 0.9, false, &p), Gate::Apply);
     assert_eq!(
-        governance::gate(Some(true), 0.99, false, &p),
+        governance::gate(
+            Some(false),
+            0.9,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
+        Gate::Apply
+    );
+    assert_eq!(
+        governance::gate(
+            Some(true),
+            0.99,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
         Gate::Propose,
         "人分开过，模型说合，只建议"
     );
@@ -248,8 +263,14 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
         1,
         "Apple 对 Apple Records 是这个名字对别的名字"
     );
-    assert_eq!(governance::gate(Some(true), 0.9, false, &p), Gate::Apply);
-    assert_eq!(governance::gate(Some(true), 0.7, false, &p), Gate::Propose);
+    assert_eq!(
+        governance::gate(Some(true), 0.9, false, governance::NameShape::Unrelated, &p),
+        Gate::Apply
+    );
+    assert_eq!(
+        governance::gate(Some(true), 0.7, false, governance::NameShape::Unrelated, &p),
+        Gate::Propose
+    );
     let lines = governance::render_lines(&p);
     assert!(lines[0].starts_with("this same pair was merged by a person on "));
     assert!(lines
@@ -258,17 +279,38 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
 
     let p = governance::precedents_for(pool, s.kb, &by_id(s.orion)).await?;
     assert_eq!(p.reverts.len(), 1);
-    assert_eq!(governance::gate(Some(true), 0.99, false, &p), Gate::Propose);
     assert_eq!(
-        governance::gate(Some(false), 0.99, false, &p),
+        governance::gate(
+            Some(true),
+            0.99,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
+        Gate::Propose
+    );
+    assert_eq!(
+        governance::gate(
+            Some(false),
+            0.99,
+            false,
+            governance::NameShape::Unrelated,
+            &p
+        ),
         Gate::Propose
     );
 
     let m = by_id(s.mercury);
     let p = governance::precedents_for(pool, s.kb, &m).await?;
     assert!(p.type_pair.is_some());
-    assert_eq!(governance::gate(Some(true), 0.99, true, &p), Gate::Propose);
-    assert_eq!(governance::gate(Some(false), 0.9, true, &p), Gate::Apply);
+    assert_eq!(
+        governance::gate(Some(true), 0.99, true, governance::NameShape::Unrelated, &p),
+        Gate::Propose
+    );
+    assert_eq!(
+        governance::gate(Some(false), 0.9, true, governance::NameShape::Unrelated, &p),
+        Gate::Apply
+    );
 
     // 写了建议的对不再进队列
     let run_id = Uuid::now_v7();
@@ -498,6 +540,35 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
         .bind(s.kb)
         .execute(pool)
         .await?;
+
+    // agent 正在裁的一簇锁住（0025 第五刀）：任务在跑 + 标着 adjudicating + 开关开着，
+    // 三样齐了人才裁不了；任务一停，标记只是标记
+    sqlx::query("INSERT INTO jobs (kind, payload, status) VALUES ('govern', $1, 'running')")
+        .bind(serde_json::json!({ "kb_id": s.kb }))
+        .execute(pool)
+        .await?;
+    assert!(governance::agent_running(pool, s.kb).await?);
+    let mercury = by_id(s.mercury);
+    governance::lock(pool, s.kb, &[mercury.id]).await?;
+    assert!(governance::locked_by_agent(pool, s.kb, mercury.id).await?);
+    assert!(
+        utopia_store::resolution::decide_review(pool, s.kb, mercury.id, "keep", s.user)
+            .await
+            .is_err(),
+        "agent 正在裁的对，人裁不了"
+    );
+    assert_eq!(governance::release_locks(pool, s.kb).await?, 1);
+    assert!(!governance::locked_by_agent(pool, s.kb, mercury.id).await?);
+    sqlx::query("DELETE FROM jobs WHERE kind = 'govern' AND payload->>'kb_id' = $1")
+        .bind(s.kb.to_string())
+        .execute(pool)
+        .await?;
+    assert!(!governance::agent_running(pool, s.kb).await?);
+    assert_eq!(
+        governance::queue_len(pool, s.kb).await?,
+        3,
+        "orion、mercury、zw23 等 agent 看"
+    );
 
     // 定时扫描：开关开着且有没看过的对 → 在；关了 → 不在
     assert!(governance::due(pool).await?.contains(&s.kb));

@@ -294,6 +294,8 @@ async fn agent(pool: &PgPool, kb_id: Uuid) -> AppResult<ReviewAgent> {
         w
     };
     Ok(ReviewAgent {
+        running: crate::governance::agent_running(pool, kb_id).await?,
+        queue: crate::governance::queue_len(pool, kb_id).await?,
         open,
         last_7d: window(true),
         last_30d: window(false),

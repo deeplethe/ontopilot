@@ -243,6 +243,256 @@ pub fn precedents_json(p: &Precedents) -> serde_json::Value {
     serde_json::Value::Array(all)
 }
 
+/// 名字的形状：不靠模型也能看出来的那几种
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameShape {
+    /// 一字不差（忽略大小写与开头的 the）
+    Identical,
+    /// 一个是另一个去掉了前面的限定词：Google DeepMind / DeepMind
+    Abbreviation,
+    /// 一个是另一个加了公司后缀：Apple Inc. / Apple、Thrive Capital / Thrive
+    Suffix,
+    /// 一个是另一个加了版本、届次：Claude 4 / Claude、AlphaFold2 / AlphaFold、2024 IMO / IMO
+    Version,
+    /// 一个是另一个加了一两个词：DeepMind Health / DeepMind、Gemini Robotics-ER / Gemini Robotics
+    Extension,
+    /// 一个是含着另一个的一句话：Sam Altman's efforts / Sam Altman；或列表 / 成员
+    Phrase,
+    /// 互不包含
+    Unrelated,
+}
+
+fn norm_name(s: &str) -> String {
+    let s = s.trim().to_lowercase();
+    let s = s.strip_prefix("the ").unwrap_or(&s).to_string();
+    // 末尾括号里的缩写不是版本：reinforcement learning (RL)、Department of Defense (DoD)
+    let s = match (s.rfind(" ("), s.ends_with(')')) {
+        (Some(i), true)
+            if s[i + 2..s.len() - 1].chars().all(|c| c.is_alphanumeric()) && s.len() - i <= 12 =>
+        {
+            s[..i].to_string()
+        }
+        _ => s,
+    };
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+const CORPORATE_SUFFIX: &[&str] = &[
+    "inc",
+    "ltd",
+    "llc",
+    "plc",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "capital",
+    "group",
+    "platforms",
+    "industries",
+    "technologies",
+    "holdings",
+    "limited",
+    "gmbh",
+    "sa",
+    "ag",
+];
+
+pub fn name_shape(a: &str, b: &str) -> NameShape {
+    let (a, b) = (norm_name(a), norm_name(b));
+    if a == b {
+        return NameShape::Identical;
+    }
+    let (short, long) = if a.len() <= b.len() {
+        (&a, &b)
+    } else {
+        (&b, &a)
+    };
+    // 要整词出现：Time 在 Financial Times 里不算（后面跟着字母），AlphaFold 在 AlphaFold2
+    // 里算（后面跟着数字，那是版本）
+    let word_at = |long: &str, short: &str| -> Option<usize> {
+        let mut from = 0;
+        while let Some(i) = long[from..].find(short) {
+            let i = from + i;
+            let before_ok = i == 0
+                || !long[..i]
+                    .chars()
+                    .last()
+                    .is_some_and(|c| c.is_alphanumeric());
+            // 后面跟着字母不算整词——除非只多一个复数的 s：sorting algorithms 含着
+            // sorting algorithm，Times 含着 Time
+            let rest = &long[i + short.len()..];
+            let mut rest_chars = rest.chars();
+            let after_ok = match (rest_chars.next(), rest_chars.next()) {
+                (None, _) => true,
+                (Some(c), _) if !c.is_alphabetic() => true,
+                (Some('s'), None) => true,
+                (Some('s'), Some(d)) => !d.is_alphanumeric(),
+                _ => false,
+            };
+            if before_ok && after_ok {
+                return Some(i);
+            }
+            from = i + 1;
+        }
+        None
+    };
+    let Some(pos) = word_at(long, short) else {
+        return NameShape::Unrelated;
+    };
+    if short.is_empty() {
+        return NameShape::Unrelated;
+    }
+    let words = |s: &str| {
+        s.split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|w| !w.is_empty())
+            .count()
+    };
+    let phrase_marker = |s: &str| {
+        s.contains("'s ")
+            || s.ends_with("'s")
+            || [
+                " of ",
+                " by ",
+                " from ",
+                " for ",
+                " against ",
+                " with ",
+                " to ",
+                " in ",
+                " on ",
+                " at ",
+                " and ",
+                " or ",
+                " led ",
+                " into ",
+            ]
+            .iter()
+            .any(|m| format!(" {s} ").contains(m))
+    };
+    if long.matches(", ").count() >= 2 {
+        return NameShape::Phrase;
+    }
+    // 短的那个在长的里到哪里结束：复数的 s 算在里面
+    let end = {
+        let rest = &long[pos + short.len()..];
+        if rest.starts_with('s')
+            && rest[1..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric())
+        {
+            pos + short.len() + 1
+        } else {
+            pos + short.len()
+        }
+    };
+    if end == long.len() {
+        let front = long[..pos].trim().trim_end_matches([',', '-', ':']);
+        if front.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return NameShape::Version;
+        }
+        if phrase_marker(front) || words(front) > 2 {
+            return NameShape::Phrase;
+        }
+        return NameShape::Abbreviation;
+    }
+    if pos == 0 {
+        let tail = long[end..]
+            .trim()
+            .trim_start_matches([',', '-', ':', '.', 'v']);
+        let tail = tail.trim();
+        if tail.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return NameShape::Version;
+        }
+        let tail_words: Vec<&str> = tail
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect();
+        if !tail_words.is_empty() && tail_words.iter().all(|w| CORPORATE_SUFFIX.contains(w)) {
+            return NameShape::Suffix;
+        }
+        // 尾巴两个词起就是一句话了：DeepMind Health data sharing、OpenAI Ireland Ltd、
+        // Meta Superintelligence Labs——都不是前面那个东西
+        if phrase_marker(tail) || tail_words.len() > 1 {
+            return NameShape::Phrase;
+        }
+        return NameShape::Extension;
+    }
+    NameShape::Phrase
+}
+
+/// 类型标签的大类：抽取器给的标签本身很吵（同一家公司在两篇里是 Organization 与
+/// Corporation），只有大类不同才算冲突。None = 说不上是哪一类，与谁都不冲突
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeFamily {
+    Person,
+    Organization,
+    Place,
+    Event,
+}
+
+pub fn type_family(label: &str) -> Option<TypeFamily> {
+    let l = label.to_lowercase();
+    if l == "person" || l == "researcher" || l.ends_with("person") {
+        return Some(TypeFamily::Person);
+    }
+    if l.contains("event") {
+        return Some(TypeFamily::Event);
+    }
+    if [
+        "organization",
+        "corporation",
+        "business",
+        "store",
+        "hospital",
+        "university",
+        "college",
+        "school",
+        "consortium",
+        "ngo",
+        "party",
+        "agency",
+        "company",
+        "bank",
+        "fund",
+        "newspaper",
+        "governmentoffice",
+        "team",
+    ]
+    .iter()
+    .any(|k| l.contains(k))
+    {
+        return Some(TypeFamily::Organization);
+    }
+    if [
+        "place",
+        "city",
+        "country",
+        "state",
+        "continent",
+        "administrativearea",
+        "region",
+        "landmark",
+        "civicstructure",
+        "locality",
+    ]
+    .iter()
+    .any(|k| l.contains(k))
+    {
+        return Some(TypeFamily::Place);
+    }
+    None
+}
+
+/// 两边的类型标签是不是不同的大类
+pub fn types_conflict(a: Option<&str>, b: Option<&str>) -> bool {
+    matches!(
+        (a.and_then(type_family), b.and_then(type_family)),
+        (Some(x), Some(y)) if x != y
+    )
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Gate {
     /// 自己动手：合并可撤，分开可再合
@@ -272,14 +522,22 @@ impl Precedents {
 /// agent 按自己的把握判，历史是参考（0025 决定 4，2026-09-06 修订）。历史反对就拦住：
 /// 人分开过这一对却说合、合过却说分、涉及任一名字的撤回。历史同意就把线放低。其余
 /// 按 agent 自己的把握。类型冲突永远不合——那是规则，不是把握
-pub fn gate(same: Option<bool>, conf: f32, types_conflict: bool, p: &Precedents) -> Gate {
+pub fn gate(
+    same: Option<bool>,
+    conf: f32,
+    types_conflict: bool,
+    shape: NameShape,
+    p: &Precedents,
+) -> Gate {
     let Some(same) = same else {
         return Gate::Propose;
     };
     if !p.reverts.is_empty() || p.same_pair.iter().any(|x| x.merged() != same) {
         return Gate::Propose;
     }
-    if same && types_conflict {
+    // 两条不靠模型的规则：类型的大类不同不合；版本尾巴或含着名字的一句话不自动合——
+    // 模型在这两种上最爱说 same，而它们几乎从不是
+    if same && (types_conflict || matches!(shape, NameShape::Version | NameShape::Phrase)) {
         return Gate::Propose;
     }
     let bar = if p.supports(same) {
@@ -570,6 +828,76 @@ pub async fn get(pool: &PgPool, kb_id: Uuid, id: Uuid) -> AppResult<AgentDecisio
         .ok_or(AppError::NotFound)
 }
 
+/// 这个库的 govern 任务此刻在跑
+pub async fn agent_running(pool: &PgPool, kb_id: Uuid) -> AppResult<bool> {
+    let running = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = 'govern' AND status = 'running'
+                          AND payload->>'kb_id' = $1)",
+    )
+    .bind(kb_id.to_string())
+    .fetch_one(pool)
+    .await?;
+    Ok(running)
+}
+
+/// 还没轮到 agent 看的对：等人的、还没有开着的建议的
+pub async fn queue_len(pool: &PgPool, kb_id: Uuid) -> AppResult<i64> {
+    let n = sqlx::query_scalar(&format!(
+        "SELECT count(*) FROM resolution_reviews rr
+         WHERE rr.kb_id = $1 AND rr.status = 'pending' AND {OPEN_PROPOSAL}"
+    ))
+    .bind(kb_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
+}
+
+/// agent 正在裁的一簇：标成 adjudicating，界面上按钮灰掉、接口上拒绝人改——模型
+/// 调用在飞的时候人把一对裁了，落地那一步会撞上
+pub async fn lock(pool: &PgPool, kb_id: Uuid, ids: &[Uuid]) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE resolution_reviews SET stage = 'adjudicating'
+         WHERE kb_id = $1 AND id = ANY($2) AND status = 'pending'",
+    )
+    .bind(kb_id)
+    .bind(ids)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// 任务开始与结束时放开所有锁：一轮中途出错、开关关掉，都不能把对锁死
+pub async fn release_locks(pool: &PgPool, kb_id: Uuid) -> AppResult<u64> {
+    let n = sqlx::query(
+        "UPDATE resolution_reviews SET stage = 'human'
+         WHERE kb_id = $1 AND status = 'pending' AND stage = 'adjudicating'",
+    )
+    .bind(kb_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(n)
+}
+
+/// 这一对此刻是不是 agent 正在裁的：治理开着、任务在跑、这一对标着 adjudicating。
+/// 三个条件缺一个都不算锁——任务没在跑的 adjudicating 只是旧裁决器留下的标记，人照样能裁
+pub async fn locked_by_agent(pool: &PgPool, kb_id: Uuid, review_id: Uuid) -> AppResult<bool> {
+    let locked = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM resolution_reviews rr
+            JOIN knowledge_bases k ON k.id = rr.kb_id
+            WHERE rr.id = $2 AND rr.kb_id = $1 AND rr.status = 'pending'
+              AND rr.stage = 'adjudicating' AND k.governance
+              AND EXISTS (SELECT 1 FROM jobs j WHERE j.kind = 'govern' AND j.status = 'running'
+                            AND j.payload->>'kb_id' = $1::text))",
+    )
+    .bind(kb_id)
+    .bind(review_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(locked)
+}
+
 pub async fn count_proposed(pool: &PgPool, kb_id: Uuid) -> AppResult<i64> {
     let n = sqlx::query_scalar(
         "SELECT count(*) FROM agent_decisions WHERE kb_id = $1 AND status = 'proposed'",
@@ -754,68 +1082,134 @@ mod tests {
     #[test]
     fn unsure_and_low_confidence_are_proposed() {
         let none = Precedents::default();
-        assert_eq!(gate(None, 0.99, false, &none), Gate::Propose);
-        assert_eq!(gate(Some(false), 0.6, false, &none), Gate::Propose);
-        assert_eq!(gate(Some(true), 0.84, false, &none), Gate::Propose);
+        assert_eq!(
+            gate(None, 0.99, false, NameShape::Unrelated, &none),
+            Gate::Propose
+        );
+        assert_eq!(
+            gate(Some(false), 0.6, false, NameShape::Unrelated, &none),
+            Gate::Propose
+        );
+        assert_eq!(
+            gate(Some(true), 0.84, false, NameShape::Unrelated, &none),
+            Gate::Propose
+        );
     }
 
     #[test]
     fn keeping_apart_needs_confidence_only() {
         let none = Precedents::default();
-        assert_eq!(gate(Some(false), 0.9, false, &none), Gate::Apply);
+        assert_eq!(
+            gate(Some(false), 0.9, false, NameShape::Unrelated, &none),
+            Gate::Apply
+        );
         // 类型冲突的对也能自己分开：分开不改图
-        assert_eq!(gate(Some(false), 0.9, true, &none), Gate::Apply);
+        assert_eq!(
+            gate(Some(false), 0.9, true, NameShape::Unrelated, &none),
+            Gate::Apply
+        );
     }
 
     #[test]
     fn the_agent_judges_and_history_moves_the_bar() {
         // 没有任何历史：agent 自己的把握够就合，不够就问
         let none = Precedents::default();
-        assert_eq!(gate(Some(true), 0.9, false, &none), Gate::Apply);
-        assert_eq!(gate(Some(true), 0.8, false, &none), Gate::Propose);
+        assert_eq!(
+            gate(Some(true), 0.9, false, NameShape::Unrelated, &none),
+            Gate::Apply
+        );
+        assert_eq!(
+            gate(Some(true), 0.8, false, NameShape::Unrelated, &none),
+            Gate::Propose
+        );
         // 历史同意：线降到 SUPPORTED_CONF
         let pair = Precedents {
             same_pair: vec![p("review.merge")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(true), 0.8, false, &pair), Gate::Apply);
-        assert_eq!(gate(Some(true), 0.7, false, &pair), Gate::Propose);
+        assert_eq!(
+            gate(Some(true), 0.8, false, NameShape::Unrelated, &pair),
+            Gate::Apply
+        );
+        assert_eq!(
+            gate(Some(true), 0.7, false, NameShape::Unrelated, &pair),
+            Gate::Propose
+        );
         let name = Precedents {
             same_name: vec![p("merge.manual"), p("review.merge")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(true), 0.8, false, &name), Gate::Apply);
+        assert_eq!(
+            gate(Some(true), 0.8, false, NameShape::Unrelated, &name),
+            Gate::Apply
+        );
         // 同名的决定有合有分：不算同意，回到 agent 自己的线
         let mixed = Precedents {
             same_name: vec![p("review.merge"), p("review.keep")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(true), 0.8, false, &mixed), Gate::Propose);
-        assert_eq!(gate(Some(true), 0.9, false, &mixed), Gate::Apply);
+        assert_eq!(
+            gate(Some(true), 0.8, false, NameShape::Unrelated, &mixed),
+            Gate::Propose
+        );
+        assert_eq!(
+            gate(Some(true), 0.9, false, NameShape::Unrelated, &mixed),
+            Gate::Apply
+        );
         // 类型对的习惯
         assert_eq!(
-            gate(Some(true), 0.8, false, &with_stats(6, 2, 0)),
+            gate(
+                Some(true),
+                0.8,
+                false,
+                NameShape::Unrelated,
+                &with_stats(6, 2, 0)
+            ),
             Gate::Apply
         );
         assert_eq!(
-            gate(Some(true), 0.8, false, &with_stats(3, 1, 0)),
+            gate(
+                Some(true),
+                0.8,
+                false,
+                NameShape::Unrelated,
+                &with_stats(3, 1, 0)
+            ),
             Gate::Propose,
             "习惯要够 {TYPE_PAIR_MIN} 笔才算"
         );
         assert_eq!(
-            gate(Some(true), 0.8, false, &with_stats(6, 2, 1)),
+            gate(
+                Some(true),
+                0.8,
+                false,
+                NameShape::Unrelated,
+                &with_stats(6, 2, 1)
+            ),
             Gate::Propose,
             "撤回过的类型对不算合并的习惯"
         );
         // 分开那一边同样：人一直分开的名字，分开的线也低
-        assert_eq!(gate(Some(false), 0.8, false, &none), Gate::Propose);
+        assert_eq!(
+            gate(Some(false), 0.8, false, NameShape::Unrelated, &none),
+            Gate::Propose
+        );
         let kept = Precedents {
             same_pair: vec![p("review.keep")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(false), 0.8, false, &kept), Gate::Apply);
         assert_eq!(
-            gate(Some(false), 0.8, false, &with_stats(1, 8, 0)),
+            gate(Some(false), 0.8, false, NameShape::Unrelated, &kept),
+            Gate::Apply
+        );
+        assert_eq!(
+            gate(
+                Some(false),
+                0.8,
+                false,
+                NameShape::Unrelated,
+                &with_stats(1, 8, 0)
+            ),
             Gate::Apply
         );
     }
@@ -862,13 +1256,133 @@ mod tests {
     }
 
     #[test]
+    fn a_name_has_a_shape() {
+        use NameShape::*;
+        assert_eq!(name_shape("Google", "google"), Identical);
+        assert_eq!(
+            name_shape("The New York Times", "New York Times"),
+            Identical
+        );
+        assert_eq!(name_shape("Google DeepMind", "DeepMind"), Abbreviation);
+        assert_eq!(name_shape("Adam D'Angelo", "D'Angelo"), Abbreviation);
+        assert_eq!(name_shape("Apple Inc.", "Apple"), Suffix);
+        assert_eq!(name_shape("Thrive Capital", "Thrive"), Suffix);
+        assert_eq!(name_shape("Meta Platforms", "Meta"), Suffix);
+        assert_eq!(name_shape("Claude 4 Opus", "Claude"), Version);
+        assert_eq!(name_shape("AlphaFold2", "AlphaFold"), Version);
+        assert_eq!(name_shape("GPT-4.5", "GPT-4"), Version);
+        assert_eq!(name_shape("Lyria 3", "Lyria"), Version);
+        assert_eq!(
+            name_shape(
+                "2024 International Mathematical Olympiad",
+                "International Mathematical Olympiad"
+            ),
+            Version
+        );
+        assert_eq!(name_shape("DeepMind Health", "DeepMind"), Extension);
+        assert_eq!(
+            name_shape("Gemini Robotics-ER", "Gemini Robotics"),
+            Extension
+        );
+        assert_eq!(name_shape("OpenAI Ireland Ltd", "OpenAI"), Phrase);
+        assert_eq!(
+            name_shape("DeepMind Health data sharing", "DeepMind Health"),
+            Phrase
+        );
+        assert_eq!(
+            name_shape("reinforcement learning (RL)", "reinforcement learning"),
+            Identical
+        );
+        assert_eq!(
+            name_shape(
+                "US Securities and Exchange Commission (SEC)",
+                "Securities and Exchange Commission"
+            ),
+            Abbreviation
+        );
+        assert_eq!(
+            name_shape(
+                "United States Department of Defense (DoD)",
+                "Department of Defense"
+            ),
+            Abbreviation
+        );
+        assert_eq!(
+            name_shape("Amazon Web Services (AWS)", "Amazon Web Services"),
+            Identical
+        );
+        assert_eq!(name_shape("Sam Altman's efforts", "Sam Altman"), Phrase);
+        assert_eq!(
+            name_shape("share sale led by Thrive Capital", "Thrive Capital"),
+            Phrase
+        );
+        assert_eq!(
+            name_shape("psychological abuse from Sam Altman", "Sam Altman"),
+            Phrase
+        );
+        assert_eq!(
+            name_shape("MuZero, AlphaStar, AlphaGeometry", "AlphaStar"),
+            Phrase
+        );
+        assert_eq!(
+            name_shape("MuZero, AlphaStar, AlphaGeometry", "MuZero"),
+            Phrase
+        );
+        assert_eq!(name_shape("Time", "Financial Times"), Abbreviation);
+        assert_eq!(
+            name_shape(
+                "C++ Standard Library sorting algorithms",
+                "sorting algorithm"
+            ),
+            Phrase
+        );
+        assert_eq!(name_shape("Timeline", "Time"), Unrelated);
+        assert_eq!(name_shape("Altimeter", "Altimeter Capital"), Suffix);
+    }
+
+    #[test]
+    fn types_conflict_only_across_families() {
+        assert!(!types_conflict(Some("Organization"), Some("Corporation")));
+        assert!(!types_conflict(
+            Some("SoftwareApplication"),
+            Some("CreativeWork")
+        ));
+        assert!(!types_conflict(Some("Organization"), None));
+        assert!(types_conflict(Some("Person"), Some("Organization")));
+        assert!(!types_conflict(Some("City"), Some("Product")));
+        assert!(types_conflict(Some("City"), Some("Corporation")));
+        assert!(types_conflict(Some("ConferenceEvent"), Some("Person")));
+    }
+
+    #[test]
+    fn a_version_or_a_phrase_never_merges_on_its_own() {
+        let none = Precedents::default();
+        assert_eq!(
+            gate(Some(true), 0.99, false, NameShape::Version, &none),
+            Gate::Propose
+        );
+        assert_eq!(
+            gate(Some(true), 0.99, false, NameShape::Phrase, &none),
+            Gate::Propose
+        );
+        assert_eq!(
+            gate(Some(true), 0.99, false, NameShape::Extension, &none),
+            Gate::Apply
+        );
+        assert_eq!(
+            gate(Some(false), 0.9, false, NameShape::Version, &none),
+            Gate::Apply
+        );
+    }
+
+    #[test]
     fn hard_rules_come_first() {
         let pair = Precedents {
             same_pair: vec![p("review.merge")],
             ..Default::default()
         };
         assert_eq!(
-            gate(Some(true), 0.99, true, &pair),
+            gate(Some(true), 0.99, true, NameShape::Unrelated, &pair),
             Gate::Propose,
             "类型冲突不合"
         );
@@ -877,14 +1391,20 @@ mod tests {
             reverts: vec![p("merge.revert")],
             ..Default::default()
         };
-        assert_eq!(gate(Some(true), 0.99, false, &reverted), Gate::Propose);
-        assert_eq!(gate(Some(false), 0.99, false, &reverted), Gate::Propose);
+        assert_eq!(
+            gate(Some(true), 0.99, false, NameShape::Unrelated, &reverted),
+            Gate::Propose
+        );
+        assert_eq!(
+            gate(Some(false), 0.99, false, NameShape::Unrelated, &reverted),
+            Gate::Propose
+        );
         let kept = Precedents {
             same_pair: vec![p("review.keep")],
             ..Default::default()
         };
         assert_eq!(
-            gate(Some(true), 0.99, false, &kept),
+            gate(Some(true), 0.99, false, NameShape::Unrelated, &kept),
             Gate::Propose,
             "人分开过这一对，模型说合，只建议"
         );
@@ -893,7 +1413,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            gate(Some(false), 0.99, false, &merged),
+            gate(Some(false), 0.99, false, NameShape::Unrelated, &merged),
             Gate::Propose,
             "人合过这一对，模型说分，只建议"
         );

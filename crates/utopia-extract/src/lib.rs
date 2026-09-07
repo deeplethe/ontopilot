@@ -531,46 +531,98 @@ struct AdjudicationReply {
 }
 
 /// 构造攒批裁决提示词。保守偏置：证据不足答 unsure（宁分勿合，合并要证据）。
+/// 身份规则（0025 第一轮迭代，2026-09-07）：攒批与工具循环两个提示词共用。
+///
+/// 从 ai-timeline 真值上量出来的四种错：版本并进系列、「X 的 Y」并进 X、列表并进成员、
+/// 子公司并进母公司；以及同名被「类型标签不同」「合作伙伴不同」拆开。每一条都写成
+/// 一句规则加例子，例子取自那份语料。
+pub const IDENTITY_RULES: &str = "\
+A record is one specific thing in the world: a person, an organization, a legal entity, a \
+product, one version of a product, a document, an event, a place, or a concept. Two records \
+are the SAME only when they denote exactly the same thing.\n\
+\n\
+Names:\n\
+- The same proper name, compatible kinds, and no real contradiction: the same thing. Type \
+  labels were assigned by an extractor and are noisy: Organization, Corporation, \
+  ResearchOrganization, NGO and Store can all be one company; SoftwareApplication, \
+  CreativeWork, Intangible, Product, Service, Offer and ComputerLanguage can all be one \
+  product; Place and State can be one state. Only incompatible kinds count as a difference: \
+  a person against a company, a place against a product, an event against an organization. \
+  For identical proper names answer \"different\" only when you can name the contradiction \
+  in one sentence; a type label, a missing fact, fewer facts, or different partners, \
+  products, roles or events is not one. Never treat the absence of facts as a difference.\n\
+- A surname or a first name alone against a full name that contains it, in the same \
+  documents, is the same person unless another person with that name appears: \"Pachocki\" \
+  is \"Jakub Pachocki\", \"Kwon\" is \"Jason Kwon\", \"Nadella\" is \"Satya Nadella\". A person \
+  who moved between two organizations is still one person.\n\
+- A parenthetical acronym, an expanded acronym or a fuller product designation is the same \
+  thing: \"reinforcement learning (RL)\" is \"reinforcement learning\", \"US Federal Trade \
+  Commission (FTC)\" is \"Federal Trade Commission\", \"MI450\" is the \"AMD Instinct MI450\".\n\
+- A name that is the other name with a qualifier removed from the FRONT is usually the same \
+  thing abbreviated: \"Google DeepMind\" and \"DeepMind\", \"Adam D'Angelo\" and \"D'Angelo\", \
+  \"Meta Platforms\" and \"Meta\", \"Altimeter Capital\" and \"Altimeter\", \"The New York \
+  Times\" and \"New York Times\", \"Apple Inc.\" and \"Apple\". Documents drop the qualifier \
+  after first mention.\n\
+- A name that is the other name with something ADDED AT THE END is a different, more \
+  specific thing: a version or edition (\"Claude 4 Opus\" is not \"Claude\", \"AlphaFold2\" is \
+  not \"AlphaFold\", \"Genie 2\" is not \"Genie\", \"GPT-4.5\" is not \"GPT-4\", \"2024 \
+  International Mathematical Olympiad\" is not \"International Mathematical Olympiad\"), a \
+  variant or tier (\"Gemini Robotics-ER\" is not \"Gemini Robotics\", \"Claude 3 Haiku\" is \
+  not \"Haiku\"), a division, subsidiary or legal entity (\"DeepMind Health\" is not \
+  \"DeepMind\", \"OpenAI Ireland Ltd\" is not \"OpenAI\", \"Microsoft AI\" is not \
+  \"Microsoft\"), a project, programme, team, app or component. Never merge a version into \
+  its family or a part into its whole.\n\
+- A phrase that merely contains a name is not that name: \"Sam Altman's efforts\", \
+  \"psychological abuse from Sam Altman\", \"share sale led by Thrive Capital\", \"leaked \
+  letter from the National Data Guardian\", \"ChatGPT played a role in the campaign\", \"a \
+  consistent pattern of lying\". These describe something about the thing; they are not the \
+  thing.\n\
+- A list of names (\"MuZero, AlphaStar, AlphaGeometry\") is not any of its members.\n\
+- A common noun or generic phrase (\"employees\", \"users\", \"lawsuit\", \"investors\", \
+  \"event\", \"safety\") is not a proper name. Two such records are the same only when their \
+  facts show they are one specific instance; usually they are different.\n\
+- When the facts of either record describe ownership, control, a subsidiary, a holding or \
+  a parent relation between the two names, or show one of them as one legal entity among \
+  several in a group (\"OpenAI, Inc. controls the for-profit company\", \"OpenAI GP LLC \
+  controls OpenAI LP\"), they are two entities even if one name is the other plus a \
+  corporate suffix. A group and its legal entities are different records.\n\
+\n\
+Facts:\n\
+- Different facts are not contradictory facts. One company has many partnerships, investors, \
+  lawsuits and contracts; a person changes jobs; one product is praised in one document and \
+  criticised in another. A contradiction is two facts that cannot both hold of one thing at \
+  once: two different founders, two headquarters at the same time, two different birth dates, \
+  or affiliations that overlap in time and exclude each other. Only a contradiction is \
+  evidence of difference.\n\
+- A record with no facts contributes nothing; the name and the other record decide.";
+
 pub fn build_adjudication_messages(pairs: &[AdjudicationPair]) -> Vec<ChatMessage> {
-    let system = "You are an entity-resolution adjudicator for a knowledge graph. \
-        For each numbered pair, decide whether the two records refer to the SAME real-world \
-        entity or are namesakes (different entities that share a name).\n\
-        \n\
-        Judge by the facts attached to each record: employer/affiliation, role, time ranges, \
-        and connected entities. Identical names alone are NEVER sufficient evidence of sameness. \
-        Contradictory affiliations in overlapping time periods indicate different entities \
-        (but people do change jobs — non-overlapping periods can belong to one person).\n\
-        \n\
-        One name containing the other is a different case, and the rule above does not apply \
-        to it: \"星云科技上海研究院\" against \"上海研究院\", \"Nebula Technologies Inc.\" \
-        against \"Nebula\". Documents drop the qualifier after first mention, so the shorter \
-        form is usually the longer one abbreviated — treat the containment as evidence FOR \
-        sameness and let the facts settle it. Shared people, parent or location confirm one \
-        entity; a different parent or conflicting leadership means the shorter name belongs \
-        to something else.\n\
-        Abbreviation removes a qualifier from the FRONT. It never adds a noun or a \
-        prepositional phrase at the end, so those are different entities however much text \
-        they share: \"the operator library for the Canghai Platform\" is not the Canghai \
-        Platform, \"Qiming X7 programme\" is not the Qiming X7, and \"沧海平台项目\" is not \
-        \"沧海平台\" — a project, a programme, a team or a component is its own record.\n\
-        \n\
-        Some pairs carry precedents: decisions people made in this same knowledge base on \
-        these names, or on pairs of the same two types. Treat them as how the owners of this \
-        base want such cases judged. Follow a precedent on the same pair unless the facts of \
-        this pair clearly differ from it; when precedents disagree with each other, answer \
-        \"unsure\". A precedent never overrides a contradiction in the facts.\n\
-        \n\
-        Output exactly one JSON object and nothing else:\n\
-        {\"verdicts\":[{\"i\":0,\"verdict\":\"same|different|unsure\",\"confidence\":0.9,\
-        \"why\":\"one sentence\"}]}\n\
-        \n\
-        Rules:\n\
-        1. One verdict per pair, using the pair's number as \"i\".\n\
-        2. confidence in 0~1.\n\
-        3. \"why\" is one short sentence; when a precedent decided it, say which.\n\
-        4. Be conservative: if the evidence is insufficient to decide, answer \"unsure\" — \
-           a wrong merge is far more damaging than leaving two records separate."
-        .to_string();
+    let system = format!(
+        "You are an entity-resolution adjudicator for a knowledge graph. For each numbered \
+         pair, decide whether the two records refer to the SAME real-world thing or are two \
+         things that share a name.\n\
+         \n\
+         {IDENTITY_RULES}\n\
+         \n\
+         Some pairs carry precedents: decisions people made in this same knowledge base on \
+         these names, or on pairs of the same two types. Treat them as how the owners of this \
+         base want such cases judged. Follow a precedent on the same pair unless the facts of \
+         this pair clearly differ from it; when precedents disagree with each other, answer \
+         \"unsure\". A precedent never overrides a contradiction in the facts.\n\
+         \n\
+         Output exactly one JSON object and nothing else:\n\
+         {{\"verdicts\":[{{\"i\":0,\"verdict\":\"same|different|unsure\",\"confidence\":0.9,\
+         \"why\":\"one sentence\"}}]}}\n\
+         \n\
+         Rules:\n\
+         1. One verdict per pair, using the pair's number as \"i\".\n\
+         2. confidence in 0~1.\n\
+         3. \"why\" is one short sentence; when a precedent decided it, say which.\n\
+         4. A wrong merge is far more damaging than leaving two records separate: answer \
+            \"same\" only when the rules above make it so; when a rule says two things, say \
+            \"different\" with confidence, not \"unsure\"; \"unsure\" is for evidence that \
+            genuinely points both ways."
+    );
 
     let mut user = String::new();
     for (i, p) in pairs.iter().enumerate() {

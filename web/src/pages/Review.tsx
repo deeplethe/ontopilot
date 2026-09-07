@@ -110,12 +110,15 @@ function typesDiffer(item: ReviewItem): boolean {
 function DuplicateCard({
   item,
   busy,
+  locked,
   picked,
   onPick,
   onDecide,
 }: {
   item: ReviewItem;
   busy: boolean;
+  /** agent 正在裁这一对（0025）：这几分钟里人不能动它，接口也会拒绝 */
+  locked: boolean;
   /** 批量选中（#428）：勾在卡片左上，选了就跟着上面的批量按钮走 */
   picked: boolean;
   onPick: (picked: boolean) => void;
@@ -129,7 +132,7 @@ function DuplicateCard({
         <Checkbox
           className="shrink-0 self-start"
           checked={picked}
-          disabled={busy}
+          disabled={busy || locked}
           onChange={(e) => onPick(e.target.checked)}
           label={<span className="sr-only">{S.review.pickPair}</span>}
         />
@@ -138,13 +141,20 @@ function DuplicateCard({
         <SideCard side={item.right} />
       </div>
       <div className="mt-3 pt-3 flex items-center gap-3 border-t border-line">
-        <span
-          className={`u-chip ${item.stage === "human" ? "u-chip-warn" : "u-chip-neutral"}`}
-        >
-          {item.stage === "human"
-            ? S.review.stageHuman
-            : S.review.stageAdjudicating}
-        </span>
+        {locked ? (
+          <span className="u-chip u-chip-info">
+            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warn animate-pulse" />
+            {S.review.agentDeciding}
+          </span>
+        ) : (
+          <span
+            className={`u-chip ${item.stage === "human" ? "u-chip-warn" : "u-chip-neutral"}`}
+          >
+            {item.stage === "human"
+              ? S.review.stageHuman
+              : S.review.stageAdjudicating}
+          </span>
+        )}
         {typesDiffer(item) && (
           <Chip tone="warn" title={S.review.typesDifferHint}>
             {S.review.typesDiffer(
@@ -174,13 +184,13 @@ function DuplicateCard({
         )}
         <div className="ml-auto flex gap-2 shrink-0">
           <Button variant="secondary" size="sm"
-            disabled={busy}
+            disabled={busy || locked}
             onClick={() => onDecide("keep")}
           >
             {S.review.keep}
           </Button>
           <Button variant="primary" size="sm"
-            disabled={busy}
+            disabled={busy || locked}
             onClick={() => onDecide("merge")}
           >
             {S.review.merge}
@@ -1214,6 +1224,10 @@ export function Review() {
   const asDefects = () => rows as OntologyDefect[];
   const asMerges = () => rows as MergeLog[];
   const asAgent = () => rows as AgentDecision[];
+  // agent 正在裁的一对（0025）：任务在跑、这一对标着 adjudicating。批量选页时跳过它们
+  const lockedByAgent = (item: ReviewItem) =>
+    !!c?.agent_running && item.stage === "adjudicating";
+  const selectable = () => asDuplicates().filter((d) => !lockedByAgent(d));
   const queueEmpty = QUEUE_ORDER.every((k) => counts[k] === 0);
 
   // 没带 ?queue= 进来就落在总览上——从前是「第一个非空队列」，那等于替人
@@ -1321,6 +1335,7 @@ export function Review() {
           <RailItem
             active={active === "agent"}
             count={counts.agent}
+            dot={c?.agent_running ? "bg-warn animate-pulse" : undefined}
             onClick={() => select("agent")}
           >
             {S.review.railAgent}
@@ -1438,13 +1453,13 @@ export function Review() {
                     <Checkbox
                       className="ml-auto"
                       checked={
-                        asDuplicates().length > 0 &&
-                        asDuplicates().every((d) => picked.has(d.id))
+                        selectable().length > 0 &&
+                        selectable().every((d) => picked.has(d.id))
                       }
                       onChange={(e) =>
                         setPicked(
                           e.target.checked
-                            ? new Set(asDuplicates().map((d) => d.id))
+                            ? new Set(selectable().map((d) => d.id))
                             : new Set(),
                         )
                       }
@@ -1487,6 +1502,7 @@ export function Review() {
                     <DuplicateCard
                       key={item.id}
                       item={item}
+                      locked={lockedByAgent(item)}
                       picked={picked.has(item.id)}
                       onPick={(on) =>
                         setPicked((prev) => {

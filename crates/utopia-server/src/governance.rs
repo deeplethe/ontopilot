@@ -17,8 +17,9 @@
 use crate::llm_util;
 use crate::state::AppState;
 use chrono::{Duration, Utc};
+use futures_util::future::join_all;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use utopia_core::models::{LlmSettings, ReviewItem, Role};
 use utopia_core::AppError;
 use utopia_extract::governor::{self, Step};
@@ -115,87 +116,213 @@ pub async fn govern(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
         settings: &settings,
     };
 
-    for _ in 0..MAX_ROUNDS {
-        // 关闭后队列自动终止：每一簇之前看一眼
-        if !utopia_store::kbs::get(&state.pool, kb_id).await?.governance {
-            tracing::info!(%kb_id, "治理：开关已关，停在这里");
-            return Ok(());
-        }
-        let Some(head) = gov::queue(&state.pool, kb_id, 1).await?.into_iter().next() else {
-            return Ok(());
-        };
-        let mut items = vec![head];
-        let siblings = gov::cluster_of(&state.pool, kb_id, &items[0], BATCH_SIZE - 1).await?;
-        items.extend(siblings);
-
-        let mut precedents = Vec::with_capacity(items.len());
-        for item in &items {
-            precedents.push(gov::precedents_for(&state.pool, kb_id, item).await?);
-        }
-        let pairs: Vec<utopia_extract::AdjudicationPair> = items
-            .iter()
-            .zip(&precedents)
-            .map(|(item, p)| pair_of(item, p))
-            .collect();
-
-        // 人定过的直接照办，不问模型；剩下的才攒批
-        let mut asked: Vec<usize> = Vec::new();
-        for (idx, item) in items.iter().enumerate() {
-            let prior =
-                gov::decided_before(&state.pool, kb_id, item.left.id, item.right.id).await?;
-            match gov::settled_by_people(&item.left.name, &item.right.name, &precedents[idx], prior)
-            {
-                Some(merged) => {
-                    settle(
-                        &ctx,
-                        item,
-                        &pairs[idx],
-                        &precedents[idx],
-                        Look::from_people(merged),
-                    )
-                    .await?
-                }
-                None => asked.push(idx),
-            }
-        }
-        if !asked.is_empty() {
-            let batch: Vec<utopia_extract::AdjudicationPair> =
-                asked.iter().map(|&i| pairs[i].clone()).collect();
-            let messages = utopia_extract::build_adjudication_messages(&batch);
-            let reply = {
-                let _permit = permit(&ctx).await;
-                // 调用/解析失败 → 任务按退避重试；重试耗尽后这些对留在队列里，人照样能裁
-                client.chat(&messages).await?
-            };
-            let verdicts = utopia_extract::parse_adjudication(&reply)?;
-            let by_i: HashMap<usize, &utopia_extract::AdjudicationVerdict> =
-                verdicts.iter().map(|v| (v.i, v)).collect();
-
-            for (n, &idx) in asked.iter().enumerate() {
-                let look = match by_i.get(&n) {
-                    Some(v) => Look::from_batch(
-                        match v.verdict.as_str() {
-                            "same" => Some(true),
-                            "different" => Some(false),
-                            _ => None,
-                        },
-                        v.confidence.unwrap_or(0.5).clamp(0.0, 1.0),
-                        v.why.clone(),
-                    ),
-                    None => Look::from_batch(None, 0.0, None),
-                };
-                settle(&ctx, &items[idx], &pairs[idx], &precedents[idx], look).await?;
-            }
-        }
-        state.emit_review(kb_id);
+    // 上一次任务半路留下的锁先放掉；跑完（不管怎么结束的）再放一次
+    gov::release_locks(&state.pool, kb_id).await?;
+    let outcome = rounds(&ctx).await;
+    if let Err(e) = gov::release_locks(&state.pool, kb_id).await {
+        tracing::warn!(%kb_id, error = %e, "治理：放锁失败");
     }
+    state.emit_review(kb_id);
+    let more = outcome?;
 
     // 轮数用完还有积压：再排一个，下一轮从队头接着走
-    if !gov::queue(&state.pool, kb_id, 1).await?.is_empty() {
+    if more {
         utopia_store::jobs::enqueue_unless_queued(&state.pool, "govern", json!({ "kb_id": kb_id }))
             .await?;
     }
     Ok(())
+}
+
+/// 一轮里并行裁几簇。只有互不共享实体、也不共享名字的簇才能同一轮：一簇里的合并
+/// 会改另一簇看到的东西。模型那边的并发由 llm_util 的闸门限，这里只决定一次挂几个
+const CLUSTERS_PER_ROUND: usize = 3;
+/// 挑簇时从队头往后看多少对
+const HEADS_TO_SCAN: i64 = 60;
+
+/// 一簇：等人的对、各自的先例、给模型看的样子、已经有的看法（人定过的快路）
+struct Cluster {
+    items: Vec<ReviewItem>,
+    precedents: Vec<Precedents>,
+    pairs: Vec<utopia_extract::AdjudicationPair>,
+    looks: Vec<Option<Look>>,
+}
+
+/// 一轮轮走到队列空、开关关或轮数用完。回 true = 轮数用完还有积压
+async fn rounds(ctx: &Ctx<'_>) -> anyhow::Result<bool> {
+    let state = ctx.state;
+    let kb_id = ctx.kb_id;
+    let pool = &state.pool;
+    for _ in 0..MAX_ROUNDS {
+        // 关闭后队列自动终止：每一轮之前看一眼
+        if !utopia_store::kbs::get(pool, kb_id).await?.governance {
+            tracing::info!(%kb_id, "治理：开关已关，停在这里");
+            return Ok(false);
+        }
+
+        // 从队头起挑互不重叠的簇，最多 K 簇；和已取的簇有交集的头留到下一轮
+        let heads = gov::queue(pool, kb_id, HEADS_TO_SCAN).await?;
+        if heads.is_empty() {
+            return Ok(false);
+        }
+        let mut clusters: Vec<Vec<ReviewItem>> = Vec::new();
+        let mut taken_ids: HashSet<Uuid> = HashSet::new();
+        let mut taken_entities: HashSet<Uuid> = HashSet::new();
+        let mut taken_names: HashSet<String> = HashSet::new();
+        for head in heads {
+            if clusters.len() >= CLUSTERS_PER_ROUND {
+                break;
+            }
+            if taken_ids.contains(&head.id) {
+                continue;
+            }
+            let mut items = vec![head];
+            let siblings = gov::cluster_of(pool, kb_id, &items[0], BATCH_SIZE - 1).await?;
+            items.extend(siblings);
+            let overlaps = items.iter().any(|i| {
+                taken_ids.contains(&i.id)
+                    || taken_entities.contains(&i.left.id)
+                    || taken_entities.contains(&i.right.id)
+                    || taken_names.contains(&i.left.name.to_lowercase())
+                    || taken_names.contains(&i.right.name.to_lowercase())
+            });
+            if overlaps {
+                continue;
+            }
+            for i in &items {
+                taken_ids.insert(i.id);
+                taken_entities.insert(i.left.id);
+                taken_entities.insert(i.right.id);
+                taken_names.insert(i.left.name.to_lowercase());
+                taken_names.insert(i.right.name.to_lowercase());
+            }
+            clusters.push(items);
+        }
+        // 这几簇归 agent 了：人在这几分钟里不能裁它们，界面上看得见
+        let ids: Vec<Uuid> = taken_ids.into_iter().collect();
+        gov::lock(pool, kb_id, &ids).await?;
+        state.emit_review(kb_id);
+
+        // 先例与快路（库操作，顺序做）
+        let mut round: Vec<Cluster> = Vec::with_capacity(clusters.len());
+        for items in clusters {
+            let mut precedents = Vec::with_capacity(items.len());
+            for item in &items {
+                precedents.push(gov::precedents_for(pool, kb_id, item).await?);
+            }
+            let pairs: Vec<utopia_extract::AdjudicationPair> = items
+                .iter()
+                .zip(&precedents)
+                .map(|(item, p)| pair_of(item, p))
+                .collect();
+            let mut looks = Vec::with_capacity(items.len());
+            for (idx, item) in items.iter().enumerate() {
+                let prior = gov::decided_before(pool, kb_id, item.left.id, item.right.id).await?;
+                looks.push(
+                    gov::settled_by_people(
+                        &item.left.name,
+                        &item.right.name,
+                        &precedents[idx],
+                        prior,
+                    )
+                    .map(Look::from_people),
+                );
+            }
+            round.push(Cluster {
+                items,
+                precedents,
+                pairs,
+                looks,
+            });
+        }
+
+        // 攒批：每簇一次调用，几簇同时挂。任何一次失败整轮失败，任务按退避重试；
+        // 重试耗尽后这些对留在队列里，人照样能裁
+        let batches = join_all(round.iter().map(|c| batch_looks(ctx, c))).await;
+        for (c, looks) in round.iter_mut().zip(batches) {
+            for (idx, look) in looks? {
+                c.looks[idx] = Some(look);
+            }
+        }
+
+        // 第二层：判不定的、同名却说不同的，带工具再看一遍——几对同时看，
+        // 模型那边由闸门限并发
+        let mut second: Vec<(usize, usize)> = Vec::new();
+        for (ci, c) in round.iter().enumerate() {
+            for (idx, look) in c.looks.iter().enumerate() {
+                if let Some(look) = look {
+                    if wants_second_look(&c.items[idx], &c.precedents[idx], look) {
+                        second.push((ci, idx));
+                    }
+                }
+            }
+        }
+        let seen = join_all(second.iter().map(|&(ci, idx)| {
+            let c = &round[ci];
+            second_look(
+                ctx,
+                &c.items[idx],
+                &c.pairs[idx],
+                c.looks[idx].as_ref().expect("a look"),
+            )
+        }))
+        .await;
+        for (&(ci, idx), look) in second.iter().zip(seen) {
+            if let Some(look) = look {
+                round[ci].looks[idx] = Some(look);
+            }
+        }
+
+        // 落地：按簇、按对顺序写库——连锁合并要按顺序
+        for c in round.iter_mut() {
+            for idx in 0..c.items.len() {
+                let look = c.looks[idx]
+                    .take()
+                    .unwrap_or_else(|| Look::from_batch(None, 0.0, None));
+                apply(ctx, &c.items[idx], &c.precedents[idx], look).await?;
+            }
+        }
+        state.emit_review(kb_id);
+    }
+    Ok(!gov::queue(pool, kb_id, 1).await?.is_empty())
+}
+
+/// 一簇的攒批调用：人定过的不问，其余一次问完；回每对的看法
+async fn batch_looks(ctx: &Ctx<'_>, c: &Cluster) -> anyhow::Result<Vec<(usize, Look)>> {
+    let asked: Vec<usize> = (0..c.items.len())
+        .filter(|&i| c.looks[i].is_none())
+        .collect();
+    if asked.is_empty() {
+        return Ok(Vec::new());
+    }
+    let batch: Vec<utopia_extract::AdjudicationPair> =
+        asked.iter().map(|&i| c.pairs[i].clone()).collect();
+    let messages = utopia_extract::build_adjudication_messages(&batch);
+    let reply = {
+        let _permit = permit(ctx).await;
+        ctx.client.chat(&messages).await?
+    };
+    let verdicts = utopia_extract::parse_adjudication(&reply)?;
+    let by_i: HashMap<usize, &utopia_extract::AdjudicationVerdict> =
+        verdicts.iter().map(|v| (v.i, v)).collect();
+    Ok(asked
+        .iter()
+        .enumerate()
+        .map(|(n, &idx)| {
+            let look = match by_i.get(&n) {
+                Some(v) => Look::from_batch(
+                    match v.verdict.as_str() {
+                        "same" => Some(true),
+                        "different" => Some(false),
+                        _ => None,
+                    },
+                    v.confidence.unwrap_or(0.5).clamp(0.0, 1.0),
+                    v.why.clone(),
+                ),
+                None => Look::from_batch(None, 0.0, None),
+            };
+            (idx, look)
+        })
+        .collect())
 }
 
 async fn permit(ctx: &Ctx<'_>) -> Option<tokio::sync::OwnedSemaphorePermit> {
@@ -206,9 +333,31 @@ async fn permit(ctx: &Ctx<'_>) -> Option<tokio::sync::OwnedSemaphorePermit> {
 }
 
 fn pair_of(item: &ReviewItem, p: &Precedents) -> utopia_extract::AdjudicationPair {
+    // 同名且大类不冲突的对：两侧写同一个类型标签。抽取器给同一家公司的两条记录
+    // Store 与 Organization，模型就拿这个当「不同」的理由——把拐杖拿掉，让它看事实
+    // 只在两侧都归得到同一个大类（人、组织、地点、事件）时才共用：Periodical 对 Service、
+    // VideoGame 对没类型，那些标签是有信息的，留着
+    let same_kind = gov::name_shape(&item.left.name, &item.right.name) == gov::NameShape::Identical
+        && matches!(
+            (
+                item.left.type_label.as_deref().and_then(gov::type_family),
+                item.right.type_label.as_deref().and_then(gov::type_family),
+            ),
+            (Some(a), Some(b)) if a == b
+        );
+    let shared = item
+        .left
+        .type_label
+        .clone()
+        .or_else(|| item.right.type_label.clone())
+        .unwrap_or_else(|| "untyped".into());
     let side = |s: &utopia_core::models::ReviewSide| utopia_extract::AdjudicationSide {
         name: s.name.clone(),
-        type_label: s.type_label.clone().unwrap_or_else(|| "untyped".into()),
+        type_label: if same_kind {
+            shared.clone()
+        } else {
+            s.type_label.clone().unwrap_or_else(|| "untyped".into())
+        },
         facts: s.top_facts.clone(),
     };
     utopia_extract::AdjudicationPair {
@@ -218,40 +367,63 @@ fn pair_of(item: &ReviewItem, p: &Precedents) -> utopia_extract::AdjudicationPai
     }
 }
 
-/// 一对的判决落地：第一层判不定的先进第二层再看；过闸就动手并记 applied，
-/// 否则转人工并记 proposed（带着问题与轨迹）
-async fn settle(
+/// 第一层没定（没判决、置信度不到线），或者同名、大类不冲突、模型却说不同——那是它
+/// 最爱错的一种：都让第二层带着全部事实与原文再看一遍。硬规则拦下的不进：再看也不会改规则
+fn wants_second_look(item: &ReviewItem, p: &Precedents, look: &Look) -> bool {
+    let types_conflict = gov::types_conflict(
+        item.left.type_label.as_deref(),
+        item.right.type_label.as_deref(),
+    );
+    let shape = gov::name_shape(&item.left.name, &item.right.name);
+    let doubted_split = shape == gov::NameShape::Identical
+        && !types_conflict
+        && look.same == Some(false)
+        && look.calls == 0;
+    ((gov::gate(look.same, look.conf, types_conflict, shape, p) == Gate::Propose
+        && look.uncertain())
+        || doubted_split)
+        && p.reverts.is_empty()
+}
+
+/// 第二层看一对：预算够就看，看完的看法替掉第一层的；看不成（预算用完、模型出错）回 None，
+/// 照第一层的看法办
+async fn second_look(
     ctx: &Ctx<'_>,
     item: &ReviewItem,
     pair: &utopia_extract::AdjudicationPair,
-    p: &Precedents,
-    mut look: Look,
-) -> anyhow::Result<()> {
-    let pool = &ctx.state.pool;
+    look: &Look,
+) -> Option<Look> {
     let kb_id = ctx.kb_id;
-    let types_conflict = matches!(
-        (&item.left.type_label, &item.right.type_label),
-        (Some(a), Some(b)) if a != b
-    );
-
-    // 第二层：只接判不定的，硬规则拦下的不进。预算用完了照第一刀写建议
-    if gov::gate(look.same, look.conf, types_conflict, p) == Gate::Propose
-        && look.uncertain()
-        && p.reverts.is_empty()
-    {
-        let spent = gov::loop_calls_today(pool, kb_id).await?;
-        if spent < LOOP_DAILY_CALLS {
-            match investigate(ctx, item, pair, &look).await {
-                Ok(l) => look = l,
-                // 第二层失败不拖累第一层：这一对照第一层的看法写成建议
-                Err(e) => {
-                    tracing::warn!(%kb_id, review = %item.id, error = %e, "治理：第二层没跑完")
-                }
-            }
-        } else {
-            tracing::info!(%kb_id, spent, "治理：今天的循环预算用完，判不定的只写建议");
+    let spent = match gov::loop_calls_today(&ctx.state.pool, kb_id).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!(%kb_id, error = %e, "治理：数循环预算失败");
+            return None;
+        }
+    };
+    if spent >= LOOP_DAILY_CALLS {
+        tracing::info!(%kb_id, spent, "治理：今天的循环预算用完，判不定的只写建议");
+        return None;
+    }
+    match investigate(ctx, item, pair, look).await {
+        Ok(l) => Some(l),
+        // 第二层失败不拖累第一层：这一对照第一层的看法写成建议
+        Err(e) => {
+            tracing::warn!(%kb_id, review = %item.id, error = %e, "治理：第二层没跑完");
+            None
         }
     }
+}
+
+/// 一对的判决落地：过闸就动手并记 applied，否则转人工并记 proposed（带着问题与轨迹）
+async fn apply(ctx: &Ctx<'_>, item: &ReviewItem, p: &Precedents, look: Look) -> anyhow::Result<()> {
+    let pool = &ctx.state.pool;
+    let kb_id = ctx.kb_id;
+    let types_conflict = gov::types_conflict(
+        item.left.type_label.as_deref(),
+        item.right.type_label.as_deref(),
+    );
+    let shape = gov::name_shape(&item.left.name, &item.right.name);
 
     let action = look.action();
     let precedents = gov::precedents_json(p);
@@ -270,7 +442,7 @@ async fn settle(
         calls: look.calls,
     };
 
-    match gov::gate(look.same, look.conf, types_conflict, p) {
+    match gov::gate(look.same, look.conf, types_conflict, shape, p) {
         Gate::Apply if look.same == Some(true) => {
             let reason = format!("governed|{conf:.2}");
             // 同簇连锁：前一对合完，这一对的一侧可能已经并进了别人——合活着的那个
