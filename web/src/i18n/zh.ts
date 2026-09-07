@@ -1675,6 +1675,8 @@ export const zh: Strings = {
     reactivate: "恢复",
     roleLabel: "角色",
     filterAll: "全部用户",
+    filterAllRoles: "全部角色",
+    statusLabel: "状态",
     filterActive: "在用",
     filterDeactivated: "已停用",
     deactivateConfirm: (name: string) =>

@@ -1911,6 +1911,8 @@ export const en = {
     reactivate: "Restore",
     roleLabel: "Role",
     filterAll: "All users",
+    filterAllRoles: "All roles",
+    statusLabel: "Status",
     filterActive: "Active",
     filterDeactivated: "Deactivated",
     deactivateConfirm: (name: string) =>
