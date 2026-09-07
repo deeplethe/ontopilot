@@ -200,13 +200,14 @@ export function KbSettings() {
       </aside>
 
       <main className="flex-1 min-w-0 overflow-y-auto u-scroll px-8 py-6">
-        <div>
+        {/* 设置是读一列字段，不是铺一张桌子：内容居中限宽，行长不随窗口拉长 */}
+        <div className="mx-auto w-full max-w-3xl">
           {/* 不缀库名：顶栏切换器已标明当前库 */}
           <PageHeader title={S.kbset.title} />
 
           {section === "general" && (
-            <div className="glass rounded-lg p-4">
-              <div className="max-w-xl space-y-3">
+            <div>
+              <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className={lbl}>{S.settings.kbs.name}</label>

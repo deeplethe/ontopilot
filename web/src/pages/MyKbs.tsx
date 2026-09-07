@@ -47,11 +47,14 @@ export function MyKbs() {
     <div className="px-8 py-6">
       <PageHeader title={S.account.kbsTitle} />
 
-      <div className="space-y-3">
+      {/* 一个面板装多行，不是一行一张卡片（DESIGN.md 6）。卡片阵列会让页面上
+          平铺七八个盒子、层级全平，而且每张卡片既是面板又是可点对象——面板于是
+          需要悬停反馈，可槽本来不该响应指针。收成一个槽之后，悬停归行所有 */}
+      <div className="glass rounded-lg divide-y divide-line">
         {rows.map((row) => {
           const canManage = row.my_role === "admin" || row.my_role === "owner";
           return (
-            <div key={row.kb.id} className="glass glass-hover rounded-lg px-6 py-4">
+            <div key={row.kb.id} className="px-6 py-4">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

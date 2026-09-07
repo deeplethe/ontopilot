@@ -95,9 +95,12 @@
   --u-line: rgba(255, 255, 255, 0.08);
   --u-line-strong: rgba(255, 255, 255, 0.14);
   /* 三档面：静止 / 指针停上 / 选中。页面里所有 white/N 都归到这三档 */
-  --u-surface: rgba(255, 255, 255, 0.04);
-  --u-surface-2: rgba(255, 255, 255, 0.06);
-  --u-surface-3: rgba(255, 255, 255, 0.1);
+  /* 面板只比背景亮一丁点：边界主要由 --u-line 那条线交代，填充不负责撑出
+     一个盒子。三档一起收窄，静止→悬停仍是 5 级灰，跳得不比从前明显。
+     悬停与选中属于**行**，不属于面板——面板是槽，槽不响应指针（DESIGN.md 6） */
+  --u-surface: rgba(255, 255, 255, 0.025);
+  --u-surface-2: rgba(255, 255, 255, 0.045);
+  --u-surface-3: rgba(255, 255, 255, 0.08);
   /* 键盘焦点环：够亮，因为它是键盘用户唯一的"我在哪" */
   --u-ring: rgba(255, 255, 255, 0.6);
   /* 凹下去的一格：代码块、令牌那种"这是原样内容"的底 */
@@ -379,12 +382,9 @@ body::before {
   }
 }
 
-.glass-hover {
-  transition: border-color 0.15s;
-}
-.glass-hover:hover {
-  border-color: var(--u-line-strong);
-}
+/* `.glass-hover` 去了（DESIGN.md 6）：用它的五处都是「一行一张卡片」，
+   于是每张卡片既是面板又是可点对象，槽才需要了指针反馈。收成一个面板 +
+   多行之后，悬停归行（`hover:bg-surface-2`），面板不再响应指针。 */
 
 @layer components {
 /* ---- form controls ---- */

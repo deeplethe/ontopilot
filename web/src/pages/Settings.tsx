@@ -159,8 +159,8 @@ function DeploymentAdmin() {
   const open = dep.data?.open_registration ?? true;
 
   return (
-    <div className="glass rounded-lg p-4">
-      <div className="max-w-xl space-y-4">
+    <div>
+      <div className="space-y-4">
         <Checkbox
           checked={open}
           disabled={dep.isPending || save.isPending}
@@ -779,7 +779,8 @@ export function Settings() {
 
   return (
     <div className="h-full overflow-y-auto u-scroll px-8 py-6">
-      <div>
+      {/* 同 KbSettings：设置是读一列字段，居中限宽，行长不随窗口拉长 */}
+      <div className="mx-auto w-full max-w-3xl">
         <PageHeader className="mb-3" title={S.settings.title} />
         <Segmented
           className="mb-6 w-fit"

@@ -1474,6 +1474,10 @@ export function ExpandCard({
   );
 }
 
+/** 面板内一行的悬停。**只给状态，不给布局**——每种列表的行高与内边距不同，
+    而悬停是同一件事。面板本身不响应指针（DESIGN.md 6），悬停归行所有。 */
+export const ROW_HOVER = "transition-colors duration-fast hover:bg-surface-2";
+
 /** 复合行的外壳：一行里有两个按钮时不能是 Row（按钮里不能嵌按钮），
     外层 div 用它拿到 hover 与 group */
 export const HOVER_ROW =

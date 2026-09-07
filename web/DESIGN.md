@@ -1,4 +1,4 @@
-# The interface, in five rules
+# The interface, in six rules
 
 Utopia's chrome is neutral dark glass: Geist for text, Marcellus for the wordmark, no hue in the chrome, colour reserved for data and for three semantic states. That language is written down in `web/src/styles.css` and has been since the first screen. What was missing was enforcement — a page could pick any of twelve pixel sizes, any of fourteen paddings, any grey. These rules close that gap. They are checked by `pnpm guard` in CI; a page that breaks them does not merge.
 
@@ -33,6 +33,20 @@ Glass is a surface treatment, not a colour: `glass` for a panel in peripheral vi
 Hover, focus, active, disabled and motion are defined once, in `web/src/ui/`, and a page never writes `hover:`, `focus:`, `transition` or `duration-`. Every control shows a visible focus ring for keyboard users (`--u-ring`); every disabled control is `opacity-40` with `cursor-not-allowed`; every hover settles in `--u-fast` (120 ms) and leaves in `--u-base` (260 ms). A page that needs a control that does not exist adds it to `ui/`, with all five states, and then uses it.
 
 Concretely, a page renders no raw `<button>`, `<input>`, `<textarea>` or `<select>`; it renders `Button`, `IconButton`, `Input`, `Textarea`, `NativeSelect`, `Dropdown`, `SearchSelect`. Confirmation is `DangerConfirm` or `Dialog`, never `window.confirm`. A hint on hover is `Tooltip`, not a bare `title=` on a span (a `title` on a button that already has a visible label is fine).
+
+## 6. A panel is a slot for content
+
+The first five rules say what a panel looks like. This one says when there is one.
+
+A panel holds **several things of the same kind** — the rows of a table, the items of a list. A group of form fields, a block of prose, the only content in a page's main region: no panel. The page is already their container, and a border, a fill and a radius each claim "this is an object separate from its surroundings" — spent on a single object, they say nothing and flatten the hierarchy of everything around them.
+
+A list is **one panel with rows**, not one card per item. Cards per item put seven or eight boxes on a page at the same level, and each card ends up being both the panel and the clickable thing — which is how a slot acquires a hover state it has no business having. With rows, hover belongs to the row (`hover:bg-surface-2`, already the pattern in `ui/table.tsx`) and the panel never responds to the pointer.
+
+Controls that operate on a panel's contents — filter, search, sort, pagination — sit **outside** it, in the page header or above it. They are not content, and when a filter empties the list the panel has to become an empty state without taking the only way to change the filter with it.
+
+Settings and other read-a-column-of-fields pages are centred and width-limited (`mx-auto max-w-3xl`), not stretched to the window.
+
+Exempt: the floating panels on Graph and Ontology. Those are `glass-strong` surfaces over a canvas, and their job is to hold the canvas down so they can be read — a different problem from this one.
 
 ## How this is enforced
 

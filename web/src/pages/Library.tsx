@@ -718,7 +718,9 @@ export function Library() {
             <RunsPanel kbId={kb.id} sourceId={selectedSource.id} />
           ) : (
           <>
-          <div className={`glass rounded-lg glass-hover ${dragging ? "u-highlight" : ""}`}>
+          {/* 这块是拖放区，不是可点对象：真反馈是 dragging 时的 u-highlight。
+              常态下指针经过时亮一下边框，等于对一个不接受点击的槽做交互暗示 */}
+          <div className={`glass rounded-lg ${dragging ? "u-highlight" : ""}`}>
             {selection === "deleted" ? (
               <DeletedTable
                 docs={pagedDocs}
