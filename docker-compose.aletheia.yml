@@ -1,0 +1,56 @@
+# Utopia + Aletheia full-stack deployment.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.aletheia.yml --profile app up -d
+#
+# Startup sequence:
+#   1. db (pgvector/pg16) starts, healthcheck passes
+#   2. Utopia app starts, runs migrations, listens on :1516
+#   3. aletheia-db (postgres:16) starts, healthcheck passes
+#   4. Aletheia starts, runs migrations, connects to Utopia at http://app:1516
+#
+# After first start, create the Aletheia service account in Utopia:
+#   curl -X POST http://localhost:1516/api/v1/auth/register \
+#     -H 'Content-Type: application/json' \
+#     -d '{"email":"aletheia@service.local","password":"change-me-in-prod","display_name":"Aletheia Service"}'
+#
+# Then add the service account as Viewer to your KB via the Utopia UI or API.
+# Set ALETHEIA_UTOPIA_EMAIL and ALETHEIA_UTOPIA_PASSWORD in .env and restart aletheia.
+
+services:
+  aletheia-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aletheia
+      POSTGRES_PASSWORD: ${ALETHEIA_DB_PASSWORD:-aletheia}
+      POSTGRES_DB: aletheia
+    volumes:
+      - aletheia-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aletheia -d aletheia"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  aletheia:
+    image: ${ALETHEIA_IMAGE:-ghcr.io/luukjuh123/aletheia:latest}
+    profiles: ["app"]
+    environment:
+      ALETHEIA_DATABASE_URL: postgres://aletheia:${ALETHEIA_DB_PASSWORD:-aletheia}@aletheia-db:5432/aletheia
+      ALETHEIA_BIND_ADDR: 0.0.0.0:8080
+      ALETHEIA_UTOPIA_BASE_URL: http://app:1516
+      ALETHEIA_UTOPIA_EMAIL: ${ALETHEIA_UTOPIA_EMAIL:-aletheia@service.local}
+      ALETHEIA_UTOPIA_PASSWORD: ${ALETHEIA_UTOPIA_PASSWORD:-change-me-in-prod}
+      ALETHEIA_SEARCH_ENRICHMENT: ${ALETHEIA_SEARCH_ENRICHMENT:-false}
+      RUST_LOG: ${RUST_LOG:-aletheia=info}
+    ports:
+      - "8080:8080"
+    depends_on:
+      aletheia-db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  aletheia-db: {}

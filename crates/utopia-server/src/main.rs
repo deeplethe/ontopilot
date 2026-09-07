@@ -1,3 +1,11 @@
+#[cfg(test)]
+#[path = "aletheia_contract_tests.rs"]
+mod aletheia_contract_tests;
+
+#[cfg(test)]
+#[path = "../tests/core_api.rs"]
+mod core_api;
+
 mod adjudication;
 mod alerting;
 mod api;

@@ -1,0 +1,58 @@
+# Helm values for deploying Aletheia alongside Utopia.
+#
+# These values are consumed by the gitops-templates app-base Helm chart.
+# Aletheia reaches Utopia via internal service DNS.
+#
+# Usage:
+#   helm upgrade --install aletheia app-base/ -f k8s/aletheia-values.yaml
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/luukjuh123/aletheia
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+env:
+  ALETHEIA_BIND_ADDR: "0.0.0.0:8080"
+  # Utopia service DNS — same namespace
+  ALETHEIA_UTOPIA_BASE_URL: "http://utopia:1516"
+  # Or via Tailscale cross-namespace:
+  # ALETHEIA_UTOPIA_BASE_URL: "http://utopia.galaxy.internal:1516"
+  ALETHEIA_SEARCH_ENRICHMENT: "false"
+  ALETHEIA_LOG_FORMAT: "json"
+  RUST_LOG: "aletheia=info"
+
+envFrom:
+  - secretRef:
+      name: aletheia-secrets
+      # Must contain:
+      #   ALETHEIA_DATABASE_URL
+      #   ALETHEIA_UTOPIA_EMAIL
+      #   ALETHEIA_UTOPIA_PASSWORD
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 3
+  periodSeconds: 5

@@ -1,0 +1,35 @@
+# Network policy: allow Aletheia to reach Utopia on port 1516.
+#
+# This policy allows ingress from pods with label app=aletheia to pods with
+# label app=utopia on port 1516. Apply this in the namespace where Utopia runs.
+#
+# Usage:
+#   kubectl apply -f k8s/aletheia-network-policy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-aletheia-to-utopia
+  labels:
+    app: utopia
+    component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: utopia
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: aletheia
+        # Allow from other namespaces if Aletheia is deployed separately
+        - namespaceSelector:
+            matchLabels:
+              galaxy: aletheia
+          podSelector:
+            matchLabels:
+              app: aletheia
+      ports:
+        - protocol: TCP
+          port: 1516

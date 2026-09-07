@@ -9,3 +9,6 @@ tantivy.workspace = true
 tantivy-jieba.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

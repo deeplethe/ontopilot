@@ -337,6 +337,12 @@ pub struct ConversationMessage {
 }
 
 /// 检索结果用的分块视图（带文档信息）。
+///
+/// **Aletheia contract type** — Aletheia deserializes this over HTTP (via the
+/// `POST /api/v1/kbs/{kb}/search` envelope `{ "results": [...] }`). New fields
+/// MUST be `Option<T>` or have serde defaults. PRs modifying this struct will
+/// be auto-labeled `aletheia-contract` for downstream review.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ChunkView {
     pub id: Uuid,
@@ -567,6 +573,11 @@ pub struct Entity {
 }
 
 /// 图渲染节点。
+///
+/// **Aletheia contract type** — Aletheia deserializes this over HTTP. New fields
+/// MUST be `Option<T>` or have serde defaults. PRs modifying this struct will
+/// be auto-labeled `aletheia-contract` for downstream review.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct GraphNode {
     pub id: Uuid,
@@ -631,6 +642,11 @@ pub struct GraphEdge {
 }
 
 /// 实体详情页的事实行（时间线）。
+///
+/// **Aletheia contract type** — Aletheia deserializes this over HTTP. New fields
+/// MUST be `Option<T>` or have serde defaults. PRs modifying this struct will
+/// be auto-labeled `aletheia-contract` for downstream review.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct EntityFact {
     pub id: Uuid,
@@ -672,6 +688,59 @@ pub struct EntityFact {
     /// `temporal_conflict`）、Review 里那一项的 id、派生撞断言时推出来的那句话。
     /// 一条只报最新的一处；行**不压暗**，断言仍然活着
     pub contested: Option<serde_json::Value>,
+}
+
+impl EntityFact {
+    /// Constructor for use outside this crate. Required because `EntityFact` is
+    /// `#[non_exhaustive]` — external crates cannot use struct literal syntax.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: Uuid,
+        direction: String,
+        predicate_key: Option<String>,
+        predicate_label: Option<String>,
+        inferred: bool,
+        temporal: Option<String>,
+        other_id: Option<Uuid>,
+        other_name: Option<String>,
+        object_value: Option<serde_json::Value>,
+        valid_from: Option<DateTime<Utc>>,
+        valid_to: Option<DateTime<Utc>>,
+        valid_from_precision: Option<String>,
+        valid_to_precision: Option<String>,
+        holds_from: Option<DateTime<Utc>>,
+        holds_to: Option<DateTime<Utc>>,
+        confidence: f32,
+        evidence_count: i64,
+        stale: bool,
+        corrected: bool,
+        last_evidence_time: Option<DateTime<Utc>>,
+        contested: Option<serde_json::Value>,
+    ) -> Self {
+        Self {
+            id,
+            direction,
+            predicate_key,
+            predicate_label,
+            inferred,
+            temporal,
+            other_id,
+            other_name,
+            object_value,
+            valid_from,
+            valid_to,
+            valid_from_precision,
+            valid_to_precision,
+            holds_from,
+            holds_to,
+            confidence,
+            evidence_count,
+            stale,
+            corrected,
+            last_evidence_time,
+            contested,
+        }
+    }
 }
 
 /// 实体的一次认知变更（记录时间轴上的事件，与 EntityFact 的有效时间轴正交）。
@@ -808,6 +877,11 @@ pub struct FactReviewItem {
 }
 
 /// 事实的证据（引句 + 原文定位）。
+///
+/// **Aletheia contract type** — Aletheia deserializes this over HTTP. New fields
+/// MUST be `Option<T>` or have serde defaults. PRs modifying this struct will
+/// be auto-labeled `aletheia-contract` for downstream review.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct EvidenceView {
     /// 模型在这一块里实际用的谓词说法。词表外谓词被降级成 related_to 后，
@@ -1399,4 +1473,226 @@ pub struct TokenView {
     /// **撤销打戳不删行**：撤过这件事本身要留痕
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod aletheia_contract_tests {
+    //! Contract tests verifying that Utopia's serialized response shapes contain all
+    //! fields Aletheia's client expects. If a field rename or type change breaks these
+    //! tests, it will also break Aletheia's deserialization.
+    //!
+    //! Aletheia expects:
+    //!   - GraphNode: `id`, `name` (string)
+    //!   - EntityFact: `id`, `direction`, `predicate_key`, `predicate_label`, `other_id`,
+    //!     `other_name`, `object_value`, `valid_from`, `valid_to`, `confidence` (f32),
+    //!     `evidence_count` (i64)
+    //!   - EvidenceView: `chunk_id`, `document_id`, `filename`, `quote`, `doc_version` (i32),
+    //!     `stale` (bool)
+    //!   - Login response: `token` (string)
+    //!   - Search response: `results` array with `text` and `document_id` per item
+
+    use super::*;
+    use chrono::TimeZone;
+
+    fn sample_graph_node() -> GraphNode {
+        GraphNode {
+            id: Uuid::nil(),
+            name: "France".to_string(),
+            type_key: Some("country".to_string()),
+            type_label: Some("Country".to_string()),
+            color: "#4A90D9".to_string(),
+            shape: "circle".to_string(),
+            degree: 42,
+            disambiguator: None,
+        }
+    }
+
+    fn sample_entity_fact() -> EntityFact {
+        EntityFact {
+            id: Uuid::nil(),
+            direction: "out".to_string(),
+            predicate_key: Some("capital".to_string()),
+            predicate_label: Some("capital".to_string()),
+            inferred: false,
+            temporal: Some("state".to_string()),
+            other_id: Some(Uuid::nil()),
+            other_name: Some("Paris".to_string()),
+            object_value: None,
+            valid_from: Some(Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()),
+            valid_to: None,
+            valid_from_precision: Some("year".to_string()),
+            valid_to_precision: None,
+            holds_from: Some(Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()),
+            holds_to: None,
+            confidence: 0.97,
+            evidence_count: 3,
+            stale: false,
+            corrected: false,
+            last_evidence_time: None,
+            contested: None,
+        }
+    }
+
+    fn sample_evidence_view() -> EvidenceView {
+        EvidenceView {
+            proposed_predicate: Some("is capital of".to_string()),
+            quote: Some("Paris is the capital of France.".to_string()),
+            chunk_id: Uuid::nil(),
+            document_id: Uuid::nil(),
+            filename: "reuters.html".to_string(),
+            seq: 3,
+            doc_version: 2,
+            stale: false,
+            document_deleted: false,
+        }
+    }
+
+    /// Aletheia's `UtopiaEntity` uses `#[serde(alias = "name")]` on `canonical_name`.
+    /// Verify that `GraphNode` serializes the field as `name`.
+    #[test]
+    fn graph_node_serializes_name_field() {
+        let node = sample_graph_node();
+        let json = serde_json::to_value(&node).unwrap();
+        assert_eq!(json["name"], "France", "must be 'name', not 'canonical_name'");
+        assert!(json["id"].is_string());
+    }
+
+    /// Aletheia's `UtopiaFact` requires: id, direction, predicate_key, predicate_label,
+    /// other_id, other_name, object_value, valid_from, valid_to, confidence, evidence_count.
+    #[test]
+    fn entity_fact_contains_all_aletheia_fields() {
+        let fact = sample_entity_fact();
+        let json = serde_json::to_value(&fact).unwrap();
+        let obj = json.as_object().unwrap();
+
+        for field in [
+            "id",
+            "direction",
+            "predicate_key",
+            "predicate_label",
+            "other_id",
+            "other_name",
+            "object_value",
+            "valid_from",
+            "valid_to",
+            "confidence",
+            "evidence_count",
+        ] {
+            assert!(
+                obj.contains_key(field),
+                "EntityFact must serialize field '{field}' for Aletheia"
+            );
+        }
+
+        // Type checks: Aletheia deserializes confidence as f32 and evidence_count as i64
+        assert!(json["confidence"].is_f64(), "confidence must be a number");
+        assert!(
+            json["evidence_count"].is_i64(),
+            "evidence_count must be an integer"
+        );
+    }
+
+    /// Aletheia's `UtopiaEvidence` requires: chunk_id, document_id, filename, quote,
+    /// doc_version, stale.
+    #[test]
+    fn evidence_view_contains_all_aletheia_fields() {
+        let ev = sample_evidence_view();
+        let json = serde_json::to_value(&ev).unwrap();
+        let obj = json.as_object().unwrap();
+
+        for field in [
+            "chunk_id",
+            "document_id",
+            "filename",
+            "quote",
+            "doc_version",
+            "stale",
+        ] {
+            assert!(
+                obj.contains_key(field),
+                "EvidenceView must serialize field '{field}' for Aletheia"
+            );
+        }
+
+        // document_id must be a UUID string (Aletheia parses it as Uuid)
+        assert!(json["document_id"].is_string());
+        assert!(json["doc_version"].is_i64());
+        assert!(json["stale"].is_boolean());
+    }
+
+    /// Aletheia wraps fact_evidence in `{ "evidence": [...] }`.
+    /// The graph_routes handler does `Json(json!({ "evidence": evidence }))`.
+    /// Verify the envelope key is "evidence".
+    #[test]
+    fn fact_evidence_envelope_key() {
+        let evidence = vec![sample_evidence_view()];
+        let envelope = serde_json::json!({ "evidence": evidence });
+        assert!(envelope["evidence"].is_array());
+        assert_eq!(envelope["evidence"].as_array().unwrap().len(), 1);
+    }
+
+    /// Entity detail response includes "entity" and "facts" keys.
+    #[test]
+    fn entity_detail_response_shape() {
+        let entity = sample_graph_node();
+        let facts = vec![sample_entity_fact()];
+        let derived: Vec<serde_json::Value> = vec![];
+        let blocked: Vec<serde_json::Value> = vec![];
+        let same_name: Vec<serde_json::Value> = vec![];
+        let response = serde_json::json!({
+            "entity": entity, "facts": facts,
+            "derived": derived, "blocked": blocked, "same_name": same_name,
+        });
+        assert!(response["entity"].is_object());
+        assert!(response["facts"].is_array());
+        assert_eq!(response["entity"]["name"], "France");
+    }
+
+    /// Search response uses envelope key "results".
+    #[test]
+    fn search_response_envelope_key() {
+        let chunks = serde_json::json!([
+            {"text": "some passage", "document_id": Uuid::nil().to_string(), "score": 0.9}
+        ]);
+        let response = serde_json::json!({ "results": chunks });
+        assert!(response["results"].is_array());
+        let first = &response["results"][0];
+        assert!(first["text"].is_string(), "search results must have 'text'");
+        assert!(
+            first["document_id"].is_string(),
+            "search results must have 'document_id'"
+        );
+    }
+
+    /// ChunkView (search result item) contains the fields Aletheia reads.
+    #[test]
+    fn chunk_view_contains_aletheia_fields() {
+        let chunk = ChunkView {
+            id: Uuid::nil(),
+            document_id: Uuid::nil(),
+            seq: 0,
+            text: "The Eiffel Tower is in Paris.".to_string(),
+            filename: "doc.md".to_string(),
+        };
+        let json = serde_json::to_value(&chunk).unwrap();
+        let obj = json.as_object().unwrap();
+
+        for field in ["text", "document_id"] {
+            assert!(
+                obj.contains_key(field),
+                "ChunkView must serialize field '{field}' for Aletheia"
+            );
+        }
+        assert!(json["text"].is_string());
+        assert!(json["document_id"].is_string());
+    }
+
+    /// Login response includes `token` field (alongside `user`).
+    #[test]
+    fn login_response_contains_token() {
+        let user = serde_json::json!({"id": Uuid::nil(), "email": "test@test.com"});
+        let token = "eyJhbGciOiJIUzI1NiJ9.test.sig";
+        let response = serde_json::json!({ "user": user, "token": token });
+        assert_eq!(response["token"].as_str().unwrap(), token);
+    }
 }

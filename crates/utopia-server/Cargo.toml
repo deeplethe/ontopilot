@@ -51,3 +51,4 @@ subtle.workspace = true
 
 [dev-dependencies]
 wiremock = "0.6.5"
+tower = { version = "0.5", features = ["util"] }

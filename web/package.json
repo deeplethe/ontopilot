@@ -9,7 +9,9 @@
     "build": "node scripts/style-guard.mjs && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "guard": "node scripts/style-guard.mjs"
+    "guard": "node scripts/style-guard.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@sigma/edge-curve": "3.1.0",
@@ -34,12 +36,16 @@
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
     "@types/node": "^26.3.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^2.1.8"
   }
 }

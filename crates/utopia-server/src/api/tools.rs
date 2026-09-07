@@ -1117,29 +1117,29 @@ mod tests {
     }
 
     fn attribute_fact(value: serde_json::Value) -> EntityFact {
-        EntityFact {
-            id: Uuid::nil(),
-            direction: "out".into(),
-            predicate_key: Some("salary".into()),
-            predicate_label: Some("salary".into()),
-            inferred: false,
-            temporal: Some("state".into()),
-            other_id: None,
-            other_name: None,
-            object_value: Some(value),
-            valid_from: Some(t("2023-06-01T00:00:00Z")),
-            valid_to: Some(t("2024-02-20T00:00:00Z")),
-            valid_from_precision: Some("day".into()),
-            valid_to_precision: Some("day".into()),
-            holds_from: Some(t("2023-06-01T00:00:00Z")),
-            holds_to: Some(t("2024-02-20T00:00:00Z")),
-            confidence: 0.9,
-            evidence_count: 1,
-            stale: false,
-            corrected: false,
-            last_evidence_time: None,
-            contested: None,
-        }
+        EntityFact::new(
+            Uuid::nil(),
+            "out".into(),
+            Some("salary".into()),
+            Some("salary".into()),
+            false,
+            Some("state".into()),
+            None,
+            None,
+            Some(value),
+            Some(t("2023-06-01T00:00:00Z")),
+            Some(t("2024-02-20T00:00:00Z")),
+            Some("day".into()),
+            Some("day".into()),
+            Some(t("2023-06-01T00:00:00Z")),
+            Some(t("2024-02-20T00:00:00Z")),
+            0.9,
+            1,
+            false,
+            false,
+            None,
+            None,
+        )
     }
 
     /// 属性事实的值要到模型眼前（#348）。从前这里是 `salary → ? (2023-06-01 → 2024-02-20)`：

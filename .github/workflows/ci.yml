@@ -27,7 +27,7 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Test
+      - name: Test (includes Aletheia contract tests)
         run: cargo test --workspace
       - name: Build
         run: cargo build --workspace

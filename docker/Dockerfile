@@ -25,9 +25,12 @@ RUN cargo build --release -p utopia-server
 # ---- 运行 ----
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN groupadd -r utopia && useradd -r -g utopia -d /app -s /sbin/nologin utopia
 WORKDIR /app
 COPY --from=build /src/target/release/utopia-server /usr/local/bin/utopia-server
 COPY --from=web /src/dist /app/web-dist
+RUN chown -R utopia:utopia /app
 ENV UTOPIA_WEB_DIST=/app/web-dist
 EXPOSE 1516
+USER utopia
 CMD ["utopia-server"]

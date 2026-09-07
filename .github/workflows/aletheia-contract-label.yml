@@ -1,0 +1,32 @@
+name: Aletheia contract label
+
+on:
+  pull_request:
+    paths:
+      - "crates/utopia-core/src/models.rs"
+      - "crates/utopia-server/src/auth.rs"
+      - "crates/utopia-server/src/api/graph_routes.rs"
+      - "crates/utopia-server/src/api/search_routes.rs"
+
+permissions:
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['aletheia-contract']
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '⚠️ **Aletheia contract change detected.** This PR modifies types that Aletheia deserializes. Please verify downstream compatibility:\n- New fields on `GraphNode`, `EntityFact`, `EvidenceView`, `ChunkView` must be `Option<T>` or have serde defaults\n- Removing or renaming existing fields is a breaking change\n- See `docs/aletheia-contract.md` for the full field list'
+            });
