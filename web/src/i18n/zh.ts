@@ -845,6 +845,7 @@ export const zh: Strings = {
     tabMembers: "用户",
     tabKbs: "知识库",
     tabDeployment: "部署",
+    cardAccounts: "账号",
     newUser: "创建用户",
     initialPassword: "初始密码（至少 8 位）",
     createUserBtn: "创建",

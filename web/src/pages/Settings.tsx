@@ -17,6 +17,7 @@ import {
   Pill,
   SearchSelect,
   Segmented,
+  SettingsCard,
   PageHeader,
 } from "../ui";
 import { Members } from "./Members";
@@ -159,8 +160,10 @@ function DeploymentAdmin() {
   const open = dep.data?.open_registration ?? true;
 
   return (
-    <div>
-      <div className="space-y-4">
+    /* 一件事一张卡，与库设置同一副排法。改即生效的（注册开关、默认本体语言）
+       没有底栏——它们没有"保存"这一步；数字要按一下才算数的，按钮在底栏 */
+    <div className="space-y-4">
+      <SettingsCard title={S.settings.cardAccounts}>
         <Checkbox
           checked={open}
           disabled={dep.isPending || save.isPending}
@@ -168,41 +171,32 @@ function DeploymentAdmin() {
           label={S.settings.deployment.openReg}
           hint={S.settings.deployment.openRegHint}
         />
+      </SettingsCard>
 
-        {/* 新建库的本体语言。**不是界面语言**——界面语言是每个人自己在账户菜单里选的，
-            根本不经过后端（docs/decisions/0004）。说明里必须把这句讲出来 */}
-        <div className="flex items-start justify-between gap-4 border-t border-line pt-4">
-          <div className="min-w-0">
-            <span className="block text-body text-ink">
-              {S.settings.deployment.ontologyLang}
-            </span>
-            <span className="block text-small text-ink-2 mt-1">
-              {S.settings.deployment.ontologyLangHint}
-            </span>
-          </div>
-          <Segmented
-            size="sm"
-            className="h-fit shrink-0"
-            disabled={dep.isPending || save.isPending}
-            value={dep.data?.default_ontology_lang ?? "en"}
-            onChange={(l) => save.mutate({ open, ontologyLang: l })}
-            options={(["en", "zh"] as const).map((l) => ({
-              value: l,
-              label: LANG_NAMES[l],
-            }))}
-          />
-        </div>
+      {/* 新建库的本体语言。**不是界面语言**——界面语言是每个人自己在账户菜单里选的，
+          根本不经过后端（docs/decisions/0004）。说明里必须把这句讲出来 */}
+      <SettingsCard
+        title={S.settings.deployment.ontologyLang}
+        hint={S.settings.deployment.ontologyLangHint}
+      >
+        <Segmented
+          size="sm"
+          className="w-fit"
+          disabled={dep.isPending || save.isPending}
+          value={dep.data?.default_ontology_lang ?? "en"}
+          onChange={(l) => save.mutate({ open, ontologyLang: l })}
+          options={(["en", "zh"] as const).map((l) => ({
+            value: l,
+            label: LANG_NAMES[l],
+          }))}
+        />
+      </SettingsCard>
 
-        <div className="flex items-start justify-between gap-4 border-t border-line pt-4">
-          <div className="min-w-0">
-            <span className="block text-body text-ink">
-              {S.settings.deployment.workers}
-            </span>
-            <span className="block text-small text-ink-2 mt-1">
-              {S.settings.deployment.workersHint}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
+      <SettingsCard
+        title={S.settings.deployment.workers}
+        hint={S.settings.deployment.workersHint}
+        action={
+          <>
             <Input size="sm" className="u-input-plain w-16 u-num text-center"
               type="number"
               min={1}
@@ -223,128 +217,120 @@ function DeploymentAdmin() {
             >
               {S.settings.deployment.workersApply}
             </Button>
-          </div>
-        </div>
-        {/* 按模型的并发才是真正的节流：约束来自供应商的速率限制，而那是按模型算的。
-            上面那个 worker 并发只是外层兜底，防任务无限堆积 */}
-        <div className="border-t border-line pt-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <span className="block text-body text-ink">
-                {S.settings.deployment.modelConcurrency}
-              </span>
-              <span className="block text-small text-ink-2 mt-1">
-                {S.settings.deployment.modelConcurrencyHint}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-small text-ink-2">
-                {S.settings.deployment.modelDefault}
-              </span>
-              <Input size="sm" className="u-input-plain w-16 u-num text-center"
-                type="number"
-                min={1}
-                max={256}
-                value={shownDefault}
-                disabled={dep.isPending}
-                onChange={(e) =>
-                  setModelDefault(
-                    Math.max(1, Math.min(256, Number(e.target.value) || 1)),
-                  )
-                }
-              />
-              <Button variant="secondary" size="sm"
-                disabled={
-                  save.isPending ||
-                  modelDefault === null ||
-                  modelDefault === dep.data?.default_model_concurrency
-                }
-                onClick={() => save.mutate({ open, defaultModel: shownDefault })}
-              >
-                {S.settings.deployment.workersApply}
-              </Button>
-            </div>
-          </div>
+          </>
+        }
+      />
 
-          {!!dep.data?.models_in_use?.length && (
-            <div className="mt-3 space-y-2">
-              {dep.data.models_in_use.map((m) => {
-                const cur =
-                  dep.data?.model_limits?.find(
-                    (l) => l.base_url === m.base_url && l.model === m.model,
-                  )?.max_concurrent ?? null;
-                const key = `${m.base_url}|${m.model}`;
-                const val = perModel[key] ?? cur ?? shownDefault;
-                return (
-                  <div key={key} className="flex items-center gap-2 text-small">
-                    <span className="u-chip u-chip-neutral !text-fine !px-2 shrink-0">
-                      {m.kind}
-                    </span>
-                    <span className="font-mono text-ink-2 truncate">
-                      {m.model}
-                    </span>
-                    <span className="text-ink-2 truncate hidden sm:inline">
-                      {m.base_url}
-                    </span>
-                    <Input size="sm" className="u-input-plain ml-auto w-14 u-num text-center shrink-0"
-                      type="number"
-                      min={1}
-                      max={256}
-                      value={val}
-                      onChange={(e) =>
-                        setPerModel({
-                          ...perModel,
-                          [key]: Math.max(
-                            1,
-                            Math.min(256, Number(e.target.value) || 1),
-                          ),
-                        })
-                      }
-                    />
+      {/* 按模型的并发才是真正的节流：约束来自供应商的速率限制，而那是按模型算的。
+          上面那个 worker 并发只是外层兜底，防任务无限堆积 */}
+      <SettingsCard
+        title={S.settings.deployment.modelConcurrency}
+        hint={S.settings.deployment.modelConcurrencyHint}
+        note={S.settings.deployment.modelDefault}
+        action={
+          <>
+            <Input size="sm" className="u-input-plain w-16 u-num text-center"
+              type="number"
+              min={1}
+              max={256}
+              value={shownDefault}
+              disabled={dep.isPending}
+              onChange={(e) =>
+                setModelDefault(
+                  Math.max(1, Math.min(256, Number(e.target.value) || 1)),
+                )
+              }
+            />
+            <Button variant="secondary" size="sm"
+              disabled={
+                save.isPending ||
+                modelDefault === null ||
+                modelDefault === dep.data?.default_model_concurrency
+              }
+              onClick={() => save.mutate({ open, defaultModel: shownDefault })}
+            >
+              {S.settings.deployment.workersApply}
+            </Button>
+          </>
+        }
+      >
+        {/* 在用的模型各自一行：这一行的数字与按钮是这一行的事，不归底栏 */}
+        {!!dep.data?.models_in_use?.length && (
+          <div className="divide-y divide-line">
+            {dep.data.models_in_use.map((m) => {
+              const cur =
+                dep.data?.model_limits?.find(
+                  (l) => l.base_url === m.base_url && l.model === m.model,
+                )?.max_concurrent ?? null;
+              const key = `${m.base_url}|${m.model}`;
+              const val = perModel[key] ?? cur ?? shownDefault;
+              return (
+                <div
+                  key={key}
+                  className="flex items-center gap-2 py-3 text-small first:pt-0"
+                >
+                  <span className="u-chip u-chip-neutral !text-fine !px-2 shrink-0">
+                    {m.kind}
+                  </span>
+                  <span className="font-mono text-ink-2 truncate">{m.model}</span>
+                  <span className="text-ink-2 truncate hidden sm:inline">
+                    {m.base_url}
+                  </span>
+                  <Input size="sm" className="u-input-plain ml-auto w-14 u-num text-center shrink-0"
+                    type="number"
+                    min={1}
+                    max={256}
+                    value={val}
+                    onChange={(e) =>
+                      setPerModel({
+                        ...perModel,
+                        [key]: Math.max(1, Math.min(256, Number(e.target.value) || 1)),
+                      })
+                    }
+                  />
+                  <Button variant="secondary" size="sm" className="shrink-0"
+                    disabled={save.isPending || perModel[key] === undefined}
+                    onClick={() =>
+                      save.mutate({
+                        open,
+                        modelLimit: {
+                          base_url: m.base_url,
+                          model: m.model,
+                          max_concurrent: val,
+                        },
+                      })
+                    }
+                  >
+                    {S.settings.deployment.workersApply}
+                  </Button>
+                  {cur !== null && (
                     <Button variant="secondary" size="sm" className="shrink-0"
-                      disabled={save.isPending || perModel[key] === undefined}
+                      disabled={save.isPending}
+                      title={S.settings.deployment.modelResetHint}
                       onClick={() =>
                         save.mutate({
                           open,
                           modelLimit: {
                             base_url: m.base_url,
                             model: m.model,
-                            max_concurrent: val,
+                            max_concurrent: null,
                           },
                         })
                       }
                     >
-                      {S.settings.deployment.workersApply}
+                      {S.settings.deployment.modelReset}
                     </Button>
-                    {cur !== null && (
-                      <Button variant="secondary" size="sm" className="shrink-0"
-                        disabled={save.isPending}
-                        title={S.settings.deployment.modelResetHint}
-                        onClick={() =>
-                          save.mutate({
-                            open,
-                            modelLimit: {
-                              base_url: m.base_url,
-                              model: m.model,
-                              max_concurrent: null,
-                            },
-                          })
-                        }
-                      >
-                        {S.settings.deployment.modelReset}
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {save.isError && (
-          <p className="text-small text-danger">{(save.error as Error).message}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
-      </div>
+      </SettingsCard>
+
+      {save.isError && (
+        <p className="text-small text-danger">{(save.error as Error).message}</p>
+      )}
     </div>
   );
 }
@@ -759,11 +745,28 @@ export function Settings() {
     }
   }, [settings.data]);
 
-  const save = useMutation({
-    mutationFn: () => api.saveSettings(workspace!.id, form),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["settings", workspace?.id] }),
+  /** 一张卡一个保存。**PUT 是整体替换**（`llm_settings` 的 upsert 只对两个
+      密钥做 COALESCE，其余列直接取 EXCLUDED），所以不能只送这张卡的三项——
+      那会把另一半清成空。底子取服务端那一份、再把这张卡的字段盖上去：
+      既不会清空邻居，也不会把邻居那张卡还没保存的编辑一起交上去。
+      密钥不在底子里：留空 = 保留旧密钥，这是 COALESCE 那两列的用法 */
+  const withSaved = (over: Record<string, unknown>) => ({
+    chat_base_url: settings.data?.chat_base_url ?? "",
+    chat_model: settings.data?.chat_model ?? "",
+    embed_base_url: settings.data?.embed_base_url ?? "",
+    embed_model: settings.data?.embed_model ?? "",
+    ...over,
   });
+  const usePatch = () =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useMutation({
+      mutationFn: (patch: Record<string, unknown>) =>
+        api.saveSettings(workspace!.id, patch),
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: ["settings", workspace?.id] }),
+    });
+  const saveChat = usePatch();
+  const saveEmbed = usePatch();
 
   const test = useMutation({
     mutationFn: () => api.testSettings(workspace!.id),
@@ -804,12 +807,14 @@ export function Settings() {
         {tab === "deployment" && <DeploymentAdmin />}
 
         {tab === "models" && (
-          <>
-            <p className="text-body text-ink-2 mb-4">
-              {S.settings.modelsIntro}
-            </p>
+          /* 两张卡，两个保存：聊天模型与嵌入模型是两套凭据，改一套不该把另一套
+             一起送上去。服务端对缺席与空串都当"这项不改"，所以每张卡只送自己
+             那三项就够了 */
+          <div className="space-y-4">
+            <p className="text-body text-ink-2">{S.settings.modelsIntro}</p>
 
-            <div className="mb-6 flex flex-wrap gap-2">
+            {/* 预设一按填满两张卡的字段：它不是设置本身，所以在卡外面 */}
+            <div className="flex flex-wrap gap-2">
               {Object.entries(PRESETS).map(([name, p]) => (
                 <Pill
                   key={name}
@@ -828,11 +833,48 @@ export function Settings() {
               ))}
             </div>
 
-            <div className="glass rounded-panel p-6">
-              <div className="max-w-xl space-y-4">
-                <h3 className="text-body font-semibold text-ink">
-                  {S.settings.chatModel}
-                </h3>
+            <SettingsCard
+              title={S.settings.chatModel}
+              note={
+                test.data ? (
+                  <span className={test.data.chat.ok ? "text-accent" : "text-danger"}>
+                    {test.data.chat.ok
+                      ? S.settings.ok(test.data.chat.reply ?? "OK")
+                      : test.data.chat.error}
+                  </span>
+                ) : saveChat.isError ? (
+                  <span className="text-danger">{(saveChat.error as Error).message}</span>
+                ) : saveChat.isSuccess ? (
+                  S.settings.saved
+                ) : undefined
+              }
+              action={
+                <>
+                  {/* 试一次连的是两套模型（一个接口），结果各自回到各自那张卡 */}
+                  <Button variant="secondary" size="sm"
+                    onClick={() => test.mutate()}
+                    disabled={test.isPending}
+                  >
+                    {test.isPending ? S.settings.testing : S.settings.test}
+                  </Button>
+                  <Button variant="secondary" size="sm"
+                    onClick={() =>
+                      saveChat.mutate(
+                        withSaved({
+                          chat_base_url: form.chat_base_url,
+                          chat_model: form.chat_model,
+                          chat_api_key: form.chat_api_key,
+                        }),
+                      )
+                    }
+                    disabled={saveChat.isPending}
+                  >
+                    {saveChat.isPending ? S.settings.saving : S.settings.save}
+                  </Button>
+                </>
+              }
+            >
+              <div className="space-y-3">
                 <div>
                   <label className={label}>{S.settings.baseUrl}</label>
                   <Input
@@ -856,9 +898,7 @@ export function Settings() {
                     <label className={label}>
                       {S.settings.apiKey}{" "}
                       {settings.data?.has_chat_key && (
-                        <span className="text-accent">
-                          {S.settings.keyConfigured}
-                        </span>
+                        <span className="text-accent">{S.settings.keyConfigured}</span>
                       )}
                     </label>
                     <Input
@@ -870,10 +910,50 @@ export function Settings() {
                     />
                   </div>
                 </div>
+              </div>
+            </SettingsCard>
 
-                <h3 className="text-body font-semibold text-ink pt-2">
-                  {S.settings.embedModel}
-                </h3>
+            <SettingsCard
+              title={S.settings.embedModel}
+              note={
+                test.data ? (
+                  <span className={test.data.embed.ok ? "text-accent" : "text-ink-2"}>
+                    {test.data.embed.ok
+                      ? S.settings.okDim(test.data.embed.dim ?? 0)
+                      : test.data.embed.error}
+                  </span>
+                ) : saveEmbed.isError ? (
+                  <span className="text-danger">{(saveEmbed.error as Error).message}</span>
+                ) : saveEmbed.isSuccess ? (
+                  S.settings.saved
+                ) : undefined
+              }
+              action={
+                <>
+                  <Button variant="secondary" size="sm"
+                    onClick={() => test.mutate()}
+                    disabled={test.isPending}
+                  >
+                    {test.isPending ? S.settings.testing : S.settings.test}
+                  </Button>
+                  <Button variant="secondary" size="sm"
+                    onClick={() =>
+                      saveEmbed.mutate(
+                        withSaved({
+                          embed_base_url: form.embed_base_url,
+                          embed_model: form.embed_model,
+                          embed_api_key: form.embed_api_key,
+                        }),
+                      )
+                    }
+                    disabled={saveEmbed.isPending}
+                  >
+                    {saveEmbed.isPending ? S.settings.saving : S.settings.save}
+                  </Button>
+                </>
+              }
+            >
+              <div className="space-y-3">
                 <div>
                   <label className={label}>{S.settings.baseUrl}</label>
                   <Input
@@ -897,9 +977,7 @@ export function Settings() {
                     <label className={label}>
                       {S.settings.apiKey}{" "}
                       {settings.data?.has_embed_key && (
-                        <span className="text-accent">
-                          {S.settings.keyConfigured}
-                        </span>
+                        <span className="text-accent">{S.settings.keyConfigured}</span>
                       )}
                     </label>
                     <Input
@@ -910,63 +988,9 @@ export function Settings() {
                     />
                   </div>
                 </div>
-
-                <div className="flex gap-2 pt-2">
-                  <Button variant="primary" size="md"
-                    onClick={() => save.mutate()}
-                    disabled={save.isPending}
-                  >
-                    {save.isPending ? S.settings.saving : S.settings.save}
-                  </Button>
-                  <Button variant="secondary" size="md"
-                    onClick={() => test.mutate()}
-                    disabled={test.isPending}
-                  >
-                    {test.isPending ? S.settings.testing : S.settings.test}
-                  </Button>
-                </div>
-
-                {save.isSuccess && (
-                  <p className="text-body text-accent">
-                    {S.settings.saved}
-                  </p>
-                )}
-                {save.isError && (
-                  <p className="text-body text-danger">
-                    {(save.error as Error).message}
-                  </p>
-                )}
-                {test.data && (
-                  <div className="text-body space-y-1 pt-1">
-                    <p
-                      className={
-                        test.data.chat.ok
-                          ? "text-accent"
-                          : "text-danger"
-                      }
-                    >
-                      {S.settings.chatLabel}:{" "}
-                      {test.data.chat.ok
-                        ? S.settings.ok(test.data.chat.reply ?? "OK")
-                        : test.data.chat.error}
-                    </p>
-                    <p
-                      className={
-                        test.data.embed.ok
-                          ? "text-accent"
-                          : "text-ink-2"
-                      }
-                    >
-                      {S.settings.embedLabel}:{" "}
-                      {test.data.embed.ok
-                        ? S.settings.okDim(test.data.embed.dim ?? 0)
-                        : test.data.embed.error}
-                    </p>
-                  </div>
-                )}
               </div>
-            </div>
-          </>
+            </SettingsCard>
+          </div>
         )}
       </div>
     </div>

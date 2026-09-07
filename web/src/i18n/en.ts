@@ -944,6 +944,7 @@ export const en = {
     tabMembers: "Users",
     tabKbs: "Knowledge bases",
     tabDeployment: "Deployment",
+    cardAccounts: "Accounts",
     newUser: "Create user",
     initialPassword: "Initial password (min. 8 characters)",
     createUserBtn: "Create",
