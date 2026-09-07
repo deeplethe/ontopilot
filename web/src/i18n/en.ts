@@ -1908,6 +1908,10 @@ export const en = {
     deactivatedHint:
       "They cannot sign in and do not appear in any member list. What they did is still attributed to them — that is why the account is kept rather than deleted.",
     reactivate: "Restore",
+    roleLabel: "Role",
+    filterAll: "All users",
+    filterActive: "Active",
+    filterDeactivated: "Deactivated",
     deactivateConfirm: (name: string) =>
       `Deactivate ${name}? They lose access everywhere. Their past decisions stay on record.`,
     pickUser: "Select a user to add…",

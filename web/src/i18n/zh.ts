@@ -1672,6 +1672,10 @@ export const zh: Strings = {
     deactivatedHint:
       "他们登不进来，也不出现在任何成员列表里。做过的事仍然算在他们名下——账号被保留而不是删除，正是为了这个。",
     reactivate: "恢复",
+    roleLabel: "角色",
+    filterAll: "全部用户",
+    filterActive: "在用",
+    filterDeactivated: "已停用",
     deactivateConfirm: (name: string) =>
       `停用 ${name}？他将无法再登录任何地方，但过往的决定仍然留痕。`,
     pickUser: "选择要添加的用户…",
