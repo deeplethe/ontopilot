@@ -2686,13 +2686,16 @@ function EntityPanel({
   const [mergeCandidate, setMergeCandidate] = useState<{ id: string; name: string } | null>(
     null,
   );
+  // 什么让你这么定（0026）：可不写；写了就跟着合并进台账
+  const [mergeWhy, setMergeWhy] = useState("");
   const merge = useMutation({
-    mutationFn: (source: string) => api.mergeEntities(kbId, source, entityId),
+    mutationFn: ({ source, why }: { source: string; why: string }) =>
+      api.mergeEntities(kbId, source, entityId, why),
     onSuccess: () => {
       toast.success(S.toast.saved);
       // 本地把并掉的那个摘掉，别等重取——它已经不存在了，留着会让人再点一次
       setSameName((prev) =>
-        (prev ?? sameName).filter((p) => p.id !== merge.variables),
+        (prev ?? sameName).filter((p) => p.id !== merge.variables?.source),
       );
       qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
       qc.invalidateQueries({ queryKey: ["graph"] });
@@ -2847,11 +2850,22 @@ function EntityPanel({
           cancelLabel={S.graph.editCancel}
           busy={merge.isPending}
           onConfirm={() => {
-            merge.mutate(mergeCandidate.id);
+            merge.mutate({ source: mergeCandidate.id, why: mergeWhy });
             setMergeCandidate(null);
+            setMergeWhy("");
           }}
-          onCancel={() => setMergeCandidate(null)}
-        />
+          onCancel={() => {
+            setMergeCandidate(null);
+            setMergeWhy("");
+          }}
+        >
+          <Input
+            className="w-full"
+            placeholder={S.review.rationalePlaceholder}
+            value={mergeWhy}
+            onChange={(e) => setMergeWhy(e.target.value)}
+          />
+        </DangerConfirm>
       )}
 
       {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}

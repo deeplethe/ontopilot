@@ -85,6 +85,7 @@ export function DangerConfirm({
   busy,
   onConfirm,
   onCancel,
+  children,
 }: {
   title: string;
   hint: string;
@@ -95,6 +96,8 @@ export function DangerConfirm({
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /** 解锁框之下的补充控件（合并弹窗里的理由框）；缺省没有 */
+  children?: ReactNode;
 }) {
   const [text, setText] = useState("");
   const unlocked = !requireText || text === requireText;
@@ -133,6 +136,7 @@ export function DangerConfirm({
           onChange={(e) => setText(e.target.value)}
         />
       )}
+      {children}
     </Dialog>
   );
 }

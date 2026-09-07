@@ -638,7 +638,7 @@ pub fn build_adjudication_messages(pairs: &[AdjudicationPair]) -> Vec<ChatMessag
          these names, or on pairs of the same two types. Treat them as how the owners of this \
          base want such cases judged. Follow a precedent on the same pair unless the facts of \
          this pair clearly differ from it; when precedents disagree with each other, answer \
-         \"unsure\". A precedent never overrides a contradiction in the facts.\n\
+         \"unsure\". A precedent never overrides a contradiction in the facts. Some precedents quote what the person wrote when deciding: weigh that stated ground, not only the outcome; a decision made for a reason that does not hold here is not a precedent for this pair.\n\
          \n\
          Output exactly one JSON object and nothing else:\n\
          {{\"verdicts\":[{{\"i\":0,\"verdict\":\"same|different|unsure\",\"confidence\":0.9,\

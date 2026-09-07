@@ -667,8 +667,14 @@ async fn lookup(
                             "review.keep" => "kept apart",
                             _ => "merged",
                         };
+                        // 人写的理由跟在后面：第二层去查台账，查到的该是「凭什么」
+                        let because = x
+                            .why
+                            .as_deref()
+                            .map(|w| format!("; they wrote: \"{w}\""))
+                            .unwrap_or_default();
                         format!(
-                            "\"{}\" ≟ \"{}\": {verb} by a person on {}",
+                            "\"{}\" ≟ \"{}\": {verb} by a person on {}{because}",
                             x.left,
                             x.right,
                             x.at.format("%Y-%m-%d")

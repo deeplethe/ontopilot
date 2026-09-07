@@ -295,6 +295,9 @@ pub async fn resolve_conflict(
 pub struct DecideBody {
     /// merge | keep
     pub action: String,
+    /// 人拍板时写的那一句（0026）：什么让你这么定。可空
+    #[serde(default)]
+    pub rationale: Option<String>,
 }
 
 pub async fn decide(
@@ -317,9 +320,17 @@ pub async fn decide(
     .await
     .ok()
     .flatten();
-    utopia_store::resolution::decide_review(&state.pool, kb_id, review_id, &body.action, user.id)
-        .await?;
+    utopia_store::resolution::decide_review(
+        &state.pool,
+        kb_id,
+        review_id,
+        &body.action,
+        user.id,
+        body.rationale.as_deref(),
+    )
+    .await?;
     if let Some((l, r, score)) = snap {
+        // 理由也进台账：先例是从这里读的，不是从 resolution_reviews
         let _ = utopia_store::audit::record(
             &state.pool,
             Some(kb_id),
@@ -331,7 +342,7 @@ pub async fn decide(
             },
             "review",
             Some(review_id),
-            json!({ "left": l, "right": r, "score": score }),
+            json!({ "left": l, "right": r, "score": score, "why": body.rationale }),
         )
         .await;
     }
@@ -352,6 +363,9 @@ pub struct AgentAnswerBody {
     /// merge | keep 答一条建议（与建议相同是接受，不同是改判）；
     /// revert 撤回一条自动合并；merge 也能推翻一条自动分开
     pub action: String,
+    /// 什么让你这么答（0026）。改判 agent 的时候尤其值得写：那一句就是下次的先例
+    #[serde(default)]
+    pub rationale: Option<String>,
 }
 
 /// 人回答 agent 的一笔（0025）。回答走的是人的裁决路径：decided_by 是这个人，
@@ -370,8 +384,15 @@ pub async fn agent_answer(
     );
     match (d.status.as_str(), body.action.as_str()) {
         ("proposed", act @ ("merge" | "keep")) => {
-            utopia_store::resolution::decide_review(&state.pool, kb_id, d.target_id, act, user.id)
-                .await?;
+            utopia_store::resolution::decide_review(
+                &state.pool,
+                kb_id,
+                d.target_id,
+                act,
+                user.id,
+                body.rationale.as_deref(),
+            )
+            .await?;
             let status = if act == d.action {
                 "accepted"
             } else {
@@ -386,7 +407,8 @@ pub async fn agent_answer(
                 if act == "merge" { "review.merge" } else { "review.keep" },
                 "review",
                 Some(d.target_id),
-                json!({ "left": l, "right": r, "agent_decision": decision_id, "agent_action": d.action }),
+                json!({ "left": l, "right": r, "agent_decision": decision_id, "agent_action": d.action,
+                        "why": body.rationale }),
             )
             .await;
         }
@@ -471,6 +493,9 @@ pub struct BatchBody {
     pub ids: Vec<Uuid>,
     /// merge | keep，整批一个动作
     pub action: String,
+    /// 整批一句理由（0026）：一批同一个动作，多半也是同一个依据
+    #[serde(default)]
+    pub rationale: Option<String>,
 }
 
 /// 一批 id 最多多少条：够一屏「全选」，又挡住一次请求把库锁上几分钟
@@ -511,6 +536,7 @@ pub async fn batch(
         &body.ids,
         &body.action,
         user.id,
+        body.rationale.as_deref(),
     )
     .await?;
     let action = if body.action == "merge" {
@@ -527,7 +553,8 @@ pub async fn batch(
                 action,
                 "review",
                 Some(o.id),
-                json!({ "left": l, "right": r, "score": score, "batch": body.ids.len() }),
+                json!({ "left": l, "right": r, "score": score, "batch": body.ids.len(),
+                        "why": body.rationale }),
             )
             .await;
         }
@@ -640,6 +667,9 @@ pub async fn revert_merge(
 pub struct ManualMergeBody {
     pub source: Uuid,
     pub target: Uuid,
+    /// 什么让你把它们并起来（0026）。可空
+    #[serde(default)]
+    pub rationale: Option<String>,
 }
 
 /// 手动合并（实体面板"Merge into…"入口）。
@@ -660,13 +690,18 @@ pub async fn manual_merge(
     .await
     .ok()
     .flatten();
+    let why = body
+        .rationale
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let merge_id = utopia_store::resolution::merge_entities(
         &state.pool,
         kb_id,
         body.source,
         body.target,
         Some(user.id),
-        "manual merge",
+        why.unwrap_or("manual merge"),
     )
     .await?;
     if let Some((pair,)) = snap {
@@ -678,7 +713,7 @@ pub async fn manual_merge(
             "merge.manual",
             "merge",
             Some(merge_id),
-            json!({ "source": s, "target": t }),
+            json!({ "source": s, "target": t, "why": why }),
         )
         .await;
     }

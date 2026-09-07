@@ -387,7 +387,7 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
     );
 
     // 人裁了张伟 1 对 2：同簇的张伟 2 对 3 的建议作废、回到队列；Apple 的不受影响
-    utopia_store::resolution::decide_review(pool, s.kb, s.zw12, "keep", s.user).await?;
+    utopia_store::resolution::decide_review(pool, s.kb, s.zw12, "keep", s.user, None).await?;
     // 同一对实体人裁过：不分左右；别的对没有
     let zw = by_id(s.zw12);
     assert_eq!(
@@ -552,7 +552,7 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
     governance::lock(pool, s.kb, &[mercury.id]).await?;
     assert!(governance::locked_by_agent(pool, s.kb, mercury.id).await?);
     assert!(
-        utopia_store::resolution::decide_review(pool, s.kb, mercury.id, "keep", s.user)
+        utopia_store::resolution::decide_review(pool, s.kb, mercury.id, "keep", s.user, None)
             .await
             .is_err(),
         "agent 正在裁的对，人裁不了"
