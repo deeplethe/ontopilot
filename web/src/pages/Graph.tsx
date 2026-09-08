@@ -86,7 +86,7 @@ import {
   LinkButton,
   Pill,
   REVEAL,
-  ROW_TRAILING,
+  ROW_VALUE,
   Row,
   Segmented,
   ToolButton,
@@ -3005,8 +3005,6 @@ function FactRow({
 }) {
   const [editing, setEditing] = useState(false);
   const interval = fmtInterval(fact);
-  // 与 Review 的低置信口径一致：只有低到需要怀疑才挂 chip，常规置信保持沉默
-  const lowConfidence = fact.confidence < 0.75;
   const go = fact.other_id ? () => onNavigate(fact.other_id!) : undefined;
 
   return (
@@ -3034,11 +3032,14 @@ function FactRow({
           {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
         </span>
         <span className="min-w-0 flex-1">
-          {/* 第一行：谓词 + 宾语，读出来就是这条事实本身 */}
+          {/* 第一行：谓词 + 宾语，读出来就是这条事实本身。
+              **宾语紧跟着谓词**，不推到右边——主语是面板上那个实体，这一行
+              是它后半句话；把宾语顶到行尾，中间隔一整行空白，两个词就不再
+              读成一句了。谓词按内容占位、放不下才收，剩下的归宾语 */}
           <span className="flex items-center gap-2">
             <span
               className={cn(
-                "min-w-0 flex-1 truncate text-body text-ink",
+                "min-w-0 truncate text-body text-ink",
                 fact.predicate_label === null && "italic text-ink-2",
               )}
               // 谓词还是可能长到放不下（`publishingPrinciples`）——悬停给全名，
@@ -3053,34 +3054,32 @@ function FactRow({
             >
               {fact.predicate_label ?? S.graph.unknownPredicate}
             </span>
-            <span className={cn(ROW_TRAILING, "max-w-40 truncate")}>
+            <span className={ROW_VALUE}>
               {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
             </span>
           </span>
-          {/* 第二行：何时成立、成色如何、凭什么、以及改期的入口 */}
+          {/* 第二行：何时成立、要不要留神、以及看证据与改期的入口。
+              **没有日期也要说一句**——空着的时候，「原文没写日期」和
+              「有日期只是我没显示」在界面上长得一模一样，而这个产品的全部
+              重点就是时间。
+              置信度与「区间是对账闭合的」那个 ⟲ 都撤了：一个是数字、一个是
+              没人猜得出的符号，两者都只在这一行占位，说不清事。它们在证据
+              那一档里用整句话说得明白（见 EvidenceList） */}
           <span className="flex items-center gap-2">
-            {interval && (
-              <span className="u-num text-fine text-ink-2">{interval}</span>
-            )}
-            {lowConfidence && (
-              <span className="shrink-0 u-num u-meta-warn text-fine">
-                {Math.round(fact.confidence * 100)}%
-              </span>
-            )}
+            <span
+              className={cn(
+                "u-num text-fine",
+                interval ? "text-ink-2" : "italic text-ink-2",
+              )}
+            >
+              {interval || S.graph.undated}
+            </span>
             {fact.stale && (
               <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
                 {S.graph.staleFactChip}
               </span>
             )}
             {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
-            {fact.corrected && (
-              <span
-                className="shrink-0 text-fine text-ink-2"
-                title={S.graph.correctedHint}
-              >
-                ⟲
-              </span>
-            )}
             <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
               {fact.evidence_count > 0 && (
                 <LinkButton
@@ -3201,6 +3200,12 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
       ))}
       {evidence.data?.evidence.length === 0 && (
         <p className="text-small text-ink-2">{S.graph.noEvidence}</p>
+      )}
+      {/* 这条区间不是原文写的，是引擎对账或人工裁决闭合的。**从事实行搬到这里**：
+          在行上它是一个 ⟲，谁也猜不出是什么意思；证据这一档本来就在回答
+          「凭什么这么说」，一句话说得明白 */}
+      {fact.corrected && (
+        <p className="text-fine text-ink-2">{S.graph.correctedHint}</p>
       )}
       {/* 置信度只在低到值得怀疑时说话（与 Review 低置信口径一致），常规不标 */}
       {fact.confidence < 0.75 && (
