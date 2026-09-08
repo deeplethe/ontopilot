@@ -1,0 +1,105 @@
+//! 两个映射测量台共用的地基：`mappings.mjs` 量提议，`ask.mjs` 量答案。
+//!
+//! **判等必须是同一份。** 两边都在做「跑一条 SQL，跟 gold 的结果比数」，
+//! 各写一份 `same()` 迟早漂移，而一旦漂移，「提议对了几条」与「答案对了几条」
+//! 就不是同一把尺子量出来的，放在一起比较就没有意义。
+
+import { execFileSync } from "node:child_process";
+
+export const BASE = process.env.BENCH_BASE || "http://127.0.0.1:8322";
+export const EMAIL = process.env.BENCH_EMAIL || "bench@test.local";
+export const PASSWORD = process.env.BENCH_PASSWORD || "benchbench123";
+const PSQL = process.env.BENCH_PSQL || "docker exec -e PGPASSWORD=utopia landscapebi-db-1 psql -U utopia -d utopia -tAc";
+/// 应用库与语料库都不是 BENCH_PSQL 里写的那个：**测量台跑在自己的库上**
+/// （bench/README 的第一条规则），而 BENCH_PSQL 与 govern.mjs 共用，指着开发库
+export const APP_DB = process.env.BENCH_APP_DB || "utopia_mapbench";
+
+export function parseArgs(argv) {
+  return Object.fromEntries(
+    argv.slice(2).reduce((acc, cur, i, arr) => {
+      if (cur.startsWith("--")) acc.push([cur.slice(2), arr[i + 1]?.startsWith("--") ? true : (arr[i + 1] ?? true)]);
+      return acc;
+    }, []),
+  );
+}
+
+let cookie = "";
+export async function api(method, url, body) {
+  const init = { method, headers: {} };
+  if (cookie) init.headers.cookie = cookie;
+  if (body !== undefined) { init.headers["content-type"] = "application/json"; init.body = JSON.stringify(body); }
+  const r = await fetch(BASE + url, init);
+  for (const c of r.headers.getSetCookie?.() ?? []) cookie = c.split(";")[0];
+  const text = await r.text();
+  if (!r.ok) throw new Error(`${method} ${url} -> ${r.status} ${text.slice(0, 200)}`);
+  return text ? JSON.parse(text) : null;
+}
+export const cookieHeader = () => cookie;
+
+/// 登录；账号不在就按首用户注册（新库上测量台该能从头跑起来，
+/// 而首个注册的人建 org 与 workspace 并且是 admin——注册数据源要 admin）
+export async function login() {
+  try {
+    await api("POST", "/api/v1/auth/login", { email: EMAIL, password: PASSWORD });
+  } catch {
+    await api("POST", "/api/v1/auth/register", {
+      email: EMAIL, password: PASSWORD, display_name: "bench", org_name: "bench",
+    });
+  }
+}
+
+function run(cmdline, sql) {
+  const parts = cmdline.split(" ");
+  return execFileSync(parts[0], [...parts.slice(1), sql], { encoding: "utf8", maxBuffer: 64 << 20 }).trim();
+}
+export const psql = (sql) => run(PSQL.replace(/-d \S+/, `-d ${APP_DB}`), sql);
+export const onDb = (db, sql) => run(PSQL.replace(/-d \S+/, `-d ${db}`), sql);
+export const num = (sql) => Number(psql(sql) || 0);
+
+/// 一条 SQL 跑出来的第一个值。
+export function value(db, sql) {
+  try {
+    const out = onDb(db, `SET statement_timeout = '20s'; ${sql}`);
+    // **命令标签也走 stdout。** `SET statement_timeout` 先打一行 `SET`，
+    // 而 -tA 下数据行不带标签——不滤掉它，每条读到的第一行都是 `SET`
+    const first = out.split("\n").map((l) => l.trim()).filter((l) => l !== "" && l !== "SET")[0];
+    if (first === undefined) return { empty: true };
+    return { n: Number(String(first).split("|")[0]) };
+  } catch (e) {
+    return { error: String(e.stderr || e.message).split("\n").filter((l) => l.trim())[0]?.slice(0, 120) };
+  }
+}
+
+/// 两个数是不是同一个口径算出来的。
+///
+/// **容差要松到吃得下小数舍入，紧到分得开两个口径**——tpch 里 charge 与
+/// order_total 是同一个业务量的两条算法，差在分位上，判成同一条是对的；
+/// 而 disc_revenue 与 discount_given 差着一个数量级。
+export const same = (a, b) => {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  if (a === b) return true;
+  return Math.abs(a - b) <= 1e-6 * Math.max(Math.abs(a), Math.abs(b), 1);
+};
+
+/// 人读答案时的同一个数。**比 `same` 松两个量级**：模型说「约 8.63 亿」
+/// 与 862793473.48 是同一个答案，而把它判成错的话，量的就不是问数准不准，
+/// 是模型肯不肯把小数点后八位抄全。
+export const roughly = (a, b) => {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  if (same(a, b)) return true;
+  return Math.abs(a - b) <= 5e-3 * Math.max(Math.abs(a), Math.abs(b), 1);
+};
+
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const log = (...a) => console.error(new Date().toISOString().slice(11, 19), ...a);
+
+export async function until(fn, everyMs, stallMs) {
+  let deadline = Date.now() + stallMs, last = null;
+  for (;;) {
+    const r = await fn();
+    if (r === true) return;
+    if (typeof r === "number" && r !== last) { last = r; deadline = Date.now() + stallMs; }
+    if (Date.now() > deadline) throw new Error(`等超时：${Math.round(stallMs / 60000)} 分钟没有任何进展`);
+    await sleep(everyMs);
+  }
+}

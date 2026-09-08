@@ -26,63 +26,19 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+// **判等与连库的那几样住在 lib.mjs，两个测量台共用。** 各写一份 `same()`
+// 迟早漂移，而一旦漂移，「提议对了几条」与「答案对了几条」就不是同一把尺子
+// 量出来的（#520）
+import { api, login, psql, onDb, num, value, same, log, until, sleep, parseArgs } from "./lib.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const BASE = process.env.BENCH_BASE || "http://127.0.0.1:8322";
-const EMAIL = process.env.BENCH_EMAIL || "bench@test.local";
-const PASSWORD = process.env.BENCH_PASSWORD || "benchbench123";
-
-const args = Object.fromEntries(
-  process.argv.slice(2).reduce((acc, cur, i, arr) => {
-    if (cur.startsWith("--")) acc.push([cur.slice(2), arr[i + 1]?.startsWith("--") ? true : (arr[i + 1] ?? true)]);
-    return acc;
-  }, []),
-);
+const args = parseArgs(process.argv);
 const corpusName = args.corpus || "tpch";
 const truth = JSON.parse(fs.readFileSync(path.join(HERE, "truth", `${corpusName}.mappings.json`), "utf8"));
 const CORPUS_DB = process.env.BENCH_CORPUS_DB || `bench_${corpusName}`;
 const CORPUS_CONN = process.env.BENCH_CORPUS_CONN || `postgres://utopia:utopia@localhost:5432/${CORPUS_DB}`;
-
-let cookie = "";
-async function api(method, url, body) {
-  const init = { method, headers: {} };
-  if (cookie) init.headers.cookie = cookie;
-  if (body !== undefined) { init.headers["content-type"] = "application/json"; init.body = JSON.stringify(body); }
-  const r = await fetch(BASE + url, init);
-  for (const c of r.headers.getSetCookie?.() ?? []) cookie = c.split(";")[0];
-  const text = await r.text();
-  if (!r.ok) throw new Error(`${method} ${url} -> ${r.status} ${text.slice(0, 200)}`);
-  return text ? JSON.parse(text) : null;
-}
-
-const PSQL = process.env.BENCH_PSQL || "docker exec -e PGPASSWORD=utopia landscapebi-db-1 psql -U utopia -d utopia -tAc";
-// 应用库与语料库都不是 BENCH_PSQL 里写的那个：**测量台跑在自己的库上**
-// （bench/README 的第一条规则），而 BENCH_PSQL 与 govern.mjs 共用，指着开发库。
-// 头一轮就栽在这里：脚本一直在开发库里找这个 kb 的任务，找不到，等满超时——
-// 而任务早就跑完了，十二条提议好端端躺在另一个库里
-const APP_DB = process.env.BENCH_APP_DB || "utopia_mapbench";
-function run(cmdline, sql) {
-  const parts = cmdline.split(" ");
-  return execFileSync(parts[0], [...parts.slice(1), sql], { encoding: "utf8", maxBuffer: 64 << 20 }).trim();
-}
-const psql = (sql) => run(PSQL.replace(/-d \S+/, `-d ${APP_DB}`), sql);
-// 语料库是另一个库：把 -d 的目标换掉，其余照旧（凭据、容器名都跟着 BENCH_PSQL 走）
-const corpusPsql = (sql) => run(PSQL.replace(/-d \S+/, `-d ${CORPUS_DB}`), `SET statement_timeout = '20s'; ${sql}`);
-const num = (sql) => Number(psql(sql) || 0);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = (...a) => console.error(new Date().toISOString().slice(11, 19), ...a);
-async function until(fn, everyMs, stallMs) {
-  let deadline = Date.now() + stallMs, last = null;
-  for (;;) {
-    const r = await fn();
-    if (r === true) return;
-    if (typeof r === "number" && r !== last) { last = r; deadline = Date.now() + stallMs; }
-    if (Date.now() > deadline) throw new Error(`等超时：${Math.round(stallMs / 60000)} 分钟没有任何进展`);
-    await sleep(everyMs);
-  }
-}
+const corpusPsql = (sql) => onDb(CORPUS_DB, `SET statement_timeout = '20s'; ${sql}`);
 
 // ---------- 语料 ----------
 //
@@ -91,9 +47,9 @@ async function until(fn, everyMs, stallMs) {
 // 继承第一轮的行，同一个库上跑两次，第二次的分不是第二次的。
 function loadCorpus() {
   const db = CORPUS_DB;
-  const exists = run(PSQL.replace(/-d \S+/, "-d postgres"), `SELECT 1 FROM pg_database WHERE datname='${db}'`);
+  const exists = onDb("postgres", `SELECT 1 FROM pg_database WHERE datname='${db}'`);
   if (!exists) {
-    run(PSQL.replace(/-d \S+/, "-d postgres"), `CREATE DATABASE ${db}`);
+    onDb("postgres", `CREATE DATABASE ${db}`);
     log(`建库 ${db}`);
   }
   const ddl = fs.readFileSync(path.join(HERE, "schemas", `${corpusName}.sql`), "utf8");
@@ -162,28 +118,6 @@ function proposalSql(m) {
   return null;
 }
 
-function value(sql) {
-  try {
-    const out = corpusPsql(sql);
-    // **命令标签也走 stdout。** `SET statement_timeout` 先打一行 `SET`，
-    // 而 -tA 下数据行不带标签——不滤掉它，每条口径读到的第一行都是 `SET`，
-    // 于是二十四条真值与十二条提议齐刷刷 NaN，看起来像全军覆没
-    const first = out.split("\n").map((l) => l.trim()).filter((l) => l !== "" && l !== "SET")[0];
-    if (first === undefined) return { empty: true };
-    return { n: Number(String(first).split("|")[0]) };
-  } catch (e) {
-    return { error: String(e.stderr || e.message).split("\n").filter((l) => l.trim())[0]?.slice(0, 120) };
-  }
-}
-
-// 相对误差。**容差要松到吃得下小数舍入，紧到分得开两个口径**——
-// tpch 里 charge 与 order_total 是同一个业务量的两条算法，差在分位上，
-// 判成同一条是对的；而 disc_revenue 与 discount_given 差着一个数量级
-const same = (a, b) => {
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-  if (a === b) return true;
-  return Math.abs(a - b) <= 1e-6 * Math.max(Math.abs(a), Math.abs(b), 1);
-};
 
 function score(kb) {
   const rows = JSON.parse(psql(`SELECT coalesce(json_agg(x), '[]') FROM (
@@ -194,11 +128,11 @@ function score(kb) {
         JOIN entity_types t ON t.id = e.type_id
        WHERE m.kb_id = '${kb}' ORDER BY e.canonical_name) x`));
 
-  const gold = truth.metrics.map((m) => ({ ...m, value: value(m.gold).n }));
+  const gold = truth.metrics.map((m) => ({ ...m, value: value(CORPUS_DB, m.gold).n }));
   // 22 条查询没说、但读得懂这个 schema 的人不会反对的口径（退货率、客均余额）。
   // **单独一栏，不算对也不算错**——头一轮把退货率记成 wrong，而它没有任何毛病，
   // 错的是真值不全。govern.mjs 的 `unlabeled` 是同一件事
-  const plausible = (truth.plausible || []).map((m) => ({ ...m, value: value(m.gold).n }));
+  const plausible = (truth.plausible || []).map((m) => ({ ...m, value: value(CORPUS_DB, m.gold).n }));
   const dimCols = new Set(truth.dimensions.map((d) => d.column.toLowerCase()));
   // 陷阱分角色。**同一列在两个角色下不是同一件事**：`p_size` 当维度是对的
   // （Q16 就按它分组），当指标求和才没有意义；`l_comment` 反过来。
@@ -227,7 +161,7 @@ function score(kb) {
     }
     const sql = proposalSql(m);
     if (!sql) { c.broken++; broken.push(`"${m.concept}" 没有可执行的定义（只有 table_name=${m.table_name}）`); continue; }
-    const got = value(sql);
+    const got = value(CORPUS_DB, sql);
     if (got.error) { c.broken++; broken.push(`"${m.concept}" → ${got.error}`); continue; }
     if (got.empty) { c.broken++; broken.push(`"${m.concept}" 返回空`); continue; }
 
@@ -272,16 +206,7 @@ function score(kb) {
 
 // ---------- 主流程 ----------
 const main = async () => {
-  try {
-    await api("POST", "/api/v1/auth/login", { email: EMAIL, password: PASSWORD });
-  } catch {
-    // 测量台该能在一个空库上从头跑起来。首个注册的人建 org 与 workspace 并且是
-    // admin——注册数据源要 admin，所以这条 fallback 不只是省事
-    log(`${EMAIL} 登录不上，按首用户注册`);
-    await api("POST", "/api/v1/auth/register", {
-      email: EMAIL, password: PASSWORD, display_name: "bench", org_name: "bench",
-    });
-  }
+  await login();
   const kb = args.kb && args.kb !== true ? args.kb : await fresh();
   score(kb);
 };
