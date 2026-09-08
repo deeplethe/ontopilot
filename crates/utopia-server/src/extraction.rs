@@ -662,6 +662,24 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             classes = etypes.len(),
             "本体超出提示词预算，改为按分块检索候选"
         );
+        // **这一篇要靠检索，那就先把检索用的向量补齐——不要跟补齐任务赛跑。**
+        //
+        // 建库装包、随手上传，是产品里最自然的一条路，而它踩的正是这个坑：
+        // `embed_ontology` 与 `extract_document` 同时排队，向量没就绪时按块检索
+        // 取不到候选，退回全量本体——实测每块 109k tokens（正文只占 0.2%），
+        // 且**多给的那些类会吃掉实体**（build_lists 上面那段注释量过：25 → 18）。
+        // 更糟的是连锁：109k × 并发把端点打到限流，退避五次仍失败就整块跳过，
+        // 一轮 13 块抽出来的同时 24 块被丢掉；抽取又占着端点，向量补得更慢。
+        //
+        // `refresh` 是幂等的、按库串行的（ontology_index::PER_KB），所以：
+        // 第一篇文档把向量补出来，同时到的其余文档在锁上等一下，进来时已经没事可做。
+        // 没配嵌入模型时它直接返回 0，退回全量那条路原样保留——那种部署本来就没有检索。
+        //
+        // 代价是新库的第一篇要多等几分钟。**换来的是它不会被一份烂抽取永久写坏**：
+        // 事实一旦落库，没有人会回头发现「这篇当初是在本体看不见的时候抽的」。
+        if let Err(e) = crate::ontology_index::refresh(state, doc.kb_id).await {
+            tracing::warn!(%document_id, error = %e, "本体向量补齐失败，这一篇按全量本体抽");
+        }
     }
     // 内置类恒在：检索漏掉的分块仍要有地方落脚，否则模型无类可选
     let seed_classes: HashSet<Uuid> = etypes.iter().filter(|t| t.builtin).map(|t| t.id).collect();
