@@ -20,6 +20,7 @@
 // **画布上没有自己的搜索框。** 找一个类或关系走左栏的过滤框——同一页放两个
 // 搜索等于没决定搜索属于谁。左栏选中什么，画布就把它带到眼前（bringIntoView）。
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Graphology from "graphology";
 import { circular } from "graphology-layout";
 import forceAtlas2 from "graphology-layout-forceatlas2";
@@ -56,7 +57,6 @@ import { Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
 import {
-  cn,
   Pill,
   Row,
   ToolButton,
@@ -90,6 +90,16 @@ const EDGE_DISJOINT_FOCUS = "rgba(255,157,175,0.9)";
    文库里抽取完成的徽章都用它，所以「这条边上的类不是抽取来的，是规则算出来的」
    不必再学一遍。弧线：规则的结论多半正是主类的子类，那对类之间已经有一条继承
    边，直线会与它重叠 */
+/* 图例上的色块不用画布上那几个带 alpha 的值。**画布靠亮度区分继承与关系**
+   （继承亮而细、关系灰而粗，两种线常常压在一起，只能这么分），可图例是四个
+   并排的小方块，同样两毫米高、一个 95% 白一个 60% 白，读出来不是"两种边"，
+   是"这排线粗细不匀"——用户第一眼就是这么说的。
+   这里一律实色，同一强度，区别交给颜色本身；取的是各自的**常态**色而不是
+   聚焦色，因为常态才是画面上多数时候的样子 */
+const LEGEND_SUBCLASS = "#ebebeb";
+const LEGEND_RELATION = "#8c8c8c";
+const LEGEND_DISJOINT = "#ff9daf";
+const LEGEND_RULE = "#c4a5ff";
 const EDGE_RULE = "rgba(196,165,255,0.5)";
 const EDGE_RULE_FOCUS = "rgba(196,165,255,0.95)";
 const EDGE_DIM = "rgba(48,48,48,0.4)";
@@ -126,9 +136,15 @@ const RELATION_EDGE_SIZE = 2;
  *  二十几条弧扇开就是那团毛球，而且哪条也点不中；一条边写着「23 relations」
  *  说的是同一件事。点它选中 domain 那个类，面板的属性页把这些关系一条条列出来 */
 const BUNDLE_ABOVE = 3;
-/** sigma 边渲染的最小厚度（像素），默认 1.7——同一个理由，全局兜底,
- *  免得缩小到某个层级时任何边都变得难点 */
-const MIN_EDGE_THICKNESS = 3;
+/** sigma 边渲染的最小厚度（像素），默认 1.7——同一个理由，全局兜底，
+ *  免得缩小到某个层级时任何边都变得难点。
+ *
+ *  **从 3 降到 2**（#497）：3 把这张图上刻意分出来的粗细一起压平了——继承边
+ *  写的是 0.9、关系边是 2，下限一兜，两种都按 3 画，于是「继承细而亮、关系
+ *  粗而灰」这条区分在画面上根本不存在，整张图只剩一个重量。而且模式图成了
+ *  图谱页的一档之后，两档之间切换看得见这一跳：同一块画布，边不该换重量。
+ *  2 与关系边自己的尺寸对齐，继承边重新细得下去，也仍然点得中 */
+const MIN_EDGE_THICKNESS = 2;
 /** 节点大小按层级深度走：根最大，每往下一层小一档，到底不再缩。区间与
  *  /graph 的节点（5–13）同一档，两张图并排看是同一个引擎画的。以前按连接数
  *  走，结果 Thing 和它的每个子类都顶到同一个上限，层级在图上读不出来 */
@@ -536,7 +552,7 @@ export function OntologySchemaGraph({
   rules = [],
   selected,
   onSelect,
-  chromeTop,
+  chromeSlot,
 }: {
   entityTypes: EntityTypeView[];
   /** 业务规则：画成主类 → 结论类的一条紫弧，点它打开规则那一页 */
@@ -549,9 +565,10 @@ export function OntologySchemaGraph({
    *  和点左栏的类名走的是同一条状态,右侧停靠的表单也就自然是同一份 */
   selected: SchemaSelection;
   onSelect: (sel: SchemaSelection) => void;
-  /** 被别的页面嵌进去时，自己那两组悬浮 chrome 往下让多少（#497）。
-   *  本体页里它独占画布，是 0；图谱页顶上还压着搜索框和层级开关 */
-  chromeTop?: string;
+  /** 图例渲染到哪儿（#497）。给了节点就 portal 过去，由宿主页把它排进
+   *  自己那条顶栏——图谱页顶上已经有搜索框和层级开关，图例再自己浮一层
+   *  就掉到第二行去了，那一排本该是一行。本体页不给，图例照旧自己浮在角上 */
+  chromeSlot?: HTMLElement | null;
 }) {
   const entityById = useMemo(
     () => new Map(entityTypes.map((t) => [t.id, t])),
@@ -854,15 +871,21 @@ export function OntologySchemaGraph({
   const unscopedPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>("top left");
   const empty = entityTypes.length === 0;
 
+  /** 图例落在哪儿：宿主给了槽就 portal 过去，由它排进自己那一行；
+   *  没给就照旧浮在画布左上角 */
+  const renderChrome = (chrome: React.ReactNode) =>
+    chromeSlot ? (
+      createPortal(chrome, chromeSlot)
+    ) : (
+      <div className="absolute left-3 right-3 top-3 z-10 flex items-start gap-2 pointer-events-none">
+        {chrome}
+      </div>
+    );
+
   return (
     <div className="h-full relative">
-      {/* 顶部悬浮条：图例 + 取景 + 未限定关系入口。没有搜索框——找东西走左栏 */}
-      <div
-        className={cn(
-          "absolute left-3 right-3 z-10 flex items-start gap-2 pointer-events-none",
-          chromeTop ?? "top-3",
-        )}
-      >
+      {/* 图例 + 取景 + 未限定关系入口。没有搜索框——找东西走左栏 */}
+      {renderChrome(
         <div className="pointer-events-auto flex flex-wrap gap-2">
           {/* 静态图例：几种边各自的说法，不是可切换的过滤器——本体的边远比
               实例图少，藏一种边省下的空间不值得多一层交互。
@@ -870,11 +893,11 @@ export function OntologySchemaGraph({
               不存在的东西的图例 */}
           {(
             [
-              [S.ontology.schemaLegendInheritance, EDGE_SUBCLASS_FOCUS],
-              [S.ontology.schemaLegendRelation, EDGE_RELATION_FOCUS],
-              [S.ontology.schemaLegendDisjoint, EDGE_DISJOINT_FOCUS],
+              [S.ontology.schemaLegendInheritance, LEGEND_SUBCLASS],
+              [S.ontology.schemaLegendRelation, LEGEND_RELATION],
+              [S.ontology.schemaLegendDisjoint, LEGEND_DISJOINT],
               ...(rules.length
-                ? ([[S.ontology.schemaLegendRule, EDGE_RULE_FOCUS]] as const)
+                ? ([[S.ontology.schemaLegendRule, LEGEND_RULE]] as const)
                 : []),
             ] as const
           ).map(([label, color]) => (
@@ -945,8 +968,8 @@ export function OntologySchemaGraph({
               )}
             </div>
           )}
-        </div>
-      </div>
+        </div>,
+      )}
 
       {/* 画布：世界坐标网格层（随相机动）垫在 sigma WebGL 层下，与 /graph 同款 */}
       <div className="absolute inset-0">

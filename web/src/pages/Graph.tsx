@@ -46,6 +46,7 @@ import {
   OntologySchemaGraph,
   type SchemaSelection,
 } from "./OntologySchemaGraph";
+import { SchemaClassPanel } from "./classPanel";
 import { EntityDialog, FactTimeDialog } from "./graphDialogs";
 import { fmtTime } from "../time";
 import { NextStep, nextStep, useReadiness } from "./NextStep";
@@ -432,6 +433,10 @@ export function Graph() {
     },
     [kbId, navigate],
   );
+
+  /** 顶栏里给模式图图例留的位置。**用 state 不用 ref**：portal 的目标是
+   *  一个真实节点，ref 变化不会让 React 重渲染，槽会一直是空的 */
+  const [chromeSlot, setChromeSlot] = useState<HTMLDivElement | null>(null);
 
   /** schema 层选中的那个类（选的是关系或什么都没选时为 null） */
   const selectedClass = useMemo(
@@ -1390,6 +1395,14 @@ export function Graph() {
           </Button>
         )}
 
+        {/* schema 层的图例（边的几种说法、取景说明）落在这里，与搜索框、
+            层级开关同一行——它是这一页顶栏的一部分，不是画布上另浮一层 */}
+        {level === "schema" && (
+          /* **shrink-0**：图例里面是 flex-wrap，可缩的话它的最小内容宽就是
+             一枚 chip，于是被压成窄窄一条、chip 竖着排成一列糊在画布上。
+             不缩，那一排就老老实实待在一行里 */
+          <div ref={setChromeSlot} className="pointer-events-auto shrink-0" />
+        )}
         {/* 图例（点击切换类型显隐）。**只摆前 LEGEND_MAX 个**，其余收进
             「+N 个类」——那一排横着长，类一多就换行把画布顶下去；而且十几个
             一模一样的胶囊排开，谁重要也读不出来 */}
@@ -1652,9 +1665,9 @@ export function Graph() {
             entityTypes={entityTypes}
             relationTypes={ontology.data?.relation_types ?? []}
             rules={rules.data?.rules ?? []}
-            // 顶上压着搜索框与层级开关（32 高 + 12 的上边距），它自己那排
-            // 图例往下让一档
-            chromeTop="top-16"
+            // 图例交给顶栏那个槽：这一页顶上已经有搜索框和层级开关，
+            // 让它自己再浮一层就掉到第二行去了
+            chromeSlot={chromeSlot}
             selected={schemaSel}
             /* 点一个类只是选中，不换层。**下钻是显式的一步**（顶栏那个按钮）
                ——一点就被弹到另一层的话，这一层就没法用来看结构了，而看结构
@@ -1818,6 +1831,19 @@ export function Graph() {
           onChange={setTimeT}
           playing={playing}
           onPlayingChange={setPlaying}
+        />
+      )}
+
+      {/* schema 层的类面板：选中一个类，说它是什么。**只读**——改本体去本体页，
+          面板末尾那条路就是干这个的。与实体侧栏同一副壳、同一个位置，
+          两档之间切换时右边这块地方讲的是同一种事 */}
+      {level === "schema" && selectedClass && (
+        <SchemaClassPanel
+          kbId={kbId}
+          cls={selectedClass}
+          allTypes={entityTypes}
+          relations={ontology.data?.relation_types ?? []}
+          onClose={() => setSchemaSel(null)}
         />
       )}
 

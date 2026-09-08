@@ -19,7 +19,6 @@ import {
   Split,
   Upload,
   Wand2,
-  X,
 } from "lucide-react";
 import {
   api,
@@ -34,6 +33,12 @@ import {
   type RelationTypeView,
   type UniquenessCandidate,
 } from "../api";
+import {
+  DockedPanel,
+  PanelHeader,
+  Def,
+  Description,
+} from "./classPanel";
 import { S } from "../i18n";
 import { useKb } from "../kb";
 import { toast } from "../toast";
@@ -710,83 +715,6 @@ export function Ontology() {
 
    退场也照图谱页：`u-dock-out` 演完再卸载，而不是一下子消失 */
 
-function DockedPanel({
-  header,
-  actions,
-  tabs,
-  exiting,
-  onClose,
-  children,
-}: {
-  header: React.ReactNode;
-  /** 关闭键左边的动作（编辑）：面板只展示，改动从这里开弹窗 */
-  actions?: React.ReactNode;
-  /** 分段控件，跟着标题一起固定在顶上——它要能一直点得到 */
-  tabs?: React.ReactNode;
-  /** 正在退场：演动画，期间不再接受点击（u-dock-out 里带了 pointer-events） */
-  exiting?: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      // 与图谱页的实体面板同一副壳：同宽（w-96）、同一个顶部起点（给顶上那排
-      // 药丸让位），同一个头部解剖。两页并排看是同一件东西
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-overlay shadow-2xl flex flex-col`}
-    >
-      <div className="shrink-0 flex items-start justify-between gap-2 px-4 py-4 border-b border-line">
-        <div className="min-w-0">{header}</div>
-        <div className="-mr-1 -mt-1 flex shrink-0 items-center gap-1">
-          {actions}
-          <IconButton size="sm" label={S.ontology.schemaClosePanel} onClick={onClose}>
-            <X size={15} />
-          </IconButton>
-        </div>
-      </div>
-      {tabs && <div className="shrink-0 px-4 pt-3 pb-1">{tabs}</div>}
-      <div className="u-scroll flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 px-4 py-3">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/* 面板标题：色点 + 名字 + 第二行的小字。与图谱页实体面板的头一个写法 */
-function PanelHeader({
-  color,
-  square,
-  title,
-  sub,
-  builtin,
-}: {
-  color?: string;
-  square?: boolean;
-  title: string;
-  sub?: string;
-  builtin?: boolean;
-}) {
-  return (
-    <>
-      <div className="flex items-center gap-2">
-        {color && (
-          <span
-            className={`h-2.5 w-2.5 shrink-0 ${square ? "scale-90" : "rounded-full"}`}
-            style={{ background: color, boxShadow: `0 0 8px ${color}55` }}
-          />
-        )}
-        <span
-          className="truncate text-title font-semibold tracking-tight text-ink"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          {title}
-        </span>
-        {builtin && <Chip tone="neutral">{S.ontology.builtin}</Chip>}
-      </div>
-      {sub && <div className="mt-1 text-small text-ink-2">{sub}</div>}
-    </>
-  );
-}
-
 /* ---------- 实例列表：选中类的实体（服务端分页，点击进图谱） ---------- */
 
 function InstancesCard({ kbId, type }: { kbId: string; type: EntityTypeView }) {
@@ -1161,23 +1089,6 @@ function PropertyList({
 /* ---------- 定义（只读）：面板展示，改动开弹窗 ---------- */
 
 /** 一行「标签 / 值」；值空着就写占位，不留白 */
-function Def({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="border-b border-line py-2 last:border-0">
-      <div className="text-small text-ink-2">{label}</div>
-      <div className="mt-1 break-words text-body text-ink">{children}</div>
-    </div>
-  );
-}
-
-function Description({ text }: { text: string | null | undefined }) {
-  return text?.trim() ? (
-    <span className="whitespace-pre-wrap">{text}</span>
-  ) : (
-    <span className="text-ink-2">{S.ontology.noDescription}</span>
-  );
-}
-
 function ClassDefinition({
   cls,
   allTypes,

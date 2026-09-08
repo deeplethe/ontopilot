@@ -1533,6 +1533,7 @@ export const en = {
     schemaIncoming: "To this class",
     schemaNoRelationships: "No relationships yet.",
     schemaNoInstances: "No instances yet.",
+    editInOntology: "Edit in the ontology",
     schemaConnectHint: "Connect using an existing relationship",
     schemaConnectPlaceholder: "Search relationships…",
     schemaConnectAs: "As",
