@@ -1184,6 +1184,8 @@ export const zh: Strings = {
       `导入完成——新建 ${created} 个类，更新 ${updated} 个。`,
     importHistory: "历次导入",
     importColFile: "文件",
+    importColFormat: "格式",
+    importColSize: "大小",
     importColTriples: "三元组",
     importColWhen: "导入",
     importDetail: "详情",

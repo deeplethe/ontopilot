@@ -1333,6 +1333,8 @@ export const en = {
       `Imported — ${created} classes created, ${updated} updated.`,
     importHistory: "Previous imports",
     importColFile: "File",
+    importColFormat: "Format",
+    importColSize: "Size",
     importColTriples: "Triples",
     importColWhen: "Imported",
     importDetail: "Detail",

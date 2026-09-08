@@ -2582,6 +2582,8 @@ function ImportHistory({ kbId }: { kbId: string }) {
             <THead>
               <Tr>
                 <Th>{S.ontology.importColFile}</Th>
+                <Th>{S.ontology.importColFormat}</Th>
+                <Th>{S.ontology.importColSize}</Th>
                 <Th>{S.ontology.importClasses}</Th>
                 <Th>{S.ontology.importRelations}</Th>
                 <Th>{S.ontology.importAttributes}</Th>
@@ -2595,13 +2597,18 @@ function ImportHistory({ kbId }: { kbId: string }) {
                 const s = im.summary ?? {};
                 return (
                   <Tr key={im.id}>
+                    {/* 一格一件事，一行一条导入。**格式与大小各占一列**，不是
+                        叠在文件名底下——叠着把每一行都撑成两行高，而右边还空着
+                        半张表。文件名不用等宽：等宽是给键、id、代码和 URL 的
+                        （DESIGN.md 1），一个文件名在一列 Geist 里只显得突兀 */}
                     <Td>
-                      <div className="max-w-48 truncate font-mono text-small text-ink" title={im.filename}>
+                      <div className="max-w-64 truncate text-small text-ink" title={im.filename}>
                         {im.filename}
                       </div>
-                      <div className="u-num text-fine text-ink-2">
-                        {im.format} · {S.ontology.importSize(im.byte_size)}
-                      </div>
+                    </Td>
+                    <Td className="text-small text-ink-2">{im.format}</Td>
+                    <Td className="u-num whitespace-nowrap text-small text-ink-2">
+                      {S.ontology.importSize(im.byte_size)}
                     </Td>
                     <Td className="text-small text-ink-2">
                       <Counts
