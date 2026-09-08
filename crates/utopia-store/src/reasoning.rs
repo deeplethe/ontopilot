@@ -1182,7 +1182,7 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<LoadedRule
             .await?;
 
     let ids: Vec<Uuid> = rows.iter().map(|r| r.0).collect();
-    // 组序在前：两组推出同一区间时，留下的证明得是稳定的那一条（0026）
+    // 组序在前：两组推出同一区间时，留下的证明得是稳定的那一条（0029）
     let conds: Vec<(Uuid, i32, Uuid, String, Option<serde_json::Value>)> = sqlx::query_as(
         "SELECT rule_id, group_seq, predicate_id, op, operand
            FROM attribute_rule_conditions

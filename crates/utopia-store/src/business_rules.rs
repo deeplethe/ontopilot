@@ -81,7 +81,7 @@ type ConditionRow = (
 /// 一条条件，界面与 API 共用的形状。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ConditionInput {
-    /// 组号：同组「与」，组间「或」（0026）。**缺省 0**——不带组的调用方
+    /// 组号：同组「与」，组间「或」（0029）。**缺省 0**——不带组的调用方
     /// 送来的就是一组合取，与从前一模一样
     #[serde(default)]
     pub group: i32,

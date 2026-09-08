@@ -107,8 +107,8 @@ function parseOperand(op: string, text: string): unknown | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** 条件按组切开，组序升序——与求值器读它的顺序一致（决定记录 0026）。
-    没带组号的当第 0 组：0026 之前写下的规则本来就是一整个合取 */
+/** 条件按组切开，组序升序——与求值器读它的顺序一致（决定记录 0029）。
+    没带组号的当第 0 组：0029 之前写下的规则本来就是一整个合取 */
 function byGroup<T extends { group?: number }>(conditions: T[]): T[][] {
   const g = (c: T) => c.group ?? 0;
   return [...new Set(conditions.map(g))]
@@ -261,7 +261,7 @@ export function RulesPanel({
     mutationFn: async () => {
       const d = draft!;
       // 组号就是块在表单里的位置。**不必维护成一串连号**——服务端收下发来的
-      // 整数，求值器自己排序（0026）；这里从 0 数起只是因为最省事
+      // 整数，求值器自己排序（0029）；这里从 0 数起只是因为最省事
       const conditions: RuleCondition[] = d.groups.flatMap((g, gi) =>
         g.map((c) => {
           const operand = parseOperand(c.op, c.text);
@@ -527,7 +527,7 @@ export function RulesPanel({
 }
 
 /** 规则读成一句话。**这一段就是它的全部语义**，没有别处再藏着条件。
-    组内是合取、组间是析取（决定记录 0026），所以中间写的是「并且」与「或者」，
+    组内是合取、组间是析取（决定记录 0029），所以中间写的是「并且」与「或者」，
     不是一个点号：符号读不出「全都要成立」，而那正是规则最容易被误读的地方。 */
 function RuleSentence({ rule }: { rule: BusinessRule }) {
   const groups = byGroup(rule.conditions);
@@ -660,7 +660,7 @@ function RuleDialog({
           />
         </Field>
 
-        {/* 条件是一块一块写的：块里的行同时成立，块与块任一成立即可（0026）。
+        {/* 条件是一块一块写的：块里的行同时成立，块与块任一成立即可（0029）。
             **块不画框**——行首的「并且」和块间那条「或者」已经把范围说清楚了，
             再套一圈边框就是给表单里的一段字段发面板（DESIGN.md 6） */}
         <Field

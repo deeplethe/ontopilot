@@ -1,4 +1,4 @@
--- 0039 · 一条规则可以说「或」（#476，决定记录 0026）
+-- 0039 · 一条规则可以说「或」（#476，决定记录 0029）
 --
 -- 编号让开 0038：另一条分支已经占了那个号（「a decision records why」），
 -- 而共享的开发库里它已经落过库了。
@@ -28,7 +28,7 @@ ALTER TABLE attribute_rule_conditions
 
 -- `is not one of`：对一条**存在的**事实做值判断，所以照样有前提、有区间，
 -- 与别的条件同构。而「压根没有这个属性」不在这里——缺失没有前提事实可挂
--- 区间，开放世界里「没记」也不等于「没有」（见 0026 末节）
+-- 区间，开放世界里「没记」也不等于「没有」（见 0029 末节）
 ALTER TABLE attribute_rule_conditions
     DROP CONSTRAINT attribute_rule_conditions_op_check;
 ALTER TABLE attribute_rule_conditions

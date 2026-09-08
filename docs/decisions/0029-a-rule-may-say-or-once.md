@@ -1,4 +1,4 @@
-# 0026 · A rule may say "or", once
+# 0029 · A rule may say "or", once
 
 - **Status**: implemented · `group_seq` on `attribute_rule_conditions` (migration `0039`, existing conditions default to group 0 so every rule keeps its meaning), the evaluator runs group by group with the combination cap per group and one dedupe by interval across groups, `not_in` beside `in` · the API carries `group` on a condition and defaults it to 0, so a caller that sends a flat list still sends one conjunction · the rule editor writes blocks and the table reads the sentence back with its "or" in it
 - **Written**: 2026-09-08 (conventions in the [README](README.md))
