@@ -52,6 +52,8 @@ Settings and other read-a-column-of-fields pages are centred and width-limited (
 
 Exempt: the floating panels on Graph and Ontology. Those are `glass-strong` surfaces over a canvas, and their job is to hold the canvas down so they can be read — a different problem from this one.
 
+A floating panel **shows**; it does not edit. A class, a property, an entity, a fact's interval are read there, and every change — creating, editing, deleting, connecting — opens a `FormDialog`: one title, one form, Cancel and Save at the bottom right, Delete on its own at the bottom left. The pencil beside the panel's close key is the way in. A form inside the panel put half-edited fields next to the definition being read and Save beside Delete; a dialog gives the change its own frame, its own Esc, and leaves the panel to say what the thing is. The dedicated dialogs live in `pages/ontologyDialogs.tsx` and `pages/graphDialogs.tsx`.
+
 ## How this is enforced
 
 `web/scripts/style-guard.mjs` scans `web/src/**/*.tsx` for the patterns above and fails CI on any hit. It runs first in `pnpm build`. While the pages were being migrated, `web/style-guard.baseline.json` listed the ones not yet done; every page passes now and the file is gone. A new file is checked from its first commit.

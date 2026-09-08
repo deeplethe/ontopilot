@@ -850,12 +850,38 @@ type TimedEdges = (
 /// 锚点为止。两端都不知道的行读成空区间，求交时自然掉出去——它支撑不了任何派生。
 /// 返回 `(from, to, from_anchored, to_anchored)`。
 fn read_span(
+    temporal: crate::graph::Temporal,
     from: Option<chrono::DateTime<chrono::Utc>>,
+    from_precision: Option<&str>,
     to: Option<chrono::DateTime<chrono::Utc>>,
     to_precision: Option<&str>,
     attested_from: chrono::DateTime<chrono::Utc>,
     attested_to: Option<chrono::DateTime<chrono::Utc>>,
 ) -> (Option<i64>, Option<i64>, bool, bool) {
+    use crate::graph::Temporal;
+    match temporal {
+        // 恒常每一刻都成立，证据日期不闸它（0028）
+        Temporal::Eternal => return (None, None, false, false),
+        // 事件在它命名的那个桶里成立；没日期的事件区间为空——`overlap` 对空交集不推，
+        // 所以一条经过「不知何时收购」的链推不出东西，与读出侧一致（0028）。
+        // 0028 之前写下的事件行终点是空的，按起点那个桶读
+        Temporal::Event => {
+            return match from {
+                None => {
+                    let a = attested_from.timestamp();
+                    (Some(a), Some(a), true, true)
+                }
+                Some(f) => {
+                    let precision = to_precision
+                        .filter(|p| *p != crate::graph::ENDED_UNKNOWN)
+                        .or(from_precision);
+                    let end = crate::graph::bucket_end(to.unwrap_or(f), precision);
+                    (Some(f.timestamp()), Some(end.timestamp()), false, false)
+                }
+            };
+        }
+        Temporal::State => {}
+    }
     let (f, from_anchored) = match from {
         Some(x) => (Some(x.timestamp()), false),
         None => (Some(attested_from.timestamp()), true),
@@ -886,6 +912,16 @@ async fn timed_edges(pool: &PgPool, kb_id: Uuid) -> AppResult<TimedEdges> {
     .bind(kb_id)
     .fetch_all(pool)
     .await?;
+    // 谓词的时间语义（0028）：事件按它的桶读，恒常两端开放。一次取全，按谓词查
+    let temporal_of: HashMap<Uuid, crate::graph::Temporal> = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT id, temporal FROM relation_types WHERE kb_id = $1",
+    )
+    .bind(kb_id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|(id, t)| (id, crate::graph::Temporal::parse(&t)))
+    .collect();
 
     let mut edges = Vec::with_capacity(rows.len());
     let mut meta: HashMap<Uuid, PremiseMeta> = HashMap::new();
@@ -894,7 +930,16 @@ async fn timed_edges(pool: &PgPool, kb_id: Uuid) -> AppResult<TimedEdges> {
         // 按读出来的区间推（0022）：没起点的前提从最早的证据起，结束了不知哪天的
         // 到说出它的那份文档为止。读成开放的话，一条经过 "former CEO" 的链会推出
         // 一条今天还成立的边
-        let (f, t, fa, ta) = read_span(from, to, tp.as_deref(), attested_from, attested_to);
+        let temporal = temporal_of.get(&pred).copied().unwrap_or_default();
+        let (f, t, fa, ta) = read_span(
+            temporal,
+            from,
+            fp.as_deref(),
+            to,
+            tp.as_deref(),
+            attested_from,
+            attested_to,
+        );
         edges.push(TimedEdge {
             edge: Edge {
                 fact: id,
@@ -1326,8 +1371,17 @@ async fn attribute_facts(
         attested_to,
     ) in rows
     {
-        // 与公理那一路同一种读法（0022）：读数没日期就从它的文档起算
-        let (f, t, fa, ta) = read_span(from, to, tp.as_deref(), attested_from, attested_to);
+        // 与公理那一路同一种读法（0022）：读数没日期就从它的文档起算。
+        // 属性一律是状态（建属性时固定 state，界面也不给改）
+        let (f, t, fa, ta) = read_span(
+            crate::graph::Temporal::State,
+            from,
+            fp.as_deref(),
+            to,
+            tp.as_deref(),
+            attested_from,
+            attested_to,
+        );
         // 属性事实的字面值是 `{"value": …, "unit": …}`；比较的是里面那个 value。
         // 取不到就把整个对象交给求值器——它对认不出的形状一律判不满足
         let inner = value.get("value").cloned().unwrap_or_else(|| value.clone());

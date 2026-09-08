@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   useCallback,
   useEffect,
@@ -38,7 +39,8 @@ import {
   TRANSPARENT,
 } from "./graphVisuals";
 import { EntityHistory } from "./EntityHistory";
-import { fmtTime, parseDateInput } from "../time";
+import { EntityDialog, FactTimeDialog } from "./graphDialogs";
+import { fmtTime } from "../time";
 import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
@@ -56,6 +58,7 @@ import {
   X,
   ZoomIn,
   ZoomOut,
+  ChevronRight,
 } from "lucide-react";
 import {
   api,
@@ -72,22 +75,20 @@ import {
   Button,
   DangerConfirm,
   ExpandCard,
-  Field,
   HOVER_ROW,
   IconButton,
   Input,
+  LinkButton,
   Pill,
-  Radio,
   REVEAL,
+  ROW_TRAILING,
   Row,
   Segmented,
   ToolButton,
   ToolDivider,
   ToolTower,
   cn,
-  localDate,
   GroupLabel,
-  SearchSelect,
 } from "../ui";
 import { usePopoverFlip } from "../ui/popoverFlip";
 import { useKb, useKbId } from "../kb";
@@ -2657,9 +2658,9 @@ function EntityPanel({
   }, [derived, entityId]);
   // Relations = 按关系分组（查关系）；Timeline = 有效时间轴（事情何时成立）；
   // History = 记录时间轴（我们何时这么认为、又何时改了主意）
-  const [view, setView] = useState<
-    "relations" | "timeline" | "history" | "derived"
-  >("relations");
+  const [view, setView] = useState<"relations" | "history" | "derived">(
+    "relations",
+  );
   useEffect(() => {
     const it = intent?.current;
     if (!it) return;
@@ -2670,11 +2671,9 @@ function EntityPanel({
 
   const e: GraphNode | undefined = detail.data?.entity;
 
-  // 实体修正：抽取给的是初判，判错此前只能整库重抽
+  // 实体修正（名字、类型）在弹窗里：面板只展示
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [draftType, setDraftType] = useState("");
   // 同名的其他实体：详情接口打开就给。改名之后再用响应里的那份覆盖——
   // 改完名可能撞上一批新的同名，那时候的答案比打开时的新
   const [renamedPeers, setRenamedPeers] = useState<GraphNode[] | null>(null);
@@ -2704,98 +2703,32 @@ function EntityPanel({
     },
     onError: (err: Error) => toast.error(err.message),
   });
-  // 类型下拉要的是全量本体，不是当前视图里出现过的那几个
-  const ontology = useQuery({
-    queryKey: ["ontology", kbId],
-    queryFn: () => api.ontology(kbId),
-    enabled: editing,
-  });
-  const types = ontology.data?.entity_types ?? [];
-
   const openEdit = () => {
     if (!e) return;
-    setDraftName(e.name);
-    setDraftType(types.find((t) => t.key === e.type_key)?.id ?? "");
-    setSameName([]);
     setEditing(true);
   };
-  // 本体是异步来的：它到齐时把类型下拉对到当前类型上
-  useEffect(() => {
-    if (editing && !draftType && e)
-      setDraftType(types.find((t) => t.key === e.type_key)?.id ?? "");
-  }, [editing, draftType, e, types]);
 
-  const save = useMutation({
-    mutationFn: () => {
-      const body: { type_id?: string; canonical_name?: string } = {};
-      if (draftName.trim() && draftName.trim() !== e?.name)
-        body.canonical_name = draftName.trim();
-      const curId = types.find((t) => t.key === e?.type_key)?.id;
-      if (draftType && draftType !== curId) body.type_id = draftType;
-      return api.updateEntity(kbId, entityId, body);
-    },
-    onSuccess: (r) => {
-      setEditing(false);
-      setSameName(r.same_name);
-      toast.success(S.graph.editSaved);
-      // 改了类型/名字，图谱节点与本体计数都要跟着动
-      qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
-      qc.invalidateQueries({ queryKey: ["graph", kbId] });
-      qc.invalidateQueries({ queryKey: ["ontology", kbId] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const dirty =
-    !!e &&
-    (draftName.trim() !== e.name ||
-      draftType !== (types.find((t) => t.key === e.type_key)?.id ?? ""));
-
-  // Relations = 当下有效的快照（as-of now）；已闭合的历史只出现在 Timeline。
-  // 按「方向 + 谓词」分组：实体自身名不再逐行重复，谓词只出现在小节标题里
-  const { groups, historicalCount } = useMemo(() => {
+  /* Relations 是一张表，不再分「现行」和「年表」两页：**从这个实体出发 / 指向这个实体**
+     两节，节里一行一条——左边关系名、右边实体名，与本体页那张同一副（不再按谓词
+     分二级）；按关系名、再按起点排。此刻不成立的（0022 的口径按读出来的区间判）折在
+     节尾的「N past」里——Wikidata 把历史值留在同一列表里靠结束时间区分，是同一个道理 */
+  const sections = useMemo(() => {
     const all = detail.data?.facts ?? [];
     const nowIso = new Date().toISOString();
-    // 「此刻成立」按读出来的区间判（0022）：结束了不知哪天的那条不再混进现行里
-    const current = all.filter(
-      (f) =>
-        (!f.holds_from || f.holds_from <= nowIso) &&
-        (!f.holds_to || f.holds_to > nowIso),
-    );
-    const map = new Map<
-      string,
-      {
-        key: string;
-        label: string | null;
-        inferred: boolean;
-        direction: string;
-        rows: EntityFact[];
-      }
-    >();
-    for (const f of current) {
-      // 谓词为空的事实归到同一组：它们的共同点就是「说不出是什么关系」
-      const k = `${f.direction}:${f.predicate_key ?? ""}`;
-      if (!map.has(k))
-        map.set(k, {
-          key: k,
-          label: f.predicate_label,
-          inferred: f.inferred,
-          direction: f.direction,
-          rows: [],
-        });
-      map.get(k)!.rows.push(f);
-    }
-    const arr = [...map.values()];
-    for (const gr of arr)
-      gr.rows.sort((a, b) =>
-        (a.valid_from ?? "9999") < (b.valid_from ?? "9999") ? -1 : 1,
-      );
-    arr.sort(
-      (a, b) =>
-        b.rows.length - a.rows.length ||
-        (a.label ?? "").localeCompare(b.label ?? ""),
-    );
-    return { groups: arr, historicalCount: all.length - current.length };
+    const current = (f: EntityFact) =>
+      (!f.holds_from || f.holds_from <= nowIso) &&
+      (!f.holds_to || f.holds_to > nowIso);
+    const order = (a: EntityFact, b: EntityFact) =>
+      (a.predicate_label ?? "\uffff").localeCompare(b.predicate_label ?? "\uffff") ||
+      ((a.valid_from ?? "9999") < (b.valid_from ?? "9999") ? -1 : 1);
+    const split = (dir: "out" | "in") => {
+      const mine = all.filter((f) => f.direction === dir);
+      return {
+        rows: mine.filter(current).sort(order),
+        past: mine.filter((f) => !current(f)).sort(order),
+      };
+    };
+    return { out: split("out"), in: split("in") };
   }, [detail.data]);
 
   return (
@@ -2845,59 +2778,20 @@ function EntityPanel({
       </div>
 
       {editing && e && (
-        <div className="px-4 py-3 border-b border-line space-y-3">
-          <Field label={S.graph.editName} className="mb-2">
-            <Input
-              size="sm"
-              autoFocus
-              value={draftName}
-              onChange={(ev) => setDraftName(ev.target.value)}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" && dirty && draftName.trim())
-                  save.mutate();
-                if (ev.key === "Escape") setEditing(false);
-              }}
-              className="w-full"
-            />
-          </Field>
-          <Field label={S.graph.editType} className="mb-2">
-            {/* 类可能上千个（schema.org 一装就是 1010 个）：这一格要能打字过滤，
-                所以是 SearchSelect 而不是下拉——下拉是给小而有界的枚举的 */}
-            <SearchSelect
-              size="sm"
-              className="w-full"
-              value={draftType}
-              onChange={setDraftType}
-              options={types.map((t) => ({
-                value: t.id,
-                label: t.label,
-                hint: t.key,
-              }))}
-            />
-          </Field>
-          <div className="flex items-center gap-2 pt-1">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!dirty || !draftName.trim() || save.isPending}
-              onClick={() => save.mutate()}
-            >
-              {S.graph.editSave}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-              {S.graph.editCancel}
-            </Button>
-            {!draftName.trim() && (
-              <span className="text-fine text-danger">
-                {S.graph.editEmptyName}
-              </span>
-            )}
-          </div>
-        </div>
+        <EntityDialog
+          kbId={kbId}
+          entityId={entityId}
+          entity={e}
+          onClose={() => setEditing(false)}
+          onSaved={(peers) => {
+            setEditing(false);
+            setSameName(peers);
+          }}
+        />
       )}
 
       {/* 同名不是错误——两个张伟可以并存。只提示，判定是不是同一个是人的事 */}
-      {sameName.length > 0 && !editing && (
+      {sameName.length > 0 && (
         <div className="mx-4 mt-3 rounded-panel border border-line bg-surface px-3 py-2">
           <div className="flex items-start justify-between gap-2">
             <p className="text-fine text-ink-2">
@@ -2974,13 +2868,13 @@ function EntityPanel({
         </DangerConfirm>
       )}
 
-      {/* 视图切换：Relations（分组）| Timeline（年表） */}
+      {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}
       <div className="px-4 pt-3">
         <Segmented
           size="sm"
           value={view}
           onChange={setView}
-          options={(["relations", "timeline", "history", "derived"] as const)
+          options={(["relations", "history", "derived"] as const)
             // 推出来的那一档：**没有派生就不出现**。一个没开推理的库不该看到
             // 一个永远是空的标签页。没落地的也算——那正是这一档要说的事
             .filter(
@@ -2991,78 +2885,56 @@ function EntityPanel({
               label:
                 v === "relations"
                   ? S.graph.viewRelations
-                  : v === "timeline"
-                    ? S.graph.viewTimeline
-                    : v === "history"
-                      ? S.graph.viewHistory
-                      : S.graph.viewDerived,
+                  : v === "history"
+                    ? S.graph.viewHistory
+                    : S.graph.viewDerived,
             }))}
         />
       </div>
 
       <div className="u-scroll flex-1 overflow-y-auto px-2 py-2">
-        {view === "relations" && historicalCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mx-2 mb-2 mt-1"
-            onClick={() => setView("timeline")}
-          >
-            {S.graph.historicalNote(historicalCount)}
-          </Button>
-        )}
         {view === "relations" &&
-          groups.map((gr) => (
-            <div key={gr.key} className="mb-3 last:mb-1">
-              <GroupLabel
-                className="px-2 pb-1 pt-2"
-                icon={
-                  gr.direction === "in" ? (
-                    <ArrowLeft size={10} />
-                  ) : (
-                    <ArrowRight size={10} />
-                  )
-                }
-                count={gr.rows.length > 1 ? gr.rows.length : undefined}
+          (["out", "in"] as const).map((dir) => {
+            const { rows, past } = sections[dir];
+            if (rows.length === 0 && past.length === 0) return null;
+            const name = e?.name ?? "";
+            return (
+              <FactSection
+                key={dir}
+                dir={dir}
+                title={dir === "out" ? S.graph.fromEntity(name) : S.graph.toEntity(name)}
+                count={rows.length + past.length}
               >
-                <span
-                  className={
-                    gr.label === null ? "italic text-ink-2" : undefined
-                  }
-                  title={
-                    gr.label && gr.inferred
-                      ? S.graph.inferredPredicate
-                      : undefined
-                  }
-                >
-                  {gr.label ?? S.graph.unknownPredicate}
-                </span>
-              </GroupLabel>
-              <div>
-                {gr.rows.map((f) => (
+                {rows.map((f) => (
                   <FactRow
                     key={f.id}
                     kbId={kbId}
+                    dir={dir}
                     fact={f}
                     open={openFact === f.id}
-                    onToggle={() =>
-                      setOpenFact(openFact === f.id ? null : f.id)
-                    }
+                    onToggle={() => setOpenFact(openFact === f.id ? null : f.id)}
                     onNavigate={onNavigate}
                   />
                 ))}
-              </div>
-            </div>
-          ))}
-        {view === "timeline" && (
-          <TimelineView
-            kbId={kbId}
-            facts={detail.data?.facts ?? []}
-            openFact={openFact}
-            onToggle={(id) => setOpenFact(openFact === id ? null : id)}
-            onNavigate={onNavigate}
-          />
-        )}
+                {past.length > 0 && (
+                  <PastFold n={past.length}>
+                    {past.map((f) => (
+                      <FactRow
+                        key={f.id}
+                        kbId={kbId}
+                        dir={dir}
+                        fact={f}
+                        past
+                        open={openFact === f.id}
+                        onToggle={() => setOpenFact(openFact === f.id ? null : f.id)}
+                        onNavigate={onNavigate}
+                      />
+                    ))}
+                  </PastFold>
+                )}
+              </FactSection>
+            );
+          })}
         {view === "history" && (
           <EntityHistory kbId={kbId} entityId={entityId} />
         )}
@@ -3149,338 +3021,6 @@ function EntityPanel({
   );
 }
 
-/** 年表视图：带区间的事实按起点摊开成竖直时间线；无时间的沉到底部 undated。 */
-function TimelineView({
-  kbId,
-  facts,
-  openFact,
-  onToggle,
-  onNavigate,
-}: {
-  kbId: string;
-  facts: EntityFact[];
-  openFact: string | null;
-  onToggle: (id: string) => void;
-  onNavigate: (entityId: string) => void;
-}) {
-  const dated = facts
-    .filter((f) => f.temporal !== "eternal" && (f.valid_from || f.valid_to))
-    .sort((a, b) =>
-      (a.valid_from ?? a.valid_to ?? "") < (b.valid_from ?? b.valid_to ?? "")
-        ? -1
-        : 1,
-    );
-  const undated = facts.filter((f) => !dated.includes(f));
-
-  return (
-    <div className="pt-1">
-      {/* 与 Relations 同一种行：chevron + 两行头（区间在上，谓词和值在下）。
-          年表的次序靠排序和第一行的区间说话，不另画一条线 */}
-      <div>
-        {dated.map((f) => (
-          <TimelineRow
-            key={f.id}
-            kbId={kbId}
-            fact={f}
-            open={openFact === f.id}
-            onToggle={() => onToggle(f.id)}
-            onNavigate={onNavigate}
-          />
-        ))}
-        {dated.length === 0 && (
-          <p className="py-2 text-small text-ink-2">
-            {S.graph.timelineEmpty}
-          </p>
-        )}
-      </div>
-      {undated.length > 0 && (
-        <div className="mt-3">
-          <GroupLabel className="px-2 pb-1">{S.graph.undated}</GroupLabel>
-          {undated.map((f) => (
-            <FactRow
-              key={f.id}
-              kbId={kbId}
-              fact={f}
-              open={openFact === f.id}
-              onToggle={() => onToggle(f.id)}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** 年表条目：区间 + 闭合方式标记 + 开放事实的最后确认时间；点击展开证据。 */
-function TimelineRow({
-  kbId,
-  fact,
-  open,
-  onToggle,
-  onNavigate,
-}: {
-  kbId: string;
-  fact: EntityFact;
-  open: boolean;
-  onToggle: () => void;
-  onNavigate: (entityId: string) => void;
-}) {
-  const interval = fmtInterval(fact);
-  const isOpenEnded = !fact.valid_to;
-  const literal = fmtObjectValue(fact.object_value);
-  const [editing, setEditing] = useState(false);
-  return (
-    <ExpandCard
-      open={open}
-      onToggle={onToggle}
-      dim={fact.stale}
-      title={fact.stale ? S.graph.staleFactHint : undefined}
-      header={
-        <>
-        <div className="flex items-center gap-2 u-num text-fine text-ink-2">
-          {interval || "—"}
-          {fact.corrected && (
-            <span className="text-ink-2" title={S.graph.correctedHint}>
-              ⟲
-            </span>
-          )}
-          <span className="ml-auto flex items-center gap-2">
-            {isOpenEnded && fact.last_evidence_time && (
-              <span className="text-ink-2">
-                {S.graph.lastConfirmed(localDate(fact.last_evidence_time))}
-              </span>
-            )}
-            {/* 这一档只有断言事实：派生的区间是算出来的，走 Derived 那条路径，
-                改了下一轮推理也会覆盖（服务端另有 derived_by_rule 的防线） */}
-            <span
-              role="button"
-              tabIndex={0}
-              title={S.graph.editTime}
-              aria-label={S.graph.editTime}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setEditing((v) => !v);
-              }}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" || ev.key === " ") {
-                  ev.preventDefault();
-                  ev.stopPropagation();
-                  setEditing((v) => !v);
-                }
-              }}
-              className={cn(REVEAL, "cursor-pointer rounded-cell p-1", editing && "is-on")}
-            >
-              <Pencil size={10} />
-            </span>
-          </span>
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-body text-ink">
-          <span className="text-ink-2 text-small">
-            {fact.direction === "in" ? "←" : "→"}{" "}
-            <span
-              className={
-                fact.predicate_label === null
-                  ? "italic text-ink-2"
-                  : undefined
-              }
-              title={
-                fact.predicate_label && fact.inferred
-                  ? S.graph.inferredPredicate
-                  : undefined
-              }
-            >
-              {fact.predicate_label ?? S.graph.unknownPredicate}
-            </span>
-          </span>
-          {fact.other_id ? (
-            <span
-              role="link"
-              tabIndex={0}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                onNavigate(fact.other_id!);
-              }}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter") {
-                  ev.stopPropagation();
-                  onNavigate(fact.other_id!);
-                }
-              }}
-              className="u-inline-link truncate"
-            >
-              {fact.other_name ?? "?"}
-            </span>
-          ) : (
-            <span className="truncate">
-              {fact.other_name ?? literal ?? "?"}
-            </span>
-          )}
-          {fact.stale && (
-            <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
-              {S.graph.staleFactChip}
-            </span>
-          )}
-          {fact.contested && (
-            <ContestedChip kbId={kbId} c={fact.contested} />
-          )}
-        </div>
-        </>
-      }
-    >
-      {editing && (
-        <TimeEditor
-          kbId={kbId}
-          fact={fact}
-          onDone={() => setEditing(false)}
-        />
-      )}
-      {open && <EvidenceList kbId={kbId} fact={fact} />}
-    </ExpandCard>
-  );
-}
-
-/** 有效区间的人工修正表单（302）。
- *
- *  两端一起提交而不是逐端改：区间的两端互相定义，「清空结束端」与「这次不动
- *  结束端」得能分辨。结束端的三个选项与账本里的三种写法一一对应，所以这里
- *  没有「留空即至今」这种隐含约定——那正是 valid_to IS NULL 一度承载两个意思
- *  的老毛病。 */
-function TimeEditor({
-  kbId,
-  fact,
-  onDone,
-}: {
-  kbId: string;
-  fact: EntityFact;
-  onDone: () => void;
-}) {
-  const qc = useQueryClient();
-  const [from, setFrom] = useState(
-    fmtTime(fact.valid_from, fact.valid_from_precision) ?? "",
-  );
-  const [to, setTo] = useState(
-    fmtTime(fact.valid_to, fact.valid_to_precision) ?? "",
-  );
-  const [endMode, setEndMode] = useState<"open" | "unknown" | "date">(
-    fact.valid_to
-      ? "date"
-      : fact.valid_to_precision === "unknown"
-        ? "unknown"
-        : "open",
-  );
-  const [note, setNote] = useState("");
-
-  const save = useMutation({
-    mutationFn: () => {
-      const f = from.trim() ? parseDateInput(from) : null;
-      if (from.trim() && !f) throw new Error(S.graph.timeBadDate);
-      const t = endMode === "date" ? parseDateInput(to) : null;
-      if (endMode === "date" && !t) throw new Error(S.graph.timeBadDate);
-      return api.updateFactTime(kbId, fact.id, {
-        valid_from: f?.iso ?? null,
-        valid_from_precision: f?.precision ?? null,
-        valid_to: t?.iso ?? null,
-        valid_to_precision:
-          endMode === "date"
-            ? (t?.precision ?? null)
-            : endMode === "unknown"
-              ? "unknown"
-              : null,
-        note: note.trim() || undefined,
-      });
-    },
-    onSuccess: (r) => {
-      // 对账的后果要说出来：改了起点可能顺手闭合了继任者的开放区间，
-      // 也可能撞出一条需要人裁的冲突。不说的话图会自己变而没人知道为什么
-      if (r.conflicts) toast.success(S.graph.timeSavedConflicts(r.conflicts));
-      else if (r.closed) toast.success(S.graph.timeSavedClosed(r.closed));
-      else toast.success(S.graph.timeSaved);
-      qc.invalidateQueries({ queryKey: ["entity", kbId] });
-      qc.invalidateQueries({ queryKey: ["graph"] });
-      qc.invalidateQueries({ queryKey: ["review", kbId] });
-      onDone();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  return (
-    <div
-      className="mb-2 rounded-panel border border-line bg-surface p-3"
-      onClick={(ev) => ev.stopPropagation()}
-    >
-      <div className="flex items-center gap-2">
-        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
-          {S.graph.timeStart}
-        </label>
-        <Input
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          placeholder={S.graph.timeFormat}
-          size="sm"
-          className="u-num flex-1"
-        />
-      </div>
-      <div className="mt-2 flex items-start gap-2">
-        <label className="w-11 shrink-0 pt-1 text-small font-medium text-ink-2">
-          {S.graph.timeEnd}
-        </label>
-        <div className="flex-1 space-y-1">
-          {(
-            [
-              ["open", S.graph.timeEndOpen],
-              ["unknown", S.graph.timeEndUnknown],
-              ["date", S.graph.timeEndDate],
-            ] as const
-          ).map(([mode, label]) => (
-            <Radio
-              key={mode}
-              name={`end-${fact.id}`}
-              checked={endMode === mode}
-              onChange={() => setEndMode(mode)}
-              label={label}
-            >
-              {mode === "date" && endMode === "date" && (
-                <Input
-                  size="sm"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  placeholder={S.graph.timeFormat}
-                  className="u-num ml-1 flex-1"
-                />
-              )}
-            </Radio>
-          ))}
-        </div>
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
-          {S.graph.timeNote}
-        </label>
-        <Input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={S.graph.timeNotePlaceholder}
-          size="sm"
-          className="flex-1"
-        />
-      </div>
-      <div className="mt-2 flex justify-end gap-2">
-        <Button size="sm" variant="secondary" onClick={onDone}>
-          {S.graph.timeCancel}
-        </Button>
-        <Button variant="primary"
-          size="sm"
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-        >
-          {S.graph.timeSave}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /** 字面值宾语的显示：属性 {value,unit} / 问数映射 {summary} / 其他 JSON 兜底。 */
 function fmtObjectValue(v: Record<string, unknown> | null): string | null {
   if (!v) return null;
@@ -3493,54 +3033,118 @@ function fmtObjectValue(v: Record<string, unknown> | null): string | null {
   return JSON.stringify(v);
 }
 
+/** 一节（从这个实体出发 / 指向这个实体）：可折叠——折叠柄占图标格，正文缩进同样的 24，
+ *  于是每一行的方向箭头正好落在节标题的箭头底下（本体页 Relations 的组同一副） */
+function FactSection({
+  dir,
+  title,
+  count,
+  children,
+}: {
+  dir: "out" | "in";
+  title: string;
+  count: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="mb-2">
+      <Row
+        className="mt-1"
+        icon={
+          <span className="flex w-4 justify-center">
+            <ChevronRight size={12} className={cn("u-turn", open && "rotate-90")} />
+          </span>
+        }
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="flex items-center gap-2 text-small font-medium">
+          {dir === "out" ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
+          <span className="truncate">{title}</span>
+          <span className="u-num">{count}</span>
+        </span>
+      </Row>
+      {open && <div className="pl-6">{children}</div>}
+    </div>
+  );
+}
+
+/** 已结束的留在同一节里，折起来：默认看现行的，要看来路展开它 */
+function PastFold({ n, children }: { n: number; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Row
+        icon={
+          <span className="flex w-4 justify-center">
+            <ChevronRight size={12} className={cn("u-turn", open && "rotate-90")} />
+          </span>
+        }
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="text-small">{S.graph.past(n)}</span>
+      </Row>
+      {open && <div className="pl-6">{children}</div>}
+    </>
+  );
+}
+
+/** 一条事实是一行，与本体页 Relations 的行同一副：图标格里是方向箭头，左边关系名
+ *  （和 disputed 之类的标记），右边那个实体的名字（区间的小字在名字前）；整行点了
+ *  跳到那个实体。指着这一行才露出「N sources」（在行下摊开证据）与铅笔（区间修正
+ *  弹窗）。行首没有折叠柄——折叠柄在这块面板上只属于节与「过去」的折 */
 function FactRow({
   kbId,
+  dir,
   fact,
+  past,
   open,
   onToggle,
   onNavigate,
 }: {
   kbId: string;
+  dir: "out" | "in";
   fact: EntityFact;
+  /** 已结束的那些：压淡 */
+  past?: boolean;
   open: boolean;
   onToggle: () => void;
   onNavigate: (entityId: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const interval = fmtInterval(fact);
   // 与 Review 的低置信口径一致：只有低到需要怀疑才挂 chip，常规置信保持沉默
   const lowConfidence = fact.confidence < 0.75;
+  const go = fact.other_id ? () => onNavigate(fact.other_id!) : undefined;
 
   return (
-    <ExpandCard
-      open={open}
-      onToggle={onToggle}
-      dim={fact.stale}
+    <div
+      className={cn((fact.stale || past) && "opacity-55")}
       title={fact.stale ? S.graph.staleFactHint : undefined}
-      header={
-        <div className="flex items-center gap-2">
-        {fact.other_id ? (
-          <span
-            role="link"
-            tabIndex={0}
-            onClick={(ev) => {
-              ev.stopPropagation();
-              onNavigate(fact.other_id!);
-            }}
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter") {
-                ev.stopPropagation();
-                onNavigate(fact.other_id!);
-              }
-            }}
-            className="u-inline-link truncate text-body text-ink"
-          >
-            {fact.other_name ?? "?"}
-          </span>
-        ) : (
-          <span className="truncate text-body text-ink">
-            {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
-          </span>
-        )}
+    >
+      <div
+        role={go ? "link" : undefined}
+        tabIndex={go ? 0 : undefined}
+        onClick={go}
+        onKeyDown={(ev) => {
+          if (go && ev.key === "Enter") go();
+        }}
+        className={cn(HOVER_ROW, go && "cursor-pointer")}
+      >
+        <span className="shrink-0 text-violet">
+          {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
+        </span>
+        <span
+          className={cn(
+            "truncate text-body text-ink",
+            fact.predicate_label === null && "italic text-ink-2",
+          )}
+          title={
+            fact.predicate_label && fact.inferred ? S.graph.inferredPredicate : undefined
+          }
+        >
+          {fact.predicate_label ?? S.graph.unknownPredicate}
+        </span>
         {lowConfidence && (
           <span className="shrink-0 u-num u-meta-warn text-fine">
             {Math.round(fact.confidence * 100)}%
@@ -3552,20 +3156,65 @@ function FactRow({
           </span>
         )}
         {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
-        {interval && (
-          <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-2">
-            {interval}
+        {fact.corrected && (
+          <span className="shrink-0 text-fine text-ink-2" title={S.graph.correctedHint}>
+            ⟲
           </span>
         )}
+        <span className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-2">
+          {interval && (
+            <span className="u-num text-fine text-ink-2">{interval}</span>
+          )}
+          <span className={cn(ROW_TRAILING, "max-w-40 truncate")}>
+            {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
+          </span>
+          {fact.evidence_count > 0 && (
+            <LinkButton
+              className={cn(REVEAL, "text-fine", open && "is-on")}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onToggle();
+              }}
+            >
+              {S.graph.sources(fact.evidence_count)}
+            </LinkButton>
+          )}
+          {/* 这一档只有断言事实：派生的区间是算出来的，走 Derived 那条路径 */}
+          <span
+            role="button"
+            tabIndex={0}
+            title={S.graph.editTime}
+            aria-label={S.graph.editTime}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              setEditing(true);
+            }}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                ev.stopPropagation();
+                setEditing(true);
+              }
+            }}
+            className={cn(REVEAL, "cursor-pointer rounded-cell p-1 text-ink-2")}
+          >
+            <Pencil size={10} />
+          </span>
+        </span>
+      </div>
+      {open && (
+        <div className="pb-2 pl-2 pr-2">
+          <EvidenceList kbId={kbId} fact={fact} />
         </div>
-      }
-    >
-      {open && <EvidenceList kbId={kbId} fact={fact} />}
-    </ExpandCard>
+      )}
+      {editing && (
+        <FactTimeDialog kbId={kbId} fact={fact} onClose={() => setEditing(false)} />
+      )}
+    </div>
   );
 }
 
-/** 证据展开区（FactRow 与 TimelineRow 共用）：quote + 跳原文 + 版本角标 + 置信。 */
+/** 证据展开区（FactRow 在行下摊开）：quote + 跳原文 + 版本角标 + 置信。 */
 function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
   const evidence = useQuery({
     queryKey: ["evidence", fact.id],

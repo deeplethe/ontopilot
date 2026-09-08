@@ -188,6 +188,62 @@ pub fn truncate_to(
     chrono::Utc.from_utc_datetime(&date.and_time(time))
 }
 
+/// 一个桶的尽头：值加一个精度单位。`2024-03-15`（day）→ `2024-03-16`；`2024-03`（month）
+/// → `2024-04`。事件在它命名的那个桶里成立（0028），读出来的终点就是这个；没有精度
+/// （锚点）原样返回——锚点是一刻，不是一个桶
+pub fn bucket_end(
+    t: chrono::DateTime<chrono::Utc>,
+    precision: Option<&str>,
+) -> chrono::DateTime<chrono::Utc> {
+    use chrono::{Duration, Months};
+    match precision {
+        Some("year") => t.checked_add_months(Months::new(12)).unwrap_or(t),
+        Some("month") => t.checked_add_months(Months::new(1)).unwrap_or(t),
+        Some("day") => t + Duration::days(1),
+        Some("hour") => t + Duration::hours(1),
+        Some("minute") => t + Duration::minutes(1),
+        Some("second") => t + Duration::seconds(1),
+        _ => t,
+    }
+}
+
+/// 关系的时间语义（`relation_types.temporal`，0028）。状态有区间；事件是一刻——两端写
+/// 同一个值，在它命名的那个桶里成立；恒常没有日期，每一刻都成立。
+///
+/// 从图谱层第一份迁移起这一列就在，界面也一直给选；但直到 0028 之前只有 state 驱动
+/// 引擎，event 与 eternal 写进去、读出来都还是区间
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Temporal {
+    #[default]
+    State,
+    Event,
+    Eternal,
+}
+
+impl Temporal {
+    /// 认不出的值当状态：数据库的 CHECK 只放这三个进来，这里不再报错
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "event" => Self::Event,
+            "eternal" => Self::Eternal,
+            _ => Self::State,
+        }
+    }
+}
+
+/// 谓词的时间语义。没有谓词（0010）按状态——三者里唯一不丢信息的那个，与导入本体时
+/// 的判断一致
+pub async fn predicate_temporal(pool: &PgPool, predicate_id: Option<Uuid>) -> AppResult<Temporal> {
+    let Some(id) = predicate_id else {
+        return Ok(Temporal::State);
+    };
+    let t: Option<String> = sqlx::query_scalar("SELECT temporal FROM relation_types WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(t.as_deref().map(Temporal::parse).unwrap_or_default())
+}
+
 impl<'a> Validity<'a> {
     /// 起始端已知、结束端未知或不适用。
     pub fn starting(
@@ -213,6 +269,42 @@ impl<'a> Validity<'a> {
     pub fn truncated(mut self) -> Self {
         self.from = self.from.map(|t| truncate_to(t, self.from_precision));
         self.to = self.to.map(|t| truncate_to(t, self.to_precision));
+        self
+    }
+
+    /// 按谓词的时间语义归一（0028）。写入路径进库前都走一遍，与读出侧 `world_axis`
+    /// 说同一句话。
+    ///
+    /// - 事件：那一刻写在**两端**。原文给了起点用起点；只给了终点，那就是它发生的
+    ///   时候；给了一段，取起点——收购不会持续到明年。没日期就两端都空；「结束了
+    ///   不知哪天」对一刻没有意义，一并抹掉。两端同值是这一行自己就能说清的形状：
+    ///   不看谓词的读者顶多把它读成一天的状态，读不成「从那天起一直如此」
+    /// - 恒常：日期全抹。原文里的日期说的是别的事，不是这条关系何时成立
+    /// - 状态：原样
+    pub fn under(mut self, temporal: Temporal) -> Self {
+        match temporal {
+            Temporal::State => {}
+            Temporal::Eternal => {
+                self.from = None;
+                self.from_precision = None;
+                self.to = None;
+                self.to_precision = None;
+            }
+            Temporal::Event => {
+                let moment = self
+                    .from
+                    .map(|t| (t, self.from_precision))
+                    .or_else(|| self.to.map(|t| (t, self.to_precision)));
+                let (t, p) = match moment {
+                    Some((t, p)) => (Some(t), p),
+                    None => (None, None),
+                };
+                self.from = t;
+                self.from_precision = p;
+                self.to = t;
+                self.to_precision = p;
+            }
+        }
         self
     }
 
@@ -244,7 +336,10 @@ async fn insert_fact_inner(
     validity: Validity<'_>,
     confidence: f32,
 ) -> AppResult<(Uuid, bool)> {
-    let validity = validity.truncated();
+    // 按谓词的时间语义归一（0028）：事件两端同一刻，恒常无日期。写在这里而不是各个
+    // 写入者那儿——抽取、点头、人自己写的事实都经过这一个门
+    let temporal = predicate_temporal(pool, predicate_id).await?;
+    let validity = validity.under(temporal).truncated();
     let same_sql = match object {
         FactObject::Entity(_) => {
             "SELECT id, valid_from, valid_to, valid_to_precision FROM facts
@@ -303,11 +398,13 @@ async fn insert_fact_inner(
         attest_earlier(pool, *existing, validity.attested_at).await?;
         return Ok((*existing, false));
     }
-    // 弱化陈述：新观察无时间，同断言已有开放行 → 并入（取起点最新的开放行）
+    // 弱化陈述：新观察无时间，同断言已有开放行 → 并入（取起点最新的开放行）。
+    // 事件没有「开放」一说——它的两端总是同一刻——所以没日期的再观察并进已有的
+    // 那一刻（0028）：说过一次「三月收购了」，再听到一句没日期的「收购了」，不是第二次收购
     if validity.from.is_none() && !validity.has_ended() {
         if let Some((existing, _, _, _)) = same
             .iter()
-            .filter(|(_, _, vt, _)| vt.is_none())
+            .filter(|(_, _, vt, _)| vt.is_none() || temporal == Temporal::Event)
             .max_by_key(|(_, vf, _, _)| *vf)
         {
             attest_earlier(pool, *existing, validity.attested_at).await?;
@@ -1936,4 +2033,93 @@ pub async fn adopt_value_facts(
         false,
     )
     .await
+}
+
+#[cfg(test)]
+mod temporal_shape_tests {
+    use super::*;
+
+    fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
+        s.parse().unwrap()
+    }
+
+    /// 桶的尽头是加一个精度单位；没有精度（锚点）原样
+    #[test]
+    fn a_bucket_ends_one_unit_later() {
+        let d = at("2024-03-15T00:00:00Z");
+        assert_eq!(bucket_end(d, Some("day")), at("2024-03-16T00:00:00Z"));
+        assert_eq!(
+            bucket_end(at("2024-03-01T00:00:00Z"), Some("month")),
+            at("2024-04-01T00:00:00Z")
+        );
+        assert_eq!(
+            bucket_end(at("2024-12-01T00:00:00Z"), Some("month")),
+            at("2025-01-01T00:00:00Z"),
+            "跨年"
+        );
+        assert_eq!(
+            bucket_end(at("2024-01-01T00:00:00Z"), Some("year")),
+            at("2025-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            bucket_end(at("2024-03-15T14:32:00Z"), Some("minute")),
+            at("2024-03-15T14:33:00Z")
+        );
+        assert_eq!(bucket_end(d, None), d);
+    }
+
+    /// 事件：起点优先，只有终点取终点，一段取起点，「结束了不知哪天」抹掉
+    #[test]
+    fn an_event_collapses_to_one_moment() {
+        let span = Validity {
+            from: Some(at("2024-03-15T00:00:00Z")),
+            from_precision: Some("day"),
+            to: Some(at("2025-01-01T00:00:00Z")),
+            to_precision: Some("day"),
+            attested_at: None,
+        }
+        .under(Temporal::Event);
+        assert_eq!(span.from, Some(at("2024-03-15T00:00:00Z")));
+        assert_eq!(span.to, Some(at("2024-03-15T00:00:00Z")));
+        assert_eq!(
+            (span.from_precision, span.to_precision),
+            (Some("day"), Some("day"))
+        );
+
+        let end_only = Validity {
+            from: None,
+            from_precision: None,
+            to: Some(at("2024-05-01T00:00:00Z")),
+            to_precision: Some("month"),
+            attested_at: None,
+        }
+        .under(Temporal::Event);
+        assert_eq!(end_only.from, Some(at("2024-05-01T00:00:00Z")));
+        assert_eq!(end_only.from_precision, Some("month"));
+
+        let unknown = Validity::default()
+            .ended_when_unknown()
+            .under(Temporal::Event);
+        assert_eq!(
+            (unknown.from, unknown.to, unknown.to_precision),
+            (None, None, None)
+        );
+        assert!(!unknown.has_ended(), "一刻没有「结束」可言");
+    }
+
+    /// 恒常抹掉日期；状态原样
+    #[test]
+    fn an_eternal_fact_keeps_no_dates_and_a_state_keeps_its_own() {
+        let dated = Validity::starting(Some(at("1990-01-01T00:00:00Z")), Some("year"))
+            .attested(Some(at("2024-04-01T00:00:00Z")));
+        let eternal = dated.under(Temporal::Eternal);
+        assert_eq!((eternal.from, eternal.from_precision), (None, None));
+        assert_eq!(
+            eternal.attested_at,
+            Some(at("2024-04-01T00:00:00Z")),
+            "证据日期照记——读出侧不用它，账本仍知道"
+        );
+        let state = dated.under(Temporal::State);
+        assert_eq!(state.from, Some(at("1990-01-01T00:00:00Z")));
+    }
 }

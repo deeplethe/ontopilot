@@ -881,6 +881,11 @@ export const en = {
     historicalNote: (n: number) =>
       `${n} past fact${n === 1 ? "" : "s"} not shown — see Timeline →`,
     undated: "Undated",
+    /* 实体面板的 Relations：两节的标题、组尾的折、行上的证据开关 */
+    fromEntity: (name: string) => `From ${name}`,
+    toEntity: (name: string) => `To ${name}`,
+    past: (n: number) => (n === 1 ? "1 past" : `${n} past`),
+    sources: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     timelineEmpty: "No dated facts yet.",
     lastConfirmed: (d: string) => `confirmed ${d}`,
     /* 三种来源共用一个标记（引擎接任对账、Review 裁决、有人手改），所以这句
@@ -892,6 +897,7 @@ export const en = {
       "The superseded assertion stays in the ledger — see History for who and when.",
     /* ---- 人工修正有效区间（302） ---- */
     editTime: "Correct the interval",
+    editTitle: "Edit entity",
     timeStart: "Start",
     timeEnd: "End",
     /* 结束端的三态，与账本里的三种写法一一对应（见迁移 0003 的注释） */
@@ -1091,7 +1097,7 @@ export const en = {
     tabClasses: "Classes",
     tabProperties: "Properties",
     newClass: "New class",
-    newSubClass: "+ Sub-class",
+    newSubClass: "New sub-class",
     newProperty: "New property",
     filter: "Filter…",
     missesShort: "Unmatched",
@@ -1191,6 +1197,15 @@ export const en = {
     attributesHint:
       "Literal-valued fields of this class (a person's salary, a contract's amount). Extracted with evidence and history, like any fact.",
     newAttribute: "New attribute",
+    /* 编辑弹窗（面板只展示，改动在弹窗里）：标题与面板里的入口 */
+    edit: "Edit",
+    editClass: "Edit class",
+    editProperty: "Edit property",
+    editAttribute: "Edit attribute",
+    connectTitle: "Connect a relationship",
+    connectOpen: "Connect an existing relationship…",
+    noDescription: "No description yet.",
+    axiomsNone: "None declared.",
     attrDatatype: "Value type",
     attrUnit: "Unit",
     attrUnitHint: "optional — e.g. CNY, %",

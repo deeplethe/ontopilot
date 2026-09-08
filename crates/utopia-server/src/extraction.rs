@@ -1901,6 +1901,7 @@ fn build_lists(
                 label: r.label.clone(),
                 description: r.description.clone(),
                 signature,
+                temporal: r.temporal.clone(),
             }
         })
         .collect();

@@ -378,6 +378,12 @@ pub fn emit_relation(
             sink.r(&iri, &nn(rdf::TYPE.as_str()), &owl(term))?;
         }
     }
+    // 时间语义也照抄（0028）：一个 event 谓词的事实两端是同一刻，一个 eternal 谓词的
+    // 事实没有日期——读的人不看这一条，会把前者读成一天的状态、后者读成从不知何时起。
+    // 状态是默认，不写
+    if r.temporal != "state" {
+        sink.l(&iri, &utopia("temporal"), &text(r.temporal.clone()))?;
+    }
     for d in &r.domains {
         if let Some(c) = vocab.class(*d) {
             let c = c.clone();
