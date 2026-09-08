@@ -438,7 +438,14 @@ pub async fn correct_interval(
     fact_id: Uuid,
     validity: crate::graph::Validity<'_>,
 ) -> AppResult<Option<Uuid>> {
-    let validity = validity.truncated();
+    // 人改区间也按谓词的时间语义归一（0028）：给一个事件填了一段，落下的仍是它的那一刻
+    let predicate: Option<Option<Uuid>> =
+        sqlx::query_scalar("SELECT predicate_id FROM facts WHERE id = $1")
+            .bind(fact_id)
+            .fetch_optional(pool)
+            .await?;
+    let temporal = crate::graph::predicate_temporal(pool, predicate.flatten()).await?;
+    let validity = validity.under(temporal).truncated();
     let mut tx = pool.begin().await?;
     let corrected = Uuid::now_v7();
     let inserted: Option<(Uuid,)> = sqlx::query_as(
