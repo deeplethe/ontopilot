@@ -21,6 +21,8 @@
 // 用法：
 //   node scripts/bench/ask.mjs --kb <id>              # 跑全部问题
 //   node scripts/bench/ask.mjs --kb <id> --only disc_revenue
+//   node scripts/bench/ask.mjs --kb <id> --seed          # 先把真值写成确认口径（上界）
+//   node scripts/bench/ask.mjs --kb <id> --replay        # 不重问，拿库里上一轮的回答重判
 //
 // 环境变量见 lib.mjs。
 
@@ -28,7 +30,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BASE, api, login, psql, value, same, roughly, log, parseArgs, cookieHeader,
+  BASE, api, login, psql, value, firstRow, same, roughly, log, parseArgs, cookieHeader,
 } from "./lib.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +99,68 @@ function sqlsIn(node, out = []) {
   return out;
 }
 
+/// 上一轮问过的答案，从库里读回来重判。
+///
+/// **问一轮很贵**（二十四题四十分钟，还有模型的账），而判分的口径会改——
+/// 头一轮就改了两次。会话本来就完整存在库里，所以重判不该重问：改了判据
+/// 拿旧回答重跑一遍，才谈得上多轮迭代。
+///
+/// 同一个问题问过多次时取最新的一次。
+function replayFromDb(kb) {
+  const rows = JSON.parse(psql(`SELECT coalesce(json_agg(x), '[]') FROM (
+      SELECT c.id,
+             (SELECT content FROM conversation_messages
+               WHERE conversation_id = c.id AND role = 'user'
+               ORDER BY created_at LIMIT 1) AS ask,
+             (SELECT content FROM conversation_messages
+               WHERE conversation_id = c.id AND role = 'assistant'
+               ORDER BY created_at DESC LIMIT 1) AS said,
+             (SELECT coalesce(json_agg(tool_exchange), '[]') FROM conversation_messages
+               WHERE conversation_id = c.id AND role = 'assistant') AS ex
+        FROM conversations c
+       WHERE c.kb_id = '${kb}'
+       ORDER BY c.created_at DESC) x`));
+  const byAsk = new Map();
+  for (const r of rows) if (r.ask && !byAsk.has(r.ask.trim())) byAsk.set(r.ask.trim(), r);
+  return byAsk;
+}
+
+/// 把真值全部写成确认过的口径（`--seed`）。
+///
+/// **这是上界，不是产品路径。** 探索提不提得出这些口径是 #501 的事；这里
+/// 直接把答案配进语义层，问的是另一个问题：**口径完备时，问数能到多少？**
+/// 基线（一条确认映射都没有，模型照着 schema 文档自己写 SQL）与这一轮之差，
+/// 就是语义层在这份语料上值多少分。
+///
+/// 概念实体按名字复用探索建好的那些；`Metric` 类由探索的 `ensure_concept_types`
+/// 建下，所以这一步要在跑过一轮探索的库上做。
+function seedTruth(kb) {
+  const typeId = psql(`SELECT id FROM entity_types WHERE kb_id = '${kb}' AND key = 'metric'`);
+  if (!typeId) throw new Error("这个库还没有 Metric 类——先跑一轮探索");
+  let n = 0;
+  for (const m of [...truth.metrics, ...(truth.plausible ?? [])]) {
+    const label = m.label.replace(/'/g, "''");
+    const gold = m.gold.replace(/'/g, "''");
+    const summary = `${m.label} — ${m.from ?? "bench truth"}`.replace(/'/g, "''");
+    const ent = psql(`
+      WITH found AS (SELECT id FROM entities
+                      WHERE kb_id = '${kb}' AND lower(canonical_name) = lower('${label}')
+                        AND merged_into IS NULL LIMIT 1),
+           made AS (INSERT INTO entities (id, kb_id, type_id, canonical_name, aliases)
+                    SELECT gen_random_uuid(), '${kb}', '${typeId}', '${label}', '{}'
+                     WHERE NOT EXISTS (SELECT 1 FROM found) RETURNING id)
+      SELECT id FROM found UNION ALL SELECT id FROM made`);
+    psql(`
+      INSERT INTO concept_mappings (id, kb_id, concept_id, source, table_name, sql, summary, status)
+      VALUES (gen_random_uuid(), '${kb}', '${ent}', 'tpch', NULL, '${gold}', '${summary}', 'confirmed')
+      ON CONFLICT (kb_id, concept_id, source)
+      DO UPDATE SET sql = EXCLUDED.sql, summary = EXCLUDED.summary,
+                    status = 'confirmed', updated_at = now()`);
+    n++;
+  }
+  log(`真值已写成 ${n} 条确认口径`);
+}
+
 /// 答案文本里的数字。千分位逗号去掉；引用标记 `[3]` 也会被算进来，
 /// 但它撞上一条真值的概率可以忽略——真值里最小的是 1.21
 function numbersIn(text) {
@@ -112,6 +176,8 @@ const main = async () => {
   await login();
   const kb = args.kb;
   if (!kb || kb === true) throw new Error("要一个 --kb <id>");
+
+  if (args.seed) seedTruth(kb);
 
   // 真值：单值口径 + 那些站得住但 22 条查询没说的
   const gold = new Map(
@@ -136,6 +202,8 @@ const main = async () => {
     for (const [id, g] of gold) if (same(g.value, got.n)) mapped.add(id);
   }
 
+  // --replay：不重问，拿库里上一轮的回答重判
+  const replay = args.replay ? replayFromDb(kb) : null;
   const questions = qs.questions.filter((q) => (args.only && args.only !== true ? q.id === args.only : true));
   const c = { right: 0, sql_only: 0, answer_only: 0, wrong: 0, no_sql: 0, failed: 0 };
   const rows = [];
@@ -143,20 +211,34 @@ const main = async () => {
     const g = gold.get(q.id);
     if (!g || !Number.isFinite(g.value)) { log(`跳过 ${q.id}：真值算不出来`); continue; }
     let r;
-    try {
-      r = await ask(kb, q.ask);
-    } catch (e) {
-      c.failed++;
-      rows.push(`FAILED  ${q.id} — ${String(e.message).slice(0, 120)}`);
-      continue;
+    if (replay) {
+      const prev = replay.get(q.ask.trim());
+      if (!prev) { log(`跳过 ${q.id}：库里没有问过这一句`); continue; }
+      r = { conversation: prev.id, text: prev.said ?? "", exchange: prev.ex ?? [] };
+    } else {
+      try {
+        r = await ask(kb, q.ask);
+      } catch (e) {
+        c.failed++;
+        rows.push(`FAILED  ${q.id} — ${String(e.message).slice(0, 120)}`);
+        continue;
+      }
+      r.exchange = r.conversation
+        ? JSON.parse(psql(`SELECT coalesce(json_agg(tool_exchange), '[]') FROM conversation_messages
+                            WHERE conversation_id = '${r.conversation}' AND role = 'assistant'`))
+        : [];
     }
-    const exchange = r.conversation
-      ? JSON.parse(psql(`SELECT coalesce(json_agg(tool_exchange), '[]') FROM conversation_messages
-                          WHERE conversation_id = '${r.conversation}' AND role = 'assistant'`))
-      : [];
-    const sqls = sqlsIn(exchange);
-    const ran = sqls.map((s) => ({ s, n: value(CORPUS_DB, s.replace(/;\s*$/, "")).n }));
-    const sqlRight = ran.some((x) => same(x.n, g.value));
+    const sqls = sqlsIn(r.exchange);
+    // **第一行的每一列都算数。** 模型问「平均行金额」跑的是
+    // `SELECT COUNT(*), AVG(l_extendedprice), MIN(…), MAX(…)`，只看第一列
+    // 拿到的是行数，一条完全正确的查询会被判成错的
+    const ran = sqls.map((s) => ({ s, ns: firstRow(CORPUS_DB, s.replace(/;\s*$/, "")).ns ?? [] }));
+    // **这里用 `roughly` 而不是 `same`。** 模型会自己 `ROUND(…, 2)`——那是
+    // 它的格式选择，不是另一个口径；594.75 与 594.74915 的相对误差刚好越过
+    // `same` 的 1e-6，于是一条完全正确的查询被判成算了别的东西。
+    // `mapped` 那边仍然用 `same`，因为它是在二十七条真值里挑中一条，认错了
+    // 就是认错了
+    const sqlRight = ran.some((x) => x.ns.some((n) => roughly(n, g.value)));
     const answerRight = numbersIn(r.text).some((n) => roughly(n, g.value));
 
     let verdict;
@@ -173,7 +255,7 @@ const main = async () => {
         `${verdict}  ${q.id} (${flag})  truth ${g.value}\n` +
         `    asked: ${q.ask}\n` +
         (ran.length
-          ? ran.map((x) => `    ran:   ${x.s.replace(/\s+/g, " ").slice(0, 150)}  → ${x.n}`).join("\n")
+          ? ran.map((x) => `    ran:   ${x.s.replace(/\s+/g, " ").slice(0, 150)}  → ${x.ns.join(", ")}`).join("\n")
           : "    ran:   (没跑任何 SQL)") +
         `\n    said:  ${r.text.replace(/\s+/g, " ").slice(0, 200)}`,
       );

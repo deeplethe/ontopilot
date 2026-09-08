@@ -56,7 +56,26 @@ export const psql = (sql) => run(PSQL.replace(/-d \S+/, `-d ${APP_DB}`), sql);
 export const onDb = (db, sql) => run(PSQL.replace(/-d \S+/, `-d ${db}`), sql);
 export const num = (sql) => Number(psql(sql) || 0);
 
-/// 一条 SQL 跑出来的第一个值。
+/// 一条 SQL 第一行里的所有数字。
+///
+/// **模型不写单列查询。** 问「平均行金额」，它跑的是
+/// `SELECT COUNT(*), AVG(l_extendedprice), MIN(...), MAX(...)`——一次把上下文
+/// 都查出来。只看第一列就拿到 60000（行数），把一条完全正确的查询判成错的；
+/// 头一轮基线上五道题栽在这里，全被记成「数对了但 SQL 不对」。
+export function firstRow(db, sql) {
+  try {
+    const out = onDb(db, `SET statement_timeout = '20s'; ${sql}`);
+    const first = out.split("\n").map((l) => l.trim()).filter((l) => l !== "" && l !== "SET")[0];
+    if (first === undefined) return { empty: true };
+    const ns = first.split("|").map((x) => Number(x)).filter((n) => Number.isFinite(n));
+    return { ns };
+  } catch (e) {
+    return { error: String(e.stderr || e.message).split("\n").filter((l) => l.trim())[0]?.slice(0, 120) };
+  }
+}
+
+/// 一条 SQL 跑出来的第一个值。口径的定义是单值的，用这个；
+/// 判模型跑过的 SQL 用 [`firstRow`]。
 export function value(db, sql) {
   try {
     const out = onDb(db, `SET statement_timeout = '20s'; ${sql}`);
