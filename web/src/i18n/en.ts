@@ -732,6 +732,7 @@ export const en = {
     legendNone: "No class matches",
     legendOnly: "Only",
     legendShowAll: (n: number) => `Show all (${n} hidden)`,
+    legendHideAll: "Hide all",
     legendAllHint:
       "Every class on screen, most common first. Click to show or hide.",
     searchMore: (n: number) => `${n} more — load 20`,

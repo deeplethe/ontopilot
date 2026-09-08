@@ -374,13 +374,15 @@ body::before {
    CSS 只负责面板的皮 */
 .u-menu-glass {
   /* 中性，不掺色相：原本 rgba(14,14,16) 蓝比红绿高 2。这个面同时用在
-     通知、用户菜单、图例的「+N 个类」和 Inference 面板上，一处偏色四处都偏 */
+     通知、用户菜单、图例的「+N 个类」和 Inference 面板上，一处偏色四处都偏。
+     底色中性还不够——backdrop 把背后糊上来的东西是有颜色的（图例这一枚正压在
+     图最密的地方），所以那一层也去掉饱和，与 .glass / .glass-strong 同一条规矩 */
   background: var(--u-menu-surface);
   /* 基态上的时长是**离开**时用的：慢一点，指针擦过边缘不会闪。
      进入的时长写在 :hover 里，更快，为的是跟手 */
   transition: background-color var(--u-base) ease;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px) saturate(0.3);
+  -webkit-backdrop-filter: blur(24px) saturate(0.3);
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
 .u-menu-glass:hover {

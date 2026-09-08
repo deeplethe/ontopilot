@@ -49,6 +49,7 @@ import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   ChevronRight,
   CircleDashed,
   ExternalLink,
@@ -1276,13 +1277,6 @@ export function Graph() {
 
           {/* chip 上的数是**全部类**，不是被收起来的那几个——
               点开看到的就是全部（搜得到任何一个），写「+3」等于承诺了另一件事 */}
-          {/* 复位。**只要存在隐藏就给一步到位的出口**——「只看」很容易把
-              画面收得很窄，没有这个就得挨个点回来 */}
-          {hiddenTypes.size > 0 && (
-            <Pill onClick={() => setHiddenTypes(new Set())}>
-              {S.graph.legendShowAll(hiddenTypes.size)}
-            </Pill>
-          )}
 
           {legendRest.length > 0 && (
             <div className="relative" ref={legendPop.rootRef}>
@@ -1305,26 +1299,60 @@ export function Graph() {
               {legendPop.open && (
                 <div
                   ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-overlay p-2 shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay shadow-2xl"
                 >
-                  {/* 面板盖在 chip 原位，所以**第一行就长成那个 chip 的样子**，
-                      点它收回去——「哪儿展开的就从哪儿收回去」，
-                      与通知/用户卡片的关闭键跟触发键原位重合是同一个道理 */}
-                  <Pill className="mb-2 w-full" onClick={() => legendPop.close()}>
-                    {S.graph.legendMore(types.length)}
-                    <X size={11} className="ml-auto text-ink-2" />
-                  </Pill>
-                  <Input
-                    size="sm"
-                    autoFocus
-                    value={legendQ}
-                    onChange={(e) => setLegendQ(e.target.value)}
-                    placeholder={S.graph.legendSearch}
-                    className="mb-2 w-full"
-                  />
+                  {/* 与库切换器、告警面板、用户菜单同一副解剖：第一行是触发它的
+                      那个胶囊自己，三角翻上去，点它缩回；没有浮在角上的关闭叉
+                      ——「哪儿展开的就从哪儿收回去」 */}
+                  <div
+                    onClick={() => legendPop.close()}
+                    className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
+                      {S.graph.legendMore(types.length)}
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      className="shrink-0 rotate-180 text-ink-2"
+                    />
+                  </div>
+                  {/* 全开 / 全关。**从顶栏那枚独立胶囊搬进来的**：它只在有隐藏时
+                      才出现，于是那一排的宽度会随着你点类跳来跳去；而它要做的事
+                      («把画面收窄»的反面）本就属于这份清单，不属于清单外面。
+                      两个都常驻、不可用时置灰——一个会消失的出口，第二次要用时
+                      得先想起它长在哪儿 */}
+                  <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+                    <LinkButton
+                      disabled={hiddenTypes.size === 0}
+                      onClick={() => setHiddenTypes(new Set())}
+                    >
+                      {S.graph.legendShowAll(hiddenTypes.size)}
+                    </LinkButton>
+                    <LinkButton
+                      className="ml-auto"
+                      disabled={hiddenTypes.size === types.length}
+                      onClick={() =>
+                        setHiddenTypes(new Set(types.map(([k]) => k)))
+                      }
+                    >
+                      {S.graph.legendHideAll}
+                    </LinkButton>
+                  </div>
+                  {/* 查找：没有自己的框（bare）——它是面板的一段，不是面板里
+                      摆的一个控件，与库切换器的查找同一个做法 */}
+                  <div className="border-b border-line px-4 py-3">
+                    <Input
+                      bare
+                      autoFocus
+                      value={legendQ}
+                      onChange={(e) => setLegendQ(e.target.value)}
+                      placeholder={S.graph.legendSearch}
+                      className="w-full text-body"
+                    />
+                  </div>
                   {/* **列的是全部类，不只是收起来的那些**：想找一个类的时候，
                       没人记得它是不是恰好排进了前几个 */}
-                  <div className="flex max-h-64 flex-col overflow-y-auto">
+                  <div className="u-scroll flex max-h-64 flex-col overflow-y-auto px-2 py-1">
                     {types
                       .filter(([, t]) =>
                         t.label.toLowerCase().includes(legendQ.toLowerCase()),
