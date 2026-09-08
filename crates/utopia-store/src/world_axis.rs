@@ -21,28 +21,47 @@
 //! 的「NULL 即现在」不同：没有人持有一个晚于此刻的信念，而没有时刻的图是全部
 //! 时间的图。
 
+/// 谓词的时间语义（0028）。一行自己说不出它是状态、事件还是恒常——它的谓词说；
+/// 没有谓词（0010）读作状态，与写入侧 `predicate_temporal` 同一判断
+fn temporal_of(alias: &str) -> String {
+    format!("(SELECT r.temporal FROM relation_types r WHERE r.id = {alias}.predicate_id)")
+}
+
 /// `facts`：读出来的下界——原文给了起点用起点，否则从最早的证据起。
+/// 恒常没有下界（NULL 即开放）：证据日期闸的是「从何时起知道」，恒常的东西不从何时起
 pub fn facts_holds_from(alias: &str) -> String {
-    format!("COALESCE({alias}.valid_from, {alias}.attested_from)")
+    format!(
+        "CASE WHEN {temporal} = 'eternal' THEN NULL \
+              ELSE COALESCE({alias}.valid_from, {alias}.attested_from) END",
+        temporal = temporal_of(alias),
+    )
 }
 
 /// `facts`：读出来的上界——原文给了终点用终点；说结束了但不知哪天，到最早说出它
 /// 的那份文档为止；否则开放（NULL）。
+///
+/// 事件（0028）在它命名的那个桶里成立：上界是那一刻加一个精度单位——`2024-03-15`
+/// 到 `2024-03-16` 为止，`2024-03` 到四月为止。没日期的事件上界与下界同为锚点，
+/// 区间为空：它发生过，但不知何时，任何时刻都不算成立（0022 对未知的收法）。
+/// 0028 之前写下的事件行终点是空的，按起点那个桶读——不必回填。恒常没有上界
 pub fn facts_holds_to(alias: &str) -> String {
     format!(
-        "CASE WHEN {alias}.valid_to IS NOT NULL THEN {alias}.valid_to \
-              WHEN {alias}.valid_to_precision = 'unknown' THEN {alias}.attested_to END"
+        "CASE WHEN {temporal} = 'eternal' THEN NULL \
+              WHEN {temporal} = 'event' THEN \
+                   CASE WHEN {alias}.valid_from IS NULL THEN {alias}.attested_from \
+                        ELSE COALESCE({alias}.valid_to, {alias}.valid_from) \
+                             + ('1 ' || COALESCE(NULLIF({alias}.valid_to_precision, 'unknown'), \
+                                                 {alias}.valid_from_precision))::interval END \
+              WHEN {alias}.valid_to IS NOT NULL THEN {alias}.valid_to \
+              WHEN {alias}.valid_to_precision = 'unknown' THEN {alias}.attested_to END",
+        temporal = temporal_of(alias),
     )
 }
 
 /// `facts`：断言在 T 时刻成立。`$param` 为 NULL 即不过滤。
+/// 两端都可能开放（恒常），所以是纯粹的区间包含
 pub fn facts_hold_at(alias: &str, param: usize) -> String {
-    format!(
-        "(${param}::timestamptz IS NULL \
-          OR ({from} <= ${param} AND ({to} IS NULL OR {to} > ${param})))",
-        from = facts_holds_from(alias),
-        to = facts_holds_to(alias),
-    )
+    interval_holds_at(&facts_holds_from(alias), &facts_holds_to(alias), param)
 }
 
 /// 纯粹的区间包含，NULL 一端即开放。派生行与幽灵边（0017 §3，区间在 `detail` 里）
