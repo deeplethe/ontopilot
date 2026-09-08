@@ -21,6 +21,7 @@
 // 用法：
 //   node scripts/bench/ask.mjs --kb <id>              # 跑全部问题
 //   node scripts/bench/ask.mjs --kb <id> --only disc_revenue
+//   node scripts/bench/ask.mjs --kb <id> --confirm       # 先确认探索提的那些（产品路径）
 //   node scripts/bench/ask.mjs --kb <id> --seed          # 先把真值写成确认口径（上界）
 //   node scripts/bench/ask.mjs --kb <id> --replay        # 不重问，拿库里上一轮的回答重判
 //
@@ -139,7 +140,10 @@ function seedTruth(kb) {
   if (!typeId) throw new Error("这个库还没有 Metric 类——先跑一轮探索");
   let n = 0;
   for (const m of [...truth.metrics, ...(truth.plausible ?? [])]) {
-    const label = m.label.replace(/'/g, "''");
+    // **概念名加个记号，别撞上探索建的实体。** 头一次跑没加，`Average order
+    // value` 正好与探索起的名字同名，`ON CONFLICT … DO UPDATE` 就把那条提议的
+    // sql 改成了 gold——上界那一轮顺手污染了产品路径那一轮的语料
+    const label = `${m.label} (truth)`.replace(/'/g, "''");
     const gold = m.gold.replace(/'/g, "''");
     const summary = `${m.label} — ${m.from ?? "bench truth"}`.replace(/'/g, "''");
     const ent = psql(`
@@ -161,6 +165,25 @@ function seedTruth(kb) {
   log(`真值已写成 ${n} 条确认口径`);
 }
 
+/// 把探索提出的口径全部确认（`--confirm`），模拟人审完一轮。
+///
+/// **这是产品路径上那一格。** `--seed` 把真值直接配进去，量的是上界；
+/// 什么都不配，量的是下界（模型照着 schema 文档自己写 SQL）。真实的库
+/// 落在中间：探索提多少、人确认多少，问数就拿到多少。
+///
+/// 全部确认而不是只确认对的那些，因为这一轮 tpch 上探索的 `wrong` 是 0
+/// （#501），一个照着看的人会把它们都点过——**审阅者不知道哪条是对的，
+/// 那正是他要判断的事**。
+function confirmProposals(kb) {
+  const before = Number(psql(`SELECT count(*) FROM concept_mappings
+                               WHERE kb_id = '${kb}' AND status = 'proposed'`));
+  psql(`UPDATE concept_mappings
+           SET status = 'confirmed', decided_at = now(),
+               decided_by = (SELECT id FROM users ORDER BY created_at LIMIT 1)
+         WHERE kb_id = '${kb}' AND status = 'proposed'`);
+  log(`探索提议已确认 ${before} 条`);
+}
+
 /// 答案文本里的数字。千分位逗号去掉；引用标记 `[3]` 也会被算进来，
 /// 但它撞上一条真值的概率可以忽略——真值里最小的是 1.21
 function numbersIn(text) {
@@ -178,6 +201,7 @@ const main = async () => {
   if (!kb || kb === true) throw new Error("要一个 --kb <id>");
 
   if (args.seed) seedTruth(kb);
+  if (args.confirm) confirmProposals(kb);
 
   // 真值：单值口径 + 那些站得住但 22 条查询没说的
   const gold = new Map(
