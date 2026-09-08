@@ -1265,17 +1265,53 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             };
             if let Some(value) = literal {
                 let subject_name = f.subject.trim();
-                let Some(&subject_id) = entity_ids.get(subject_name) else {
-                    drop_signal(
-                        state,
-                        doc.kb_id,
-                        document_id,
-                        utopia_store::extraction_drops::reason::SUBJECT_NOT_DECLARED,
-                        &f.predicate,
-                        Some(subject_name),
-                    )
-                    .await;
-                    continue;
+                // **主语按关系那条路解，不要求它在本次回复里重新声明过。**
+                //
+                // 从前这里只查 `entity_ids`，模型用「已知实体」句柄带进来的、
+                // 或者只写了名字没重列的主语一律落空——实测一轮 51 块里
+                // `subject_not_declared` 丢掉 113 条，丢的是 NVIDIA 的营收、
+                // 净利、每股收益，是十位董事的赞成票与反对票，全是有名有姓的
+                // 主语。属性那一档要求主语有类型（domain 要校验），这一档没有
+                // domain 可校验，也就没有理由比关系那条路更严
+                let subject_id = match f.subject_ref.as_deref().map(str::trim) {
+                    Some(handle) => match referenced_entity(&ref_entities, handle) {
+                        Some(bound) => bound.id,
+                        None => {
+                            drop_signal(
+                                state,
+                                doc.kb_id,
+                                document_id,
+                                utopia_store::extraction_drops::reason::MALFORMED_ITEM,
+                                &f.predicate,
+                                Some(handle),
+                            )
+                            .await;
+                            continue;
+                        }
+                    },
+                    None => match no_ref_name_binding(&entity_ids, &handled_by_name, subject_name) {
+                        NoRefNameBinding::Legacy(id) => id,
+                        NoRefNameBinding::AmbiguousHandled | NoRefNameBinding::Missing => {
+                            touched_names.insert(
+                                utopia_store::resolution::normalize_name(subject_name)
+                                    .to_lowercase(),
+                            );
+                            resolve_bare(
+                                &state.pool,
+                                doc.kb_id,
+                                entity_type_of.get(subject_name).copied().flatten(),
+                                subject_name,
+                                ctx,
+                                Some(&chunk.text),
+                                &mut doc_cache,
+                                &handled_by_name,
+                                &mut ambiguous_bare_cache,
+                                &mut needs_adjudication,
+                                &mut human_reviews_found,
+                            )
+                            .await?
+                        }
+                    },
                 };
                 let _ = utopia_store::ontology::record_miss(
                     &state.pool,
