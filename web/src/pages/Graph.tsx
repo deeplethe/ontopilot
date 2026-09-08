@@ -81,6 +81,7 @@ import {
   LinkButton,
   Pill,
   REVEAL,
+  ROW_TRAILING,
   Row,
   Segmented,
   ToolButton,
@@ -2705,46 +2706,26 @@ function EntityPanel({
   };
 
   /* Relations 是一张表，不再分「现行」和「年表」两页：**从这个实体出发 / 指向这个实体**
-     两节，节里按谓词分组，组里按起点排；此刻不成立的（0022 的口径按读出来的区间判）
-     折在组尾的「N past」里——Wikidata 把历史值留在同一列表里靠结束时间区分，
-     是同一个道理。方向靠节的措辞说，谓词标题上不再画箭头 */
+     两节，节里一行一条——左边关系名、右边实体名，与本体页那张同一副（不再按谓词
+     分二级）；按关系名、再按起点排。此刻不成立的（0022 的口径按读出来的区间判）折在
+     节尾的「N past」里——Wikidata 把历史值留在同一列表里靠结束时间区分，是同一个道理 */
   const sections = useMemo(() => {
     const all = detail.data?.facts ?? [];
     const nowIso = new Date().toISOString();
     const current = (f: EntityFact) =>
       (!f.holds_from || f.holds_from <= nowIso) &&
       (!f.holds_to || f.holds_to > nowIso);
-    const byDir: Record<"out" | "in", Map<string, FactGroupData>> = {
-      out: new Map(),
-      in: new Map(),
+    const order = (a: EntityFact, b: EntityFact) =>
+      (a.predicate_label ?? "\uffff").localeCompare(b.predicate_label ?? "\uffff") ||
+      ((a.valid_from ?? "9999") < (b.valid_from ?? "9999") ? -1 : 1);
+    const split = (dir: "out" | "in") => {
+      const mine = all.filter((f) => f.direction === dir);
+      return {
+        rows: mine.filter(current).sort(order),
+        past: mine.filter((f) => !current(f)).sort(order),
+      };
     };
-    for (const f of all) {
-      const m = byDir[f.direction];
-      // 谓词为空的事实归到同一组：它们的共同点就是「说不出是什么关系」
-      const k = f.predicate_key ?? "";
-      let g = m.get(k);
-      if (!g) {
-        g = { key: k, label: f.predicate_label, inferred: f.inferred, rows: [], past: [] };
-        m.set(k, g);
-      }
-      (current(f) ? g.rows : g.past).push(f);
-    }
-    const byTime = (a: EntityFact, b: EntityFact) =>
-      (a.valid_from ?? "9999") < (b.valid_from ?? "9999") ? -1 : 1;
-    const finish = (m: Map<string, FactGroupData>) => {
-      const arr = [...m.values()];
-      for (const g of arr) {
-        g.rows.sort(byTime);
-        g.past.sort(byTime);
-      }
-      arr.sort(
-        (a, b) =>
-          b.rows.length + b.past.length - (a.rows.length + a.past.length) ||
-          (a.label ?? "").localeCompare(b.label ?? ""),
-      );
-      return arr;
-    };
-    return { out: finish(byDir.out), in: finish(byDir.in) };
+    return { out: split("out"), in: split("in") };
   }, [detail.data]);
 
   return (
@@ -2900,28 +2881,43 @@ function EntityPanel({
       <div className="u-scroll flex-1 overflow-y-auto px-2 py-2">
         {view === "relations" &&
           (["out", "in"] as const).map((dir) => {
-            const groups = sections[dir];
-            if (groups.length === 0) return null;
-            const total = groups.reduce((n, g) => n + g.rows.length + g.past.length, 0);
+            const { rows, past } = sections[dir];
+            if (rows.length === 0 && past.length === 0) return null;
             const name = e?.name ?? "";
             return (
               <FactSection
                 key={dir}
                 dir={dir}
                 title={dir === "out" ? S.graph.fromEntity(name) : S.graph.toEntity(name)}
-                count={total}
+                count={rows.length + past.length}
               >
-                {groups.map((gr) => (
-                  <FactGroup
-                    key={gr.key}
+                {rows.map((f) => (
+                  <FactRow
+                    key={f.id}
                     kbId={kbId}
                     dir={dir}
-                    group={gr}
-                    openFact={openFact}
-                    onToggle={(id) => setOpenFact(openFact === id ? null : id)}
+                    fact={f}
+                    open={openFact === f.id}
+                    onToggle={() => setOpenFact(openFact === f.id ? null : f.id)}
                     onNavigate={onNavigate}
                   />
                 ))}
+                {past.length > 0 && (
+                  <PastFold n={past.length}>
+                    {past.map((f) => (
+                      <FactRow
+                        key={f.id}
+                        kbId={kbId}
+                        dir={dir}
+                        fact={f}
+                        past
+                        open={openFact === f.id}
+                        onToggle={() => setOpenFact(openFact === f.id ? null : f.id)}
+                        onNavigate={onNavigate}
+                      />
+                    ))}
+                  </PastFold>
+                )}
               </FactSection>
             );
           })}
@@ -3023,16 +3019,8 @@ function fmtObjectValue(v: Record<string, unknown> | null): string | null {
   return JSON.stringify(v);
 }
 
-/** 一个谓词下的事实：现行的、按起点排；过去的折在组尾 */
-interface FactGroupData {
-  key: string;
-  label: string | null;
-  inferred: boolean;
-  rows: EntityFact[];
-  past: EntityFact[];
-}
-
-/** 一节（从这个实体出发 / 指向这个实体）：可折叠——折叠柄占图标格，正文缩进同样的 24 */
+/** 一节（从这个实体出发 / 指向这个实体）：可折叠——折叠柄占图标格，正文缩进同样的 24，
+ *  于是每一行的方向箭头正好落在节标题的箭头底下（本体页 Relations 的组同一副） */
 function FactSection({
   dir,
   title,
@@ -3067,82 +3055,30 @@ function FactSection({
   );
 }
 
-function FactGroup({
-  kbId,
-  dir,
-  group: gr,
-  openFact,
-  onToggle,
-  onNavigate,
-}: {
-  kbId: string;
-  dir: "out" | "in";
-  group: FactGroupData;
-  openFact: string | null;
-  onToggle: (id: string) => void;
-  onNavigate: (entityId: string) => void;
-}) {
-  const [pastOpen, setPastOpen] = useState(false);
-  const total = gr.rows.length + gr.past.length;
+/** 已结束的留在同一节里，折起来：默认看现行的，要看来路展开它 */
+function PastFold({ n, children }: { n: number; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="mb-2 last:mb-1">
-      <GroupLabel className="px-2 pb-1 pt-2" count={total > 1 ? total : undefined}>
-        <span
-          className={gr.label === null ? "italic" : undefined}
-          title={gr.label && gr.inferred ? S.graph.inferredPredicate : undefined}
-        >
-          {gr.label ?? S.graph.unknownPredicate}
-        </span>
-      </GroupLabel>
-      {gr.rows.map((f) => (
-        <FactRow
-          key={f.id}
-          kbId={kbId}
-          dir={dir}
-          fact={f}
-          open={openFact === f.id}
-          onToggle={() => onToggle(f.id)}
-          onNavigate={onNavigate}
-        />
-      ))}
-      {/* 已结束的留在同一组里，折起来：默认看现行的，要看来路展开它 */}
-      {gr.past.length > 0 && (
-        <>
-          <Row
-            icon={
-              <span className="flex w-4 justify-center">
-                <ChevronRight size={12} className={cn("u-turn", pastOpen && "rotate-90")} />
-              </span>
-            }
-            onClick={() => setPastOpen((v) => !v)}
-          >
-            <span className="text-small">{S.graph.past(gr.past.length)}</span>
-          </Row>
-          {pastOpen && (
-            <div className="pl-6">
-              {gr.past.map((f) => (
-                <FactRow
-                  key={f.id}
-                  kbId={kbId}
-                  dir={dir}
-                  fact={f}
-                  past
-                  open={openFact === f.id}
-                  onToggle={() => onToggle(f.id)}
-                  onNavigate={onNavigate}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </div>
+    <>
+      <Row
+        icon={
+          <span className="flex w-4 justify-center">
+            <ChevronRight size={12} className={cn("u-turn", open && "rotate-90")} />
+          </span>
+        }
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="text-small">{S.graph.past(n)}</span>
+      </Row>
+      {open && <div className="pl-6">{children}</div>}
+    </>
   );
 }
 
-/** 一条事实是一行：名字（点了跳转）与标记在左，区间在右；指着这一行才露出
- *  「N sources」（在行下摊开证据）与铅笔（区间修正弹窗）。行首不再有折叠柄——
- *  折叠柄在这块面板上只属于节与「过去」的折，行的主动作是跳过去 */
+/** 一条事实是一行，与本体页 Relations 的行同一副：图标格里是方向箭头，左边关系名
+ *  （和 disputed 之类的标记），右边那个实体的名字（区间的小字在名字前）；整行点了
+ *  跳到那个实体。指着这一行才露出「N sources」（在行下摊开证据）与铅笔（区间修正
+ *  弹窗）。行首没有折叠柄——折叠柄在这块面板上只属于节与「过去」的折 */
 function FactRow({
   kbId,
   dir,
@@ -3165,34 +3101,36 @@ function FactRow({
   const interval = fmtInterval(fact);
   // 与 Review 的低置信口径一致：只有低到需要怀疑才挂 chip，常规置信保持沉默
   const lowConfidence = fact.confidence < 0.75;
+  const go = fact.other_id ? () => onNavigate(fact.other_id!) : undefined;
 
   return (
     <div
       className={cn((fact.stale || past) && "opacity-55")}
       title={fact.stale ? S.graph.staleFactHint : undefined}
     >
-      <div className={HOVER_ROW}>
-        {/* 图标格里是方向箭头——与本体页 Relations 的行同一副样子 */}
+      <div
+        role={go ? "link" : undefined}
+        tabIndex={go ? 0 : undefined}
+        onClick={go}
+        onKeyDown={(ev) => {
+          if (go && ev.key === "Enter") go();
+        }}
+        className={cn(HOVER_ROW, go && "cursor-pointer")}
+      >
         <span className="shrink-0 text-violet">
           {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
         </span>
-        {fact.other_id ? (
-          <span
-            role="link"
-            tabIndex={0}
-            onClick={() => onNavigate(fact.other_id!)}
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter") onNavigate(fact.other_id!);
-            }}
-            className="u-inline-link truncate text-body text-ink"
-          >
-            {fact.other_name ?? "?"}
-          </span>
-        ) : (
-          <span className="truncate text-body text-ink">
-            {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
-          </span>
-        )}
+        <span
+          className={cn(
+            "truncate text-body text-ink",
+            fact.predicate_label === null && "italic text-ink-2",
+          )}
+          title={
+            fact.predicate_label && fact.inferred ? S.graph.inferredPredicate : undefined
+          }
+        >
+          {fact.predicate_label ?? S.graph.unknownPredicate}
+        </span>
         {lowConfidence && (
           <span className="shrink-0 u-num u-meta-warn text-fine">
             {Math.round(fact.confidence * 100)}%
@@ -3209,14 +3147,20 @@ function FactRow({
             ⟲
           </span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+        <span className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-2">
           {interval && (
             <span className="u-num text-fine text-ink-2">{interval}</span>
           )}
+          <span className={cn(ROW_TRAILING, "max-w-40 truncate")}>
+            {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
+          </span>
           {fact.evidence_count > 0 && (
             <LinkButton
               className={cn(REVEAL, "text-fine", open && "is-on")}
-              onClick={onToggle}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onToggle();
+              }}
             >
               {S.graph.sources(fact.evidence_count)}
             </LinkButton>
@@ -3227,10 +3171,14 @@ function FactRow({
             tabIndex={0}
             title={S.graph.editTime}
             aria-label={S.graph.editTime}
-            onClick={() => setEditing(true)}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              setEditing(true);
+            }}
             onKeyDown={(ev) => {
               if (ev.key === "Enter" || ev.key === " ") {
                 ev.preventDefault();
+                ev.stopPropagation();
                 setEditing(true);
               }
             }}
