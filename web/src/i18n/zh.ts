@@ -1046,6 +1046,8 @@ export const zh: Strings = {
       `命中 ${hits} · 新增 ${inserted} · 退场 ${invalidated}`,
     ruleRunCapped: (n: number) =>
       `${n} 对（规则，实体）的读数组合太多没有展开完，它们的结论不完整`,
+    ruleRunRoundsCapped: (n: number) =>
+      `跑满 ${n} 轮还在往下推，链再往后的那几环没有接上`,
     ruleNeedsCondition: "一条规则至少要有一个条件。",
     ruleEdit: "编辑",
     ruleEditing: "正在编辑",

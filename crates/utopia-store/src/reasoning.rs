@@ -832,6 +832,97 @@ pub struct DeriveReport {
     pub rule_hits: usize,
     /// 前提组合太多、没展开完的 (规则, 实体) 对数。**与「不满足」区分开报**
     pub rule_capped: usize,
+    /// 业务规则跑了几轮（0027）。一轮的结论进下一轮的输入，直到某一轮不再
+    /// 产出新的结论。链上一环一轮，所以 1 就是「没有链」，2 就是 `A → B`
+    pub rule_rounds: usize,
+    /// 跑满 `MAX_DEPTH` 轮还在产出：链比上限长，后面的没接上。**与「不满足」
+    /// 区分开报**——没推到与不成立在结果里长得一模一样
+    pub rule_rounds_capped: bool,
+    /// 结论没变、证明变了、于是重写了前提链的行数（0027）。同一句话可以有
+    /// 第二条依据，而对账的键里没有前提——不重写的话那一行会一直挂着上一轮
+    /// 的理由，链上还可能挂着一条刚刚作废的前提
+    pub reproved: usize,
+}
+
+/// 一条派生从它的前提上得到的精度与置信度（0024）。
+///
+/// **抽出来是因为链**（0027）：链中间那一层既要拿它算自己的两端，又要作为
+/// 下一层的前提被同一段代码读一遍。落库那一处与不动点那一处各写一份的话，
+/// 两处对「哪一端是锚点顶上来的」的判断迟早会长得不一样。
+///
+/// 精度跟着**赢下这一端的那条前提**走：派生的起点就是前提里最晚的那个起点，
+/// 它的精度就是那条前提的精度。几条前提并列时取其中最粗的；那一端若是某条
+/// 前提的**锚点**顶上来的（0022），没有精度可言。
+fn premise_meta(
+    premises: &[Uuid],
+    from: Option<i64>,
+    to: Option<i64>,
+    spans: &HashMap<Uuid, (Option<i64>, Option<i64>)>,
+    meta: &HashMap<Uuid, PremiseMeta>,
+) -> PremiseMeta {
+    let mut fp: Option<String> = None;
+    let mut tp: Option<String> = None;
+    let mut conf = 1.0f32;
+    let mut from_anchored = false;
+    let mut to_anchored = false;
+    for p in premises {
+        let Some((pf, pt, pc, fa, ta)) = meta.get(p) else {
+            continue;
+        };
+        // 置信度取前提里最低的：一条链只和它最弱的一环一样可信
+        conf = conf.min(*pc);
+        let Some((sf, st)) = spans.get(p) else {
+            continue;
+        };
+        if from.is_some() && *sf == from {
+            if *fa {
+                from_anchored = true;
+            } else {
+                fp = coarsest(fp.as_deref(), pf.as_deref());
+            }
+        }
+        if to.is_some() && *st == to {
+            if *ta {
+                to_anchored = true;
+            } else {
+                // 'unknown' 不是粒度，是「结束了不知哪天」的标记；它顶上来的
+                // 那一端是锚点，走上面那条路
+                tp = coarsest(
+                    tp.as_deref(),
+                    pt.as_deref().filter(|p| *p != crate::graph::ENDED_UNKNOWN),
+                );
+            }
+        }
+    }
+    (fp, tp, conf, from_anchored, to_anchored)
+}
+
+/// 主类靠**派生归类**才够得着的那一份规则：范围从筛子变成一条条件（0027）。
+///
+/// `范围 与 ((A 且 B) 或 C)` 展开就是 `(范围且A且B) 或 (范围且C)`——所以每组
+/// 各加一条，析取仍然只有一层（0026）。写成条件而不是筛子，是为了让归类那条
+/// 派生事实进前提：结论的区间跟着它收窄，它作废时结论也跟着退场。
+fn scoped_by_conclusion(
+    rule: &utopia_reason::rules::BusinessRule,
+    is_a: Uuid,
+    classes: &[String],
+) -> utopia_reason::rules::BusinessRule {
+    use utopia_reason::rules::{Condition, Op, Operand};
+    let groups: std::collections::BTreeSet<i32> = rule.conditions.iter().map(|c| c.group).collect();
+    let mut conditions = rule.conditions.clone();
+    for group in groups {
+        conditions.push(Condition {
+            group,
+            predicate: is_a,
+            op: Op::In,
+            operand: Operand::Set(classes.to_vec()),
+        });
+    }
+    utopia_reason::rules::BusinessRule {
+        id: rule.id,
+        conclusion: rule.conclusion.clone(),
+        conditions,
+    }
 }
 
 /// 一次取数，三样东西：带区间的边、每条事实的区间、精度与置信度。
@@ -994,6 +1085,10 @@ async fn accepted_clashes(
 /// 宾语两格,与 `derived_facts` 拓宽后的两条通道一一对应(0021 决策 1):实体宾语
 /// 走 `Option<Uuid>`,字面值结论走那串规范化过的 JSON。两格都参与比较——否则
 /// 同一个类上的两条不同结论会被认成同一条。
+/// 一条前提在 `fact_derivations` 上的两格（0027）：断言一格、派生一格，
+/// 恰好一个有值——数据库那条 CHECK 说的就是这句
+type PremiseCols = (Option<Uuid>, Option<Uuid>);
+
 type DerivedKey = (
     Uuid,
     Uuid,
@@ -1136,8 +1231,21 @@ struct LoadedRule {
     rule: utopia_reason::rules::BusinessRule,
     /// 规则只看这个类**及其子类**的实体
     subject_types: Vec<Uuid>,
+    /// 上面那几个类的名字（IRI，没有才 key）。派生归类记的是名字，主类范围记的
+    /// 是 id——链要接上就得两边都有一份（0027）
+    subject_classes: Vec<String>,
     /// 结论落在哪个谓词上：归类落 `is_a`，属性落它自己那个
     conclude_predicate: Uuid,
+}
+
+/// 编译出来的一批规则，外加接链要用的两样东西（0027）。
+struct LoadedRules {
+    rules: Vec<LoadedRule>,
+    /// 内建 `is_a`。派生归类落在它上面，链上再读回来也从它上面读
+    is_a: Option<Uuid>,
+    /// 类名（IRI，没有才 key）→ 类 id。一条派生归类要变成「这个实体属于哪个类」，
+    /// 必须走这一步
+    class_ids: HashMap<String, Uuid>,
 }
 
 /// 求值要用的一行规则：id、主类、结论种类、结论那三格，外加结论类的 IRI 与 key
@@ -1155,22 +1263,45 @@ type RuleDefRow = (
 
 /// 取业务规则。条件形状不合法的规则**整条跳过而不是报错退出**——一条写坏的
 /// 规则不该让整轮物化停摆，而它不产出这件事在报告的条数里看得见。
-async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<LoadedRule>> {
+async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<LoadedRules> {
     use utopia_reason::rules::{BusinessRule, Conclusion, Condition, Op};
 
+    // **按 id 排序**：规则之间撞上同一个结论时留下的是先到的那条证明，而
+    // 「先到」不该由 HashMap 的顺序决定——同一个库两次物化要给出同一份证明
+    // （0026 在组之间讲的是同一件事，0027 让链把它放大了）
     let rows: Vec<RuleDefRow> = sqlx::query_as(
         "SELECT r.id, r.subject_type_id, r.conclusion,
                 r.conclude_type_id, r.conclude_predicate_id, r.conclude_value,
                 ct.iri, ct.key
            FROM attribute_rules r
            LEFT JOIN entity_types ct ON ct.id = r.conclude_type_id
-          WHERE r.kb_id = $1 AND r.enabled",
+          WHERE r.kb_id = $1 AND r.enabled
+          ORDER BY r.id",
     )
     .bind(kb_id)
     .fetch_all(pool)
     .await?;
     if rows.is_empty() {
-        return Ok(Vec::new());
+        return Ok(LoadedRules {
+            rules: Vec::new(),
+            is_a: None,
+            class_ids: HashMap::new(),
+        });
+    }
+
+    // 类名 ↔ 类 id，两个方向各一份：归类结论按名字记（改标签不该让已推出的结论
+    // 变成另一条，0021 决策 2），而主类范围与实体的类都是 id
+    let type_rows: Vec<(Uuid, Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT id, iri, key FROM entity_types WHERE kb_id = $1")
+            .bind(kb_id)
+            .fetch_all(pool)
+            .await?;
+    let mut class_ids: HashMap<String, Uuid> = HashMap::new();
+    let mut class_name: HashMap<Uuid, String> = HashMap::new();
+    for (id, iri, key) in type_rows {
+        let Some(name) = iri.or(key) else { continue };
+        class_ids.insert(name.clone(), id);
+        class_name.insert(id, name);
     }
 
     // 归类结论要落在内建 `is_a` 上。规则存在就意味着它已经被建出来了
@@ -1247,6 +1378,10 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<LoadedRule
             _ => continue,
         };
         let subject_types = descendants_of(pool, kb_id, subject_type).await?;
+        let subject_classes = subject_types
+            .iter()
+            .filter_map(|t| class_name.get(t).cloned())
+            .collect();
         out.push(LoadedRule {
             rule: BusinessRule {
                 id,
@@ -1254,10 +1389,15 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<LoadedRule
                 conditions,
             },
             subject_types,
+            subject_classes,
             conclude_predicate: predicate,
         });
     }
-    Ok(out)
+    Ok(LoadedRules {
+        rules: out,
+        is_a: is_a.map(|(id,)| id),
+        class_ids,
+    })
 }
 
 /// 操作数按 op 解析。形状不对返回 None，调用方整条规则跳过。
@@ -1473,46 +1613,93 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
     // 下面的陈旧对账扫的是整张 `derived_facts`，两趟各做各的 diff 会把对方
     // 落的行每一轮都判成陈旧
     let loaded = attribute_rules(pool, kb_id).await?;
-    report.attribute_rules = loaded.len();
-    if !loaded.is_empty() {
-        let (attr_facts, attr_spans, attr_meta, type_of) = attribute_facts(pool, kb_id).await?;
-        for lr in &loaded {
-            // 规则只看自己主类（含子类）的实体
-            let scoped: Vec<utopia_reason::rules::AttrFact> = attr_facts
-                .iter()
-                .filter(|f| {
-                    type_of
+    report.attribute_rules = loaded.rules.len();
+    // 一条规则结论的临时 id → 它最后落在哪一行。链上的前提指的是前者，
+    // `fact_derivations` 要存的是后者（0027）。键是派生键，值是临时 id
+    let mut provisional: HashMap<DerivedKey, Uuid> = HashMap::new();
+    if !loaded.rules.is_empty() {
+        let (asserted, attr_spans, attr_meta, type_of) = attribute_facts(pool, kb_id).await?;
+        // 前提的精度与置信度：落地那一段与不动点这一段共用，所以两份 meta 先合起来；
+        // 区间也要——认出派生的哪一端是被前提的锚点顶上来的，靠的就是它
+        meta.extend(attr_meta);
+        spans.extend(attr_spans);
+
+        // ---- 不动点：这一轮的结论进下一轮的输入（0027）
+        //
+        // **全量重跑而不是半朴素**：链通常只有一两环，收敛靠「这一轮没产出新键」
+        // 那一下，真实代价是单趟的两三倍。半朴素要维护每条规则读哪些谓词，
+        // 为一个两三轮的循环换一份索引，不划算。
+        //
+        // 输入侧一行 `derived_facts` 都不读：反馈全在这个内存池子里，一次物化
+        // 仍然是 (facts, rules, axioms) 的纯函数——0013 那条反对意见守的是这个
+        let mut fact_pool = asserted;
+        // 每个实体被**推**出来的类。断言的类在 `type_of` 里，两者进规则的方式
+        // 不一样：断言的类没有区间，是个筛子；推出来的类有区间，得当条件
+        let mut derived_types: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        let mut capped_by_rule: HashMap<Uuid, usize> = HashMap::new();
+        let mut rounds = 0usize;
+        for _ in 0..utopia_reason::MAX_DEPTH {
+            rounds += 1;
+            // 一轮之内先算完再入池：同一轮里规则读到的是上一轮结束时的池子，
+            // 谁先谁后就不影响结果
+            let mut fresh: Vec<(usize, utopia_reason::rules::RuleHit)> = Vec::new();
+            capped_by_rule.clear();
+            for (ri, lr) in loaded.rules.iter().enumerate() {
+                // 主类是断言的：范围是个筛子，不带区间、不进前提
+                let mut by_assertion: Vec<utopia_reason::rules::AttrFact> = Vec::new();
+                // 只靠派生归类够得着的：范围变成一个条件（下面那段）
+                let mut by_conclusion: Vec<utopia_reason::rules::AttrFact> = Vec::new();
+                for f in &fact_pool {
+                    if type_of
                         .get(&f.subject)
                         .and_then(|t| *t)
                         .is_some_and(|t| lr.subject_types.contains(&t))
-                })
-                .cloned()
-                .collect();
-            let (hits, rr) = utopia_reason::rules::evaluate(
-                std::slice::from_ref(&lr.rule),
-                &scoped,
-                &attr_spans,
-            );
-            report.rule_hits += rr.hits;
-            // 展不完的组合数按规则写回：这个数字在卡片上常驻，而不只在
-            // 「跑完那一刻」的提示里闪一下（少推几条与「不满足」长得一样）
-            sqlx::query("UPDATE attribute_rules SET capped_at_last_run = $2 WHERE id = $1")
-                .bind(lr.rule.id)
-                .bind(rr.capped as i32)
-                .execute(pool)
-                .await?;
-            //  是「这一轮算出来的派生总数」，公理与规则都算在内。
-            // **别改写它的原义**：被拦下的那些也算「算出来了」，队列里那一行
-            // 正是凭它对上的
-            report.derived += rr.hits;
-            report.rule_capped += rr.capped;
-            for h in hits {
-                let value = match &lr.rule.conclusion {
-                    utopia_reason::rules::Conclusion::Typing { class } => {
-                        serde_json::json!({ "class": class })
+                    {
+                        by_assertion.push(f.clone());
+                    } else if derived_types
+                        .get(&f.subject)
+                        .is_some_and(|ts| ts.iter().any(|t| lr.subject_types.contains(t)))
+                    {
+                        by_conclusion.push(f.clone());
                     }
+                }
+                let (hits, rr) = utopia_reason::rules::evaluate(
+                    std::slice::from_ref(&lr.rule),
+                    &by_assertion,
+                    &spans,
+                );
+                let mut capped = rr.capped;
+                fresh.extend(hits.into_iter().map(|h| (ri, h)));
+
+                // 主类是推出来的那一份：**范围写成一条条件**，而不是再当筛子。
+                // 归类那条派生事实因此进了前提，区间跟着它收窄（一个实体
+                // 2019–2022 是 B，就不该拿 2024 的读数满足一条 B 上的规则），
+                // 它作废时这条结论也就跟着退场——这一条不用另写代码
+                if !by_conclusion.is_empty() {
+                    if let (Some(is_a), false) = (loaded.is_a, lr.subject_classes.is_empty()) {
+                        let scoped = scoped_by_conclusion(&lr.rule, is_a, &lr.subject_classes);
+                        let (h2, rr2) = utopia_reason::rules::evaluate(
+                            std::slice::from_ref(&scoped),
+                            &by_conclusion,
+                            &spans,
+                        );
+                        capped += rr2.capped;
+                        fresh.extend(h2.into_iter().map(|h| (ri, h)));
+                    }
+                }
+                *capped_by_rule.entry(lr.rule.id).or_default() += capped;
+            }
+
+            let before = provisional.len();
+            for (ri, h) in fresh {
+                let lr = &loaded.rules[ri];
+                let (value, inner) = match &lr.rule.conclusion {
+                    utopia_reason::rules::Conclusion::Typing { class } => (
+                        serde_json::json!({ "class": class }),
+                        serde_json::Value::String(class.clone()),
+                    ),
                     utopia_reason::rules::Conclusion::Attribute { value, .. } => {
-                        serde_json::json!({ "value": value })
+                        (serde_json::json!({ "value": value }), value.clone())
                     }
                 };
                 let key = (
@@ -1523,23 +1710,68 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
                     h.from,
                     h.to,
                 );
-                wanted.entry(key).or_insert(Wanted {
+                // 上一轮已经推出过同一条：不再进池子，也就不会再进 frontier。
+                // 自反馈的环正是在这里停下的——它推出的是同一个键
+                if wanted.contains_key(&key) {
+                    continue;
+                }
+                // 临时 id：这一条现在就要当事实用，可它落在哪一行要等对账之后
+                // 才知道（不变的结论保留原来那一行）。落库前统一换过来
+                let prov = Uuid::now_v7();
+                let pm = premise_meta(&h.premises, h.from, h.to, &spans, &meta);
+                spans.insert(prov, (h.from, h.to));
+                meta.insert(prov, pm);
+                fact_pool.push(utopia_reason::rules::AttrFact {
+                    id: prov,
                     subject: h.subject,
                     predicate: lr.conclude_predicate,
-                    object_id: None,
-                    object_value: Some(value),
-                    from: h.from,
-                    to: h.to,
-                    premises: h.premises,
-                    rule_id: None,
-                    attribute_rule_id: Some(lr.rule.id),
+                    value: inner,
                 });
+                if let utopia_reason::rules::Conclusion::Typing { class } = &lr.rule.conclusion {
+                    if let Some(&t) = loaded.class_ids.get(class) {
+                        derived_types.entry(h.subject).or_default().push(t);
+                    }
+                }
+                provisional.insert(key.clone(), prov);
+                wanted.insert(
+                    key,
+                    Wanted {
+                        subject: h.subject,
+                        predicate: lr.conclude_predicate,
+                        object_id: None,
+                        object_value: Some(value),
+                        from: h.from,
+                        to: h.to,
+                        premises: h.premises,
+                        rule_id: None,
+                        attribute_rule_id: Some(lr.rule.id),
+                    },
+                );
+            }
+            // 这一轮什么新东西都没推出来：不动点到了
+            if provisional.len() == before {
+                break;
             }
         }
-        // 前提的精度与置信度：两趟共用下面那段，所以两份 meta 也要合起来；
-        // 区间也要——落地时要对着前提的区间认出派生的哪一端是锚点顶上的
-        meta.extend(attr_meta);
-        spans.extend(attr_spans);
+        report.rule_rounds = rounds;
+        // 跑满了轮数还在产出：链比 MAX_DEPTH 长，后面的没接上。**得报出来**——
+        // 「没推到」与「不满足」在结果里长得一模一样（组合封顶那条是同一个道理）
+        report.rule_rounds_capped = rounds == utopia_reason::MAX_DEPTH;
+        for lr in &loaded.rules {
+            // 展不完的组合数按规则写回：这个数字在表里常驻，而不只在「跑完那一刻」
+            // 的提示里闪一下。取最后一轮的数——那一轮扫的是最全的池子
+            let capped = capped_by_rule.get(&lr.rule.id).copied().unwrap_or(0);
+            sqlx::query("UPDATE attribute_rules SET capped_at_last_run = $2 WHERE id = $1")
+                .bind(lr.rule.id)
+                .bind(capped as i32)
+                .execute(pool)
+                .await?;
+            report.rule_capped += capped;
+        }
+        // 命中数按**不同的结论**数，不按算出来多少次：不动点里同一条结论每轮都
+        // 会被重新算出来，累加就成了轮数的函数
+        report.rule_hits = provisional.len();
+        report.derived += provisional.len();
     }
 
     let mut tx = pool.begin().await?;
@@ -1553,6 +1785,12 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
     .await?;
 
     let mut stale: Vec<Uuid> = Vec::new();
+    // 每个还成立的结论最后落在哪一行。**不变的结论保留原来那一行**，所以链上
+    // 指向它的前提要指向这个 id，而不是这一轮新造的（0027）
+    let mut settled: HashMap<DerivedKey, Uuid> = HashMap::new();
+    // 这一轮还成立、行也留着的那些，连同它们**这一轮的**前提。对账的键里没有
+    // 前提，所以「结论没变、理由变了」在这里是看不出来的——下面单独对一遍
+    let mut kept: Vec<(Uuid, Wanted)> = Vec::new();
     for (id, s, p, o, ov, from, to) in &live {
         let key = (
             *s,
@@ -1562,7 +1800,10 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
             from.map(|x| x.timestamp()),
             to.map(|x| x.timestamp()),
         );
-        if wanted.remove(&key).is_none() {
+        if let Some(d) = wanted.remove(&key) {
+            settled.insert(key, *id);
+            kept.push((*id, d));
+        } else {
             stale.push(*id);
         }
     }
@@ -1578,50 +1819,31 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
         report.invalidated = stale.len();
     }
 
-    for (_, d) in wanted {
-        // 置信度取前提里最低的；精度跟着**赢下这一端的那条前提**走（0024）：派生的起点
-        // 就是前提里最晚的那个起点，它的精度就是那条前提的精度——值与精度说同一句话，
-        // 数据库的 CHECK 也这么要求。从前取所有前提里最粗的：year 标在一个 6 月 1 日的
-        // 值上，值与标签互相矛盾。几条前提并列时取其中最粗的；那一端若是某条前提的
-        // **锚点**顶上来的（0022），没有精度可言
-        let mut fp: Option<String> = None;
-        let mut tp: Option<String> = None;
-        let mut conf = 1.0f32;
-        let mut from_anchored = false;
-        let mut to_anchored = false;
-        for p in &d.premises {
-            if let Some((pf, pt, pc, fa, ta)) = meta.get(p) {
-                conf = conf.min(*pc);
-                let Some((sf, st)) = spans.get(p) else {
-                    continue;
-                };
-                if d.from.is_some() && *sf == d.from {
-                    if *fa {
-                        from_anchored = true;
-                    } else {
-                        fp = coarsest(fp.as_deref(), pf.as_deref());
-                    }
-                }
-                if d.to.is_some() && *st == d.to {
-                    if *ta {
-                        to_anchored = true;
-                    } else {
-                        // 'unknown' 不是粒度，是「结束了不知哪天」的标记；它顶上来的
-                        // 那一端是锚点，走上面那条路
-                        tp = coarsest(
-                            tp.as_deref(),
-                            pt.as_deref().filter(|p| *p != crate::graph::ENDED_UNKNOWN),
-                        );
-                    }
-                }
-            }
-        }
+    // 剩下的都是新行。**先把 id 全定下来再插**：链上的前提要指向的那一行，
+    // 可能是这一批里还没插的另一条（0027）
+    let fresh: Vec<(Uuid, Wanted)> = wanted
+        .into_iter()
+        .map(|(key, d)| {
+            let id = Uuid::now_v7();
+            settled.insert(key, id);
+            (id, d)
+        })
+        .collect();
+    // 临时 id → 真正的行 id。链上的前提在不动点里用的是临时 id，落库要换过来；
+    // 断言前提不在这张表里，原样通过
+    let resolve: HashMap<Uuid, Uuid> = provisional
+        .iter()
+        .filter_map(|(key, prov)| settled.get(key).map(|id| (*prov, *id)))
+        .collect();
+
+    for (id, d) in &fresh {
         // 约束是「有精度必有日期」（0022 放宽了反向）：交集把某一端算成无界时，那一端
         // 的精度清掉；那一端若来自证据日期而不是原文的日期，也没有精度——在无知的地方
         // 填一个确定的值，正是 `facts.valid_from_precision` 那条注释说的病
+        let (fp, tp, conf, from_anchored, to_anchored) =
+            premise_meta(&d.premises, d.from, d.to, &spans, &meta);
         let fp = if from_anchored { None } else { d.from.and(fp) };
         let tp = if to_anchored { None } else { d.to.and(tp) };
-        let id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO derived_facts (id, kb_id, subject_id, predicate_id, object_id,
                                         object_value, valid_from, valid_to,
@@ -1644,18 +1866,86 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
         .bind(d.attribute_rule_id)
         .execute(&mut *tx)
         .await?;
-        for (seq, premise) in d.premises.iter().enumerate() {
+        report.inserted += 1;
+    }
+
+    // 结论没变、理由变了：**同一句话可以有第二条依据**（换了一条读数，或者换了
+    // 一组条件）。对账的键是主宾谓加区间，前提不在里面，所以那一行会带着上一轮
+    // 的证明留下来——链让这件事更容易撞上：站在它上面的那条前提可能刚刚作废。
+    // 一次查完再逐条比，只有真不一样的才重写
+    let kept_ids: Vec<Uuid> = kept.iter().map(|(id, _)| *id).collect();
+    let mut stored: HashMap<Uuid, Vec<PremiseCols>> = HashMap::new();
+    if !kept_ids.is_empty() {
+        let rows: Vec<(Uuid, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+            "SELECT derived_fact_id, premise_fact_id, premise_derived_id
+               FROM fact_derivations WHERE derived_fact_id = ANY($1)
+              ORDER BY derived_fact_id, seq",
+        )
+        .bind(&kept_ids)
+        .fetch_all(&mut *tx)
+        .await?;
+        for (d, f, dv) in rows {
+            stored.entry(d).or_default().push((f, dv));
+        }
+    }
+    let premise_cols = |d: &Wanted| -> Vec<PremiseCols> {
+        d.premises
+            .iter()
+            .map(|p| match resolve.get(p) {
+                Some(x) => (None, Some(*x)),
+                None => (Some(*p), None),
+            })
+            .collect()
+    };
+    let mut reproved: Vec<(Uuid, Vec<PremiseCols>)> = Vec::new();
+    for (id, d) in &kept {
+        let want = premise_cols(d);
+        if stored.get(id).map(|s| s.as_slice()) == Some(want.as_slice()) {
+            continue;
+        }
+        reproved.push((*id, want));
+    }
+    for (id, want) in &reproved {
+        sqlx::query("DELETE FROM fact_derivations WHERE derived_fact_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        for (seq, (f, d)) in want.iter().enumerate() {
             sqlx::query(
-                "INSERT INTO fact_derivations (derived_fact_id, premise_fact_id, seq)
-                 VALUES ($1, $2, $3)",
+                "INSERT INTO fact_derivations (derived_fact_id, premise_fact_id,
+                                               premise_derived_id, seq)
+                 VALUES ($1, $2, $3, $4)",
             )
             .bind(id)
-            .bind(premise)
+            .bind(f)
+            .bind(d)
             .bind(seq as i32)
             .execute(&mut *tx)
             .await?;
         }
-        report.inserted += 1;
+    }
+    report.reproved = reproved.len();
+
+    // 证明**等派生全插完再写**：链上一条前提指的可能是这一批里的另一行，
+    // 而这一批没有顺序可言（`wanted` 是个 HashMap）。一趟写完的话，先轮到
+    // 的那一行会指着还不存在的行，外键当场拦下
+    for (id, d) in &fresh {
+        for (seq, premise) in d.premises.iter().enumerate() {
+            // 前提是断言还是另一条派生：两列二选一，`seq` 是跨两种的一个序，
+            // 证明读起来才是一条顺下来的路（0027）
+            let derived_premise = resolve.get(premise).copied();
+            sqlx::query(
+                "INSERT INTO fact_derivations (derived_fact_id, premise_fact_id,
+                                               premise_derived_id, seq)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(id)
+            .bind(derived_premise.is_none().then_some(*premise))
+            .bind(derived_premise)
+            .bind(seq as i32)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
     tx.commit().await?;
     Ok(report)
@@ -1761,10 +2051,10 @@ pub async fn mark_inference_ran(pool: &PgPool, kb_id: Uuid) -> AppResult<()> {
 
 /// 一条派生事实的证明，展开到原句（0002 R2）。
 ///
-/// `fact_derivations` 只记直接前提，而前提一律是断言，所以「递归展开」在这里
-/// 退化成一条链：派生 → 按 `seq` 的断言 → 每条断言的证据。叶子是 chunk，
-/// 界面上一路点到文档。**撤了的前提照样列出并打上标记**：派生随前提失效，
-/// 但「当时靠的是什么」要读得出来，那正是记录轴存在的理由。
+/// `fact_derivations` 只记直接前提，顺着它一层层问下去就是完整的证明。一条
+/// 前提要么是断言——那一步的叶子是它的原句——要么是**另一条派生**（0027），
+/// 那一步要再问一次它凭什么。**撤了的前提照样列出并打上标记**：派生随前提
+/// 失效，但「当时靠的是什么」要读得出来，那正是记录轴存在的理由。
 ///
 /// 派生已失效或不存在时回 None——不是错误，界面据此收起。
 pub async fn proof(
@@ -1775,14 +2065,135 @@ pub async fn proof(
     let Some(derived) = derived_one(pool, kb_id, derived_id).await? else {
         return Ok(None);
     };
-    let premises: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT premise_fact_id FROM fact_derivations WHERE derived_fact_id = $1 ORDER BY seq",
-    )
-    .bind(derived_id)
-    .fetch_all(pool)
-    .await?;
-    let steps = steps_for(pool, &premises).await?;
+    let steps = premise_steps(pool, derived_id, 0).await?;
     Ok(Some(utopia_core::models::Proof { derived, steps }))
+}
+
+/// 一条派生的直接前提，派生的那几步再往下展开一层（0027）。
+///
+/// 深度上限与推理是同一条 `MAX_DEPTH`：链最长这么长，证明也就最深这么深。
+/// 到底了就停在那一步上——它自己的三元组还是列出来的，只是不再往下问。
+fn premise_steps<'a>(
+    pool: &'a PgPool,
+    derived_id: Uuid,
+    depth: usize,
+) -> std::pin::Pin<
+    Box<
+        dyn std::future::Future<Output = AppResult<Vec<utopia_core::models::ProofStep>>>
+            + Send
+            + 'a,
+    >,
+> {
+    Box::pin(async move {
+        let rows: Vec<(i32, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+            "SELECT seq, premise_fact_id, premise_derived_id
+               FROM fact_derivations WHERE derived_fact_id = $1 ORDER BY seq",
+        )
+        .bind(derived_id)
+        .fetch_all(pool)
+        .await?;
+        // 断言那几步一次取完（每一步还要各取一次证据），派生那几步逐条问
+        let asserted: Vec<Uuid> = rows.iter().filter_map(|(_, f, _)| *f).collect();
+        let mut by_fact: HashMap<Uuid, utopia_core::models::ProofStep> = steps_for(pool, &asserted)
+            .await?
+            .into_iter()
+            .map(|s| (s.fact_id, s))
+            .collect();
+
+        let mut steps = Vec::with_capacity(rows.len());
+        for (seq, fact, derived) in rows {
+            if let Some(f) = fact {
+                let Some(mut step) = by_fact.remove(&f) else {
+                    continue;
+                };
+                step.seq = seq;
+                steps.push(step);
+            } else if let Some(d) = derived {
+                let Some(mut step) = derived_step(pool, d).await? else {
+                    continue;
+                };
+                step.seq = seq;
+                if depth + 1 < utopia_reason::MAX_DEPTH {
+                    step.premises = premise_steps(pool, d, depth + 1).await?;
+                }
+                steps.push(step);
+            }
+        }
+        Ok(steps)
+    })
+}
+
+/// 一条派生前提读成证明的一步。三元组与区间跟断言那一步同一副样子——读的人
+/// 关心的是「这一句成不成立」，而不是它从哪张表来；`derived` 那一格答的是
+/// 后者，也是「还能不能再往下点一层」的依据。
+async fn derived_step(
+    pool: &PgPool,
+    id: Uuid,
+) -> AppResult<Option<utopia_core::models::ProofStep>> {
+    #[allow(clippy::type_complexity)]
+    let row: Option<(
+        Uuid,
+        Uuid,
+        String,
+        Option<Uuid>,
+        Option<String>,
+        Option<Uuid>,
+        Option<String>,
+        Option<chrono::DateTime<chrono::Utc>>,
+        Option<chrono::DateTime<chrono::Utc>>,
+        f32,
+        bool,
+    )> = sqlx::query_as(
+        "SELECT d.id, d.subject_id, s.canonical_name,
+                d.predicate_id, r.label, d.object_id,
+                COALESCE(o.canonical_name, ct.label,
+                         d.object_value ->> 'class',
+                         d.object_value #>> '{value}'),
+                d.valid_from, d.valid_to, d.confidence,
+                d.invalidated_at IS NOT NULL
+           FROM derived_facts d
+           JOIN entities s ON s.id = d.subject_id
+           LEFT JOIN relation_types r ON r.id = d.predicate_id
+           LEFT JOIN entities o ON o.id = d.object_id
+           LEFT JOIN attribute_rules ar ON ar.id = d.attribute_rule_id
+           LEFT JOIN entity_types ct ON ct.id = ar.conclude_type_id
+          WHERE d.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(
+        |(
+            fact_id,
+            subject_id,
+            subject,
+            predicate_id,
+            predicate,
+            object_id,
+            object,
+            valid_from,
+            valid_to,
+            confidence,
+            retracted,
+        )| utopia_core::models::ProofStep {
+            seq: 0,
+            fact_id,
+            derived: true,
+            subject_id,
+            subject,
+            predicate_id,
+            predicate,
+            object_id,
+            object,
+            valid_from,
+            valid_to,
+            confidence,
+            retracted,
+            // 派生没有原句：它的「证据」就是下面那一层前提
+            evidence: Vec::new(),
+            premises: Vec::new(),
+        },
+    ))
 }
 
 /// 一串前提展开成证明的步：三元组、区间、撤没撤、证据。
@@ -1843,6 +2254,8 @@ async fn steps_for(
         steps.push(utopia_core::models::ProofStep {
             seq: seq as i32,
             fact_id,
+            derived: false,
+            premises: Vec::new(),
             subject_id,
             subject,
             predicate_id,
@@ -1940,14 +2353,14 @@ async fn derived_one(
                                 ps.canonical_name || ' · '
                                 || COALESCE(pr.label, '?') || ' · '
                                 || COALESCE(po.canonical_name,
-                                            pf.object_value #>> '{value}',
+                                            fd.object_value #>> '{value}',
+                                            fd.object_value #>> '{class}',
                                             '?')
                                 ORDER BY fd.seq)
-                       FROM fact_derivations fd
-                       JOIN facts pf       ON pf.id = fd.premise_fact_id
-                       JOIN entities ps    ON ps.id = pf.subject_id
-                       LEFT JOIN relation_types pr ON pr.id = pf.predicate_id
-                       LEFT JOIN entities po ON po.id = pf.object_id
+                       FROM derivation_premises fd
+                       JOIN entities ps    ON ps.id = fd.subject_id
+                       LEFT JOIN relation_types pr ON pr.id = fd.predicate_id
+                       LEFT JOIN entities po ON po.id = fd.object_id
                       WHERE fd.derived_fact_id = d.id),
                     ARRAY[]::text[]
                 ) AS premises
@@ -1999,14 +2412,14 @@ pub async fn derived_for_entity(
                                 ps.canonical_name || ' · '
                                 || COALESCE(pr.label, '?') || ' · '
                                 || COALESCE(po.canonical_name,
-                                            pf.object_value #>> '{{value}}',
+                                            fd.object_value #>> '{{value}}',
+                                            fd.object_value #>> '{{class}}',
                                             '?')
                                 ORDER BY fd.seq)
-                       FROM fact_derivations fd
-                       JOIN facts pf       ON pf.id = fd.premise_fact_id
-                       JOIN entities ps    ON ps.id = pf.subject_id
-                       LEFT JOIN relation_types pr ON pr.id = pf.predicate_id
-                       LEFT JOIN entities po ON po.id = pf.object_id
+                       FROM derivation_premises fd
+                       JOIN entities ps    ON ps.id = fd.subject_id
+                       LEFT JOIN relation_types pr ON pr.id = fd.predicate_id
+                       LEFT JOIN entities po ON po.id = fd.object_id
                       WHERE fd.derived_fact_id = d.id),
                     ARRAY[]::text[]
                 ) AS premises

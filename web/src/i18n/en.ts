@@ -1182,6 +1182,9 @@ export const en = {
       `${hits} matched · ${inserted} new · ${invalidated} retired`,
     ruleRunCapped: (n: number) =>
       `${n} entity/rule pairs had too many readings to expand; their conclusions are incomplete`,
+    /** 链跑满上限就停了。**说出来**：没接上的那一环与「不满足」长得一样 */
+    ruleRunRoundsCapped: (n: number): string =>
+      `Rules kept concluding after ${n} rounds; anything further down the chain was not reached`,
     ruleNeedsCondition: "A rule needs at least one condition.",
     /* ---- 打磨：可点的计数、常驻的 capped 提示、改结论 ---- */
     ruleEdit: "Edit",

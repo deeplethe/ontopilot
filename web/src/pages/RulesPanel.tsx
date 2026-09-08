@@ -312,6 +312,8 @@ export function RulesPanel({
       toast.success(S.ontology.ruleRunDone(r.hits, r.inserted, r.invalidated));
       // 展开不全要单独说：少推几条与「不满足」在结果里长得一样
       if (r.capped) toast.error(S.ontology.ruleRunCapped(r.capped));
+      // 链没跑到头也是「少推了东西」，与组合展不完同一类提示（0027）
+      if (r.rounds_capped) toast.error(S.ontology.ruleRunRoundsCapped(r.rounds));
       invalidate();
     },
     onError,

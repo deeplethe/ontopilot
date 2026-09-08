@@ -196,5 +196,9 @@ pub async fn run_now(
         "capped": report.rule_capped,
         "inserted": report.inserted,
         "invalidated": report.invalidated,
+        // 链跑了几轮，以及有没有跑满上限就停（0027）。**跑满得说出来**——
+        // 没接上的那一环与「不满足」在结果里长得一模一样
+        "rounds": report.rule_rounds,
+        "rounds_capped": report.rule_rounds_capped,
     })))
 }

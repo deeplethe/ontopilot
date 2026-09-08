@@ -960,6 +960,7 @@ mod tests {
             rule: "business".into(),
             rule_name: Some("Gas-bearing well".into()),
             premises: vec![id(5)],
+            premises_derived: Vec::new(),
         };
         let quads = export(Format::Turtle, |sink, names, vocab| {
             emit_derived(sink, names, vocab, &derived).unwrap();
@@ -1023,6 +1024,7 @@ mod tests {
             rule: "transitive".into(),
             rule_name: None,
             premises: vec![id(5)],
+            premises_derived: Vec::new(),
         };
         let quads = export(Format::Turtle, |sink, names, vocab| {
             emit_derived(sink, names, vocab, &derived).unwrap();

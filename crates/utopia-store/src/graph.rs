@@ -714,7 +714,9 @@ async fn edges_among(
                 r.key AS predicate, r.label AS label,
                 FALSE AS inferred, TRUE AS derived, ru.kind AS rule,
                 ARRAY(SELECT fd.premise_fact_id FROM fact_derivations fd
-                       WHERE fd.derived_fact_id = d.id ORDER BY fd.seq) AS premises,
+                       WHERE fd.derived_fact_id = d.id
+                         AND fd.premise_fact_id IS NOT NULL
+                       ORDER BY fd.seq) AS premises,
                 d.valid_from, d.valid_to,
                 d.valid_from AS holds_from, d.valid_to AS holds_to, d.confidence,
                 FALSE AS contested, FALSE AS blocked

@@ -106,6 +106,9 @@ pub struct ExportDerived {
     pub rule_name: Option<String>,
     /// 前提事实。审计要顺着它往下走到句子
     pub premises: Vec<Uuid>,
+    /// 前提里是**另一条派生**的那些（0027）。与上面那列分开，是因为读回来的人
+    /// 要知道该去哪张表接着往下走；合成一列的话，一条链在导出里就断了
+    pub premises_derived: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -217,7 +220,13 @@ pub async fn derived_page(
                 d.derived_at, d.invalidated_at, d.confidence,
                 COALESCE(ru.kind, 'business') AS rule, ar.name AS rule_name,
                 COALESCE(ARRAY(SELECT fd.premise_fact_id FROM fact_derivations fd
-                                WHERE fd.derived_fact_id = d.id ORDER BY fd.seq), '{}') AS premises
+                                WHERE fd.derived_fact_id = d.id
+                                  AND fd.premise_fact_id IS NOT NULL
+                                ORDER BY fd.seq), '{}') AS premises,
+                COALESCE(ARRAY(SELECT fd.premise_derived_id FROM fact_derivations fd
+                                WHERE fd.derived_fact_id = d.id
+                                  AND fd.premise_derived_id IS NOT NULL
+                                ORDER BY fd.seq), '{}') AS premises_derived
            FROM derived_facts d
            LEFT JOIN rules ru ON ru.id = d.rule_id
            LEFT JOIN attribute_rules ar ON ar.id = d.attribute_rule_id

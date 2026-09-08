@@ -396,11 +396,11 @@ pub async fn matches(
                 COALESCE(
                     (SELECT array_agg(
                                 COALESCE(pr.label, '?') || ' = '
-                                || COALESCE(pf.object_value #>> '{value}', '?')
+                                || COALESCE(fd.object_value #>> '{value}',
+                                            fd.object_value #>> '{class}', '?')
                                 ORDER BY fd.seq)
-                       FROM fact_derivations fd
-                       JOIN facts pf ON pf.id = fd.premise_fact_id
-                       LEFT JOIN relation_types pr ON pr.id = pf.predicate_id
+                       FROM derivation_premises fd
+                       LEFT JOIN relation_types pr ON pr.id = fd.predicate_id
                       WHERE fd.derived_fact_id = d.id),
                     ARRAY[]::text[]
                 )
