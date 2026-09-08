@@ -104,13 +104,25 @@ const graphRoute = createRoute({
      - entity：选中了谁
      - focus：是否处在某个实体的邻域（与"在全图里选中"是两个画面）
      - at：时间轴停在哪一刻。**这条最不能少**——这产品的卖点就是
-       "看某个时刻的世界"，不带时刻的链接把最有意思的那部分丢了 */
+       "看某个时刻的世界"，不带时刻的链接把最有意思的那部分丢了
+     - level：在看合同还是在看数据（0012 / #497）。缺省是数据；`schema`
+       画的是类与关系。它跟上面三条同族——也是"你在看什么"
+     - cls：schema 层选中了哪个类，记的是 key 不是 id。**key 才跨库可读**，
+       而且从实例面板点过来时手上只有 type_key（GraphNode 不带类 id） */
   validateSearch: (
     search: Record<string, unknown>,
-  ): { entity?: string; focus?: string; at?: string } => ({
+  ): {
+    entity?: string;
+    focus?: string;
+    at?: string;
+    level?: "schema";
+    cls?: string;
+  } => ({
     entity: typeof search.entity === "string" ? search.entity : undefined,
     focus: typeof search.focus === "string" ? search.focus : undefined,
     at: typeof search.at === "string" ? search.at : undefined,
+    level: search.level === "schema" ? "schema" : undefined,
+    cls: typeof search.cls === "string" ? search.cls : undefined,
   }),
   component: Graph,
 });

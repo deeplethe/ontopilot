@@ -56,6 +56,7 @@ import { Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
 import {
+  cn,
   Pill,
   Row,
   ToolButton,
@@ -535,6 +536,7 @@ export function OntologySchemaGraph({
   rules = [],
   selected,
   onSelect,
+  chromeTop,
 }: {
   entityTypes: EntityTypeView[];
   /** 业务规则：画成主类 → 结论类的一条紫弧，点它打开规则那一页 */
@@ -547,6 +549,9 @@ export function OntologySchemaGraph({
    *  和点左栏的类名走的是同一条状态,右侧停靠的表单也就自然是同一份 */
   selected: SchemaSelection;
   onSelect: (sel: SchemaSelection) => void;
+  /** 被别的页面嵌进去时，自己那两组悬浮 chrome 往下让多少（#497）。
+   *  本体页里它独占画布，是 0；图谱页顶上还压着搜索框和层级开关 */
+  chromeTop?: string;
 }) {
   const entityById = useMemo(
     () => new Map(entityTypes.map((t) => [t.id, t])),
@@ -852,7 +857,12 @@ export function OntologySchemaGraph({
   return (
     <div className="h-full relative">
       {/* 顶部悬浮条：图例 + 取景 + 未限定关系入口。没有搜索框——找东西走左栏 */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-start gap-2 pointer-events-none">
+      <div
+        className={cn(
+          "absolute left-3 right-3 z-10 flex items-start gap-2 pointer-events-none",
+          chromeTop ?? "top-3",
+        )}
+      >
         <div className="pointer-events-auto flex flex-wrap gap-2">
           {/* 静态图例：几种边各自的说法，不是可切换的过滤器——本体的边远比
               实例图少，藏一种边省下的空间不值得多一层交互。

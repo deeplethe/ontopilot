@@ -42,6 +42,10 @@ import {
   softMutedNode,
 } from "./graphCanvas";
 import { EntityHistory } from "./EntityHistory";
+import {
+  OntologySchemaGraph,
+  type SchemaSelection,
+} from "./OntologySchemaGraph";
 import { EntityDialog, FactTimeDialog } from "./graphDialogs";
 import { fmtTime } from "../time";
 import { NextStep, nextStep, useReadiness } from "./NextStep";
@@ -253,6 +257,12 @@ export function Graph() {
   const search = useSearch({ from: "/app/kb/$kbId/graph" });
   const navigate = useNavigate();
   const entityParam = search.entity;
+  /* 层级（#497）：`schema` 画的是本体——类与关系；缺省画实例与事实。
+     同一块画布，两套数据。**不是两个页面**：本体是数据要守的合同（0012），
+     而合同和数据分在两页时，"三个类四条关系产生了一万两千条事实"这句话
+     没有一个地方看得见 */
+  const level: "instances" | "schema" =
+    search.level === "schema" ? "schema" : "instances";
   const [focusEntity, setFocusEntity] = useState<string | null>(
     search.focus ?? entityParam ?? null,
   );
@@ -318,6 +328,8 @@ export function Graph() {
           Math.abs(timeT - Date.now()) < DAY_MS
           ? undefined
           : new Date(timeT).toISOString().slice(0, 10);
+    // schema 层不写实例那三条：那一层没有选中的实体，也没有邻域
+    if (level === "schema") return;
     const next = {
       entity: selected ?? undefined,
       // **与 entity 相同就不写**：点搜索结果会同时设这两个，
@@ -336,10 +348,15 @@ export function Graph() {
     navigate({
       to: "/kb/$kbId/graph",
       params: { kbId },
-      search: next,
+      /* **合并，不是整份替换**（#497）：这个 effect 只管实例那三条。
+         整份写回去的话，切到 schema 层那一瞬间它正好被"清空选中"触发一次，
+         把刚写进 URL 的 level 一起抹掉——表现是点了类型入口，面板关了、
+         层没换 */
+      search: (prev) => ({ ...prev, ...next }),
       replace: true,
     });
   }, [
+    level,
     selected,
     focusEntity,
     timeT,
@@ -367,6 +384,75 @@ export function Graph() {
   /* 画多少个。**进 queryKey**——不进的话调了档位不会重新取数，
      界面看着变了实际还是老数据 */
   const [nodeBudget, setNodeBudget] = useState<number>(NODE_BUDGETS[0]);
+
+  /* 本体：只有 schema 层才取。**query key 与本体页的那一份相同**，
+     所以两页之间来回不重取。2777 个类的库这一趟不便宜，实例层不该白付 */
+  const ontology = useQuery({
+    queryKey: ["ontology", kbId],
+    queryFn: () => api.ontology(kbId),
+    enabled: level === "schema",
+  });
+  const rules = useQuery({
+    queryKey: ["rules", kbId],
+    queryFn: () => api.rules(kbId),
+    enabled: level === "schema",
+  });
+  const entityTypes = useMemo(
+    () => ontology.data?.entity_types ?? [],
+    [ontology.data],
+  );
+  /* schema 层选中了什么。**由 URL 的 cls（类的 key）导出**——从实例面板
+     点类型过来时手上只有 type_key，而 key 也比 id 更适合出现在可分享的链接里 */
+  const [schemaSel, setSchemaSel] = useState<SchemaSelection>(null);
+  useEffect(() => {
+    if (level !== "schema") return;
+    const key = search.cls;
+    if (!key) return;
+    const t = entityTypes.find((x) => x.key === key);
+    if (t) setSchemaSel({ kind: "class", id: t.id });
+  }, [level, search.cls, entityTypes]);
+
+  /* 切层。选中态两层各管各的：实例层选的是一个实体，schema 层选的是一个类，
+     换层时把对方的清掉，免得回来时面板讲的是上一层的事 */
+  const goLevel = useCallback(
+    (next: "instances" | "schema", cls?: string) => {
+      if (next === "instances") setSchemaSel(null);
+      else setSelected(null);
+      navigate({
+        to: "/kb/$kbId/graph",
+        params: { kbId },
+        search: (prev) => ({
+          ...prev,
+          level: next === "schema" ? ("schema" as const) : undefined,
+          cls: next === "schema" ? cls : undefined,
+          entity: next === "schema" ? undefined : prev.entity,
+          focus: next === "schema" ? undefined : prev.focus,
+        }),
+      });
+    },
+    [kbId, navigate],
+  );
+
+  /** schema 层选中的那个类（选的是关系或什么都没选时为 null） */
+  const selectedClass = useMemo(
+    () =>
+      schemaSel?.kind === "class"
+        ? (entityTypes.find((t) => t.id === schemaSel.id) ?? null)
+        : null,
+    [schemaSel, entityTypes],
+  );
+
+  /* schema 层的搜索找的是类，本地过滤即可——本体一次取全，没有分页 */
+  const classHits = useMemo(() => {
+    const q = searchQ.trim().toLowerCase();
+    if (level !== "schema" || !q) return [];
+    return entityTypes
+      .filter(
+        (t) =>
+          t.label.toLowerCase().includes(q) || t.key.toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+  }, [level, searchQ, entityTypes]);
 
   // 空状态给谁看：管理员能自己去配模型，其他人只能去找管理员。与 Shell 共用同一份缓存
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
@@ -1148,8 +1234,11 @@ export function Graph() {
       sigma.kill();
       sigmaRef.current = null;
     };
+    // **level 也要在依赖里**（#497）：schema 层不挂实例画布，回来时容器是
+    // 新挂的一个 div，而 ref 变化不触发 effect——少了它，从模式层切回来
+    // 是一张空白画布，控制台还一声不吭
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.data]);
+  }, [data.data, level]);
 
   if (!kb)
     return <div className="p-8 text-body text-ink-2">{S.nav.loading}</div>;
@@ -1165,15 +1254,21 @@ export function Graph() {
 
   return (
     <div className="h-full relative">
-      {/* 顶部悬浮条：搜索 + 图例 + 状态 */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-start gap-2 pointer-events-none">
+      {/* 顶部悬浮条：搜索 + 图例 + 状态。
+          **z-20 高过画布自己的那层 chrome**：schema 层的图例排在它下面一档
+          （见 chromeTop），搜索下拉展开时正好落在图例上，得压得住 */}
+      <div className="absolute top-3 left-3 right-3 z-20 flex items-start gap-2 pointer-events-none">
         <div className="relative pointer-events-auto">
           {/* 与本体页左栏的过滤框同一副身材、同一个角落（见 Ontology.tsx） */}
           <Input
             icon={<Search size={12} />}
             className="w-58 shadow-lg"
             placeholder={
-              inSubgraph ? S.graph.searchInSubgraph : S.graph.searchEntity
+              level === "schema"
+                ? S.graph.searchClass
+                : inSubgraph
+                  ? S.graph.searchInSubgraph
+                  : S.graph.searchEntity
             }
             value={searchInput}
             onChange={(e) => {
@@ -1181,7 +1276,31 @@ export function Graph() {
               setSearchQ(e.target.value.trim());
             }}
           />
-          {searchQ && searchHits.length > 0 && (
+          {/* schema 层：命中的是类。选中即带到眼前——本体页的左栏也是这条路 */}
+          {level === "schema" && classHits.length > 0 && (
+            <div className="glass-strong absolute mt-1 w-full rounded-overlay shadow-xl overflow-hidden">
+              {classHits.map((t) => (
+                <Row
+                  key={t.id}
+                  trailing={t.usage ? String(t.usage) : undefined}
+                  onClick={() => {
+                    setSchemaSel({ kind: "class", id: t.id });
+                    setSearchInput("");
+                    setSearchQ("");
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-2.5 w-2.5 shrink-0 ${t.shape === "square" ? "scale-90" : "rounded-full"}`}
+                      style={{ background: t.color }}
+                    />
+                    <span className="truncate">{t.label}</span>
+                  </span>
+                </Row>
+              ))}
+            </div>
+          )}
+          {level === "instances" && searchQ && searchHits.length > 0 && (
             <div className="glass-strong absolute mt-1 w-full rounded-overlay shadow-xl overflow-hidden">
               {searchHits.map((c) => (
                 <Row
@@ -1228,7 +1347,40 @@ export function Graph() {
             </div>
           )}
         </div>
-        {focusEntity && (
+        {/* 层级开关：合同与数据同一块画布上的两档（#497）。
+            **挨着搜索框**——它决定的正是那个框在搜什么 */}
+        <div className="pointer-events-auto shrink-0">
+          <Segmented<"instances" | "schema">
+            value={level}
+            onChange={(v) => goLevel(v)}
+            options={[
+              { value: "instances", label: S.graph.levelInstances },
+              { value: "schema", label: S.graph.levelSchema },
+            ]}
+          />
+        </div>
+        {/* 下钻：从合同到数据。只留这个类，用的是既有的类型显隐——图例上
+            看得见哪些被关了，也有一步复位，不必另造一套过滤 */}
+        {level === "schema" && selectedClass && (
+          <Button
+            variant="secondary"
+            className="glass-strong pointer-events-auto shrink-0 shadow-lg"
+            onClick={() => {
+              setHiddenTypes(
+                new Set(
+                  entityTypes
+                    .map((x) => x.key)
+                    .filter((k) => k !== selectedClass.key),
+                ),
+              );
+              goLevel("instances");
+            }}
+          >
+            {S.graph.onlyThisType(selectedClass.label)}
+            <span className="u-num text-ink-2">{selectedClass.usage}</span>
+          </Button>
+        )}
+        {level === "instances" && focusEntity && (
           <Button
             variant="secondary"
             className="glass-strong pointer-events-auto shadow-lg"
@@ -1242,7 +1394,14 @@ export function Graph() {
             「+N 个类」——那一排横着长，类一多就换行把画布顶下去；而且十几个
             一模一样的胶囊排开，谁重要也读不出来 */}
         {/* 与搜索框顶齐：药丸和输入框都是 32 高，这里再垫 4 就矮一截 */}
-        <div className="pointer-events-auto flex flex-wrap gap-2">
+        {/* schema 层不挂这一排：那一层画的是类本身，"显示哪些类"由取景规则
+            回答（见 schemaScope），而模式图自带一枚说明取景的药丸 */}
+        <div
+          className={cn(
+            "pointer-events-auto flex flex-wrap gap-2",
+            level === "schema" && "hidden",
+          )}
+        >
           {legendShown.map(([key, t]) => (
             <Pill
               key={key}
@@ -1397,7 +1556,13 @@ export function Graph() {
         {/* 右上：能调「画多少个」+ 统计。**统计说的正是这个数**
             （「画了 150 个，共 548 个」），把调节放在它旁边，改的是谁一目了然。
             外壳保持中性——这一片是 chrome，彩色只属于数据 */}
-        <div className="ml-auto flex flex-col items-end gap-1">
+        {/* 右上的读数说的是这张画上有多少实体多少事实——schema 层没有这回事 */}
+        <div
+          className={cn(
+            "ml-auto flex flex-col items-end gap-1",
+            level === "schema" && "hidden",
+          )}
+        >
           <div className="flex items-start gap-2">
             <div className="pointer-events-auto flex items-center overflow-hidden rounded-control border border-line">
             <IconButton
@@ -1471,17 +1636,46 @@ export function Graph() {
         </div>
       </div>
 
-      {/* 画布：世界坐标网格层（随相机动）垫在 sigma WebGL 层下（全出血，时间岛悬浮其上） */}
-      <div className="absolute inset-0">
-        <canvas ref={gridRef} className="absolute inset-0 h-full w-full" />
-        <div ref={containerRef} className="absolute inset-0" />
-      </div>
+      {/* 画布。两层各画各的，**换层是卸载重建**：两台 sigma 同时挂着更贵，
+          而藏起来的那一台容器高宽为零，回来还得自己 resize——那种坑不值得省
+          这一两秒的重排。schema 层画的是本体页那张模式图，同一个组件、同一块
+          画布机器（#496），这里只是它的第二个消费者 */}
+      {level === "instances" ? (
+        <div className="absolute inset-0">
+          {/* 世界坐标网格层（随相机动）垫在 sigma WebGL 层下（全出血，时间岛悬浮其上） */}
+          <canvas ref={gridRef} className="absolute inset-0 h-full w-full" />
+          <div ref={containerRef} className="absolute inset-0" />
+        </div>
+      ) : (
+        <div className="absolute inset-0">
+          <OntologySchemaGraph
+            entityTypes={entityTypes}
+            relationTypes={ontology.data?.relation_types ?? []}
+            rules={rules.data?.rules ?? []}
+            // 顶上压着搜索框与层级开关（32 高 + 12 的上边距），它自己那排
+            // 图例往下让一档
+            chromeTop="top-16"
+            selected={schemaSel}
+            /* 点一个类只是选中，不换层。**下钻是显式的一步**（顶栏那个按钮）
+               ——一点就被弹到另一层的话，这一层就没法用来看结构了，而看结构
+               正是它存在的理由 */
+            onSelect={setSchemaSel}
+          />
+        </div>
+      )}
 
       {/* 左下控件塔：推出来的边 + 布局切换 + 相机（右下归实体侧栏，底部中央归时间岛） */}
       {/* **items-start**：列内项目默认 stretch，一组展开就会把其余几组
           一起拉到同宽——那几组的字还收着，于是看着是几个莫名其妙的空白长条。
           各自按内容收放，才是「一组一组展开，不牵连别人」 */}
-      <div className="absolute bottom-4 left-3 z-10 flex flex-col items-start gap-2">
+      {/* 这几座塔与时间岛都是实例层的事：类没有区间，也没有被推出来一说；
+          模式图自带缩放塔 */}
+      <div
+        className={cn(
+          "absolute bottom-4 left-3 z-10 flex flex-col items-start gap-2",
+          level === "schema" && "hidden",
+        )}
+      >
         {/* 推出来的边：**自成一组，也不进类型图例。**
             图例回答「显示哪些类」，一排全是本体里的类；这个回答的是
             「显不显示推出来的边」——不是同一个问题。为零时整组不出现。
@@ -1594,7 +1788,7 @@ export function Graph() {
 
       {/* pb 把这块从几何正中抬起 40px：视觉重心比几何中心略高一点，
           正居中的短文字块看上去总是偏下 */}
-      {empty && (
+      {level === "instances" && empty && (
         <div className="absolute inset-0 grid place-items-center pb-20 pointer-events-none">
           {/* 不放标题方块：页面本身就是图谱页，tab 条上也写着，
               第三遍写"图谱"两个字不带任何信息。空状态该说的是下一步做什么——
@@ -1616,8 +1810,8 @@ export function Graph() {
         </div>
       )}
 
-      {/* 底部居中悬浮时间岛 */}
-      {edgeCount > 0 && (
+      {/* 底部居中悬浮时间岛。schema 层没有它：类不在世界轴上成立或失效 */}
+      {level === "instances" && edgeCount > 0 && (
         <TimeScrubber
           edges={data.data!.edges}
           value={timeT}
@@ -1628,13 +1822,14 @@ export function Graph() {
       )}
 
       {/* 实体侧栏。**取消选中之后还要多留 170ms**：那段时间它在演退场 */}
-      {(selected || exiting) && kb && (
+      {level === "instances" && (selected || exiting) && kb && (
         <EntityPanel
           kbId={kb.id}
           entityId={(selected ?? exiting)!}
           exiting={!selected}
           intent={panelIntentRef}
           onClose={deselect}
+          onSeeClass={(key) => goLevel("schema", key)}
           onNavigate={(id) => {
             // 跳转目标可能不在当前画布：同时把图 refocus 到它的邻域（与搜索选择一致）
             setFocusEntity(id);
@@ -2490,6 +2685,7 @@ function EntityPanel({
   intent,
   onClose,
   onNavigate,
+  onSeeClass,
 }: {
   kbId: string;
   entityId: string;
@@ -2499,6 +2695,9 @@ function EntityPanel({
   intent?: MutableRefObject<{ view: "derived"; open: string } | null>;
   onClose: () => void;
   onNavigate: (entityId: string) => void;
+  /** 去看这个实体守的是哪一条合同（#497）。带的是类的 key——
+   *  `GraphNode` 不带类 id，而 key 也更适合出现在链接里 */
+  onSeeClass: (typeKey: string) => void;
 }) {
   const detail = useQuery({
     queryKey: ["entity", kbId, entityId],
@@ -2641,8 +2840,18 @@ function EntityPanel({
                 {e.disambiguator && e.disambiguator !== e.type_label
                   ? `${e.disambiguator} · `
                   : ""}
-                {e.type_label ?? S.graph.untyped} ·{" "}
-                {detail.data?.facts.length ?? 0} {S.graph.facts}
+                {e.type_key ? (
+                  <LinkButton
+                    className="text-small"
+                    title={S.graph.seeInSchema}
+                    onClick={() => onSeeClass(e.type_key!)}
+                  >
+                    {e.type_label ?? S.graph.untyped}
+                  </LinkButton>
+                ) : (
+                  (e.type_label ?? S.graph.untyped)
+                )}{" "}
+                · {detail.data?.facts.length ?? 0} {S.graph.facts}
               </div>
             </>
           )}

@@ -743,6 +743,12 @@ export const en = {
     layoutPack: "Cluster by type",
     searchEntity: "Search entities…",
     searchInSubgraph: "Search in subgraph…",
+    searchClass: "Search classes…",
+    levelInstances: "Instances",
+    levelSchema: "Schema",
+    levelHint: "What the base says exists, and what it holds",
+    onlyThisType: (n: string) => `Only ${n}`,
+    seeInSchema: "See this class in the schema",
     backToOverview: "← Full graph",
     // 顺序不是随便排的：模型没配好之前，上传的文档只会排队等着，
     // 一个实体也抽不出来。先配模型，再传文档
