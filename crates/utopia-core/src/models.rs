@@ -1141,7 +1141,7 @@ pub struct BlockedDerivation {
 
 /// 证明的一步：一条前提，连同它的证据（0002 R2）。
 ///
-/// 前提要么是断言——叶子就是它的原句（chunk）——要么是**另一条派生**（0027），
+/// 前提要么是断言——叶子就是它的原句（chunk）——要么是**另一条派生**（0030），
 /// 那一步的证据是它自己的前提，在 `premises` 里再往下一层。所以证明是一棵树，
 /// 深度与推理同一条上限。
 #[derive(Debug, Clone, Serialize)]
@@ -1149,7 +1149,7 @@ pub struct ProofStep {
     pub seq: i32,
     /// 断言时是 `facts.id`，派生时是 `derived_facts.id`——看 `derived`
     pub fact_id: Uuid,
-    /// 这一步自己是推出来的（0027）。**界面要分得出**：一条推出来的前提与
+    /// 这一步自己是推出来的（0030）。**界面要分得出**：一条推出来的前提与
     /// 一条读来的前提在句子上长得一样，而它们能不能追到原文完全不同
     pub derived: bool,
     pub subject_id: Uuid,
@@ -1166,7 +1166,7 @@ pub struct ProofStep {
     /// 这条前提后来被撤了。派生随之失效，但证明还要读得出「当时靠的是什么」
     pub retracted: bool,
     pub evidence: Vec<EvidenceView>,
-    /// 这一步自己的前提，按 `seq`（0027）。断言那一步是空的——它的叶子是
+    /// 这一步自己的前提，按 `seq`（0030）。断言那一步是空的——它的叶子是
     /// `evidence` 里的原句，不必再往下问
     pub premises: Vec<ProofStep>,
 }

@@ -1778,7 +1778,7 @@ export const api = {
       capped: number;
       inserted: number;
       invalidated: number;
-      /** 链跑了几轮：1 就是没有链，2 就是一条规则读了另一条的结论（0027） */
+      /** 链跑了几轮：1 就是没有链，2 就是一条规则读了另一条的结论（0030） */
       rounds: number;
       /** 跑满上限还在产出：链比 MAX_DEPTH 长，后面那几环没接上 */
       rounds_capped: boolean;

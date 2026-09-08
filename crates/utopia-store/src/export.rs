@@ -106,7 +106,7 @@ pub struct ExportDerived {
     pub rule_name: Option<String>,
     /// 前提事实。审计要顺着它往下走到句子
     pub premises: Vec<Uuid>,
-    /// 前提里是**另一条派生**的那些（0027）。与上面那列分开，是因为读回来的人
+    /// 前提里是**另一条派生**的那些（0030）。与上面那列分开，是因为读回来的人
     /// 要知道该去哪张表接着往下走；合成一列的话，一条链在导出里就断了
     pub premises_derived: Vec<Uuid>,
 }

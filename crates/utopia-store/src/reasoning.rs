@@ -832,13 +832,13 @@ pub struct DeriveReport {
     pub rule_hits: usize,
     /// 前提组合太多、没展开完的 (规则, 实体) 对数。**与「不满足」区分开报**
     pub rule_capped: usize,
-    /// 业务规则跑了几轮（0027）。一轮的结论进下一轮的输入，直到某一轮不再
+    /// 业务规则跑了几轮（0030）。一轮的结论进下一轮的输入，直到某一轮不再
     /// 产出新的结论。链上一环一轮，所以 1 就是「没有链」，2 就是 `A → B`
     pub rule_rounds: usize,
     /// 跑满 `MAX_DEPTH` 轮还在产出：链比上限长，后面的没接上。**与「不满足」
     /// 区分开报**——没推到与不成立在结果里长得一模一样
     pub rule_rounds_capped: bool,
-    /// 结论没变、证明变了、于是重写了前提链的行数（0027）。同一句话可以有
+    /// 结论没变、证明变了、于是重写了前提链的行数（0030）。同一句话可以有
     /// 第二条依据，而对账的键里没有前提——不重写的话那一行会一直挂着上一轮
     /// 的理由，链上还可能挂着一条刚刚作废的前提
     pub reproved: usize,
@@ -846,7 +846,7 @@ pub struct DeriveReport {
 
 /// 一条派生从它的前提上得到的精度与置信度（0024）。
 ///
-/// **抽出来是因为链**（0027）：链中间那一层既要拿它算自己的两端，又要作为
+/// **抽出来是因为链**（0030）：链中间那一层既要拿它算自己的两端，又要作为
 /// 下一层的前提被同一段代码读一遍。落库那一处与不动点那一处各写一份的话，
 /// 两处对「哪一端是锚点顶上来的」的判断迟早会长得不一样。
 ///
@@ -897,10 +897,10 @@ fn premise_meta(
     (fp, tp, conf, from_anchored, to_anchored)
 }
 
-/// 主类靠**派生归类**才够得着的那一份规则：范围从筛子变成一条条件（0027）。
+/// 主类靠**派生归类**才够得着的那一份规则：范围从筛子变成一条条件（0030）。
 ///
 /// `范围 与 ((A 且 B) 或 C)` 展开就是 `(范围且A且B) 或 (范围且C)`——所以每组
-/// 各加一条，析取仍然只有一层（0026）。写成条件而不是筛子，是为了让归类那条
+/// 各加一条，析取仍然只有一层（0029）。写成条件而不是筛子，是为了让归类那条
 /// 派生事实进前提：结论的区间跟着它收窄，它作废时结论也跟着退场。
 fn scoped_by_conclusion(
     rule: &utopia_reason::rules::BusinessRule,
@@ -1085,7 +1085,7 @@ async fn accepted_clashes(
 /// 宾语两格,与 `derived_facts` 拓宽后的两条通道一一对应(0021 决策 1):实体宾语
 /// 走 `Option<Uuid>`,字面值结论走那串规范化过的 JSON。两格都参与比较——否则
 /// 同一个类上的两条不同结论会被认成同一条。
-/// 一条前提在 `fact_derivations` 上的两格（0027）：断言一格、派生一格，
+/// 一条前提在 `fact_derivations` 上的两格（0030）：断言一格、派生一格，
 /// 恰好一个有值——数据库那条 CHECK 说的就是这句
 type PremiseCols = (Option<Uuid>, Option<Uuid>);
 
@@ -1232,13 +1232,13 @@ struct LoadedRule {
     /// 规则只看这个类**及其子类**的实体
     subject_types: Vec<Uuid>,
     /// 上面那几个类的名字（IRI，没有才 key）。派生归类记的是名字，主类范围记的
-    /// 是 id——链要接上就得两边都有一份（0027）
+    /// 是 id——链要接上就得两边都有一份（0030）
     subject_classes: Vec<String>,
     /// 结论落在哪个谓词上：归类落 `is_a`，属性落它自己那个
     conclude_predicate: Uuid,
 }
 
-/// 编译出来的一批规则，外加接链要用的两样东西（0027）。
+/// 编译出来的一批规则，外加接链要用的两样东西（0030）。
 struct LoadedRules {
     rules: Vec<LoadedRule>,
     /// 内建 `is_a`。派生归类落在它上面，链上再读回来也从它上面读
@@ -1268,7 +1268,7 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<LoadedRules> {
 
     // **按 id 排序**：规则之间撞上同一个结论时留下的是先到的那条证明，而
     // 「先到」不该由 HashMap 的顺序决定——同一个库两次物化要给出同一份证明
-    // （0026 在组之间讲的是同一件事，0027 让链把它放大了）
+    // （0029 在组之间讲的是同一件事，0030 让链把它放大了）
     let rows: Vec<RuleDefRow> = sqlx::query_as(
         "SELECT r.id, r.subject_type_id, r.conclusion,
                 r.conclude_type_id, r.conclude_predicate_id, r.conclude_value,
@@ -1615,7 +1615,7 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
     let loaded = attribute_rules(pool, kb_id).await?;
     report.attribute_rules = loaded.rules.len();
     // 一条规则结论的临时 id → 它最后落在哪一行。链上的前提指的是前者，
-    // `fact_derivations` 要存的是后者（0027）。键是派生键，值是临时 id
+    // `fact_derivations` 要存的是后者（0030）。键是派生键，值是临时 id
     let mut provisional: HashMap<DerivedKey, Uuid> = HashMap::new();
     if !loaded.rules.is_empty() {
         let (asserted, attr_spans, attr_meta, type_of) = attribute_facts(pool, kb_id).await?;
@@ -1624,7 +1624,7 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
         meta.extend(attr_meta);
         spans.extend(attr_spans);
 
-        // ---- 不动点：这一轮的结论进下一轮的输入（0027）
+        // ---- 不动点：这一轮的结论进下一轮的输入（0030）
         //
         // **全量重跑而不是半朴素**：链通常只有一两环，收敛靠「这一轮没产出新键」
         // 那一下，真实代价是单趟的两三倍。半朴素要维护每条规则读哪些谓词，
@@ -1786,7 +1786,7 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
 
     let mut stale: Vec<Uuid> = Vec::new();
     // 每个还成立的结论最后落在哪一行。**不变的结论保留原来那一行**，所以链上
-    // 指向它的前提要指向这个 id，而不是这一轮新造的（0027）
+    // 指向它的前提要指向这个 id，而不是这一轮新造的（0030）
     let mut settled: HashMap<DerivedKey, Uuid> = HashMap::new();
     // 这一轮还成立、行也留着的那些，连同它们**这一轮的**前提。对账的键里没有
     // 前提，所以「结论没变、理由变了」在这里是看不出来的——下面单独对一遍
@@ -1820,7 +1820,7 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
     }
 
     // 剩下的都是新行。**先把 id 全定下来再插**：链上的前提要指向的那一行，
-    // 可能是这一批里还没插的另一条（0027）
+    // 可能是这一批里还没插的另一条（0030）
     let fresh: Vec<(Uuid, Wanted)> = wanted
         .into_iter()
         .map(|(key, d)| {
@@ -1932,7 +1932,7 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
     for (id, d) in &fresh {
         for (seq, premise) in d.premises.iter().enumerate() {
             // 前提是断言还是另一条派生：两列二选一，`seq` 是跨两种的一个序，
-            // 证明读起来才是一条顺下来的路（0027）
+            // 证明读起来才是一条顺下来的路（0030）
             let derived_premise = resolve.get(premise).copied();
             sqlx::query(
                 "INSERT INTO fact_derivations (derived_fact_id, premise_fact_id,
@@ -2052,7 +2052,7 @@ pub async fn mark_inference_ran(pool: &PgPool, kb_id: Uuid) -> AppResult<()> {
 /// 一条派生事实的证明，展开到原句（0002 R2）。
 ///
 /// `fact_derivations` 只记直接前提，顺着它一层层问下去就是完整的证明。一条
-/// 前提要么是断言——那一步的叶子是它的原句——要么是**另一条派生**（0027），
+/// 前提要么是断言——那一步的叶子是它的原句——要么是**另一条派生**（0030），
 /// 那一步要再问一次它凭什么。**撤了的前提照样列出并打上标记**：派生随前提
 /// 失效，但「当时靠的是什么」要读得出来，那正是记录轴存在的理由。
 ///
@@ -2069,7 +2069,7 @@ pub async fn proof(
     Ok(Some(utopia_core::models::Proof { derived, steps }))
 }
 
-/// 一条派生的直接前提，派生的那几步再往下展开一层（0027）。
+/// 一条派生的直接前提，派生的那几步再往下展开一层（0030）。
 ///
 /// 深度上限与推理是同一条 `MAX_DEPTH`：链最长这么长，证明也就最深这么深。
 /// 到底了就停在那一步上——它自己的三元组还是列出来的，只是不再往下问。
