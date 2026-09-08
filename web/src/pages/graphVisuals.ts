@@ -132,62 +132,46 @@ export function drawHoverCard(
   if (!data.label) return;
   ctx.save();
 
-  // 柔光: 半径 max(size*4.8, 16), 类型色 alpha 0.18 → 0
-  const glowR = Math.max(data.size * 4.8, 16);
-  const [r, g, b] = hexToRgb((data.typeColor as string) ?? "#888888");
-  const grad = ctx.createRadialGradient(
-    data.x,
-    data.y,
-    0,
-    data.x,
-    data.y,
-    glowR,
-  );
-  grad.addColorStop(0, `rgba(${r},${g},${b},0.18)`);
-  grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(data.x, data.y, glowR, 0, Math.PI * 2);
-  ctx.fill();
-
-  /* 卡片：标题 body/500、类型行 fine。**类型不再大写**——界面里没有一处
-     大写拉字距的小标题（表格列头除外），画布也不该自成一套 */
-  const titleSize = CANVAS_TITLE_SIZE;
-  const metaSize = CANVAS_META_SIZE;
-  const padX = 10;
-  const padY = 7;
-  const metaGap = 5;
+  /* 它就是一个 Tooltip，只是画在 canvas 上：皮照抄 `ui/tooltip.tsx` 的那一行——
+     `.u-pop`（近实底 + line-strong 的边）、`rounded-cell`（4）、`px-2 py-1`（8 / 4）、
+     `text-fine`（12）。名字一行、类型一行，名字用正文色加粗一档，类型用第二色。
+     没有光晕、没有大投影：指着的节点自己已经亮了环，卡片只负责说名字 */
+  const size = CANVAS_META_SIZE;
+  const padX = 8;
+  const padY = 4;
+  const gap = 2;
   const meta = String(data.typeLabel ?? "");
   ctx.textBaseline = "top";
-  ctx.font = `500 ${titleSize}px ${CANVAS_FONT}`;
+  ctx.font = `500 ${size}px ${CANVAS_FONT}`;
   const titleW = ctx.measureText(data.label).width;
-  ctx.font = `400 ${metaSize}px ${CANVAS_FONT}`;
-  const metaW = ctx.measureText(meta).width;
+  ctx.font = `400 ${size}px ${CANVAS_FONT}`;
+  const metaW = meta ? ctx.measureText(meta).width : 0;
   const w = Math.max(titleW, metaW) + padX * 2;
-  const h = padY * 2 + titleSize + metaGap + metaSize;
+  const h = padY * 2 + size + (meta ? gap + size : 0);
   const x = data.x + Math.max(data.size * 0.9, 16);
   const y = data.y - Math.max(data.size * 1.1, 16) - h;
 
-  /* 皮与界面上的浮层同一副（`.u-pop`：近实底 + 一条 line-strong 的边）。
-     它就是一个 tooltip——指到才有、指开就没，只是画在 canvas 上，所以数字
-     照抄而不是自己定一套 */
-  ctx.shadowColor = "rgba(0,0,0,0.62)";
-  ctx.shadowBlur = 15;
+  ctx.shadowColor = "rgba(0,0,0,0.35)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 8); // --radius-panel
+  ctx.roundRect(x, y, w, h, 4); // --radius-cell
   ctx.fillStyle = POP_BG;
   ctx.fill();
   ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
   ctx.strokeStyle = PILL_BORDER; // --u-line-strong
   ctx.lineWidth = 1;
   ctx.stroke();
 
   ctx.fillStyle = CANVAS_TEXT;
-  ctx.font = `500 ${titleSize}px ${CANVAS_FONT}`;
+  ctx.font = `500 ${size}px ${CANVAS_FONT}`;
   ctx.fillText(data.label, x + padX, y + padY);
-  ctx.fillStyle = CANVAS_TEXT_2;
-  ctx.font = `400 ${metaSize}px ${CANVAS_FONT}`;
-  ctx.fillText(meta, x + padX, y + padY + titleSize + metaGap);
+  if (meta) {
+    ctx.fillStyle = CANVAS_TEXT_2;
+    ctx.font = `400 ${size}px ${CANVAS_FONT}`;
+    ctx.fillText(meta, x + padX, y + padY + size + gap);
+  }
   ctx.restore();
 }
 

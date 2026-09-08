@@ -26,7 +26,7 @@ import forceAtlas2 from "graphology-layout-forceatlas2";
 import Sigma from "sigma";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import { EdgeArrowProgram, EdgeLineProgram } from "sigma/rendering";
-import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
+import EdgeCurveProgram, { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
 import { NodeSquareShellProgram } from "./squareShellProgram";
 import {
   drawHoverCard,
@@ -94,6 +94,7 @@ const DISJOINT_KIND = "disjoint";
 const EDGE_TYPE_ARROW = "arrow"; // 直线 + 箭头（EdgeArrowProgram）
 const EDGE_TYPE_CURVED_ARROW = "curvedArrow"; // 弧线 + 箭头（EdgeCurvedArrowProgram）
 const EDGE_TYPE_LINE = "line"; // 直线，无箭头（EdgeLineProgram）——互斥专用
+const EDGE_TYPE_CURVED_LINE = "curvedLine"; // 弧线，无箭头（EdgeCurveProgram）——互斥与别的边共用一对时
 
 /** 结构边细、关系边粗一档——「语义关系比结构性信息更显眼」不能只靠颜色说,
  *  粗细上也要有一档差。这个粗细同时也是点选判定的命中带宽——sigma 的边拾取
@@ -339,37 +340,45 @@ export function buildSchemaGraph(
     });
   }
 
-  layOutParallelRelations(graph);
+  layOutParallelEdges(graph);
   return { graph, unscoped };
 }
 
-/** 同一对类之间的多条关系边（works_at / founded / owns 都连着 Person↔Organization）
- *  各自扇到一条独立的弧上，不叠成一条谁也点不中的线。算法与 Graph.tsx 的
- *  layOutParallelEdges 同一个思路（按无向对分组，围绕直线对称铺开），
- *  但这里的边不需要先合并逆关系——本体里 inverse_of 只在关系检查器里说明，
- *  不折进画布，所以少了那一整步。
+/** 同一对类之间的多条边各自扇到一条独立的弧上，不叠成一条谁也点不中的线。
+ *  **不分种类**：继承、互斥、关系三种边都可能落在同一对类上（Unit 既是
+ *  Organization 的子类又与它互斥；一条关系的主宾恰好是父子），只给关系边扇开
+ *  的话，剩下两种照旧叠在直线上，标签也叠在一起。算法与 Graph.tsx 的
+ *  layOutParallelEdges 同一个思路（按无向对分组，围绕直线对称铺开）；这里的边
+ *  不需要先合并逆关系——本体里 inverse_of 只在关系检查器里说明，不折进画布。
  *
- *  顺带决定每条关系边的渲染类型：**独苗走直线**（EDGE_TYPE_ARROW），
- *  只有真的平行/自环时才切到弧线程序——弧线程序在零弯曲度下也能画，
- *  但没必要为大多数只有一条的关系边多背一层曲线计算 */
-function layOutParallelRelations(graph: Graphology): void {
+ *  顺带决定每条边的渲染程序：**独苗走直线**，只有真的平行/自环时才切到弧线
+ *  程序；有箭头的（继承、关系）用带箭头的弧，互斥用不带箭头的弧 */
+function layOutParallelEdges(graph: Graphology): void {
   const groups = new Map<string, string[]>();
-  graph.forEachEdge((edge, attrs, source, target) => {
-    if (attrs.kind !== RELATION_KIND) return;
+  graph.forEachEdge((edge, _attrs, source, target) => {
     const key =
       source === target ? `loop:${source}` : [source, target].sort().join("|");
     const list = groups.get(key);
     if (list) list.push(edge);
     else groups.set(key, [edge]);
   });
+  const typeFor = (kind: string, curved: boolean) =>
+    kind === DISJOINT_KIND
+      ? curved
+        ? EDGE_TYPE_CURVED_LINE
+        : EDGE_TYPE_LINE
+      : curved
+        ? EDGE_TYPE_CURVED_ARROW
+        : EDGE_TYPE_ARROW;
   for (const edges of groups.values()) {
     const n = edges.length;
     edges.forEach((edge, i) => {
       const [source, target] = graph.extremities(edge);
+      const kind = graph.getEdgeAttribute(edge, "kind") as string;
       if (source === target) {
         graph.mergeEdgeAttributes(edge, {
           curvature: SELF_LOOP_BASE_CURVATURE + i * RELATION_CURVATURE_STEP,
-          type: EDGE_TYPE_CURVED_ARROW,
+          type: typeFor(kind, true),
         });
         return;
       }
@@ -380,7 +389,7 @@ function layOutParallelRelations(graph: Graphology): void {
       const curvature = offset === 0 ? 0 : sign * offset * RELATION_CURVATURE_STEP;
       graph.mergeEdgeAttributes(edge, {
         curvature,
-        type: curvature === 0 ? EDGE_TYPE_ARROW : EDGE_TYPE_CURVED_ARROW,
+        type: typeFor(kind, curvature !== 0),
       });
     });
   }
@@ -677,6 +686,7 @@ export function OntologySchemaGraph({
         [EDGE_TYPE_ARROW]: EdgeArrowProgram,
         [EDGE_TYPE_LINE]: EdgeLineProgram,
         [EDGE_TYPE_CURVED_ARROW]: EdgeCurvedArrowProgram,
+        [EDGE_TYPE_CURVED_LINE]: EdgeCurveProgram,
       },
       enableEdgeEvents: true,
       minEdgeThickness: MIN_EDGE_THICKNESS,

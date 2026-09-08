@@ -835,6 +835,48 @@ function RelationshipsCard({
   const outgoing = relations.filter((r) => r.domains.includes(cls.id));
   const incoming = relations.filter((r) => r.ranges.includes(cls.id));
 
+  /** 一组可折叠（#455 的解剖：折叠柄、头、缩进的正文）。缺省展开——
+   *  折起来是为了在长列表里跳过一段，不是为了藏 */
+  const Group = ({
+    dir,
+    rows,
+  }: {
+    dir: "out" | "in";
+    rows: RelationTypeView[];
+  }) => {
+    const [open, setOpen] = useState(true);
+    return (
+      <div>
+        {/* 头是一行 Row：折叠柄占图标格（16 宽），正文缩进同样的 24，
+            于是下面每一行的方向箭头正好落在组标题的箭头底下 */}
+        <Row
+          className="-mx-2 mt-1"
+          icon={
+            <span className="flex w-4 justify-center">
+              <ChevronRight size={12} className={cn("u-turn", open && "rotate-90")} />
+            </span>
+          }
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="flex items-center gap-2 text-small font-medium">
+            {dir === "out" ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
+            <span className="truncate">
+              {dir === "out" ? S.ontology.schemaOutgoing : S.ontology.schemaIncoming}
+            </span>
+            {rows.length > 1 && <span className="u-num">{rows.length}</span>}
+          </span>
+        </Row>
+        {open && (
+          <div className="pl-6">
+            {rows.map((r) => (
+              <RelationRow key={`${dir}:${r.id}`} r={r} dir={dir} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const RelationRow = ({ r, dir }: { r: RelationTypeView; dir: "out" | "in" }) => (
     // 悬停要有底色：这一行整条可点，只把文字提亮半级在深底上几乎看不出来。
     // 底色用左栏那一档（white/[0.05]），右端的类型小字跟着一起提亮
@@ -869,61 +911,18 @@ function RelationshipsCard({
         </p>
       ) : (
         <div className="mb-2">
-          {outgoing.length > 0 && (
-            <>
-              <GroupLabel
-                className="pb-1 pt-2"
-                icon={<ArrowRight size={10} />}
-                count={outgoing.length > 1 ? outgoing.length : undefined}
-              >
-                {S.ontology.schemaOutgoing}
-              </GroupLabel>
-              <div>
-                {outgoing.map((r) => (
-                  <RelationRow key={`out:${r.id}`} r={r} dir="out" />
-                ))}
-              </div>
-            </>
-          )}
-          {incoming.length > 0 && (
-            <>
-              <GroupLabel
-                className="pb-1 pt-2"
-                icon={<ArrowLeft size={10} />}
-                count={incoming.length > 1 ? incoming.length : undefined}
-              >
-                {S.ontology.schemaIncoming}
-              </GroupLabel>
-              <div>
-                {incoming.map((r) => (
-                  <RelationRow key={`in:${r.id}`} r={r} dir="in" />
-                ))}
-              </div>
-            </>
-          )}
+          {outgoing.length > 0 && <Group dir="out" rows={outgoing} />}
+          {incoming.length > 0 && <Group dir="in" rows={incoming} />}
         </div>
       )}
-      {/* 改动开弹窗：连一个已有的关系、或新建一条。面板这一段只展示 */}
-      <div className="flex flex-col items-start border-t border-line pt-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<Link2 size={13} />}
-          className="-ml-2"
-          onClick={onConnect}
-        >
-          {S.ontology.connectOpen}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<Plus size={13} />}
-          className="-ml-2"
-          onClick={onAddNew}
-        >
-          {S.ontology.schemaAddRelationship}
-        </Button>
-      </div>
+      {/* 改动开弹窗：连一个已有的关系、或新建一条。面板这一段只展示。
+          两行与上面的关系行同一副身材 */}
+      <Row className="-mx-2 mt-2" icon={<Link2 size={14} />} onClick={onConnect}>
+        {S.ontology.connectOpen}
+      </Row>
+      <Row className="-mx-2" icon={<Plus size={14} />} onClick={onAddNew}>
+        {S.ontology.schemaAddRelationship}
+      </Row>
     </div>
   );
 }
@@ -965,15 +964,9 @@ function AttributesCard({
           </Row>
         ))}
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        icon={<Plus size={13} />}
-        className="mt-2 -ml-2"
-        onClick={onNew}
-      >
+      <Row className="-mx-2 mt-2" icon={<Plus size={14} />} onClick={onNew}>
         {S.ontology.newAttribute}
-      </Button>
+      </Row>
     </div>
   );
 }
@@ -1178,17 +1171,11 @@ function ClassDefinition({
       <Def label={S.ontology.description}>
         <Description text={cls.description} />
       </Def>
-      <div className="mt-2 border-t border-line pt-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<Plus size={13} />}
-          className="-ml-2"
-          onClick={onNewSub}
-        >
-          {S.ontology.newSubClass}
-        </Button>
-      </div>
+      {/* 新增入口与列表里的行同一副身材（左栏的「New class」也是这样一行）：
+          图标落在文字的左缘上，不再用带内距的按钮去对 */}
+      <Row className="-mx-2 mt-2" icon={<Plus size={14} />} onClick={onNewSub}>
+        {S.ontology.newSubClass}
+      </Row>
     </div>
   );
 }
