@@ -1,4 +1,4 @@
-# 0028 · An event holds at the moment it names
+# 0031 · An event holds at the moment it names
 
 - **Status**: implemented (#486) · `Validity::under` normalises every write by the predicate's `temporal` — in `insert_fact_inner`, so extraction, the nod and a person's own fact all pass through it, and in `correct_interval` · `world_axis` reads an event as the bucket it names and an eternal fact as open at both ends, and the evaluator's `read_span` says the same · the prompt marks `[event]` and `[eternal]` relations and tells the model what to write, for a base that has any · the export carries `utopia:temporal` on a property that is not a state · no schema change, and a row written before this reads correctly · the panel still prints an event as `T ~ T` and the ontology page still does not say what the three values do — that is the UI cut
 - **Written**: 2026-09-08 (conventions in the [README](README.md))

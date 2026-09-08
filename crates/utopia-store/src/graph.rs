@@ -189,7 +189,7 @@ pub fn truncate_to(
 }
 
 /// 一个桶的尽头：值加一个精度单位。`2024-03-15`（day）→ `2024-03-16`；`2024-03`（month）
-/// → `2024-04`。事件在它命名的那个桶里成立（0028），读出来的终点就是这个；没有精度
+/// → `2024-04`。事件在它命名的那个桶里成立（0031），读出来的终点就是这个；没有精度
 /// （锚点）原样返回——锚点是一刻，不是一个桶
 pub fn bucket_end(
     t: chrono::DateTime<chrono::Utc>,
@@ -207,10 +207,10 @@ pub fn bucket_end(
     }
 }
 
-/// 关系的时间语义（`relation_types.temporal`，0028）。状态有区间；事件是一刻——两端写
+/// 关系的时间语义（`relation_types.temporal`，0031）。状态有区间；事件是一刻——两端写
 /// 同一个值，在它命名的那个桶里成立；恒常没有日期，每一刻都成立。
 ///
-/// 从图谱层第一份迁移起这一列就在，界面也一直给选；但直到 0028 之前只有 state 驱动
+/// 从图谱层第一份迁移起这一列就在，界面也一直给选；但直到 0031 之前只有 state 驱动
 /// 引擎，event 与 eternal 写进去、读出来都还是区间
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Temporal {
@@ -272,7 +272,7 @@ impl<'a> Validity<'a> {
         self
     }
 
-    /// 按谓词的时间语义归一（0028）。写入路径进库前都走一遍，与读出侧 `world_axis`
+    /// 按谓词的时间语义归一（0031）。写入路径进库前都走一遍，与读出侧 `world_axis`
     /// 说同一句话。
     ///
     /// - 事件：那一刻写在**两端**。原文给了起点用起点；只给了终点，那就是它发生的
@@ -336,7 +336,7 @@ async fn insert_fact_inner(
     validity: Validity<'_>,
     confidence: f32,
 ) -> AppResult<(Uuid, bool)> {
-    // 按谓词的时间语义归一（0028）：事件两端同一刻，恒常无日期。写在这里而不是各个
+    // 按谓词的时间语义归一（0031）：事件两端同一刻，恒常无日期。写在这里而不是各个
     // 写入者那儿——抽取、点头、人自己写的事实都经过这一个门
     let temporal = predicate_temporal(pool, predicate_id).await?;
     let validity = validity.under(temporal).truncated();
@@ -400,7 +400,7 @@ async fn insert_fact_inner(
     }
     // 弱化陈述：新观察无时间，同断言已有开放行 → 并入（取起点最新的开放行）。
     // 事件没有「开放」一说——它的两端总是同一刻——所以没日期的再观察并进已有的
-    // 那一刻（0028）：说过一次「三月收购了」，再听到一句没日期的「收购了」，不是第二次收购
+    // 那一刻（0031）：说过一次「三月收购了」，再听到一句没日期的「收购了」，不是第二次收购
     if validity.from.is_none() && !validity.has_ended() {
         if let Some((existing, _, _, _)) = same
             .iter()

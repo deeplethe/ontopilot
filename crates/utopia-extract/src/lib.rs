@@ -83,7 +83,7 @@ pub struct PromptRelation {
     /// **一律用 key**：模型要输出的就是 key，中文库里 person 的 label 是"人物"，
     /// 写进签名等于教它输出一个不存在的类型（docs/decisions/0004）
     pub signature: String,
-    /// 时间语义（`relation_types.temporal`）：`state` / `event` / `eternal`（0028）。
+    /// 时间语义（`relation_types.temporal`）：`state` / `event` / `eternal`（0031）。
     /// 只有 event 与 eternal 会在清单里带标记——状态是默认，写出来只多花 token
     pub temporal: String,
 }
@@ -143,7 +143,7 @@ pub fn build_messages(
             } else {
                 String::new()
             };
-            // 事件与恒常带方括号标记；状态是默认，不标（0028）
+            // 事件与恒常带方括号标记；状态是默认，不标（0031）
             let mark = temporal_mark(&r.temporal)
                 .map(|m| format!(" [{m}]"))
                 .unwrap_or_default();
@@ -832,7 +832,7 @@ mod prompt_shape_tests {
         }
     }
 
-    /// 事件与恒常在清单里带标记，说明只出现一次（0028）
+    /// 事件与恒常在清单里带标记，说明只出现一次（0031）
     #[test]
     fn an_event_and_an_eternal_relation_are_marked() {
         let rels = vec![
