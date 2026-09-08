@@ -43,11 +43,15 @@ What it costs is real and belongs here: the rule evaluator reads the **literal**
 
 ## Aggregation is not in this record, and not by oversight
 
-`sum`, `count`, `avg` over a to-many relation are out. The line is not "one value versus many" — it is what the premise would have to be.
+`sum`, `count`, `avg` over a to-many relation are out. The line is not "one value versus many" — a traversal that yields three values yields three conclusions, each pointing at the readings that made it true. A `sum` yields one, and the difference is what that one conclusion claims.
 
-A traversal that yields three values yields three conclusions, each pointing at the readings that made it true. A `sum` yields one, and its premise is "these three readings **and there are no others**". That second half is not a fact in this base and cannot be one: the base is open-world, extraction lags documents, and documents lag the world. A conclusion whose premise includes an absence has nothing that can retire it when the absence ends — the same reason [0029](0029-a-rule-may-say-or-once.md) refused "this entity has no such attribute at all".
+**It asserts completeness, which this base cannot.** Every other derived fact here says "these readings hold, therefore this". A sum says "these readings **are all the readings**, therefore this". The second half is not a fact the base can hold: it is open-world, extraction lags documents, and documents lag the world. The honest statement is "the wells we know about total 300", and that is not what the row would say.
 
-If it is ever wanted it needs its own record, answering what its premise is and when it retires.
+**Its proof cannot explain its own retirement.** Retirement itself is fine — recompute is total, so a fourth well simply produces 400 and the 300 falls out of `wanted` like anything else. But the retired row still names readings A, B and C as its premises, and all three are still live. A reader looking at a conclusion whose every premise still holds, asking why it was withdrawn, finds nothing in the proof: the reading that changed the answer was never one of its premises.
+
+**It forecloses incremental maintenance** (0002 R3, still open). An incremental pass walks premises to decide what to invalidate. A new reading that is nobody's premise wakes nothing. Full recompute hides this today; the record does not, because R3 is a road this product still intends to take.
+
+If it is ever wanted it needs its own record, answering what a completeness claim means here and how a proof reports what it did not see.
 
 ## Three consequences worth writing down
 
