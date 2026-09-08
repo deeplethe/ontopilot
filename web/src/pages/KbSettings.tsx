@@ -180,8 +180,8 @@ export function KbSettings() {
     { key: "general", label: S.kbset.general, Icon: Settings2 },
     { key: "members", label: S.kbset.members, Icon: Users },
     { key: "activity", label: S.kbset.activity, Icon: HistoryIcon },
-    // 默认库不可删除：danger 节整个不出现。入口用警示色：这一条只是去往危险区，
-    // 真正删库的那个按钮才是危险色
+    // 默认库不可删除：danger 节整个不出现。入口只把图标染成警示色，文字与别的
+    // 节一样：这一条只是去往危险区，真正删库的那个按钮才是危险色
     ...(isDefault
       ? []
       : [
@@ -203,8 +203,7 @@ export function KbSettings() {
             key={key}
             density="nav"
             active={section === key}
-            tone={tone}
-            icon={<Icon size={14} />}
+            icon={<Icon size={14} className={tone === "warn" ? "text-warn" : undefined} />}
             onClick={() => setSection(key)}
           >
             {label}
