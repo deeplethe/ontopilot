@@ -623,6 +623,14 @@ select.input-dark option {
 .u-pill.is-on {
   color: var(--u-text);
 }
+/* 说明性的那几枚：形状与可点的完全一样，但不该有悬停反馈——
+   图例里「Inheritance」「+774 classes」只是在说明画面，点它不会发生任何事 */
+.u-pill.is-static {
+  cursor: default;
+}
+.u-pill.is-static:hover {
+  color: var(--u-text-2);
+}
 .u-pill.is-dim {
   opacity: 0.35;
 }
