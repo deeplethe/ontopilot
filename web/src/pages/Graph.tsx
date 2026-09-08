@@ -3013,6 +3013,13 @@ function FactRow({
       className={cn((fact.stale || past) && "opacity-55")}
       title={fact.stale ? S.graph.staleFactHint : undefined}
     >
+      {/* **两行：上面是这条事实，下面是我们对它知道些什么。**
+          从前是一行，而那一行里塞着谓词、区间、宾语、证据数、改期笔。分组的
+          缩进之后只剩 249px，尾部那一组又是 shrink-0，于是唯一能收缩的谓词
+          把亏空全吃了——实测一个实体的 144 行里，35 行的谓词宽度是 0，读起来
+          就是「→ 2023-03-02 ~ now  Project Aurora」：说有这么条事实，就是不说
+          是哪条（#500）。谓词是这一行的主语句，不该是第一个被挤掉的。
+          悬停才现身的那两个动作也一起下来：`u-reveal` 只改透明度，看不见也占着位 */}
       <div
         role={go ? "link" : undefined}
         tabIndex={go ? 0 : undefined}
@@ -3020,76 +3027,93 @@ function FactRow({
         onKeyDown={(ev) => {
           if (go && ev.key === "Enter") go();
         }}
-        className={cn(HOVER_ROW, go && "cursor-pointer")}
+        className={cn(HOVER_ROW, "items-start", go && "cursor-pointer")}
       >
-        <span className="shrink-0 text-violet">
+        <span className="shrink-0 pt-1 text-violet">
           {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
         </span>
-        <span
-          className={cn(
-            "truncate text-body text-ink",
-            fact.predicate_label === null && "italic text-ink-2",
-          )}
-          title={
-            fact.predicate_label && fact.inferred ? S.graph.inferredPredicate : undefined
-          }
-        >
-          {fact.predicate_label ?? S.graph.unknownPredicate}
-        </span>
-        {lowConfidence && (
-          <span className="shrink-0 u-num u-meta-warn text-fine">
-            {Math.round(fact.confidence * 100)}%
-          </span>
-        )}
-        {fact.stale && (
-          <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
-            {S.graph.staleFactChip}
-          </span>
-        )}
-        {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
-        {fact.corrected && (
-          <span className="shrink-0 text-fine text-ink-2" title={S.graph.correctedHint}>
-            ⟲
-          </span>
-        )}
-        <span className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-2">
-          {interval && (
-            <span className="u-num text-fine text-ink-2">{interval}</span>
-          )}
-          <span className={cn(ROW_TRAILING, "max-w-40 truncate")}>
-            {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
-          </span>
-          {fact.evidence_count > 0 && (
-            <LinkButton
-              className={cn(REVEAL, "text-fine", open && "is-on")}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                onToggle();
-              }}
-            >
-              {S.graph.sources(fact.evidence_count)}
-            </LinkButton>
-          )}
-          {/* 这一档只有断言事实：派生的区间是算出来的，走 Derived 那条路径 */}
-          <span
-            role="button"
-            tabIndex={0}
-            title={S.graph.editTime}
-            aria-label={S.graph.editTime}
-            onClick={(ev) => {
-              ev.stopPropagation();
-              setEditing(true);
-            }}
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter" || ev.key === " ") {
-                ev.preventDefault();
-                ev.stopPropagation();
-                setEditing(true);
+        <span className="min-w-0 flex-1">
+          {/* 第一行：谓词 + 宾语，读出来就是这条事实本身 */}
+          <span className="flex items-center gap-2">
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-body text-ink",
+                fact.predicate_label === null && "italic text-ink-2",
+              )}
+              // 谓词还是可能长到放不下（`publishingPrinciples`）——悬停给全名，
+              // 是本体认下的关系就不必再说它是原文的说法
+              title={
+                fact.predicate_label
+                  ? fact.inferred
+                    ? `${fact.predicate_label} · ${S.graph.inferredPredicate}`
+                    : fact.predicate_label
+                  : undefined
               }
-            }}
-            className={cn(REVEAL, "cursor-pointer rounded-cell p-1 text-ink-2")}
-          >
-            <Pencil size={10} />
+            >
+              {fact.predicate_label ?? S.graph.unknownPredicate}
+            </span>
+            <span className={cn(ROW_TRAILING, "max-w-40 truncate")}>
+              {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
+            </span>
+          </span>
+          {/* 第二行：何时成立、成色如何、凭什么、以及改期的入口 */}
+          <span className="flex items-center gap-2">
+            {interval && (
+              <span className="u-num text-fine text-ink-2">{interval}</span>
+            )}
+            {lowConfidence && (
+              <span className="shrink-0 u-num u-meta-warn text-fine">
+                {Math.round(fact.confidence * 100)}%
+              </span>
+            )}
+            {fact.stale && (
+              <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
+                {S.graph.staleFactChip}
+              </span>
+            )}
+            {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
+            {fact.corrected && (
+              <span
+                className="shrink-0 text-fine text-ink-2"
+                title={S.graph.correctedHint}
+              >
+                ⟲
+              </span>
+            )}
+            <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+              {fact.evidence_count > 0 && (
+                <LinkButton
+                  className={cn(REVEAL, "text-fine", open && "is-on")}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onToggle();
+                  }}
+                >
+                  {S.graph.sources(fact.evidence_count)}
+                </LinkButton>
+              )}
+              {/* 这一档只有断言事实：派生的区间是算出来的，走 Derived 那条路径 */}
+              <span
+                role="button"
+                tabIndex={0}
+                title={S.graph.editTime}
+                aria-label={S.graph.editTime}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  setEditing(true);
+                }}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    setEditing(true);
+                  }
+                }}
+                className={cn(REVEAL, "cursor-pointer rounded-cell p-1 text-ink-2")}
+              >
+                <Pencil size={10} />
+              </span>
+            </span>
           </span>
         </span>
       </div>
