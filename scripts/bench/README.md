@@ -72,6 +72,45 @@ node scripts/bench/govern.mjs --kb <id> --score --stuck   # 连留给人的那�
 同一份语料上的对照（2026-09-06，闸门还是「没先例不合」那版）：治理关着老裁决器自动合
 146、留 50 给人；治理开着一对不合、留 200。这个数就是记录 0025 决定 4 修订的起因。
 
+## 映射的测量台（#501）
+
+`mappings.mjs` 量的是探索从数据库 schema 提议的口径，对不对、漏了多少。
+
+```
+node scripts/bench/mappings.mjs --fresh                # 新库 → 挂源 → 探索 → 打分
+node scripts/bench/mappings.mjs --fresh --no-comments  # 同上，语料不带列注释
+node scripts/bench/mappings.mjs --kb <id> --score      # 只打分，不动库
+```
+
+**打分不看名字，看数。** 治理那边真值按两个名字键，因为它判的是二分类；这里概念名
+是模型自己起的，「Revenue」与「已支付 GMV」按名字对不上任何一条。所以真值一条是
+「一个业务口径 + 一条 gold SQL」，打分把提议真跑一遍，跟 gold 的结果比数——数一样
+就是同一个口径。省掉逐条手标，判据还是客观的。
+
+四栏分开读：`covered` 是真值里被算出来的有几条（漏没漏）；`right` 是提议里跑得通
+且对上某条真值的；`wrong` 是**跑得通但一条都对不上**的，附它算出的数与最接近的真值；
+`broken` 是跑不通的。**要看的是 `wrong`。** 跑不通的提议无害，它失败得很响，人一眼
+看得见；跑得通而算错的才是全部风险——问数会拿它印出一个看起来完全正常的数字。这一栏
+也是 #504 能不能默认开的唯一依据。
+
+`traps_hit` 数的是落到陷阱列上的提议：整数外键求和、`o_shippriority` 这种恒为 0 的列、
+把一段自由文本当维度。它们都跑得通。
+
+语料在 `schemas/<corpus>.sql`，真值在 `truth/<corpus>.mappings.json`。
+
+- **口径不是我们定的。** TPC-H 的 22 条查询里写死了「收入」在这个 schema 上就是
+  `sum(l_extendedprice * (1 - l_discount))`，真值从那儿抄。自己拟一份口径来量自己的
+  探索，量出来的是自我一致。
+- **行是 `generate_series` 造的，不按 TPC 的生成规范。** 探索只读 schema 不读数据，
+  打分时 gold 与提议跑在同一批行上，比的是两个数一不一样——那份规范值钱的是 schema
+  与查询，不是它的数据分布。`setseed` 固定，两轮之间语料不变。
+- **列注释单独一个文件，因为它是一个自变量。** 真 TPC-H 一条注释都没有，而真实库里
+  注释是探索最主要的线索（提示词专门要求 citing column comments）。加载与不加载各跑
+  一轮，两个分数之差就是注释值多少分。注释只描述列，不描述口径——写「折后收入 =
+  extendedprice × (1 - discount)」等于把 gold SQL 抄给模型。
+- **每一组一个新库**在这里还多一层理由：`propose` 的 `ON CONFLICT … WHERE status =
+  'proposed'` 让第二轮探索继承第一轮的行，同一个库上跑两次，第二次的分不是第二次的。
+
 ## 读数怎么算
 
 - `prompt_tokens_est` 是**本体段**的估算，不是整个提示词。实测 4.0 字符 ≈ 1 token
