@@ -18,6 +18,23 @@ mod table_tests {
     }
 
     #[test]
+    fn empty_spacer_columns_do_not_survive() {
+        let html = "<table><tr><td>Revenue</td><td></td><td>$96,221</td><td></td></tr>\
+                    <tr><td>Margin</td><td></td><td>75.0</td><td></td></tr></table>";
+        let md = markdown_from_html(html).expect("converts");
+        let row = md.lines().find(|l| l.contains("96,221")).expect("row survives");
+        assert!(!row.contains("|  |"), "空列应当被砍掉: {row}");
+        assert!(row.contains("Revenue"), "有内容的列一个不能少: {row}");
+    }
+
+    #[test]
+    fn a_column_with_any_content_is_kept() {
+        let md = super::prune_empty_table_columns("| a |  | c |\n| --- | --- | --- |\n|  | b |  |");
+        assert!(md.contains("| a |  | c |") || md.contains("a"), "{md}");
+        assert!(md.contains("b"), "有内容的列不能砍: {md}");
+    }
+
+    #[test]
     fn a_table_that_already_has_headers_is_untouched() {
         let html = "<table><thead><tr><th>a</th></tr></thead><tr><td>1</td></tr></table>";
         assert_eq!(promote_first_row_headers(html), html);
@@ -362,6 +379,74 @@ fn replace_td_with_th(row: &str) -> String {
     out
 }
 
+/// 表格里整列都空的，砍掉；对齐用的空格也不留。
+///
+/// **不砍的代价是三倍。** 排版用的空单元格（XBRL 的缩进列、货币符号列）在
+/// HTML 里不占地方，转成 markdown 管道表之后每一行都要为它们写一个 `|` 和
+/// 一片对齐空格。实测那份财报：24 块 2.6 万字符 → 78 块 9.2 万字符，多出来的
+/// 全是 `|  |  |  |`。分块数进了抽取的成本，一列空格不值这个钱。
+///
+/// 判据是「这一列在**每一行**都空」，所以有内容的列一个不动；分隔行不参与判断
+/// （它本来就只有横线），但跟着一起砍列。
+fn prune_empty_table_columns(markdown: &str) -> String {
+    let is_row = |l: &str| {
+        let t = l.trim();
+        t.starts_with('|') && t.ends_with('|') && t.len() > 1
+    };
+    let cells = |l: &str| -> Vec<String> {
+        let t = l.trim();
+        t[1..t.len() - 1]
+            .split('|')
+            .map(|c| c.trim().to_string())
+            .collect()
+    };
+    let is_sep = |c: &[String]| {
+        !c.is_empty()
+            && c.iter()
+                .all(|x| !x.is_empty() && x.chars().all(|ch| ch == '-' || ch == ':'))
+    };
+
+    let lines: Vec<&str> = markdown.split('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        if !is_row(lines[i]) {
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < lines.len() && is_row(lines[i]) {
+            i += 1;
+        }
+        let rows: Vec<Vec<String>> = lines[start..i].iter().map(|l| cells(l)).collect();
+        let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+        let keep: Vec<bool> = (0..width)
+            .map(|c| {
+                rows.iter()
+                    .any(|r| !is_sep(r) && r.get(c).is_some_and(|x| !x.is_empty()))
+            })
+            .collect();
+        // 一列都不剩就原样留着，不去猜
+        if !keep.iter().any(|k| *k) {
+            out.extend(lines[start..i].iter().map(|l| l.to_string()));
+            continue;
+        }
+        for r in &rows {
+            let sep = is_sep(r);
+            let kept: Vec<String> = (0..width)
+                .filter(|c| keep[*c])
+                .map(|c| {
+                    let v = r.get(c).cloned().unwrap_or_default();
+                    if sep && v.is_empty() { "---".to_string() } else { v }
+                })
+                .collect();
+            out.push(format!("| {} |", kept.join(" | ")));
+        }
+    }
+    out.join("\n")
+}
+
 fn markdown_from_html(html: &str) -> Result<String, HtmlError> {
     let html = &promote_first_row_headers(html);
     let markdown = htmd::HtmlToMarkdown::builder()
@@ -380,7 +465,7 @@ fn markdown_from_html(html: &str) -> Result<String, HtmlError> {
     {
         return Err(HtmlError::Interstitial);
     }
-    normalize_markdown(&markdown)
+    normalize_markdown(&prune_empty_table_columns(&markdown))
 }
 
 /// Normalize direct Markdown with the same link policy as HTML conversion.

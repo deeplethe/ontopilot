@@ -291,6 +291,13 @@ pub fn build_messages(
             units and all. **A stated figure left out is the loss that costs most**: the reader \
             came for those numbers, and no later step can recover one that was never written \
             down.\n\
+         8b. A **listed** relation also takes \"value\" when what the text gives is a \
+            string rather than another entity — a job title, a designation, a ticker, a \
+            model number. Never invent an entity for a string. And when the text introduces \
+            someone by their role — \"X, founder and CEO of Y\", \"Z, co-CEO of W\" — write \
+            both facts: the tie to the organization, and the role itself as a value on the \
+            person. The tie alone says they are connected; the role is what the sentence \
+            was actually telling you.\n\
          9. The same holds for entity types: if none of the listed types fits, write the type \
             the text implies, in snake_case (e.g. \"model\", \"technology\"). Do not fall back \
             to a broad listed type such as \"thing\" or \"creative_work\" merely because \
