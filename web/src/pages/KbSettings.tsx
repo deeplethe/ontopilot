@@ -8,6 +8,8 @@ import { useParams, useNavigate } from "@tanstack/react-router";
 import {
   History as HistoryIcon,
   Lock,
+  Plus,
+  Search,
   Settings2,
   TriangleAlert,
   Users,
@@ -34,6 +36,12 @@ import {
   PageHeader,
   Dialog,
   Field,
+  Table,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
 } from "../ui";
 
 const KB_ROLES = [
@@ -627,6 +635,9 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
   });
   const orgUsers = useQuery({ queryKey: ["orgUsers"], queryFn: api.orgUsers });
   const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [role, setRole] = useState("all");
+  const [editingRole, setEditingRole] = useState<string | null>(null);
   const [addUserId, setAddUserId] = useState("");
   // open 库连 viewer 这个选项都没有，默认值得跟着走
   const [addRole, setAddRole] = useState(isOpen ? "editor" : "viewer");
@@ -658,52 +669,109 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
   );
   const memberIds = new Set(listed.map((m) => m.user_id));
   const addable = orgUsers.data?.filter((u) => !memberIds.has(u.id)) ?? [];
+  const q = filter.trim().toLowerCase();
+  const shown = listed
+    .filter((m) => role === "all" || m.role === role)
+    .filter(
+      (m) =>
+        !q ||
+        m.display_name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q),
+    );
 
   if (members.isError) return null;
 
   return (
-    <>
-    {/* 一张卡：上面是名单，底栏是一个「加人」按钮——与部署那边的用户管理
-        同一副排法。**加人是偶尔一次的动作**，一个常驻的选人器摆在名单底下，
-        读起来像还没填好的第 N 个成员，而且它和名单本身抢同一块地方 */}
-    <SettingsCard
-      title={S.kbset.members}
-      hint={isOpen ? S.kbset.membersHintOpen : S.kbset.membersHintRestricted}
-      action={
-        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
-          {S.kbset.addMemberTitle}
-        </Button>
-      }
-    >
-      {members.data && listed.length === 0 ? (
-        <p className="text-small text-ink-2">
-          {isOpen ? S.kbset.noWriters : S.kbset.noMembers}
-        </p>
-      ) : (
-        /* 一人一行，行与行之间一条线：名字与邮箱是同一个人的两件事，
-           挨着读；能改的（角色）和会拆掉的（移除）都在右边 */
-        <div className="divide-y divide-line">
-          {listed.map((m) => (
-            <div key={m.user_id} className="flex items-center gap-3 py-3 first:pt-0">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-body text-ink">{m.display_name}</div>
-                <div className="truncate text-small text-ink-2">{m.email}</div>
-              </div>
-              <Dropdown
-                size="sm"
-                className="w-24"
-                value={m.role}
-                onChange={(role) => setMember.mutate({ userId: m.user_id, role })}
-                options={rolesFor(isOpen)}
-              />
-              <LinkButton tone="danger" onClick={() => remove.mutate(m.user_id)}>
-                {S.kbset.remove}
-              </LinkButton>
-            </div>
-          ))}
+    <div className="space-y-3">
+      <p className="text-body text-ink-2">
+        {isOpen ? S.kbset.membersHintOpen : S.kbset.membersHintRestricted}
+      </p>
+
+      {/* 筛名单的东西与加人的按钮都在表格**外面**（DESIGN.md 6）：它们不是名单
+          的内容，而且筛空了的时候那张表要能变成空态，不能把改筛选和加人的
+          唯一入口一起带走。这一排与部署那边的用户管理一模一样 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          icon={<Search size={13} />}
+          className="w-64"
+          placeholder={S.settings.searchUsers}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <Dropdown
+          className="w-32"
+          value={role}
+          onChange={setRole}
+          options={[
+            { value: "all", label: S.members.filterAllRoles },
+            ...rolesFor(isOpen),
+          ]}
+        />
+        <div className="ml-auto">
+          <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
+            <Plus size={12} />
+            {S.kbset.addMemberTitle}
+          </Button>
         </div>
-      )}
-    </SettingsCard>
+      </div>
+
+      {/* 一张表，每一列宽度定死：角色和动作都在自己那一列，不随名字长短漂移 */}
+      <div className="glass overflow-hidden rounded-panel">
+        <Table>
+          <THead>
+            <Tr>
+              <Th>{S.members.userLabel}</Th>
+              <Th>{S.members.roleLabel}</Th>
+              <Th />
+            </Tr>
+          </THead>
+          <TBody>
+            {shown.map((m) => (
+              <Tr key={m.user_id}>
+                <Td>
+                  <div className="truncate text-body text-ink">{m.display_name}</div>
+                  <div className="truncate text-small text-ink-2">{m.email}</div>
+                </Td>
+                <Td>
+                  {/* 静态文字，点一下才变成下拉：一列下拉框会把一张只读的名单
+                      看成一张待填的表，而改角色是偶尔为之 */}
+                  {editingRole === m.user_id ? (
+                    <Dropdown
+                      size="sm"
+                      className="w-24"
+                      value={m.role}
+                      onChange={(r) => {
+                        setEditingRole(null);
+                        if (r !== m.role) setMember.mutate({ userId: m.user_id, role: r });
+                      }}
+                      options={rolesFor(isOpen)}
+                    />
+                  ) : (
+                    <LinkButton onClick={() => setEditingRole(m.user_id)}>
+                      {S.kbset.roles[m.role as keyof typeof S.kbset.roles] ?? m.role}
+                    </LinkButton>
+                  )}
+                </Td>
+                <Td className="whitespace-nowrap text-right">
+                  <LinkButton tone="danger" onClick={() => remove.mutate(m.user_id)}>
+                    {S.kbset.remove}
+                  </LinkButton>
+                </Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
+        {/* 一个人都没有，与「筛没了」是两回事：前者该去加人，后者该改筛选 */}
+        {shown.length === 0 && (
+          <p className="px-4 py-6 text-body text-ink-2">
+            {listed.length === 0
+              ? isOpen
+                ? S.kbset.noWriters
+                : S.kbset.noMembers
+              : S.ui.noMatches}
+          </p>
+        )}
+      </div>
 
     {/* 把一个已有账号加进这个库。**picker 在弹窗里也仍然常驻**：没人可加时
         它自己会说（SearchSelect 有 noMatches 空态），控件消失读作"坏了" */}
@@ -753,6 +821,6 @@ function KbMembers({ kbId, isOpen }: { kbId: string; isOpen: boolean }) {
         </Field>
       </div>
     </Dialog>
-    </>
+    </div>
   );
 }
