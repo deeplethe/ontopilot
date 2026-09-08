@@ -28,6 +28,16 @@ mod table_tests {
     }
 
     #[test]
+    fn a_blank_header_row_gives_way_to_the_real_one() {
+        let md = super::prune_empty_table_columns(
+            "|  |  |\n| --- | --- |\n| a. Tench Coxe |  |\n| shares For | 15,411 |",
+        );
+        let first = md.lines().next().expect("a line");
+        assert!(first.contains("Tench Coxe"), "表头该是真正的抬头: {md}");
+        assert!(md.contains("15,411"), "行不能丢: {md}");
+    }
+
+    #[test]
     fn a_column_with_any_content_is_kept() {
         let md = super::prune_empty_table_columns("| a |  | c |\n| --- | --- | --- |\n|  | b |  |");
         assert!(md.contains("| a |  | c |") || md.contains("a"), "{md}");
@@ -432,7 +442,7 @@ fn prune_empty_table_columns(markdown: &str) -> String {
             out.extend(lines[start..i].iter().map(|l| l.to_string()));
             continue;
         }
-        for r in &rows {
+        let render = |r: &Vec<String>| {
             let sep = is_sep(r);
             let kept: Vec<String> = (0..width)
                 .filter(|c| keep[*c])
@@ -441,7 +451,28 @@ fn prune_empty_table_columns(markdown: &str) -> String {
                     if sep && v.is_empty() { "---".to_string() } else { v }
                 })
                 .collect();
-            out.push(format!("| {} |", kept.join(" | ")));
+            format!("| {} |", kept.join(" | "))
+        };
+        // **表头整行是空的就让位。** 提上来的第一行有时只是排版用的占位行
+        // （SEC 那份投票结果 8-K 的每张表都这样），留着它，模型看到的是
+        // 一张列名全空的表——没有信息，还占着「表头」这个位置。下一行顶上，
+        // 表的第一行才是它真正的抬头（"a. Tench Coxe"）。
+        let head_blank = rows
+            .first()
+            .is_some_and(|r| (0..width).filter(|c| keep[*c]).all(|c| r.get(c).is_none_or(String::is_empty)));
+        let body_start = if head_blank && rows.len() > 2 { 2 } else { 0 };
+        if body_start == 2 {
+            out.push(render(&rows[2]));
+            if let Some(sep) = rows.get(1) {
+                out.push(render(sep));
+            }
+            for r in &rows[3..] {
+                out.push(render(r));
+            }
+        } else {
+            for r in &rows {
+                out.push(render(r));
+            }
         }
     }
     out.join("\n")
