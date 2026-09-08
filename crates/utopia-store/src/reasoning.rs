@@ -860,11 +860,11 @@ fn read_span(
 ) -> (Option<i64>, Option<i64>, bool, bool) {
     use crate::graph::Temporal;
     match temporal {
-        // 恒常每一刻都成立，证据日期不闸它（0028）
+        // 恒常每一刻都成立，证据日期不闸它（0031）
         Temporal::Eternal => return (None, None, false, false),
         // 事件在它命名的那个桶里成立；没日期的事件区间为空——`overlap` 对空交集不推，
-        // 所以一条经过「不知何时收购」的链推不出东西，与读出侧一致（0028）。
-        // 0028 之前写下的事件行终点是空的，按起点那个桶读
+        // 所以一条经过「不知何时收购」的链推不出东西，与读出侧一致（0031）。
+        // 0031 之前写下的事件行终点是空的，按起点那个桶读
         Temporal::Event => {
             return match from {
                 None => {
@@ -912,7 +912,7 @@ async fn timed_edges(pool: &PgPool, kb_id: Uuid) -> AppResult<TimedEdges> {
     .bind(kb_id)
     .fetch_all(pool)
     .await?;
-    // 谓词的时间语义（0028）：事件按它的桶读，恒常两端开放。一次取全，按谓词查
+    // 谓词的时间语义（0031）：事件按它的桶读，恒常两端开放。一次取全，按谓词查
     let temporal_of: HashMap<Uuid, crate::graph::Temporal> = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id, temporal FROM relation_types WHERE kb_id = $1",
     )
