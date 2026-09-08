@@ -33,6 +33,9 @@ pub enum Op {
     Lte,
     Between,
     In,
+    /// 反过来的 In。**它判的仍然是一条存在的事实**，所以照样有前提、有区间；
+    /// 「压根没有这个属性」是另一件事，不在这套里（0026 末节）
+    NotIn,
     Present,
 }
 
@@ -45,6 +48,7 @@ impl Op {
             Op::Lte => "lte",
             Op::Between => "between",
             Op::In => "in",
+            Op::NotIn => "not_in",
             Op::Present => "present",
         }
     }
@@ -57,6 +61,7 @@ impl Op {
             "lte" => Op::Lte,
             "between" => Op::Between,
             "in" => Op::In,
+            "not_in" => Op::NotIn,
             "present" => Op::Present,
             _ => return None,
         })
@@ -77,6 +82,8 @@ pub enum Operand {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Condition {
+    /// 同组的条件用「与」连，组与组之间用「或」连（0026）。老规则全是第 0 组
+    pub group: i32,
     pub predicate: Uuid,
     pub op: Op,
     pub operand: Operand,
@@ -98,7 +105,8 @@ pub enum Conclusion {
 pub struct BusinessRule {
     pub id: Uuid,
     pub conclusion: Conclusion,
-    /// 合取：全部满足才算命中。空条件集永不命中——一条没有判据的规则应当
+    /// 条件。**组内合取、组间析取**（0026）：同一组里全部满足才算这一组成立，
+    /// 任何一组成立这条规则就命中。空条件集永不命中——一条没有判据的规则应当
     /// 什么都不推，而不是把整个类都归进去
     pub conditions: Vec<Condition>,
 }
@@ -140,6 +148,11 @@ const MAX_COMBOS: usize = 64;
 /// 求区间交集，交集非空即一次命中。**所以同一条规则可以在同一个实体上产出
 /// 多段区间**——2023 那次读数命中、2025 那次不命中，得到的是两段各自成立的
 /// 结论，而不是一行翻来覆去改（0021 决策 4）。
+///
+/// **组内与、组间或**（0026）：上面那一段是一组的算法，整条规则就是把它按组
+/// 跑几遍。封顶按组算——一组展不开不该拖累另一组；两组推出同一区间时按区间
+/// 去重，留先到的那组当证明（多条证明路径对读的人没有区别，全存下来只会让
+/// 证明树跟着路径数长）。
 pub fn evaluate(
     rules: &[BusinessRule],
     facts: &[AttrFact],
@@ -161,55 +174,80 @@ pub fn evaluate(
         if rule.conditions.is_empty() {
             continue;
         }
+        // 按组切开，组序保持稳定：同一区间被两组同时推出时，留下的是**组序在前**
+        // 的那条证明，而不是 HashMap 顺序决定的随机一条
+        let groups = group_conditions(&rule.conditions);
         for (subject, own) in &by_subject {
-            // 每个条件的命中集。任何一个为空，这条规则在这个实体上就不成立
-            let mut per_condition: Vec<Vec<Uuid>> = Vec::with_capacity(rule.conditions.len());
-            let mut satisfiable = true;
-            for c in &rule.conditions {
-                let matched: Vec<Uuid> = own
-                    .iter()
-                    .filter(|f| f.predicate == c.predicate && satisfies(c, &f.value))
-                    .map(|f| f.id)
-                    .collect();
-                if matched.is_empty() {
-                    satisfiable = false;
-                    break;
-                }
-                per_condition.push(matched);
-            }
-            if !satisfiable {
-                continue;
-            }
-
-            let combos: usize = per_condition.iter().map(|v| v.len()).product();
-            if combos > MAX_COMBOS {
-                report.capped += 1;
-                continue;
-            }
-
-            // 笛卡尔积。同一区间可能由多个组合得出（同一读数报了两遍），
-            // 按区间去重——它们本来就会落成同一行
+            // 同一实体上，一条规则的多个组可能推出同一段区间。去重跨组，
+            // 因为它们落成的是同一行派生事实
             let mut seen: Vec<(Option<i64>, Option<i64>)> = Vec::new();
-            for combo in cartesian(&per_condition) {
-                let Some((from, to)) = validity(&combo, spans) else {
-                    continue;
-                };
-                if seen.contains(&(from, to)) {
+            // 这条规则在这个实体上有没有哪一组因组合太多没展开完。**按 (规则, 实体)
+            // 记一次**：报出来的是「这里少推了东西」，不是「少推了几组」
+            let mut capped_here = false;
+            for group in &groups {
+                // 每个条件的命中集。任何一个为空，这一组在这个实体上就不成立
+                let mut per_condition: Vec<Vec<Uuid>> = Vec::with_capacity(group.len());
+                let mut satisfiable = true;
+                for c in group {
+                    let matched: Vec<Uuid> = own
+                        .iter()
+                        .filter(|f| f.predicate == c.predicate && satisfies(c, &f.value))
+                        .map(|f| f.id)
+                        .collect();
+                    if matched.is_empty() {
+                        satisfiable = false;
+                        break;
+                    }
+                    per_condition.push(matched);
+                }
+                if !satisfiable {
                     continue;
                 }
-                seen.push((from, to));
-                hits.push(RuleHit {
-                    rule: rule.id,
-                    subject: *subject,
-                    premises: combo,
-                    from,
-                    to,
-                });
+
+                // 封顶按组算：一组展不开，不该把另一组也拦下
+                let combos: usize = per_condition.iter().map(|v| v.len()).product();
+                if combos > MAX_COMBOS {
+                    capped_here = true;
+                    continue;
+                }
+
+                // 笛卡尔积。同一区间可能由多个组合得出（同一读数报了两遍），
+                // 按区间去重——它们本来就会落成同一行
+                for combo in cartesian(&per_condition) {
+                    let Some((from, to)) = validity(&combo, spans) else {
+                        continue;
+                    };
+                    if seen.contains(&(from, to)) {
+                        continue;
+                    }
+                    seen.push((from, to));
+                    hits.push(RuleHit {
+                        rule: rule.id,
+                        subject: *subject,
+                        premises: combo,
+                        from,
+                        to,
+                    });
+                }
+            }
+            if capped_here {
+                report.capped += 1;
             }
         }
     }
     report.hits = hits.len();
     (hits, report)
+}
+
+/// 按 `group` 切成几组，**组序按 group_seq 升序**——两组推出同一区间时，
+/// 留下的证明得是稳定的那一条，不能随存储顺序变。
+fn group_conditions(conditions: &[Condition]) -> Vec<Vec<&Condition>> {
+    let mut keys: Vec<i32> = conditions.iter().map(|c| c.group).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys.into_iter()
+        .map(|g| conditions.iter().filter(|c| c.group == g).collect())
+        .collect()
 }
 
 /// 每个条件取一条，穷举组合。调用方已经把上限挡在外面。
@@ -236,6 +274,10 @@ fn cartesian(sets: &[Vec<Uuid>]) -> Vec<Vec<Uuid>> {
 fn satisfies(c: &Condition, value: &serde_json::Value) -> bool {
     match (&c.op, &c.operand) {
         (Op::Present, _) => !value.is_null(),
+        // 值不在集合里就算满足；**没有值不算**——那是「没记」，不是「不是它」
+        (Op::NotIn, Operand::Set(set)) => {
+            !value.is_null() && text(value).is_some_and(|v| !set.iter().any(|s| s == &v))
+        }
         (Op::Gt, Operand::Num(n)) => num(value).is_some_and(|v| v > *n),
         (Op::Gte, Operand::Num(n)) => num(value).is_some_and(|v| v >= *n),
         (Op::Lt, Operand::Num(n)) => num(value).is_some_and(|v| v < *n),
@@ -296,11 +338,13 @@ mod tests {
             },
             conditions: vec![
                 Condition {
+                    group: 0,
                     predicate: id(10),
                     op: Op::Gt,
                     operand: Operand::Num(8.0),
                 },
                 Condition {
+                    group: 0,
                     predicate: id(11),
                     op: Op::In,
                     operand: Operand::Set(vec!["气测异常".into(), "气测异常后效".into()]),
@@ -331,11 +375,13 @@ mod tests {
             },
             conditions: vec![
                 Condition {
+                    group: 0,
                     predicate: id(10),
                     op: Op::Gt,
                     operand: Operand::Num(8.0),
                 },
                 Condition {
+                    group: 0,
                     predicate: id(11),
                     op: Op::Present,
                     operand: Operand::None,
@@ -357,6 +403,7 @@ mod tests {
                 class: "GasBearingWell".into(),
             },
             conditions: vec![Condition {
+                group: 0,
                 predicate: id(10),
                 op: Op::Gt,
                 operand: Operand::Num(8.0),
@@ -389,11 +436,13 @@ mod tests {
             },
             conditions: vec![
                 Condition {
+                    group: 0,
                     predicate: id(10),
                     op: Op::Gt,
                     operand: Operand::Num(8.0),
                 },
                 Condition {
+                    group: 0,
                     predicate: id(11),
                     op: Op::In,
                     operand: Operand::Set(vec!["气测异常".into()]),
@@ -412,6 +461,160 @@ mod tests {
         assert!(hits.is_empty(), "两条前提没有同时成立的时段");
     }
 
+    /// 两组「或」：任一组成立就命中。第二组的前提里**没有**第一组那条读数——
+    /// 一条派生事实带的是真正让它成立的那几条，不是这个实体的全部属性
+    #[test]
+    fn either_group_can_fire_and_carries_only_its_own_premises() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Typing {
+                class: "GasBearingWell".into(),
+            },
+            conditions: vec![
+                // 第 0 组：全烃 > 8 且 解释 ∈ {气测异常}
+                Condition {
+                    group: 0,
+                    predicate: id(10),
+                    op: Op::Gt,
+                    operand: Operand::Num(8.0),
+                },
+                Condition {
+                    group: 0,
+                    predicate: id(11),
+                    op: Op::In,
+                    operand: Operand::Set(vec!["气测异常".into()]),
+                },
+                // 第 1 组：综合解释 ∈ {气层}
+                Condition {
+                    group: 1,
+                    predicate: id(12),
+                    op: Op::In,
+                    operand: Operand::Set(vec!["气层".into()]),
+                },
+            ],
+        };
+        // 只有第二组的那条读数
+        let facts = vec![fact(3, 50, 12, json!("气层"))];
+        let spans = HashMap::from([(id(3), (Some(100), Some(200)))]);
+        let (hits, _) = evaluate(&[rule], &facts, &spans);
+        assert_eq!(hits.len(), 1, "第二组独自成立");
+        assert_eq!(hits[0].premises, vec![id(3)]);
+        assert_eq!((hits[0].from, hits[0].to), (Some(100), Some(200)));
+    }
+
+    /// 两组同时成立、且推出同一段区间：**一条命中，不是两条**——它们落成的是
+    /// 同一行派生事实，留下的证明是组序在前的那一组
+    #[test]
+    fn two_groups_on_the_same_interval_are_one_hit() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Typing {
+                class: "GasBearingWell".into(),
+            },
+            conditions: vec![
+                Condition {
+                    group: 0,
+                    predicate: id(10),
+                    op: Op::Gt,
+                    operand: Operand::Num(8.0),
+                },
+                Condition {
+                    group: 1,
+                    predicate: id(11),
+                    op: Op::In,
+                    operand: Operand::Set(vec!["气层".into()]),
+                },
+            ],
+        };
+        let facts = vec![fact(1, 50, 10, json!(12.3)), fact(2, 50, 11, json!("气层"))];
+        // 同一段区间
+        let spans = HashMap::from([
+            (id(1), (Some(100), Some(200))),
+            (id(2), (Some(100), Some(200))),
+        ]);
+        let (hits, report) = evaluate(&[rule], &facts, &spans);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(
+            hits[0].premises,
+            vec![id(1)],
+            "留下的是组序在前那一组的证明"
+        );
+        assert_eq!(report.hits, 1);
+    }
+
+    /// 一组展不开不该拖累另一组：**封顶按组算**，而且这个 (规则, 实体) 对
+    /// 只报一次「没展完」
+    #[test]
+    fn a_capped_group_does_not_stop_the_other() {
+        let mut facts: Vec<AttrFact> = Vec::new();
+        let mut spans = HashMap::new();
+        // 第 0 组：同一个属性上 100 条读数，组合数 100 > 64
+        for i in 1..=100u8 {
+            facts.push(fact(i, 50, 10, json!(12.3)));
+            spans.insert(id(i), (Some(100), Some(200)));
+        }
+        // 第 1 组：一条就够
+        facts.push(fact(200, 50, 11, json!("气层")));
+        spans.insert(id(200), (Some(100), Some(200)));
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Typing {
+                class: "GasBearingWell".into(),
+            },
+            conditions: vec![
+                Condition {
+                    group: 0,
+                    predicate: id(10),
+                    op: Op::Gt,
+                    operand: Operand::Num(8.0),
+                },
+                Condition {
+                    group: 1,
+                    predicate: id(11),
+                    op: Op::In,
+                    operand: Operand::Set(vec!["气层".into()]),
+                },
+            ],
+        };
+        let (hits, report) = evaluate(&[rule], &facts, &spans);
+        assert_eq!(hits.len(), 1, "第二组照样出结论");
+        assert_eq!(hits[0].premises, vec![id(200)]);
+        assert_eq!(report.capped, 1, "(规则, 实体) 只报一次");
+    }
+
+    /// `is not one of`：值在集合外算满足；**没有这条读数不算**——那是「没记」，
+    /// 不是「不是它」
+    #[test]
+    fn not_one_of_needs_a_reading_to_be_true() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Typing {
+                class: "NonGas".into(),
+            },
+            conditions: vec![Condition {
+                group: 0,
+                predicate: id(11),
+                op: Op::NotIn,
+                operand: Operand::Set(vec!["气层".into()]),
+            }],
+        };
+        let spans = HashMap::from([(id(1), (None, None))]);
+        let (hit, _) = evaluate(
+            std::slice::from_ref(&rule),
+            &[fact(1, 50, 11, json!("水层"))],
+            &spans,
+        );
+        assert_eq!(hit.len(), 1, "读数在集合外");
+        let (miss, _) = evaluate(
+            std::slice::from_ref(&rule),
+            &[fact(1, 50, 11, json!("气层"))],
+            &spans,
+        );
+        assert!(miss.is_empty(), "读数在集合里");
+        let (none, _) = evaluate(&[rule], &[], &HashMap::new());
+        assert!(none.is_empty(), "没有这条读数：不成立，而不是「不是它」");
+    }
+
     /// 数字被抽成字符串照样比得动。**这一条挡的是最难发现的失效**：
     /// 规则从不报错，只是永远不命中
     #[test]
@@ -423,6 +626,7 @@ mod tests {
                 value: json!("good"),
             },
             conditions: vec![Condition {
+                group: 0,
                 predicate: id(10),
                 op: Op::Gte,
                 operand: Operand::Num(12.0),
@@ -445,6 +649,7 @@ mod tests {
                 class: "GasBearingWell".into(),
             },
             conditions: vec![Condition {
+                group: 0,
                 predicate: id(10),
                 op: Op::Gt,
                 operand: Operand::Num(threshold),
@@ -477,11 +682,13 @@ mod tests {
             conclusion: Conclusion::Typing { class: "X".into() },
             conditions: vec![
                 Condition {
+                    group: 0,
                     predicate: id(10),
                     op: Op::Present,
                     operand: Operand::None,
                 },
                 Condition {
+                    group: 0,
                     predicate: id(11),
                     op: Op::Present,
                     operand: Operand::None,

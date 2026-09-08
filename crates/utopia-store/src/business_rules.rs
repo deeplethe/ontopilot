@@ -68,9 +68,10 @@ type RuleRow = (
     i32,
 );
 
-/// 条件查询回来的一行：规则、属性谓词及其标签、比较方式、操作数
+/// 条件查询回来的一行：规则、组号、属性谓词及其标签、比较方式、操作数
 type ConditionRow = (
     Uuid,
+    i32,
     Uuid,
     Option<String>,
     String,
@@ -80,6 +81,10 @@ type ConditionRow = (
 /// 一条条件，界面与 API 共用的形状。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ConditionInput {
+    /// 组号：同组「与」，组间「或」（0026）。**缺省 0**——不带组的调用方
+    /// 送来的就是一组合取，与从前一模一样
+    #[serde(default)]
+    pub group: i32,
     pub predicate_id: Uuid,
     pub op: String,
     #[serde(default)]
@@ -285,11 +290,11 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<serde_json::Value
     }
     let ids: Vec<Uuid> = rules.iter().map(|r| r.0).collect();
     let conds: Vec<ConditionRow> = sqlx::query_as(
-        "SELECT c.rule_id, c.predicate_id, p.label, c.op, c.operand
+        "SELECT c.rule_id, c.group_seq, c.predicate_id, p.label, c.op, c.operand
                FROM attribute_rule_conditions c
                JOIN relation_types p ON p.id = c.predicate_id
               WHERE c.rule_id = ANY($1)
-              ORDER BY c.rule_id, c.seq",
+              ORDER BY c.rule_id, c.group_seq, c.seq",
     )
     .bind(&ids)
     .fetch_all(pool)
@@ -317,8 +322,9 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<serde_json::Value
                 let conditions: Vec<serde_json::Value> = conds
                     .iter()
                     .filter(|c| c.0 == id)
-                    .map(|(_, pid, plabel, op, operand)| {
+                    .map(|(_, group, pid, plabel, op, operand)| {
                         json!({
+                            "group": group,
                             "predicate_id": pid,
                             "predicate_label": plabel,
                             "op": op,
@@ -436,19 +442,25 @@ async fn insert_conditions(
     rule_id: Uuid,
     conditions: &[ConditionInput],
 ) -> AppResult<()> {
-    for (seq, c) in conditions.iter().enumerate() {
+    // seq 在**组内**编号：(rule, group, seq) 才是一条条件的位置，两组各自从 0 起
+    let mut next: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+    for c in conditions {
+        let seq = next.entry(c.group).or_insert(0);
         sqlx::query(
-            "INSERT INTO attribute_rule_conditions (id, rule_id, seq, predicate_id, op, operand)
-             VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO attribute_rule_conditions
+                (id, rule_id, group_seq, seq, predicate_id, op, operand)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(Uuid::now_v7())
         .bind(rule_id)
-        .bind(seq as i32)
+        .bind(c.group)
+        .bind(*seq)
         .bind(c.predicate_id)
         .bind(&c.op)
         .bind(&c.operand)
         .execute(&mut **tx)
         .await?;
+        *seq += 1;
     }
     Ok(())
 }
@@ -506,12 +518,17 @@ async fn validate_conditions(
         let op = utopia_reason::rules::Op::parse(&c.op).ok_or_else(|| {
             AppError::invalid(
                 "bad_op",
-                "A condition compares with >, >=, <, <=, a range, a set, or presence.",
+                "A condition compares with >, >=, <, <=, a range, a set (in or not in), or presence.",
             )
         })?;
         attribute_predicate(pool, kb_id, c.predicate_id).await?;
         let shaped = match op {
             utopia_reason::rules::Op::Present => c.operand.is_none(),
+            utopia_reason::rules::Op::NotIn => c
+                .operand
+                .as_ref()
+                .and_then(|v| v.as_array())
+                .is_some_and(|a| !a.is_empty()),
             utopia_reason::rules::Op::Between => c
                 .operand
                 .as_ref()

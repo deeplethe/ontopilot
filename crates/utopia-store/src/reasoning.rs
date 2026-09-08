@@ -1182,18 +1182,19 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<LoadedRule
             .await?;
 
     let ids: Vec<Uuid> = rows.iter().map(|r| r.0).collect();
-    let conds: Vec<(Uuid, Uuid, String, Option<serde_json::Value>)> = sqlx::query_as(
-        "SELECT rule_id, predicate_id, op, operand
+    // 组序在前：两组推出同一区间时，留下的证明得是稳定的那一条（0026）
+    let conds: Vec<(Uuid, i32, Uuid, String, Option<serde_json::Value>)> = sqlx::query_as(
+        "SELECT rule_id, group_seq, predicate_id, op, operand
            FROM attribute_rule_conditions
           WHERE rule_id = ANY($1)
-          ORDER BY rule_id, seq",
+          ORDER BY rule_id, group_seq, seq",
     )
     .bind(&ids)
     .fetch_all(pool)
     .await?;
     let mut by_rule: HashMap<Uuid, Vec<Condition>> = HashMap::new();
     let mut broken: HashSet<Uuid> = HashSet::new();
-    for (rule_id, predicate, op, operand) in conds {
+    for (rule_id, group, predicate, op, operand) in conds {
         let Some(op) = Op::parse(&op) else {
             broken.insert(rule_id);
             continue;
@@ -1203,6 +1204,7 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<LoadedRule
             continue;
         };
         by_rule.entry(rule_id).or_default().push(Condition {
+            group,
             predicate,
             op,
             operand,

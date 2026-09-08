@@ -251,6 +251,83 @@ async fn a_rule_types_a_well_and_says_which_readings_did_it() -> anyhow::Result<
     run
 }
 
+/// 两组「或」（0026 / #476）：第二组独自成立时，落下的结论只挂**它自己那条**读数。
+///
+/// 钉的是纯逻辑那层看不见的一件事：前提链进 `fact_derivations` 的是这一组的
+/// 前提，不是这条规则全部条件碰过的事实——「凭哪条读数」在库里也得是真的。
+#[tokio::test]
+async fn either_group_concludes_and_names_only_its_own_reading() -> anyhow::Result<()> {
+    let Some(url) = utopia_store::test_db::url() else {
+        return Ok(());
+    };
+    let pool = PgPool::connect(&url).await?;
+    let f = seed(&pool).await?;
+
+    let run = async {
+        // 只有一条全烃读数，没有解释结论：第 0 组（全烃 > 8 且 解释 ∈ {…}）
+        // 不成立，第 1 组（全烃 > 20）成立
+        let a = attr(
+            &pool,
+            &f,
+            f.thc,
+            serde_json::json!(25.0),
+            "2023-06-01T00:00:00Z",
+        )
+        .await?;
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO attribute_rules (id, kb_id, name, subject_type_id, conclusion, conclude_type_id)
+             VALUES ($1, $2, 'gas-bearing (two ways)', $3, 'typing', $4)",
+        )
+        .bind(id)
+        .bind(f.kb)
+        .bind(f.well)
+        .bind(f.gas_bearing)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO attribute_rule_conditions
+                (id, rule_id, group_seq, seq, predicate_id, op, operand)
+             VALUES ($1, $2, 0, 0, $3, 'gt', $4),
+                    ($5, $2, 0, 1, $6, 'in', $7),
+                    ($8, $2, 1, 0, $3, 'gt', $9)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(id)
+        .bind(f.thc)
+        .bind(serde_json::json!(8.0))
+        .bind(Uuid::now_v7())
+        .bind(f.category)
+        .bind(serde_json::json!(["气测异常"]))
+        .bind(Uuid::now_v7())
+        .bind(serde_json::json!(20.0))
+        .execute(&pool)
+        .await?;
+
+        let report = utopia_store::reasoning::materialize(&pool, f.kb).await?;
+        assert_eq!(report.rule_hits, 1, "第二组独自成立，一次命中");
+
+        let rows = derived(&pool, &f).await?;
+        assert_eq!(rows.len(), 1);
+        let premises: Vec<(Uuid,)> = sqlx::query_as(
+            "SELECT premise_fact_id FROM fact_derivations WHERE derived_fact_id = $1",
+        )
+        .bind(rows[0].id)
+        .fetch_all(&pool)
+        .await?;
+        let got: Vec<Uuid> = premises.into_iter().map(|(x,)| x).collect();
+        assert_eq!(got, vec![a], "前提只有这一组用到的那条读数");
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+
+    sqlx::query("DELETE FROM organizations WHERE id = $1")
+        .bind(f.org)
+        .execute(&pool)
+        .await?;
+    run
+}
+
 /// 阈值抬到读数之上再跑：结论**作废而不是删除**——记录轴上留着「我们曾据此推出」
 #[tokio::test]
 async fn raising_the_threshold_invalidates_without_deleting() -> anyhow::Result<()> {
