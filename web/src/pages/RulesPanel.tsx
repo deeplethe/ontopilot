@@ -10,7 +10,7 @@
  *  一律从 ui/ 来。 */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { Pencil, Play, Plus, Search, Trash2 } from "lucide-react";
 import {
   api,
   type BusinessRule,
@@ -56,6 +56,23 @@ const OPS: {
 
 const operandKind = (op: string) =>
   OPS.find((o) => o.value === op)?.operand ?? "num";
+
+/** 一条规则可以被搜到的全部文本。**判据也算**——「哪条规则用到了 Clearance」
+    是找规则最常见的问法，只搜名字的话得先记住自己当初叫它什么 */
+function searchText(r: BusinessRule): string {
+  return [
+    r.name,
+    r.description ?? "",
+    r.subject_label,
+    r.conclude_type_label ?? "",
+    r.conclude_predicate_label ?? "",
+    ...r.conditions.map(
+      (c) => `${c.predicate_label} ${operandText(c.op, c.operand)}`,
+    ),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
 
 /** 条件的操作数 → 输入框里的文本。回读要与写入是同一套，否则编辑一次就变形 */
 function operandText(op: string, operand: unknown): string {
@@ -209,6 +226,7 @@ export function RulesPanel({
   const [doomed, setDoomed] = useState<BusinessRule | null>(null);
   /** 展开了哪条规则的命中列表。一次只展开一条——两份长列表并排读不了 */
   const [opened, setOpened] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["rules", kbId] });
@@ -288,7 +306,11 @@ export function RulesPanel({
     onError,
   });
 
-  const list = rules.data?.rules ?? [];
+  const all = rules.data?.rules ?? [];
+  const needle = filter.trim().toLowerCase();
+  const list = needle
+    ? all.filter((r) => searchText(r).includes(needle))
+    : all;
   /** 命中列表看的是哪一条。一次一条——两份长列表并排读不了 */
   const opening = list.find((r) => r.id === opened) ?? null;
 
@@ -313,32 +335,46 @@ export function RulesPanel({
         className="mb-2"
         title={S.ontology.rulesTitle}
         sub={S.ontology.rulesHint}
-        actions={
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => run.mutate()}
-              disabled={run.isPending || !list.length}
-            >
-              <Play size={12} />
-              {run.isPending ? S.ontology.ruleRunning : S.ontology.ruleRun}
-            </Button>
-            {/* 入口不设门槛：缺属性时表单自己会在缺的那一处说 */}
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => setDraft(emptyDraft(classes, attributes))}
-            >
-              <Plus size={12} />
-              {S.ontology.ruleNew}
-            </Button>
-          </>
-        }
       />
 
+      {/* 搜索与两个动作同一行，都在表格外面（DESIGN.md 6）：筛空了这一行还在，
+          否则改筛选的唯一入口跟着列表一起消失。输入框不进 PageHeader 的
+          actions——那一排是贴着标题基线排的，塞个控件进去基线就断了 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          icon={<Search size={13} />}
+          className="w-64"
+          placeholder={S.ontology.ruleSearch}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => run.mutate()}
+            disabled={run.isPending || !all.length}
+          >
+            <Play size={12} />
+            {run.isPending ? S.ontology.ruleRunning : S.ontology.ruleRun}
+          </Button>
+          {/* 入口不设门槛：缺属性时表单自己会在缺的那一处说 */}
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => setDraft(emptyDraft(classes, attributes))}
+          >
+            <Plus size={12} />
+            {S.ontology.ruleNew}
+          </Button>
+        </div>
+      </div>
+
       {!list.length ? (
-        <p className="text-small text-ink-2">{S.ontology.rulesEmpty}</p>
+        <p className="text-small text-ink-2">
+          {/* 一条都没有，与「筛掉了」是两回事：前者该去建一条，后者该改筛选 */}
+          {needle ? S.ontology.rulesNoMatch : S.ontology.rulesEmpty}
+        </p>
       ) : (
         /* 一张表，不是一条一张卡片（DESIGN.md 6）。**第一列仍然是那句话**——
            规则的全部语义就在那句话里，收进详情等于把规则本身藏起来；其余几列
