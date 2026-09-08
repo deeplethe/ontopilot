@@ -298,6 +298,10 @@ pub fn build_messages(
             both facts: the tie to the organization, and the role itself as a value on the \
             person. The tie alone says they are connected; the role is what the sentence \
             was actually telling you.\n\
+         8c. A list of named parties is a list of facts — one per name. \"partners \
+            including A, B, C and D\" is four facts, not one; \"advisors A and B\" is two. \
+            Do not collapse an enumeration into a summary or into its first member. \
+            The same applies to the entities: each named party is its own entity.\n\
          9. The same holds for entity types: if none of the listed types fits, write the type \
             the text implies, in snake_case (e.g. \"model\", \"technology\"). Do not fall back \
             to a broad listed type such as \"thing\" or \"creative_work\" merely because \
