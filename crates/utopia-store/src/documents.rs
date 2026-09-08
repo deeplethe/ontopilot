@@ -1134,6 +1134,7 @@ pub async fn queue_extraction_one(pool: &PgPool, document_id: Uuid) -> AppResult
     .bind(document_id)
     .fetch_one(&mut *tx)
     .await?;
+    crate::jobs::notify_worker_tx(&mut tx).await?;
     tx.commit().await?;
     Ok(job_id)
 }
@@ -1354,6 +1355,7 @@ pub async fn queue_extraction(
     .bind(&ids)
     .execute(&mut *tx)
     .await?;
+    crate::jobs::notify_worker_tx(&mut tx).await?;
     tx.commit().await?;
     Ok(ids)
 }

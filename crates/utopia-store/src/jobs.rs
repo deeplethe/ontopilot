@@ -5,12 +5,14 @@
 //! 目标数经 AtomicUsize 热读——系统设置里改并发即时生效，无需重启。
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{postgres::PgListener, PgPool, Postgres, Transaction};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use utopia_core::AppResult;
 use uuid::Uuid;
+
+pub const JOB_CHANNEL: &str = "utopia_jobs";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Job {
@@ -29,6 +31,7 @@ pub async fn enqueue_unless_queued(
     kind: &str,
     payload: serde_json::Value,
 ) -> AppResult<Option<i64>> {
+    let mut tx = pool.begin().await?;
     let row: Option<(i64,)> = sqlx::query_as(
         "INSERT INTO jobs (kind, payload)
          SELECT $1, $2
@@ -37,8 +40,12 @@ pub async fn enqueue_unless_queued(
     )
     .bind(kind)
     .bind(payload)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
+    if row.is_some() {
+        notify_worker_tx(&mut tx).await?;
+    }
+    tx.commit().await?;
     Ok(row.map(|(id,)| id))
 }
 
@@ -58,14 +65,9 @@ pub async fn enqueue_with_max_attempts(
             "max_attempts must be between 1 and 32".into(),
         ));
     }
-    let (id,): (i64,) = sqlx::query_as(
-        "INSERT INTO jobs (kind, payload, max_attempts) VALUES ($1, $2, $3) RETURNING id",
-    )
-    .bind(kind)
-    .bind(payload)
-    .bind(max_attempts)
-    .fetch_one(pool)
-    .await?;
+    let mut tx = pool.begin().await?;
+    let id = enqueue_with_max_attempts_tx(&mut tx, kind, payload, max_attempts).await?;
+    tx.commit().await?;
     Ok(id)
 }
 
@@ -90,7 +92,19 @@ pub async fn enqueue_with_max_attempts_tx(
     .bind(max_attempts)
     .fetch_one(&mut **tx)
     .await?;
+    notify_worker_tx(tx).await?;
     Ok(id)
+}
+
+/// Wake idle workers only after the transaction containing the job is committed.
+/// PostgreSQL delivers `NOTIFY` at commit, so a worker can never wake up before
+/// the row it needs to claim is visible.
+pub(crate) async fn notify_worker_tx(tx: &mut Transaction<'_, Postgres>) -> AppResult<()> {
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(JOB_CHANNEL)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 /// 重排失败任务的范围（#216）。三个条件都可空，空 = 不限。
@@ -121,6 +135,7 @@ const KB_SCOPE: &str = "(
 /// 其他处理器都是幂等的（启动时回收孤儿就靠这一点）；
 /// 此前 `failed` 是终点，余额耗尽一批文档全失败，充值之后只能逐个点或整源重抽
 pub async fn requeue_failed(pool: &PgPool, scope: RequeueScope<'_>) -> AppResult<u64> {
+    let mut tx = pool.begin().await?;
     let sql = format!(
         "UPDATE jobs j
             SET status = 'queued', attempts = 0, run_at = now(), updated_at = now()
@@ -134,9 +149,14 @@ pub async fn requeue_failed(pool: &PgPool, scope: RequeueScope<'_>) -> AppResult
         .bind(scope.kind)
         .bind(scope.failed_since)
         .bind(scope.kb_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
-    Ok(res.rows_affected())
+    let count = res.rows_affected();
+    if count > 0 {
+        notify_worker_tx(&mut tx).await?;
+    }
+    tx.commit().await?;
+    Ok(count)
 }
 
 /// 范围内 failed 的条数——设置页那一行「N 个失败任务」
@@ -262,6 +282,19 @@ where
         concurrency = concurrency.load(Ordering::Relaxed),
         "jobs worker 已启动"
     );
+    let mut listener = match PgListener::connect_with(&pool).await {
+        Ok(mut listener) => match listener.listen(JOB_CHANNEL).await {
+            Ok(()) => Some(listener),
+            Err(e) => {
+                tracing::error!(error = %e, "jobs worker 监听通知失败，退回轮询");
+                None
+            }
+        },
+        Err(e) => {
+            tracing::error!(error = %e, "jobs worker 建立通知监听失败，退回轮询");
+            None
+        }
+    };
     loop {
         let cap = concurrency.load(Ordering::Relaxed).max(1);
         if running.load(Ordering::Relaxed) >= cap {
@@ -289,7 +322,19 @@ where
                     running.fetch_sub(1, Ordering::Relaxed);
                 });
             }
-            Ok(None) => tokio::time::sleep(Duration::from_secs(2)).await,
+            Ok(None) => match &mut listener {
+                Some(listener) => {
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                        result = listener.recv() => {
+                            if let Err(e) = result {
+                                tracing::warn!(error = %e, "jobs worker 通知监听失败，继续轮询");
+                            }
+                        }
+                    }
+                }
+                None => tokio::time::sleep(Duration::from_secs(2)).await,
+            },
             Err(e) => {
                 tracing::error!(error = %e, "任务认领失败，5s 后重试");
                 tokio::time::sleep(Duration::from_secs(5)).await;
