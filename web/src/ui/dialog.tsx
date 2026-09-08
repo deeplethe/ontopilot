@@ -136,3 +136,94 @@ export function DangerConfirm({
     </Dialog>
   );
 }
+
+/* ---------- FormDialog（编辑弹窗） ----------
+   类、属性、关系、实体、事实区间的改动都在这一个壳里：面板只展示，改动开一扇窗。
+   正文包在 <form> 里——输入框里按 Enter 就是保存；页脚在表单之外，取消与删除
+   不会被当成提交。与 DangerConfirm 一样**总是挂载着**（open 恒真）：调用方条件渲染。
+   删除放在左下角、次要样式：它和保存不是一对，隔开才不会顺手点到 */
+export function FormDialog({
+  title,
+  description,
+  closeLabel,
+  width = "md",
+  saveLabel,
+  cancelLabel,
+  canSave = true,
+  busy,
+  onSave,
+  onCancel,
+  danger,
+  children,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  closeLabel: string;
+  width?: "sm" | "md" | "lg";
+  saveLabel: string;
+  cancelLabel: string;
+  /** 没填够就点不动保存 */
+  canSave?: boolean;
+  busy?: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+  /** 左下角的破坏性动作（删除）；缺省没有 */
+  danger?: {
+    label: string;
+    disabled?: boolean;
+    title?: string;
+    onClick: () => void;
+  };
+  children: ReactNode;
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onCancel();
+      }}
+      title={title}
+      description={description}
+      closeLabel={closeLabel}
+      width={width}
+      footer={
+        <>
+          {danger && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mr-auto"
+              disabled={danger.disabled || busy}
+              title={danger.title}
+              onClick={danger.onClick}
+            >
+              {danger.label}
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!canSave}
+            busy={busy}
+            onClick={onSave}
+          >
+            {saveLabel}
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave && !busy) onSave();
+        }}
+      >
+        {children}
+      </form>
+    </Dialog>
+  );
+}
+

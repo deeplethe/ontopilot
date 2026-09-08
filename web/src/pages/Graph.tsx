@@ -38,7 +38,8 @@ import {
   TRANSPARENT,
 } from "./graphVisuals";
 import { EntityHistory } from "./EntityHistory";
-import { fmtTime, parseDateInput } from "../time";
+import { EntityDialog, FactTimeDialog } from "./graphDialogs";
+import { fmtTime } from "../time";
 import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
@@ -72,12 +73,10 @@ import {
   Button,
   DangerConfirm,
   ExpandCard,
-  Field,
   HOVER_ROW,
   IconButton,
   Input,
   Pill,
-  Radio,
   REVEAL,
   Row,
   Segmented,
@@ -87,7 +86,6 @@ import {
   cn,
   localDate,
   GroupLabel,
-  SearchSelect,
 } from "../ui";
 import { usePopoverFlip } from "../ui/popoverFlip";
 import { useKb, useKbId } from "../kb";
@@ -2670,11 +2668,9 @@ function EntityPanel({
 
   const e: GraphNode | undefined = detail.data?.entity;
 
-  // 实体修正：抽取给的是初判，判错此前只能整库重抽
+  // 实体修正（名字、类型）在弹窗里：面板只展示
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [draftType, setDraftType] = useState("");
   // 同名的其他实体：详情接口打开就给。改名之后再用响应里的那份覆盖——
   // 改完名可能撞上一批新的同名，那时候的答案比打开时的新
   const [renamedPeers, setRenamedPeers] = useState<GraphNode[] | null>(null);
@@ -2701,52 +2697,10 @@ function EntityPanel({
     },
     onError: (err: Error) => toast.error(err.message),
   });
-  // 类型下拉要的是全量本体，不是当前视图里出现过的那几个
-  const ontology = useQuery({
-    queryKey: ["ontology", kbId],
-    queryFn: () => api.ontology(kbId),
-    enabled: editing,
-  });
-  const types = ontology.data?.entity_types ?? [];
-
   const openEdit = () => {
     if (!e) return;
-    setDraftName(e.name);
-    setDraftType(types.find((t) => t.key === e.type_key)?.id ?? "");
-    setSameName([]);
     setEditing(true);
   };
-  // 本体是异步来的：它到齐时把类型下拉对到当前类型上
-  useEffect(() => {
-    if (editing && !draftType && e)
-      setDraftType(types.find((t) => t.key === e.type_key)?.id ?? "");
-  }, [editing, draftType, e, types]);
-
-  const save = useMutation({
-    mutationFn: () => {
-      const body: { type_id?: string; canonical_name?: string } = {};
-      if (draftName.trim() && draftName.trim() !== e?.name)
-        body.canonical_name = draftName.trim();
-      const curId = types.find((t) => t.key === e?.type_key)?.id;
-      if (draftType && draftType !== curId) body.type_id = draftType;
-      return api.updateEntity(kbId, entityId, body);
-    },
-    onSuccess: (r) => {
-      setEditing(false);
-      setSameName(r.same_name);
-      toast.success(S.graph.editSaved);
-      // 改了类型/名字，图谱节点与本体计数都要跟着动
-      qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
-      qc.invalidateQueries({ queryKey: ["graph", kbId] });
-      qc.invalidateQueries({ queryKey: ["ontology", kbId] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const dirty =
-    !!e &&
-    (draftName.trim() !== e.name ||
-      draftType !== (types.find((t) => t.key === e.type_key)?.id ?? ""));
 
   // Relations = 当下有效的快照（as-of now）；已闭合的历史只出现在 Timeline。
   // 按「方向 + 谓词」分组：实体自身名不再逐行重复，谓词只出现在小节标题里
@@ -2842,59 +2796,20 @@ function EntityPanel({
       </div>
 
       {editing && e && (
-        <div className="px-4 py-3 border-b border-line space-y-3">
-          <Field label={S.graph.editName} className="mb-2">
-            <Input
-              size="sm"
-              autoFocus
-              value={draftName}
-              onChange={(ev) => setDraftName(ev.target.value)}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" && dirty && draftName.trim())
-                  save.mutate();
-                if (ev.key === "Escape") setEditing(false);
-              }}
-              className="w-full"
-            />
-          </Field>
-          <Field label={S.graph.editType} className="mb-2">
-            {/* 类可能上千个（schema.org 一装就是 1010 个）：这一格要能打字过滤，
-                所以是 SearchSelect 而不是下拉——下拉是给小而有界的枚举的 */}
-            <SearchSelect
-              size="sm"
-              className="w-full"
-              value={draftType}
-              onChange={setDraftType}
-              options={types.map((t) => ({
-                value: t.id,
-                label: t.label,
-                hint: t.key,
-              }))}
-            />
-          </Field>
-          <div className="flex items-center gap-2 pt-1">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!dirty || !draftName.trim() || save.isPending}
-              onClick={() => save.mutate()}
-            >
-              {S.graph.editSave}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-              {S.graph.editCancel}
-            </Button>
-            {!draftName.trim() && (
-              <span className="text-fine text-danger">
-                {S.graph.editEmptyName}
-              </span>
-            )}
-          </div>
-        </div>
+        <EntityDialog
+          kbId={kbId}
+          entityId={entityId}
+          entity={e}
+          onClose={() => setEditing(false)}
+          onSaved={(peers) => {
+            setEditing(false);
+            setSameName(peers);
+          }}
+        />
       )}
 
       {/* 同名不是错误——两个张伟可以并存。只提示，判定是不是同一个是人的事 */}
-      {sameName.length > 0 && !editing && (
+      {sameName.length > 0 && (
         <div className="mx-4 mt-3 rounded-panel border border-line bg-surface px-3 py-2">
           <div className="flex items-start justify-between gap-2">
             <p className="text-fine text-ink-2">
@@ -3315,155 +3230,10 @@ function TimelineRow({
       }
     >
       {editing && (
-        <TimeEditor
-          kbId={kbId}
-          fact={fact}
-          onDone={() => setEditing(false)}
-        />
+        <FactTimeDialog kbId={kbId} fact={fact} onClose={() => setEditing(false)} />
       )}
       {open && <EvidenceList kbId={kbId} fact={fact} />}
     </ExpandCard>
-  );
-}
-
-/** 有效区间的人工修正表单（302）。
- *
- *  两端一起提交而不是逐端改：区间的两端互相定义，「清空结束端」与「这次不动
- *  结束端」得能分辨。结束端的三个选项与账本里的三种写法一一对应，所以这里
- *  没有「留空即至今」这种隐含约定——那正是 valid_to IS NULL 一度承载两个意思
- *  的老毛病。 */
-function TimeEditor({
-  kbId,
-  fact,
-  onDone,
-}: {
-  kbId: string;
-  fact: EntityFact;
-  onDone: () => void;
-}) {
-  const qc = useQueryClient();
-  const [from, setFrom] = useState(
-    fmtTime(fact.valid_from, fact.valid_from_precision) ?? "",
-  );
-  const [to, setTo] = useState(
-    fmtTime(fact.valid_to, fact.valid_to_precision) ?? "",
-  );
-  const [endMode, setEndMode] = useState<"open" | "unknown" | "date">(
-    fact.valid_to
-      ? "date"
-      : fact.valid_to_precision === "unknown"
-        ? "unknown"
-        : "open",
-  );
-  const [note, setNote] = useState("");
-
-  const save = useMutation({
-    mutationFn: () => {
-      const f = from.trim() ? parseDateInput(from) : null;
-      if (from.trim() && !f) throw new Error(S.graph.timeBadDate);
-      const t = endMode === "date" ? parseDateInput(to) : null;
-      if (endMode === "date" && !t) throw new Error(S.graph.timeBadDate);
-      return api.updateFactTime(kbId, fact.id, {
-        valid_from: f?.iso ?? null,
-        valid_from_precision: f?.precision ?? null,
-        valid_to: t?.iso ?? null,
-        valid_to_precision:
-          endMode === "date"
-            ? (t?.precision ?? null)
-            : endMode === "unknown"
-              ? "unknown"
-              : null,
-        note: note.trim() || undefined,
-      });
-    },
-    onSuccess: (r) => {
-      // 对账的后果要说出来：改了起点可能顺手闭合了继任者的开放区间，
-      // 也可能撞出一条需要人裁的冲突。不说的话图会自己变而没人知道为什么
-      if (r.conflicts) toast.success(S.graph.timeSavedConflicts(r.conflicts));
-      else if (r.closed) toast.success(S.graph.timeSavedClosed(r.closed));
-      else toast.success(S.graph.timeSaved);
-      qc.invalidateQueries({ queryKey: ["entity", kbId] });
-      qc.invalidateQueries({ queryKey: ["graph"] });
-      qc.invalidateQueries({ queryKey: ["review", kbId] });
-      onDone();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  return (
-    <div
-      className="mb-2 rounded-panel border border-line bg-surface p-3"
-      onClick={(ev) => ev.stopPropagation()}
-    >
-      <div className="flex items-center gap-2">
-        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
-          {S.graph.timeStart}
-        </label>
-        <Input
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          placeholder={S.graph.timeFormat}
-          size="sm"
-          className="u-num flex-1"
-        />
-      </div>
-      <div className="mt-2 flex items-start gap-2">
-        <label className="w-11 shrink-0 pt-1 text-small font-medium text-ink-2">
-          {S.graph.timeEnd}
-        </label>
-        <div className="flex-1 space-y-1">
-          {(
-            [
-              ["open", S.graph.timeEndOpen],
-              ["unknown", S.graph.timeEndUnknown],
-              ["date", S.graph.timeEndDate],
-            ] as const
-          ).map(([mode, label]) => (
-            <Radio
-              key={mode}
-              name={`end-${fact.id}`}
-              checked={endMode === mode}
-              onChange={() => setEndMode(mode)}
-              label={label}
-            >
-              {mode === "date" && endMode === "date" && (
-                <Input
-                  size="sm"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  placeholder={S.graph.timeFormat}
-                  className="u-num ml-1 flex-1"
-                />
-              )}
-            </Radio>
-          ))}
-        </div>
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <label className="w-11 shrink-0 text-small font-medium text-ink-2">
-          {S.graph.timeNote}
-        </label>
-        <Input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={S.graph.timeNotePlaceholder}
-          size="sm"
-          className="flex-1"
-        />
-      </div>
-      <div className="mt-2 flex justify-end gap-2">
-        <Button size="sm" variant="secondary" onClick={onDone}>
-          {S.graph.timeCancel}
-        </Button>
-        <Button variant="primary"
-          size="sm"
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-        >
-          {S.graph.timeSave}
-        </Button>
-      </div>
-    </div>
   );
 }
 

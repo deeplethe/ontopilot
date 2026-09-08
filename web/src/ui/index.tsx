@@ -1578,7 +1578,7 @@ export const HOVER_ROW =
 export const REVEAL = "u-reveal";
 
 /* 各在自己文件里的组件，从这里一并导出，页面只认 "../ui" 一个入口 */
-export { Dialog, DangerConfirm } from "./dialog";
+export { Dialog, DangerConfirm, FormDialog } from "./dialog";
 export { Tooltip } from "./tooltip";
 export { Table, THead, TBody, Tr, Th, Td } from "./table";
 export { Field } from "./field";
