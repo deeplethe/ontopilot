@@ -68,6 +68,29 @@ export function mix(c1: string, c2: string, t: number): string {
   return `rgb(${f(r1, r2)},${f(g1, g2)},${f(b1, b2)})`;
 }
 
+/** rgb / rgba / #hex 都收，按 t 从 from 渐到 to，**alpha 也一起渐**。
+ *
+ * 与 `mix` 分工：那个只吃 hex、只管把类型色按比例调进壳色（节点的配方）；
+ * 这个要处理边的 `rgba(...)` 与淡入淡出，两边都得能解析、alpha 不能丢 */
+function parseRgba(c: string): [number, number, number, number] {
+  if (c.startsWith("#")) {
+    const [r, g, b] = hexToRgb(c);
+    return [r, g, b, 1];
+  }
+  const m = c.match(
+    /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/,
+  );
+  if (!m) return [128, 128, 128, 1];
+  return [+m[1], +m[2], +m[3], m[4] !== undefined ? +m[4] : 1];
+}
+
+export function lerpColor(from: string, to: string, t: number): string {
+  const a = parseRgba(from);
+  const b = parseRgba(to);
+  const f = (i: number) => a[i] + (b[i] - a[i]) * t;
+  return `rgba(${Math.round(f(0))},${Math.round(f(1))},${Math.round(f(2))},${f(3).toFixed(3)})`;
+}
+
 /* 节点标签：**平时是一行裸字，指到或选中的那一个才补一块底**。
    从前它一直是个胶囊（深底 + 一圈 14% 的白描边），而在界面的语汇里那副样子
    说的是「状态」——Ready、3 dropped、System admin。节点的名字不是状态，它就是

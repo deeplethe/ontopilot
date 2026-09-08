@@ -24,29 +24,34 @@ import Graphology from "graphology";
 import { circular } from "graphology-layout";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import Sigma from "sigma";
-import { createNodeBorderProgram } from "@sigma/node-border";
 import { EdgeArrowProgram, EdgeLineProgram } from "sigma/rendering";
 import EdgeCurveProgram, { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
-import { NodeSquareShellProgram } from "./squareShellProgram";
 import {
-  drawHoverCard,
-  CANVAS_FONT,
-  CANVAS_LABEL_SIZE,
-  CANVAS_TEXT,
-  CANVAS_TEXT_2,
-  drawNodeLabel,
   drawWorldGrid,
   mix,
-  MUTED_SHELL,
   NODE_BORDER_BASE,
   NODE_CORE_BASE,
   NODE_CORE_MIX,
   NODE_SHELL_BASE,
   NODE_TINT_MIX,
-  RING_HOVER_MIX,
   RING_SELECT_MIX,
   TRANSPARENT,
 } from "./graphVisuals";
+// 画布那台机器是两页共用的（#496）：构造选项、状态表、相机、拖拽都在那边，
+// 这个文件只管把本体投影成一张图、说清楚每个节点是什么颜色
+import {
+  attachDrag,
+  focusNode,
+  hoveredNode,
+  mutedNode,
+  neighborNode,
+  nodeInView,
+  NODE_TYPE_SHELL,
+  NODE_TYPE_SQUARE,
+  ownColorOf,
+  selectedNode,
+  sigmaOptions,
+} from "./graphCanvas";
 import { Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
@@ -256,7 +261,7 @@ export function buildSchemaGraph(
       ringColor: TRANSPARENT,
       typeColor: t.color,
       typeLabel: t.key,
-      type: t.shape === "square" ? "square" : "circle",
+      type: t.shape === "square" ? NODE_TYPE_SQUARE : NODE_TYPE_SHELL,
       key: t.key,
     });
   }
@@ -517,47 +522,6 @@ function seedFreshNodes(
   return total;
 }
 
-/** 相机推过去时最多放大到这个比例；已经比它更近就保持——从左栏挨个点类
- *  看下去时，画面不该每点一下就重新缩放 */
-const FOCUS_MAX_RATIO = 0.5;
-/** 视口四边留的边距：贴着边的节点也算看不见（右侧还有停靠的面板压着） */
-const IN_VIEW_MARGIN = 48;
-
-function nodePosition(sigma: Sigma, id: string): Point {
-  const graph = sigma.getGraph();
-  return {
-    x: graph.getNodeAttribute(id, "x") as number,
-    y: graph.getNodeAttribute(id, "y") as number,
-  };
-}
-
-/** 节点此刻是否在视口里（按上一次渲染的相机算） */
-function nodeInView(sigma: Sigma, id: string): boolean {
-  const { x, y } = sigma.graphToViewport(nodePosition(sigma, id));
-  const { width, height } = sigma.getDimensions();
-  return (
-    x >= IN_VIEW_MARGIN &&
-    x <= width - IN_VIEW_MARGIN &&
-    y >= IN_VIEW_MARGIN &&
-    y <= height - IN_VIEW_MARGIN
-  );
-}
-
-/** 相机推到一个节点上。sigma 的相机坐标是归一化到 [0,1] 的「框内」坐标，
- *  不是图坐标——直接喂图坐标（x 动辄几百）相机会飞出画面几万像素，画布
- *  一片空白。sigma 没有公开的图→框内换算，绕一趟视口：graphToViewport 用的
- *  是上一次渲染的矩阵，与 viewportToFramedGraph 用同一台相机，一来一回把
- *  相机抵消掉，剩下的就是框内坐标 */
-function focusNode(sigma: Sigma, id: string): void {
-  if (!sigma.getGraph().hasNode(id)) return;
-  const framed = sigma.viewportToFramedGraph(
-    sigma.graphToViewport(nodePosition(sigma, id)),
-  );
-  const ratio = Math.min(sigma.getCamera().ratio, FOCUS_MAX_RATIO);
-  sigma
-    .getCamera()
-    .animate({ x: framed.x, y: framed.y, ratio }, { duration: 300 });
-}
 
 export type SchemaSelection =
   | { kind: "class"; id: string }
@@ -703,103 +667,42 @@ export function OntologySchemaGraph({
 
     sigmaRef.current?.kill();
     const sigma = new Sigma(g, containerRef.current, {
-      allowInvalidContainer: true,
-      defaultNodeType: "circle",
-      nodeProgramClasses: {
-        // 与 /graph 同一套「状态环 → 描边 → 深色壳 → 微彩核心」四层解剖
-        circle: createNodeBorderProgram({
-          borders: [
-            { size: { value: 0.1 }, color: { attribute: "ringColor" } },
-            { size: { value: 0.07 }, color: { attribute: "borderColor" } },
-            { size: { value: 0.3 }, color: { attribute: "shellColor" } },
-            { size: { fill: true }, color: { attribute: "color" } },
-          ],
-        }),
-        square: NodeSquareShellProgram,
-      },
-      defaultEdgeType: EDGE_TYPE_ARROW,
-      edgeProgramClasses: {
-        [EDGE_TYPE_ARROW]: EdgeArrowProgram,
-        [EDGE_TYPE_LINE]: EdgeLineProgram,
-        [EDGE_TYPE_CURVED_ARROW]: EdgeCurvedArrowProgram,
-        [EDGE_TYPE_CURVED_LINE]: EdgeCurveProgram,
-      },
-      enableEdgeEvents: true,
-      minEdgeThickness: MIN_EDGE_THICKNESS,
-      labelFont: CANVAS_FONT,
-      labelSize: CANVAS_LABEL_SIZE,
-      labelColor: { color: CANVAS_TEXT },
-      /* 标签按距离出没——离得远只看形状，走近了才认名字。**试过不按距离**
-         （阈值归零、只按拥挤程度筛）：缩远之后一百多个名字铺开互相压字，
-         读不出也点不准。
-         阈值 5、每 130px 见方留 0.8 个：只比原先松半档。**放宽到 3 / 1.2 试过
-         一轮，一屏上百个名字铺开，太吵**——这里要的是「远处认得出几个地标」，
-         不是「每个点都报名字」。放大时 sigma 自己按 1/ratio² 放开这个上限
-         （见 `getLabelsToDisplay`），越走近露得越全，不封顶 */
-      labelRenderedSizeThreshold: 5,
-      labelDensity: 0.8,
-      labelGridCellSize: 130,
-      minCameraRatio: 0.05,
-      maxCameraRatio: 6,
-      edgeLabelSize: CANVAS_LABEL_SIZE,
-      // 与 /graph 的边标签同一个灰；只有关系边挂标签，有字的就是关系边
-      edgeLabelColor: { color: CANVAS_TEXT_2 },
-      edgeLabelFont: CANVAS_FONT,
-      defaultDrawNodeLabel: drawNodeLabel,
-      defaultDrawNodeHover: drawHoverCard,
+      ...sigmaOptions({
+        defaultEdgeType: EDGE_TYPE_ARROW,
+        edgeProgramClasses: {
+          [EDGE_TYPE_ARROW]: EdgeArrowProgram,
+          [EDGE_TYPE_LINE]: EdgeLineProgram,
+          [EDGE_TYPE_CURVED_ARROW]: EdgeCurvedArrowProgram,
+          [EDGE_TYPE_CURVED_LINE]: EdgeCurveProgram,
+        },
+        minEdgeThickness: MIN_EDGE_THICKNESS,
+        // 几十上百个类，缩到 0.05 就看得见全貌；实例图动辄上千，那边缩得更远
+        minCameraRatio: 0.05,
+        maxCameraRatio: 6,
+      }),
       nodeReducer: (node, attrs) => {
         const res = { ...attrs };
         const base = attrs.size as number;
         const sel = selectedRef.current;
         const hov = hoverRef.current;
-        // 环取节点自己的类型色，不取已经混过壳色的 color——见 graphVisuals
-        // 里 RING_*_MIX 的说明
-        const ownColor = (attrs.typeColor as string) ?? NODE_CORE_BASE;
-        const muteNode = () => {
-          res.size = base * 0.55;
-          res.color = mix(MUTED_SHELL, NODE_CORE_BASE, 0.3);
-          res.shellColor = MUTED_SHELL;
-          res.borderColor = TRANSPARENT;
-          res.ringColor = TRANSPARENT;
-          res.label = "";
-          res.zIndex = 0;
-        };
-        if (hov === node) {
-          res.size = Math.max(base * 1.08, 10.4);
-          res.ringColor = mix(ownColor, "#ffffff", RING_HOVER_MIX);
-          // 悬浮卡接管标签展示；label 本身保留（悬浮卡靠它渲染标题）
-          res.hideBaseLabel = true;
-          res.zIndex = 4;
-          return res;
-        }
+        if (hov === node) return hoveredNode(res, attrs, base);
         if (sel?.kind === "class" && g.hasNode(sel.id)) {
-          if (node === sel.id) {
-            res.size = Math.max(base * 1.02, 9.2);
-            res.ringColor = mix(ownColor, "#ffffff", RING_SELECT_MIX);
-            res.forceLabel = true;
-            // 选中的那一个补一块底（同 /graph）
-            res.labelSlab = true;
-            res.zIndex = 3;
-            return res;
-          }
-          if (g.areNeighbors(sel.id, node)) {
-            res.zIndex = 2;
-            return res;
-          }
-          muteNode();
-          return res;
+          if (node === sel.id) return selectedNode(res, attrs, base);
+          // 邻居不收小：几十个类的图，收了显得瘫（实例图那边收到 0.76）
+          if (g.areNeighbors(sel.id, node)) return neighborNode(res, base);
+          return mutedNode(res, base);
         }
         if (sel?.kind === "relation") {
           const rel = relationById.get(sel.id);
           if (rel) {
+            // 选中一条关系，亮的是它的两端——类之间没有「邻居」可言，
+            // 这条关系的 domain 与 range 就是它连着的
             const endpoints = new Set([...rel.domains, ...rel.ranges]);
             if (endpoints.has(node)) {
-              res.ringColor = mix(ownColor, "#ffffff", RING_SELECT_MIX);
-              res.zIndex = 2;
-              return res;
+              res.ringColor = mix(ownColorOf(attrs), "#ffffff", RING_SELECT_MIX);
+              return neighborNode(res, base);
             }
-            muteNode();
-            return res;
+            return mutedNode(res, base);
           }
         }
         return res;
@@ -897,55 +800,15 @@ export function OntologySchemaGraph({
 
     // 拖节点。**没有活的力模拟要喂**——与 /graph 不同，这里的布局是一次性
     // 算完就定住的，拖完往哪放就在哪，不会被力模拟拽回去，这正是「手动摆
-    // 布局求清楚」要的效果。按下只记候选：位移超过阈值才升格成拖拽，
-    // 否则一次纯点击也会被当成拖了 0 像素的拖拽,鼠标松手时机跟点选打架
-    let dragCandidate: string | null = null;
-    let downPoint: { x: number; y: number } | null = null;
-    let dragged: string | null = null;
-    sigma.on("downNode", (e) => {
-      dragCandidate = e.node;
-      downPoint = { x: e.event.x, y: e.event.y };
-    });
-    sigma.getMouseCaptor().on("mousemovebody", (e) => {
-      if (!dragCandidate) return;
-      if (!dragged) {
-        if (!downPoint || Math.hypot(e.x - downPoint.x, e.y - downPoint.y) < 4)
-          return;
-        dragged = dragCandidate;
-        if (containerRef.current) containerRef.current.style.cursor = "grabbing";
-        // 冻住此刻的包围盒：拖着拖着节点飞出画面边缘时，相机不该跟着自动
-        // 缩放去「适应」新的包围盒——那样一拖节点全图就跟着抖
-        if (!sigma.getCustomBBox()) sigma.setCustomBBox(sigma.getBBox());
-      }
-      const pos = sigma.viewportToGraph(e);
-      g.setNodeAttribute(dragged, "x", pos.x);
-      g.setNodeAttribute(dragged, "y", pos.y);
+    // 布局求清楚」要的效果。阈值、包围盒冻结、光标那一套在 attachDrag 里
+    attachDrag(sigma, {
+      container: () => containerRef.current,
+      hovering: () => !!hoverRef.current,
       // 边拖边记：万一中途出岔子（组件卸载、切换本体）也不丢这一手
-      draggedPositionsRef.current.set(dragged, pos);
-      positionsRef.current.set(dragged, pos);
-      e.preventSigmaDefault();
-      e.original.preventDefault();
-      e.original.stopPropagation();
-    });
-    const endDrag = () => {
-      dragCandidate = null;
-      downPoint = null;
-      if (!dragged) return;
-      dragged = null;
-      if (containerRef.current)
-        containerRef.current.style.cursor = hoverRef.current ? "grab" : "";
-      // 拖完把冻结的包围盒解开——「归位」要看得见刚挪过去的新位置，
-      // 不能还按拖拽开始前的旧范围来适应
-      sigma.setCustomBBox(null);
-    };
-    sigma.getMouseCaptor().on("mouseup", endDrag);
-    // 悬停在节点上方给个「可以抓」的提示——发现得靠猜的交互等于没有
-    sigma.on("enterNode", () => {
-      if (containerRef.current && !dragged)
-        containerRef.current.style.cursor = "grab";
-    });
-    sigma.on("leaveNode", () => {
-      if (containerRef.current && !dragged) containerRef.current.style.cursor = "";
+      onMove: (node, pos) => {
+        draggedPositionsRef.current.set(node, pos);
+        positionsRef.current.set(node, pos);
+      },
     });
 
     // 关系标签只在放大后出现——本体大起来（导入包常有几十上百个类）时,

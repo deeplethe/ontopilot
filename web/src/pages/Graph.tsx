@@ -14,19 +14,11 @@ import { circular, circlepack } from "graphology-layout";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
 import Sigma from "sigma";
-import { createNodeBorderProgram } from "@sigma/node-border";
 import EdgeCurveProgram from "@sigma/edge-curve";
-import { NodeSquareShellProgram } from "./squareShellProgram";
 import {
-  drawHoverCard,
-  CANVAS_FONT,
-  CANVAS_LABEL_SIZE,
-  CANVAS_TEXT,
-  CANVAS_TEXT_2,
-  drawNodeLabel,
   drawWorldGrid,
-  hexToRgb,
   HOVER_MUTE,
+  lerpColor,
   mix,
   MUTED_SHELL,
   NODE_BORDER_BASE,
@@ -34,10 +26,21 @@ import {
   NODE_CORE_MIX,
   NODE_SHELL_BASE,
   NODE_TINT_MIX,
-  RING_HOVER_MIX,
-  RING_SELECT_MIX,
   TRANSPARENT,
 } from "./graphVisuals";
+// 画布那台机器是两页共用的（#496）：构造选项、状态表、相机、拖拽都在那边，
+// 这个文件只管把实例与事实投影成一张图、说清楚每个节点是什么颜色
+import {
+  attachDrag,
+  hoveredNode,
+  mutedNode,
+  neighborNode,
+  NODE_TYPE_SHELL,
+  NODE_TYPE_SQUARE,
+  selectedNode,
+  sigmaOptions,
+  softMutedNode,
+} from "./graphCanvas";
 import { EntityHistory } from "./EntityHistory";
 import { EntityDialog, FactTimeDialog } from "./graphDialogs";
 import { fmtTime } from "../time";
@@ -237,23 +240,6 @@ const EDGE_FOCUS_DERIVED = "rgba(255,214,140,0.95)";
 const DAY_MS = 24 * 3600 * 1000;
 
 /* 播放淡入：解析 hex / rgb / rgba（含 alpha）并线性插值 */
-function parseRgba(c: string): [number, number, number, number] {
-  if (c.startsWith("#")) {
-    const [r, g, b] = hexToRgb(c);
-    return [r, g, b, 1];
-  }
-  const m = c.match(
-    /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/,
-  );
-  if (!m) return [128, 128, 128, 1];
-  return [+m[1], +m[2], +m[3], m[4] !== undefined ? +m[4] : 1];
-}
-function lerpColor(from: string, to: string, t: number): string {
-  const a = parseRgba(from);
-  const b = parseRgba(to);
-  const f = (i: number) => a[i] + (b[i] - a[i]) * t;
-  return `rgba(${Math.round(f(0))},${Math.round(f(1))},${Math.round(f(2))},${f(3).toFixed(3)})`;
-}
 /** 播放中新元素的淡入时长 */
 const FADE_MS = 320;
 
@@ -701,7 +687,7 @@ export function Graph() {
           typeColor: n.color,
           typeLabel: n.type_label ?? S.graph.untyped,
           typeKey: n.type_key ?? "",
-          type: n.shape === "square" ? "square" : "shell",
+          type: n.shape === "square" ? NODE_TYPE_SQUARE : NODE_TYPE_SHELL,
           size: 5 + Math.min(8, Math.sqrt(Number(n.degree)) * 1.6),
         });
       }
@@ -837,98 +823,27 @@ export function Graph() {
 
     sigmaRef.current?.kill();
     const sigma = new Sigma(g, containerRef.current, {
-      allowInvalidContainer: true,
-      defaultNodeType: "shell",
-      nodeProgramClasses: {
-        // Semantica 节点解剖：状态环 → 描边 → 深色壳 → 微彩核心
-        shell: createNodeBorderProgram({
-          borders: [
-            { size: { value: 0.1 }, color: { attribute: "ringColor" } },
-            { size: { value: 0.07 }, color: { attribute: "borderColor" } },
-            { size: { value: 0.3 }, color: { attribute: "shellColor" } },
-            { size: { fill: true }, color: { attribute: "color" } },
-          ],
-        }),
-        square: NodeSquareShellProgram,
-      },
-      renderEdgeLabels: true,
-      defaultEdgeType: "line",
-      /* 平行边扇成弧（见 `layOutParallelEdges`）。直线那一版把同一对节点之间
-         的每条边画在同一条线段上，于是几个标签逐字符叠成乱码——实测一对节点
-         之间最多压着六条 */
-      edgeProgramClasses: { curved: EdgeCurveProgram },
-      // 边的悬停事件默认是关的。开它是为了 `enterEdge`：并进去的那些说法
-      // 要有地方看得见（见 edgeReducer）
-      enableEdgeEvents: true,
-      labelFont: CANVAS_FONT,
-      labelSize: CANVAS_LABEL_SIZE,
-      labelColor: { color: CANVAS_TEXT },
-      /* 标签按距离出没——离得远只看形状，走近了才认名字。**试过不按距离**
-         （阈值归零、只按拥挤程度筛）：缩远之后一百多个名字铺开互相压字，
-         读不出也点不准。
-         阈值 5、每 130px 见方留 0.8 个：只比原先松半档。**放宽到 3 / 1.2 试过
-         一轮，一屏上百个名字铺开，太吵**——这里要的是「远处认得出几个地标」，
-         不是「每个点都报名字」。放大时 sigma 自己按 1/ratio² 放开这个上限
-         （见 `getLabelsToDisplay`），越走近露得越全，不封顶 */
-      labelRenderedSizeThreshold: 5,
-      labelDensity: 0.8,
-      labelGridCellSize: 130,
-      minCameraRatio: 0.04,
-      maxCameraRatio: 8,
-      /* 边的字与节点同一档（fine）、同一个次要色。从前是 9px/#a1a1a1——
-         9 比界面里最小的字还小一半，而 #a1a1a1 是上一版的 ink-2 */
-      edgeLabelSize: CANVAS_LABEL_SIZE,
-      edgeLabelColor: { color: CANVAS_TEXT_2 },
-      edgeLabelFont: CANVAS_FONT,
-      defaultDrawNodeLabel: drawNodeLabel,
-      defaultDrawNodeHover: drawHoverCard,
+      ...sigmaOptions({
+        defaultEdgeType: "line",
+        /* 平行边扇成弧（见 `layOutParallelEdges`）。直线那一版把同一对节点
+           之间的每条边画在同一条线段上，于是几个标签逐字符叠成乱码——实测
+           一对节点之间最多压着六条 */
+        edgeProgramClasses: { curved: EdgeCurveProgram },
+        // 边上写的是谓词，近距离下每条画得出来的边都写（见 updateEdgeLabels）
+        renderEdgeLabels: true,
+        // 上千个节点，得缩得比本体页更远才看得见全貌
+        minCameraRatio: 0.04,
+        maxCameraRatio: 8,
+      }),
       nodeReducer: (node, attrs) => {
         const f = filterRef.current;
         const res = { ...attrs };
         const base = attrs.size as number;
-        // 状态环取节点自己的类型色（见 RING_*_MIX 处的理由）
-        const ownColor = (attrs.typeColor as string) ?? NODE_CORE_BASE;
         if (f.hiddenTypes.has(attrs.typeKey as string)) {
           res.hidden = true;
           return res;
         }
-        // Semantica 状态表: muted { ×0.52, 全层压暗 }
-        const muteNode = () => {
-          res.size = base * 0.52;
-          res.color = mix(MUTED_SHELL, NODE_CORE_BASE, 0.3);
-          res.shellColor = MUTED_SHELL;
-          res.borderColor = TRANSPARENT;
-          res.ringColor = TRANSPARENT;
-          res.label = "";
-          res.zIndex = 0;
-        };
-        /* 悬停时其余的按 HOVER_MUTE 压一档（选中是压到底）。
-           邻居不压——悬停要回答的是"它连着谁"，把邻居也压掉就等于没回答 */
-        const softMute = () => {
-          res.size = base * (1 - 0.48 * HOVER_MUTE);
-          res.color = lerpColor(
-            String(attrs.color ?? NODE_CORE_BASE),
-            mix(MUTED_SHELL, NODE_CORE_BASE, 0.3),
-            HOVER_MUTE,
-          );
-          res.shellColor = lerpColor(
-            String(attrs.shellColor ?? NODE_SHELL_BASE),
-            MUTED_SHELL,
-            HOVER_MUTE,
-          );
-          res.borderColor = TRANSPARENT;
-          res.ringColor = TRANSPARENT;
-          res.label = "";
-          res.zIndex = 0;
-        };
-        if (hoverRef.current === node) {
-          res.size = Math.max(base * 1.08, 10.4);
-          res.ringColor = mix(ownColor, "#ffffff", RING_HOVER_MIX);
-          // 悬浮卡接管标签展示；label 本身保留（悬浮卡靠它渲染标题）
-          res.hideBaseLabel = true;
-          res.zIndex = 4;
-          return res;
-        }
+        if (hoverRef.current === node) return hoveredNode(res, attrs, base);
         const hov = hoverRef.current;
         // 选中实体可能不在当前画布（侧栏跳转/邻域重载间隙）——不在则跳过聚焦压暗逻辑
         const sel =
@@ -936,39 +851,24 @@ export function Graph() {
             ? selectedRef.current
             : null;
         if (sel) {
-          if (node === sel) {
-            res.size = Math.max(base * 1.02, 9.2);
-            res.ringColor = mix(ownColor, "#ffffff", RING_SELECT_MIX);
-            res.forceLabel = true;
-            // 选中的那一个补一块底：其余都压暗了，它得读得最清楚
-            res.labelSlab = true;
-            res.zIndex = 3;
-            return res;
-          }
-          if (g.areNeighbors(sel, node)) {
-            // neighbor {×0.76, min 4, zIndex 2}
-            res.size = Math.max(base * 0.76, 4);
-            res.zIndex = 2;
-          } else {
-            muteNode();
-            return res;
-          }
+          if (node === sel) return selectedNode(res, attrs, base);
+          // 邻居收到 0.76：上千个节点，得给选中的那一条路让地方
+          if (g.areNeighbors(sel, node)) neighborNode(res, base, 0.76);
+          else return mutedNode(res, base);
         } else if (hov && hov !== node && !g.areNeighbors(hov, node)) {
           // **悬停也压暗其余**，只是比选中轻一档（见 HOVER_MUTE）。
           // 邻居留着：悬停要回答的正是"它连着谁"。
           // **此刻还不存在的节点直接压到底**：这个分支会提前 return，
           // 绕过下面那道时间过滤，只压一半的话它反而比不 hover 时更亮
-          if (f.activeNodes && !f.activeNodes.has(node)) muteNode();
-          else softMute();
-          return res;
+          if (f.activeNodes && !f.activeNodes.has(node))
+            return mutedNode(res, base);
+          return softMutedNode(res, attrs, base);
         } else {
           // default {×0.7}
           res.size = base * 0.7;
         }
-        if (f.activeNodes && !f.activeNodes.has(node)) {
-          muteNode();
-          return res;
-        }
+        if (f.activeNodes && !f.activeNodes.has(node))
+          return mutedNode(res, base);
         // 播放淡入：从 muted 形态渐变到本帧算出的正常形态
         const fs = fadeRef.current.get(node);
         if (fs !== undefined) {
@@ -1212,44 +1112,26 @@ export function Graph() {
     //（否则纯点选也会误启 FA2）；被拖节点由 fa2 的 outputReducer 钉在光标上（见上），
     // 松手后稳定 ~1.2s 停机
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
-    let dragCandidate: string | null = null;
-    let downPoint: { x: number; y: number } | null = null;
-    sigma.on("downNode", (e) => {
-      dragCandidate = e.node;
-      downPoint = { x: e.event.x, y: e.event.y };
-    });
-    sigma.getMouseCaptor().on("mousemovebody", (e) => {
-      if (!dragCandidate) return;
-      if (!dragged) {
-        if (!downPoint || Math.hypot(e.x - downPoint.x, e.y - downPoint.y) < 4)
-          return;
-        // 升格为拖拽
-        dragged = dragCandidate;
+    // 阈值、包围盒冻结那一套在 attachDrag 里；这里只接三个当口。
+    // `dragged` 仍留在这个闭包里——FA2 的 outputReducer 每帧读它，
+    // 把被拖的那个钉回光标（见上面 fa2 的构造）
+    attachDrag(sigma, {
+      onStart: (node) => {
+        dragged = node;
         if (settleTimer) clearTimeout(settleTimer);
         // 静态布局（circular/pack）下拖拽不唤醒力模拟——否则一碰就散架
         if (layoutModeRef.current === "force" && fa2 && !fa2.isRunning())
           fa2.start();
-        // 固定当前包围盒，避免拖拽时相机自动跟随缩放
-        if (!sigma.getCustomBBox()) sigma.setCustomBBox(sigma.getBBox());
-      }
-      const pos = sigma.viewportToGraph(e);
-      dragPos = pos;
-      g.setNodeAttribute(dragged, "x", pos.x);
-      g.setNodeAttribute(dragged, "y", pos.y);
-      // 阻止相机平移
-      e.preventSigmaDefault();
-      e.original.preventDefault();
-      e.original.stopPropagation();
+      },
+      onMove: (_node, pos) => {
+        dragPos = pos;
+      },
+      onEnd: () => {
+        dragged = null;
+        dragPos = null;
+        settleTimer = setTimeout(() => fa2?.stop(), 1200);
+      },
     });
-    const endDrag = () => {
-      dragCandidate = null;
-      downPoint = null;
-      if (!dragged) return;
-      dragged = null;
-      dragPos = null;
-      settleTimer = setTimeout(() => fa2?.stop(), 1200);
-    };
-    sigma.getMouseCaptor().on("mouseup", endDrag);
     sigmaRef.current = sigma;
     if (import.meta.env.DEV) {
       // 调试句柄（仅 dev）：无头环境下检查 reducer 输出
