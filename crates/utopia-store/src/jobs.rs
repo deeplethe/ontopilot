@@ -275,7 +275,22 @@ where
                 let handler = handler.clone();
                 let running = running.clone();
                 tokio::spawn(async move {
-                    let result = handler(job.clone()).await;
+                    // **处理器 panic 也要收尸。** 直接 `handler(job).await` 的话，
+                    // panic 会把这个 spawn 出来的 future 一起掀掉：`mark_failed`
+                    // 不会跑（任务行永远停在 running，无错误无重试），`running`
+                    // 也不会减（每 panic 一次就永久少一个并发名额，攒够 cap 之后
+                    // 整个队列不再认领任何任务）。套一层 spawn，panic 变成
+                    // JoinError 拿回来，两件事就都还在。
+                    let inner = {
+                        let (handler, job) = (handler.clone(), job.clone());
+                        tokio::spawn(async move { handler(job).await })
+                    };
+                    let result = match inner.await {
+                        Ok(r) => r,
+                        Err(join) => Err(anyhow::anyhow!(
+                            "任务处理器 panic（详情见 stderr）：{join}"
+                        )),
+                    };
                     let outcome = match result {
                         Ok(()) => mark_done(&pool, job.id).await,
                         Err(e) => {
