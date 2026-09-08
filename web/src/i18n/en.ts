@@ -1146,8 +1146,14 @@ export const en = {
     ruleConcludes: "Concludes",
     ruleConcludesTyping: "the class",
     ruleConcludesAttribute: "the attribute",
-    ruleConditions: "When all of",
+    /* 从前是「当以下全部成立」。**一条规则现在可以写第二种情况**，那句话就
+       不再是真的——标签退回一个「当」，全不全由下面那句说明交代 */
+    ruleConditions: "When",
+    ruleConditionsHint:
+      "The conditions in a block must all hold. Add another way and any one block is enough.",
     ruleAddCondition: "Add a condition",
+    /** 加一整块：同一条判据的另一种满足方式，不是另一条规则 */
+    ruleAddGroup: "Another way",
     ruleOpGt: "is above",
     ruleOpGte: "is at least",
     ruleOpLt: "is below",

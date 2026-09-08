@@ -1,6 +1,6 @@
 # 0026 · A rule may say "or", once
 
-- **Status**: cut 1 implemented · `group_seq` on `attribute_rule_conditions` (migration `0039`, existing conditions default to group 0 so every rule keeps its meaning), the evaluator runs group by group with the combination cap per group and one dedupe by interval across groups, `not_in` beside `in` · the API carries `group` on a condition and defaults it to 0, so a caller that sends a flat list still sends one conjunction · the editor that lets a person *write* a second group is the next cut, so today the "or" is reachable through the API and not yet through the page
+- **Status**: implemented · `group_seq` on `attribute_rule_conditions` (migration `0039`, existing conditions default to group 0 so every rule keeps its meaning), the evaluator runs group by group with the combination cap per group and one dedupe by interval across groups, `not_in` beside `in` · the API carries `group` on a condition and defaults it to 0, so a caller that sends a flat list still sends one conjunction · the rule editor writes blocks and the table reads the sentence back with its "or" in it
 - **Written**: 2026-09-08 (conventions in the [README](README.md))
 - **Related**: [0021](0021-a-rule-reads-attributes-and-concludes-a-type.md) built the rule and made its conditions a conjunction; this record widens that shape by exactly one level and says why not further. [0002](0002-reasoning-engine.md) ruled out a user-defined rule language, which is the boundary this record stays inside. From #476.
 
@@ -35,9 +35,11 @@ An arbitrary `and`/`or`/`not` tree would have to answer a question with no good 
 
 If it is ever wanted, it needs its own record answering what makes it true, what its premise is, and when it retires.
 
-## What the page will show
+## What the page shows
 
-The editor gets blocks: rows inside a block joined by `and`, blocks joined by `or`, one button to add a row and one to add a block. The rule reads as one sentence in the table — `A and B, or C` — because it is one criterion however many ways it can be met. The schema diagram already draws a rule as a single edge from the subject class to the concluded class, and that does not change.
+The editor is blocks: rows inside a block joined by `and` written at the head of the row, blocks divided by a rule and the word `or`, one button per block to add a row and one at the bottom to add a block. A block is not drawn as a box — the connectives already say how far it reaches, and a border around a run of form fields is a panel spent on nothing (DESIGN.md 6). Deleting the last row of a block takes the block with it, which is why no block is ever empty except the first one before anything is written; an empty conjunction is true of everything, and there is no state in which one can be saved.
+
+The rule reads as one sentence in the table — `A and B or C` — because it is one criterion however many ways it can be met. The schema diagram draws a rule as a single edge from the subject class to the concluded class, and that does not change: `or` is inside the criterion, not a second edge.
 
 ## Open
 

@@ -107,6 +107,19 @@ function parseOperand(op: string, text: string): unknown | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/** 条件按组切开，组序升序——与求值器读它的顺序一致（决定记录 0026）。
+    没带组号的当第 0 组：0026 之前写下的规则本来就是一整个合取 */
+function byGroup<T extends { group?: number }>(conditions: T[]): T[][] {
+  const g = (c: T) => c.group ?? 0;
+  return [...new Set(conditions.map(g))]
+    .sort((a, b) => a - b)
+    .map((n) => conditions.filter((c) => g(c) === n));
+}
+
+/** 表单里的一行条件。**文本原样留着**——解析放到保存那一刻，否则打字打到
+    一半的「1」会被当成写完的数 */
+type Row = { predicate_id: string; op: string; text: string };
+
 type Draft = {
   /** 改的是哪一条；新建时为 null。**同一份草稿两种用途**——两套表单会漂移 */
   id: string | null;
@@ -117,7 +130,9 @@ type Draft = {
   conclude_type_id: string;
   conclude_predicate_id: string;
   conclude_value: string;
-  conditions: { predicate_id: string; op: string; text: string }[];
+  /** 一块是一个合取，块之间是析取。**空数组只允许出现在唯一一块上**——
+      那是「还没写条件」，不是「无条件成立」（空合取恒真，会归进整个类） */
+  groups: Row[][];
 };
 
 const emptyDraft = (
@@ -132,13 +147,18 @@ const emptyDraft = (
   conclude_type_id: classes[0]?.id ?? "",
   conclude_predicate_id: attrs[0]?.id ?? "",
   conclude_value: "",
-  conditions: attrs[0]
-    ? [{ predicate_id: attrs[0].id, op: "gt", text: "" }]
-    : [],
+  groups: attrs[0] ? [[{ predicate_id: attrs[0].id, op: "gt", text: "" }]] : [[]],
 });
 
 /** 已有规则 → 草稿。**回读要与写入是同一套形状**，否则编辑一次就变形。 */
 function draftOf(r: BusinessRule): Draft {
+  const groups = byGroup(r.conditions).map((g) =>
+    g.map((c) => ({
+      predicate_id: c.predicate_id,
+      op: c.op,
+      text: operandText(c.op, c.operand),
+    })),
+  );
   return {
     id: r.id,
     name: r.name,
@@ -153,11 +173,9 @@ function draftOf(r: BusinessRule): Draft {
         : r.conclude_value === undefined || r.conclude_value === null
           ? ""
           : String(r.conclude_value),
-    conditions: r.conditions.map((c) => ({
-      predicate_id: c.predicate_id,
-      op: c.op,
-      text: operandText(c.op, c.operand),
-    })),
+    // 一条条件都没有的规则服务端不收，可草稿要撑得住这一格——空着的那一块
+    // 就是「还没写」，界面靠它摆得出「加一个条件」
+    groups: groups.length ? groups : [[]],
   };
 }
 
@@ -242,14 +260,18 @@ export function RulesPanel({
   const save = useMutation({
     mutationFn: async () => {
       const d = draft!;
-      if (!d.conditions.length) throw new Error(S.ontology.ruleNeedsCondition);
-      const conditions: RuleCondition[] = d.conditions.map((c) => {
-        const operand = parseOperand(c.op, c.text);
-        if (operandKind(c.op) !== "none" && operand === undefined) {
-          throw new Error(S.ontology.ruleNeedsCondition);
-        }
-        return { predicate_id: c.predicate_id, op: c.op, operand };
-      });
+      // 组号就是块在表单里的位置。**不必维护成一串连号**——服务端收下发来的
+      // 整数，求值器自己排序（0026）；这里从 0 数起只是因为最省事
+      const conditions: RuleCondition[] = d.groups.flatMap((g, gi) =>
+        g.map((c) => {
+          const operand = parseOperand(c.op, c.text);
+          if (operandKind(c.op) !== "none" && operand === undefined) {
+            throw new Error(S.ontology.ruleNeedsCondition);
+          }
+          return { group: gi, predicate_id: c.predicate_id, op: c.op, operand };
+        }),
+      );
+      if (!conditions.length) throw new Error(S.ontology.ruleNeedsCondition);
       const conclusion = {
         conclusion: d.conclusion,
         conclude_type_id:
@@ -508,10 +530,7 @@ export function RulesPanel({
     组内是合取、组间是析取（决定记录 0026），所以中间写的是「并且」与「或者」，
     不是一个点号：符号读不出「全都要成立」，而那正是规则最容易被误读的地方。 */
 function RuleSentence({ rule }: { rule: BusinessRule }) {
-  // 按组切开，组序升序——与求值器读它的顺序一致
-  const groups = [...new Set(rule.conditions.map((c) => c.group ?? 0))]
-    .sort((a, b) => a - b)
-    .map((g) => rule.conditions.filter((c) => (c.group ?? 0) === g));
+  const groups = byGroup(rule.conditions);
   return (
     <p className="text-small leading-relaxed text-ink-2">
       <span>{rule.subject_label}</span>
@@ -551,7 +570,35 @@ function RuleDialog({
   onSave: () => void;
 }) {
   const ready =
-    !!draft.name.trim() && !!draft.subject_type_id && draft.conditions.length > 0;
+    !!draft.name.trim() &&
+    !!draft.subject_type_id &&
+    draft.groups.some((g) => g.length > 0);
+
+  const newRow = (): Row => ({
+    predicate_id: attributes[0]?.id ?? "",
+    op: "gt",
+    text: "",
+  });
+  const setGroups = (groups: Row[][]) =>
+    // 空块只有在它是唯一一块时才算数（「还没写条件」）。别的地方留一个空块
+    // 就是留一个恒真的合取，会把整个主类归进结论里
+    setDraft({ ...draft, groups: groups.some((g) => g.length) ? groups.filter((g) => g.length) : [[]] });
+  const editRow = (gi: number, ri: number, patch: Partial<Row>) =>
+    setGroups(
+      draft.groups.map((g, j) =>
+        j === gi ? g.map((r, k) => (k === ri ? { ...r, ...patch } : r)) : g,
+      ),
+    );
+  const dropRow = (gi: number, ri: number) =>
+    setGroups(
+      draft.groups.map((g, j) => (j === gi ? g.filter((_, k) => k !== ri) : g)),
+    );
+  const addRow = (gi: number) =>
+    setGroups(draft.groups.map((g, j) => (j === gi ? [...g, newRow()] : g)));
+  // 新的一块自带一行：空块在别处没有意义，让它一出生就不是空的，
+  // 比事后拦一次「这块还空着」少一条规则
+  const addGroup = () => setGroups([...draft.groups, [newRow()]]);
+
   return (
     <Dialog
       open
@@ -613,93 +660,92 @@ function RuleDialog({
           />
         </Field>
 
-        <Field label={S.ontology.ruleConditions} className="mb-0">
+        {/* 条件是一块一块写的：块里的行同时成立，块与块任一成立即可（0026）。
+            **块不画框**——行首的「并且」和块间那条「或者」已经把范围说清楚了，
+            再套一圈边框就是给表单里的一段字段发面板（DESIGN.md 6） */}
+        <Field
+          label={S.ontology.ruleConditions}
+          hint={S.ontology.ruleConditionsHint}
+          className="mb-0"
+        >
           <div className="space-y-2">
-            {draft.conditions.map((c, i) => (
-              <div key={i} className="flex items-center gap-2">
-                {/* 合取写在行首而不是行尾：读的人先知道「还要同时成立」，
-                    再读这一行说了什么 */}
-                <span className="w-10 shrink-0 text-right text-fine text-ink-2">
-                  {i === 0 ? "" : S.ontology.ruleAnd}
-                </span>
-                <Dropdown
-                  className="flex-1"
-                  value={c.predicate_id}
-                  onChange={(v) =>
-                    setDraft({
-                      ...draft,
-                      conditions: draft.conditions.map((x, j) =>
-                        j === i ? { ...x, predicate_id: v } : x,
-                      ),
-                    })
-                  }
-                  options={attributes.map((a) => ({ value: a.id, label: a.label }))}
-                />
-                <Dropdown
-                  className="w-32"
-                  value={c.op}
-                  onChange={(v) =>
-                    setDraft({
-                      ...draft,
-                      conditions: draft.conditions.map((x, j) =>
-                        j === i ? { ...x, op: v, text: "" } : x,
-                      ),
-                    })
-                  }
-                  options={OPS.map((o) => ({ value: o.value, label: o.label() }))}
-                />
-                {operandKind(c.op) !== "none" && (
-                  <Input
-                    className="w-40"
-                    placeholder={S.ontology.ruleOperandPlaceholder(operandKind(c.op))}
-                    value={c.text}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        conditions: draft.conditions.map((x, j) =>
-                          j === i ? { ...x, text: e.target.value } : x,
-                        ),
-                      })
-                    }
-                  />
+            {draft.groups.map((group, gi) => (
+              <div key={gi} className="space-y-2">
+                {/* 析取不写成又一个行首连词：跟「并且」长得一样的话，谁先谁后
+                    就读不出来了。一条线把两块分开，词落在同一条竖列上 */}
+                {gi > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="w-10 shrink-0 text-right text-fine text-ink">
+                      {S.ontology.ruleOr}
+                    </span>
+                    <span className="h-px flex-1 bg-line-strong" />
+                  </div>
                 )}
-                <IconButton
-                  label={S.ontology.ruleDropCondition}
-                  size="sm"
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      conditions: draft.conditions.filter((_, j) => j !== i),
-                    })
-                  }
-                >
-                  <Trash2 size={11} />
-                </IconButton>
+                {group.map((c, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    {/* 合取写在行首而不是行尾：读的人先知道「还要同时成立」，
+                        再读这一行说了什么 */}
+                    <span className="w-10 shrink-0 text-right text-fine text-ink-2">
+                      {i === 0 ? "" : S.ontology.ruleAnd}
+                    </span>
+                    <Dropdown
+                      className="flex-1"
+                      value={c.predicate_id}
+                      onChange={(v) => editRow(gi, i, { predicate_id: v })}
+                      options={attributes.map((a) => ({ value: a.id, label: a.label }))}
+                    />
+                    <Dropdown
+                      className="w-32"
+                      value={c.op}
+                      onChange={(v) => editRow(gi, i, { op: v, text: "" })}
+                      options={OPS.map((o) => ({ value: o.value, label: o.label() }))}
+                    />
+                    {operandKind(c.op) !== "none" && (
+                      <Input
+                        className="w-40"
+                        placeholder={S.ontology.ruleOperandPlaceholder(operandKind(c.op))}
+                        value={c.text}
+                        onChange={(e) => editRow(gi, i, { text: e.target.value })}
+                      />
+                    )}
+                    <IconButton
+                      label={S.ontology.ruleDropCondition}
+                      size="sm"
+                      onClick={() => dropRow(gi, i)}
+                    >
+                      <Trash2 size={11} />
+                    </IconButton>
+                  </div>
+                ))}
+                {/* 加行的按钮一块一个：有两块的时候，「加到哪一块」只有它答得出 */}
+                {attributes.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-10 shrink-0" />
+                    <Button size="sm" variant="ghost" onClick={() => addRow(gi)}>
+                      <Plus size={11} />
+                      {S.ontology.ruleAddCondition}
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
             {/* 一个条件判的是属性的值。没有属性时，「加一个条件」只会加出一行
                 选不了东西的空条件——所以这里说清缺的是什么，按钮不摆 */}
-            {attributes.length === 0 ? (
+            {attributes.length === 0 && (
               <p className="text-small text-ink-2">
                 {S.ontology.ruleNeedsAttribute}
               </p>
-            ) : (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() =>
-                  setDraft({
-                    ...draft,
-                    conditions: [
-                      ...draft.conditions,
-                      { predicate_id: attributes[0].id, op: "gt", text: "" },
-                    ],
-                  })
-                }
-              >
-                <Plus size={11} />
-                {S.ontology.ruleAddCondition}
-              </Button>
+            )}
+            {/* 加一整块。**不跟行缩进对齐**——缩进进去就跟上一块的「加一个条件」
+                成了并排的两个按钮，一个加行一个加块，看不出管的不是一件事。
+                第一个条件都没写时不摆：没有第一种情况，「另一种情况」无从谈起 */}
+            {draft.groups.some((g) => g.length > 0) && (
+              <div className="pt-2">
+                <Button size="sm" variant="ghost" onClick={addGroup}>
+                  <Plus size={11} />
+                  {S.ontology.ruleAddGroup}
+                </Button>
+              </div>
             )}
           </div>
         </Field>
