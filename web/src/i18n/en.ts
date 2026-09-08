@@ -754,6 +754,7 @@ export const en = {
     evidence: "evidence",
     noEvidence: "No evidence recorded",
     noQuote: "(no quote)",
+    openInDoc: "Open the passage in the document",
     /* 抽取器从原文读出来的谓词，规范成了标识符。词表外的说法会被降级成
        related to，原意只在这里活着。
        **措辞不能宣称这是引文**：关系 key 只能是 [a-z0-9_]，所以中文语料里

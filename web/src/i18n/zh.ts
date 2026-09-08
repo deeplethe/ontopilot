@@ -690,6 +690,7 @@ export const zh: Strings = {
     evidence: "证据",
     noEvidence: "没有记录证据",
     noQuote: "（无引文）",
+    openInDoc: "在文档里看这一段",
     proposedPredicate: (p: string) => `从原文读作「${p}」`,
     /* 本体没认下这条关系：显示的词来自原文，不是词表里的关系 */
     inferredPredicate: "本体里没有这个关系，这是原文的说法",

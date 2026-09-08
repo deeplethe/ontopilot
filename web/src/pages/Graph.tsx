@@ -49,7 +49,9 @@ import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronRight,
   CircleDashed,
+  ExternalLink,
   Grape,
   Loader2,
   Maximize2,
@@ -62,7 +64,6 @@ import {
   X,
   ZoomIn,
   ZoomOut,
-  ChevronRight,
 } from "lucide-react";
 import {
   api,
@@ -3136,14 +3137,20 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
     queryFn: () => api.factEvidence(kbId, fact.id),
   });
   return (
-    <div className="space-y-2">
+    /* 多段就滚，不把整个面板顶长。一条事实最多见过十几段证据，全摊开的话
+       它下面那些事实全被挤出屏幕——而展开一条是为了读它，不是为了失去上下文 */
+    <div className="u-scroll max-h-64 space-y-2 overflow-y-auto">
       {evidence.data?.evidence.map((ev: Evidence) => (
-        <Link
+        /* **一段原文一张卡，卡本身不是链接。**
+           从前整块是个 `<Link>`：想读原文，手一动就跳去了文档页；想选一句
+           复制，松手也是跳走。展开这个动作要回答的是「凭什么这么说」，
+           那句话就在这儿，读完了才谈得上要不要去看上下文——所以跳转收进
+           末尾那个小角标，点它才走。
+           底色取最低那一档，**而且没有悬停态**：整张卡不可点，给它一个高亮
+           等于在骗手；会响应的只有末尾那个角标，它自己有 `u-hover-ink` */
+        <div
           key={ev.chunk_id}
-          to="/kb/$kbId/doc/$docId"
-          params={{ kbId, docId: ev.document_id }}
-          search={{ chunk: ev.chunk_id }}
-          className="u-hover-ink block text-small text-ink-2"
+          className="rounded-cell bg-surface px-2 py-2 text-small text-ink-2"
         >
           {/* 原文说的谓词，只在它与事实行上显示的不同时才写出来。本体外的谓词
               事实行上已经显示原文说法（0052），相同的话再写一遍是噪声；
@@ -3154,14 +3161,28 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
                 {S.graph.proposedPredicate(ev.proposed_predicate)}
               </div>
             )}
-          <div className="line-clamp-2 italic">
+          {/* **不截断**。从前是 line-clamp-2，于是「看原文」看到的是原文的
+              前两行——想读全的唯一办法是跳去文档页，那就等于没有展开这一档 */}
+          <div className="whitespace-pre-wrap italic text-ink">
             {ev.quote ? `“${ev.quote}”` : S.graph.noQuote}
           </div>
-          <div className="mt-1 text-ink-2">
-            {S.graph.sectionRef(ev.filename, ev.seq + 1)}
+          <div className="mt-2 flex items-center gap-2">
+            {/* 小角标：出处 + 去文档页看上下文。这是这张卡上唯一会走人的地方 */}
+            <Link
+              to="/kb/$kbId/doc/$docId"
+              params={{ kbId, docId: ev.document_id }}
+              search={{ chunk: ev.chunk_id }}
+              className="u-hover-ink inline-flex min-w-0 items-center gap-1 text-fine text-ink-2"
+              title={S.graph.openInDoc}
+            >
+              <span className="truncate">
+                {S.graph.sectionRef(ev.filename, ev.seq + 1)}
+              </span>
+              <ExternalLink size={11} className="shrink-0" />
+            </Link>
             {ev.stale && (
               <span
-                className="ml-2 u-num text-fine text-ink-2"
+                className="u-num shrink-0 text-fine text-ink-2"
                 title={S.graph.staleEvidenceHint}
               >
                 {S.graph.fromVersion(ev.doc_version)}
@@ -3169,14 +3190,14 @@ function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
             )}
             {ev.document_deleted && (
               <span
-                className="ml-2 text-fine text-contest"
+                className="shrink-0 text-fine text-contest"
                 title={S.graph.sourceDeletedHint}
               >
                 {S.graph.sourceDeleted}
               </span>
             )}
           </div>
-        </Link>
+        </div>
       ))}
       {evidence.data?.evidence.length === 0 && (
         <p className="text-small text-ink-2">{S.graph.noEvidence}</p>
