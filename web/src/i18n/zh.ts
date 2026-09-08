@@ -1321,8 +1321,6 @@ export const zh: Strings = {
     schemaIncoming: "指向这个类",
     schemaNoRelationships: "还没有关系。",
     schemaNoInstances: "还没有实例。",
-    schemaFewerClasses: "少画几个类",
-    schemaMoreClassesBtn: "多画几个类",
     schemaConnectHint: "用一个已有的关系连接",
     schemaConnectPlaceholder: "搜索关系…",
     schemaConnectAs: "作为",

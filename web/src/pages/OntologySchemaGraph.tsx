@@ -56,7 +56,6 @@ import { Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
 import {
-  IconButton,
   Pill,
   Row,
   ToolButton,
@@ -606,12 +605,9 @@ export function OntologySchemaGraph({
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  /** 画多少个类。**组件自己管**：它是「这张图怎么取景」的一部分，与图例、
-   *  缩放塔同族，不该由每个用它的页面各自持一份状态 */
-  const [budget, setBudget] = useState<number>(SCHEMA_BUDGETS[0]);
   const scope = useMemo(
-    () => schemaScope(entityTypes, revealed, budget),
-    [entityTypes, revealed, budget],
+    () => schemaScope(entityTypes, revealed),
+    [entityTypes, revealed],
   );
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
@@ -988,44 +984,6 @@ export function OntologySchemaGraph({
                   </div>
                 </div>
               )}
-            </div>
-          )}
-          {/* 画多少个类。**档位在图例这一排里**，与「+N classes」挨着——
-              那枚药丸说的正是这个档位收起了多少，改的是谁一目了然。
-              与 /graph 右上那对 − + 同一副样子 */}
-          {scope.drawn && (
-            <div className="pointer-events-auto flex h-8 items-center overflow-hidden rounded-control border border-line">
-              <IconButton
-                size="sm"
-                label={S.ontology.schemaFewerClasses}
-                disabled={budget <= SCHEMA_BUDGETS[0]}
-                onClick={() =>
-                  setBudget(
-                    (b) =>
-                      SCHEMA_BUDGETS[Math.max(0, SCHEMA_BUDGETS.indexOf(b) - 1)],
-                  )
-                }
-              >
-                −
-              </IconButton>
-              <IconButton
-                size="sm"
-                label={S.ontology.schemaMoreClassesBtn}
-                disabled={budget >= SCHEMA_BUDGETS[SCHEMA_BUDGETS.length - 1]}
-                onClick={() =>
-                  setBudget(
-                    (b) =>
-                      SCHEMA_BUDGETS[
-                        Math.min(
-                          SCHEMA_BUDGETS.length - 1,
-                          SCHEMA_BUDGETS.indexOf(b) + 1,
-                        )
-                      ],
-                  )
-                }
-              >
-                +
-              </IconButton>
             </div>
           )}
         </div>

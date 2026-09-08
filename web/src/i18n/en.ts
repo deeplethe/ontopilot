@@ -1527,8 +1527,6 @@ export const en = {
     schemaIncoming: "To this class",
     schemaNoRelationships: "No relationships yet.",
     schemaNoInstances: "No instances yet.",
-    schemaFewerClasses: "Draw fewer classes",
-    schemaMoreClassesBtn: "Draw more classes",
     schemaConnectHint: "Connect using an existing relationship",
     schemaConnectPlaceholder: "Search relationships…",
     schemaConnectAs: "As",
