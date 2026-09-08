@@ -11,9 +11,25 @@
 
 use crate::llm_util;
 use crate::state::AppState;
+use utopia_store::exploration_runs::drop_reason;
 use uuid::Uuid;
 
 const MAX_SCHEMA_CHARS: usize = 12_000;
+
+/// 一轮允许提几条口径。
+///
+/// **上限跟着 schema 的大小走。** 写死的 12 对一个三张表的小库绰绰有余，
+/// 对一张八十列的宽表就是覆盖率的天花板：实测 TPC-H 八张表、二十四条口径，
+/// 十二条上限之下覆盖率 25%，漏掉的包括那条出现在七条基准查询里的核心收入
+/// 口径（#501）。
+///
+/// 每张表三条是个估计而不是定律——一张事实表值得的口径远多于三条，一张
+/// 码表一条都不值。它只需要比常数强：**规模大的时候不至于一开始就封顶**。
+/// 下限仍是 12，小 schema 不该因此缩水；上限 60 挡住提示词与一轮人工审阅
+/// 的规模。
+fn proposal_cap(tables: i32) -> i32 {
+    (tables * 3).clamp(12, 60)
+}
 
 /// 探索把 schema 里的量与维度落成 Metric / Dimension 实体，而这两个类不在任何
 /// 内置本体包里——0009 之后建库不再自带类。没有它们，下面的 `type_id` 查不到，
@@ -48,7 +64,23 @@ async fn ensure_concept_types(pool: &sqlx::PgPool, kb_id: Uuid) -> anyhow::Resul
     Ok(())
 }
 
+/// 一轮探索开账、干活、收账（#503）。
+///
+/// **先开行再干活**：跑挂了的那一轮也留一行，因为「失败」与「跑了但一条都没提」
+/// 从前在页面上都是「没有新提议」，而该做的事完全不同。
 pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
+    let run = utopia_store::exploration_runs::start(&state.pool, kb_id).await?;
+    match explore(state, kb_id, run).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // 报错路径上的失败不该淹掉它要报的那件事（与 `source_name` 同一条理由）
+            let _ = utopia_store::exploration_runs::fail(&state.pool, run, &e.to_string()).await;
+            Err(e)
+        }
+    }
+}
+
+async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()> {
     let kb = utopia_store::kbs::get(&state.pool, kb_id).await?;
     let settings = utopia_store::settings::get(&state.pool, kb.workspace_id)
         .await?
@@ -63,8 +95,18 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
     ensure_concept_types(&state.pool, kb_id).await?;
 
     // 各源 schema（引擎直读，保证新鲜；限量防 prompt 爆炸）
+    //
+    // **上限是跨源的一个总数。** 从前那个 `break` 只跳出当前源的列循环，
+    // 下一个源接着往同一个字符串里追加——`MAX_SCHEMA_CHARS` 读起来像个上限，
+    // 实际上是「每个源各自超一次」的下限。
     let mut schema_txt = String::new();
+    let mut tables_scanned = 0i32;
+    let mut columns_scanned = 0i32;
+    let mut truncated = false;
     for ds in &sources {
+        if truncated {
+            break;
+        }
         let (engine, conn) = utopia_store::datasources::engine_and_conn(&state.pool, ds.id).await?;
         let cols = crate::query_engine::engine_for(&engine, &conn)?
             .fetch_schema()
@@ -75,8 +117,10 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
             let key = format!("{}.{}", c.schema, c.table);
             if key != current {
                 current = key.clone();
+                tables_scanned += 1;
                 schema_txt.push_str(&format!("table {key}:\n"));
             }
+            columns_scanned += 1;
             schema_txt.push_str(&format!(
                 "  {} {}{}\n",
                 c.column,
@@ -85,10 +129,24 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
             ));
             if schema_txt.len() > MAX_SCHEMA_CHARS {
                 schema_txt.push_str("(truncated)\n");
+                truncated = true;
                 break;
             }
         }
     }
+
+    let cap = proposal_cap(tables_scanned);
+    let source_list: Vec<String> = sources.iter().map(|d| d.name.clone()).collect();
+    let _ = utopia_store::exploration_runs::scanned(
+        &state.pool,
+        run,
+        &source_list,
+        tables_scanned,
+        columns_scanned,
+        truncated,
+        cap,
+    )
+    .await;
 
     // 既有概念（供归并复用，避免重复起名）
     let existing: Vec<(String,)> = sqlx::query_as(
@@ -115,7 +173,7 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
          \"summary\": \"one line: source + expression, shown to reviewers\", \
          \"rationale\": \"why this mapping, citing column comments\"}}\n\
          Metrics are aggregatable quantities (use sum/count/avg in expr); dimensions are \
-         group-by columns. Propose at most 12, only well-grounded ones.",
+         group-by columns. Propose at most {cap}, only well-grounded ones.",
         if existing_names.is_empty() {
             "(none)".into()
         } else {
@@ -142,23 +200,56 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
 
     let source_names: Vec<&str> = sources.iter().map(|d| d.name.as_str()).collect();
     let mut accepted = 0usize;
-    for p in proposals.iter().take(12) {
+    // 丢弃要计数，还要留一条例子——**光有计数诊断不动**：「十二条源名对不上」
+    // 得配上「模型说的是 tpch，挂的是 tpch-2026-09-08」才知道该改什么
+    let mut drops: std::collections::BTreeMap<&'static str, (i64, String)> = Default::default();
+    let mut note = |reason: &'static str, example: String| {
+        let e = drops.entry(reason).or_insert((0, example));
+        e.0 += 1;
+    };
+    let mut covered: std::collections::BTreeSet<String> = Default::default();
+    for p in proposals.iter().take(cap as usize) {
         let name = p["name"].as_str().map(str::trim).unwrap_or("");
         let kind = p["kind"].as_str().unwrap_or("");
-        let source = p["source"].as_str().map(str::trim).unwrap_or("");
-        if name.is_empty()
-            || !matches!(kind, "metric" | "dimension")
-            || !source_names.iter().any(|s| s.eq_ignore_ascii_case(source))
-        {
+        let said = p["source"].as_str().map(str::trim).unwrap_or("");
+        if name.is_empty() || !matches!(kind, "metric" | "dimension") {
+            note(drop_reason::KIND, format!("name={name:?} kind={kind:?}"));
             continue;
         }
+        // **只挂了一个源时，模型说什么都算它。** 没有歧义可言，而对不上的代价是
+        // 整条提议消失：实测源叫 `tpch-2026-09-08-12-30`，模型照着 schema 回
+        // `tpch`，十二条一条不剩地被吞掉，任务照样 done（#501 跑第一轮时踩的）
+        let source = if sources.len() == 1 {
+            source_names[0]
+        } else {
+            match source_names
+                .iter()
+                .find(|s| s.eq_ignore_ascii_case(said))
+                .copied()
+            {
+                Some(s) => s,
+                None => {
+                    note(
+                        drop_reason::SOURCE,
+                        format!("model said {said:?}, mounted: {}", source_names.join(", ")),
+                    );
+                    continue;
+                }
+            }
+        };
         let type_id: Option<(Uuid,)> =
             sqlx::query_as("SELECT id FROM entity_types WHERE kb_id = $1 AND key = $2")
                 .bind(kb_id)
                 .bind(kind)
                 .fetch_optional(&state.pool)
                 .await?;
-        let Some((type_id,)) = type_id else { continue };
+        let Some((type_id,)) = type_id else {
+            note(
+                drop_reason::TYPE,
+                format!("no entity type {kind:?} in this base"),
+            );
+            continue;
+        };
 
         // 概念实体：走消解（同名归并；无向量上下文按 v1 兼容归并）。
         // 没有块原文可给——这些名字来自数据源的 schema 探索，不是从文档句子里抽的
@@ -179,6 +270,10 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
         // 断言，是配置**，所以搬去自己的表
         let def = &p["definition"];
         if !def.is_object() {
+            note(
+                drop_reason::DEFINITION,
+                format!("{name:?} has no definition object"),
+            );
             continue;
         }
         let s = |k: &str| {
@@ -187,6 +282,11 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
                 .filter(|x| !x.is_empty())
                 .map(str::to_string)
         };
+        // 覆盖率的分子。分母是这一轮扫见的表数——**十一条提议对着八十列的宽表，
+        // 与十一条刚好覆盖完一个小库，从 `concept_mappings` 里看长得一模一样**
+        if let Some(t) = s("table") {
+            covered.insert(t);
+        }
         utopia_store::mappings::propose(
             &state.pool,
             kb_id,
@@ -204,9 +304,42 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
         accepted += 1;
     }
 
-    tracing::info!(%kb_id, proposals = accepted, "映射探索完成，提议已入审核队列");
+    let dropped = serde_json::Value::Object(
+        drops
+            .iter()
+            .map(|(k, (n, ex))| {
+                (
+                    (*k).to_string(),
+                    serde_json::json!({ "n": n, "example": ex }),
+                )
+            })
+            .collect(),
+    );
+    let covered: Vec<String> = covered.into_iter().collect();
+    let _ = utopia_store::exploration_runs::finish(
+        &state.pool,
+        run,
+        proposals.len() as i32,
+        accepted as i32,
+        dropped,
+        &covered,
+    )
+    .await;
+    tracing::info!(
+        %kb_id,
+        proposals = accepted,
+        returned = proposals.len(),
+        tables = tables_scanned,
+        covered = covered.len(),
+        truncated,
+        "映射探索完成，提议已入审核队列"
+    );
     // 一条都没提出来时页面上什么都不会变——Pending 还是 0，而"已排队"那句
-    // 早就翻篇了。走告警中心说一声，人才知道该去刷新结构或给列加注释
+    // 早就翻篇了。走告警中心说一声，人才知道该去刷新结构或给列加注释。
+    //
+    // **告警要带上是怎么空的。** 从前只说「0 条，这些源」，而「模型一条没回」
+    // 与「回了十二条全被源名挡掉」是两件事，该做的动作也不同——前者去给列加注释，
+    // 后者去看源名。`dropped` 就是这个区别，它现在也在这条告警里
     if accepted == 0 {
         if let Err(e) = utopia_store::alerts::raise(
             &state.pool,
@@ -217,7 +350,14 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
                 min_role: utopia_core::models::Role::Editor,
                 subject_type: None,
                 subject_id: None,
-                detail: serde_json::json!({ "proposals": 0, "sources": source_names }),
+                detail: serde_json::json!({
+                    "proposals": 0,
+                    "sources": source_names,
+                    "returned": proposals.len(),
+                    "dropped": drops.iter().map(|(k, (n, _))| (*k, *n))
+                        .collect::<std::collections::BTreeMap<_, _>>(),
+                    "tables_scanned": tables_scanned,
+                }),
             },
         )
         .await
@@ -228,4 +368,25 @@ pub async fn explore_mappings(state: &AppState, kb_id: Uuid) -> anyhow::Result<(
     }
     state.emit_review(kb_id);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proposal_cap;
+
+    #[test]
+    fn a_bigger_schema_gets_a_bigger_cap() {
+        // 小库不缩水：从前写死的 12 在这一端是对的
+        assert_eq!(proposal_cap(1), 12);
+        assert_eq!(proposal_cap(4), 12);
+        // 八张表的 TPC-H：从前 12 条封顶，二十四条真值只覆盖了 6 条（#501）
+        assert_eq!(proposal_cap(8), 24);
+        // TPC-DS 二十四张表
+        assert_eq!(proposal_cap(24), 60);
+        // 再大也到此为止：提示词与一轮人工审阅都有自己的上限
+        assert_eq!(proposal_cap(300), 60);
+        // 一张表都没扫见（源连不上、schema 是空的）也不该是 0——
+        // **0 条上限会把「连不上」变成「模型什么都没提」**，两件事又混在一起了
+        assert_eq!(proposal_cap(0), 12);
+    }
 }

@@ -58,10 +58,17 @@ pub async fn list(
         utopia_store::mappings::page(&state.pool, kb_id, status, needle, limit, offset).await?;
     let (proposed, confirmed, rejected) =
         utopia_store::mappings::status_counts(&state.pool, kb_id).await?;
+    // 上一轮探索的账（#503）。**列表本身答不了「漏了多少」**——十一条提议对着
+    // 一张八十列的宽表，与十一条刚好覆盖完一个小库，在 items 里长得一模一样
+    let last_run = utopia_store::exploration_runs::recent(&state.pool, kb_id, 1)
+        .await?
+        .into_iter()
+        .next();
     Ok(Json(json!({
         "items": items,
         "total": total,
         "counts": { "proposed": proposed, "confirmed": confirmed, "rejected": rejected },
+        "last_run": last_run,
     })))
 }
 

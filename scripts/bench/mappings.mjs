@@ -62,7 +62,7 @@ const PSQL = process.env.BENCH_PSQL || "docker exec -e PGPASSWORD=utopia landsca
 // （bench/README 的第一条规则），而 BENCH_PSQL 与 govern.mjs 共用，指着开发库。
 // 头一轮就栽在这里：脚本一直在开发库里找这个 kb 的任务，找不到，等满超时——
 // 而任务早就跑完了，十二条提议好端端躺在另一个库里
-const APP_DB = process.env.BENCH_APP_DB || "utopia_bench";
+const APP_DB = process.env.BENCH_APP_DB || "utopia_mapbench";
 function run(cmdline, sql) {
   const parts = cmdline.split(" ");
   return execFileSync(parts[0], [...parts.slice(1), sql], { encoding: "utf8", maxBuffer: 64 << 20 }).trim();
@@ -200,7 +200,17 @@ function score(kb) {
   // 错的是真值不全。govern.mjs 的 `unlabeled` 是同一件事
   const plausible = (truth.plausible || []).map((m) => ({ ...m, value: value(m.gold).n }));
   const dimCols = new Set(truth.dimensions.map((d) => d.column.toLowerCase()));
-  const trapCols = new Map(truth.traps.map((t) => [t.column.toLowerCase(), t.why]));
+  // 陷阱分角色。**同一列在两个角色下不是同一件事**：`p_size` 当维度是对的
+  // （Q16 就按它分组），当指标求和才没有意义；`l_comment` 反过来。
+  // 第三轮上这条把一条正确的维度提议记成了踩陷阱
+  const trapFor = (role) =>
+    new Map(
+      truth.traps
+        .filter((t) => (t.as ?? "both") === "both" || t.as === role)
+        .map((t) => [t.column.toLowerCase(), t.why]),
+    );
+  const dimTraps = trapFor("dimension");
+  const trapCols = trapFor("metric");
 
   const c = { right: 0, wrong: 0, broken: 0, traps: 0, plausible: 0, dim_right: 0, dim_wrong: 0 };
   const hit = new Set(), wrong = [], broken = [], fair = [];
@@ -211,8 +221,8 @@ function score(kb) {
     if (m.kind === "dimension") {
       const col = `${qualify(m.table_name)}.${(m.expr || "").replace(/[^\w.]/g, "")}`.toLowerCase();
       if (dimCols.has(col)) c.dim_right++;
-      else { c.dim_wrong++; wrong.push(`dim  "${m.concept}" → ${col}${trapCols.has(col) ? ` **trap: ${trapCols.get(col)}**` : ""}`); }
-      if (trapCols.has(col)) c.traps++;
+      else { c.dim_wrong++; wrong.push(`dim  "${m.concept}" → ${col}${dimTraps.has(col) ? ` **trap: ${dimTraps.get(col)}**` : ""}`); }
+      if (dimTraps.has(col)) c.traps++;
       continue;
     }
     const sql = proposalSql(m);

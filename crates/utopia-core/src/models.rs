@@ -1004,6 +1004,35 @@ pub struct MappingRevision {
     pub changed_at: DateTime<Utc>,
 }
 
+/// 一轮映射探索扫了什么、丢了什么、剩下什么（#503）。
+///
+/// **它回答的是覆盖率**：十一条提议对着一张八十列的宽表，与十一条刚好覆盖完
+/// 一个小库，从 `concept_mappings` 里看长得一模一样。分子是 `tables_covered`，
+/// 分母是 `tables_scanned`，而 `schema_truncated` 说明覆盖不全是「没看见」
+/// 还是「看见了没提」。
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ExplorationRun {
+    pub id: Uuid,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub sources: Vec<String>,
+    pub tables_scanned: i32,
+    pub columns_scanned: i32,
+    /// schema 文本撞了上限：提示词里没有的表，模型没有机会提
+    pub schema_truncated: bool,
+    /// 这一轮允许提几条（按表数放大）
+    pub cap: i32,
+    /// 模型回了几条 / 落库几条。两者之差是被丢掉的，明细在 `dropped`
+    pub returned: i32,
+    pub accepted: i32,
+    /// `{"source": {"n": 12, "example": "…"}, …}`，键见
+    /// `utopia_store::exploration_runs::drop_reason`
+    pub dropped: serde_json::Value,
+    pub tables_covered: Vec<String>,
+    /// 跑挂了的那一轮也留一行——失败与「跑了但什么都没提」不是一回事
+    pub error: Option<String>,
+}
+
 /// 语义层的一条映射：业务概念 → 数据资产定义（见 `docs/decisions/0011`）。
 ///
 /// **字段是列，不是 JSON 里的键。** 从前它是一条 `mapped_to` 事实，

@@ -30,7 +30,8 @@
   ],
   "plausible": [
     { "id": "return_rate", "label": "Return rate", "gold": "SELECT sum(CASE WHEN l_returnflag = 'R' THEN 1.0 ELSE 0.0 END) / count(*) * 100 FROM tpch.lineitem", "seen": "run 1, commented" },
-    { "id": "avg_customer_balance", "label": "Average customer balance", "gold": "SELECT avg(c_acctbal) FROM tpch.customer", "seen": "run 1, uncommented" }
+    { "id": "avg_customer_balance", "label": "Average customer balance", "gold": "SELECT avg(c_acctbal) FROM tpch.customer", "seen": "run 1, uncommented" },
+    { "id": "returned_lines", "label": "Returned lines", "gold": "SELECT count(*) FROM tpch.lineitem WHERE l_returnflag = 'R'", "seen": "run 3, commented" }
   ],
   "dimensions": [
     { "column": "tpch.lineitem.l_returnflag", "from": "Q1 group by" },
@@ -71,7 +72,7 @@
     { "column": "tpch.customer.c_nationkey", "why": "integer key" },
     { "column": "tpch.supplier.s_nationkey", "why": "integer key" },
     { "column": "tpch.nation.n_regionkey", "why": "integer key" },
-    { "column": "tpch.part.p_size", "why": "a unitless nominal size; the average is meaningful, the sum is not" },
-    { "column": "tpch.lineitem.l_comment", "why": "free text; a dimension built on it has one group per row" }
+    { "column": "tpch.part.p_size", "as": "metric", "why": "a unitless nominal size; summing it means nothing, while grouping by it is what Q16 does" },
+    { "column": "tpch.lineitem.l_comment", "as": "dimension", "why": "free text; a dimension built on it has one group per row" }
   ]
 }
