@@ -1292,6 +1292,46 @@ pub async fn nearest_entity_type_ids(
 }
 
 /// 同上，关系与属性。`only_kind` 分道：关系清单与属性清单在提示词里是两段。
+/// 同上，但**只在 domain 落在这批类上的那些关系里**检索。
+///
+/// 存在的理由：全库检索对关系几乎没有区分度（1500 字的分块向量 vs 几个词的
+/// 关系标签，距离全挤在一条窄带里）。实测一块讲「Jensen Huang, founder and CEO
+/// of NVIDIA」的正文，`founder` 排 267、`job_title` 排 618（共 1026）——两个都进不了
+/// 前 30 的窗口，于是模型没有地方写职务，索性不写。**不是抽错，是没被问到。**
+///
+/// 把池子先按 domain 收窄到「这一块认出来的那些类身上声明的关系」，同一块里
+/// `founder` 升到 29、`job_title` 升到 55（共 86）。收窄靠的是本体自己声明的
+/// 结构，不是又一个相似度模型。
+pub async fn nearest_relation_type_ids_in_domains(
+    pool: &PgPool,
+    kb_id: Uuid,
+    embedding: &[f32],
+    limit: i64,
+    only_kind: Option<&str>,
+    domains: &[Uuid],
+) -> AppResult<Vec<Uuid>> {
+    if domains.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT r.id FROM relation_types r
+         WHERE r.kb_id = $1 AND r.embedding IS NOT NULL
+           AND ($4::text IS NULL OR r.kind = $4)
+           AND EXISTS (SELECT 1 FROM relation_type_domains d
+                       WHERE d.relation_type_id = r.id AND d.entity_type_id = ANY($5))
+         ORDER BY r.embedding <=> $2
+         LIMIT $3",
+    )
+    .bind(kb_id)
+    .bind(Vector::from(embedding.to_vec()))
+    .bind(limit)
+    .bind(only_kind)
+    .bind(domains)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 pub async fn nearest_relation_type_ids(
     pool: &PgPool,
     kb_id: Uuid,

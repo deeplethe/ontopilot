@@ -1946,6 +1946,13 @@ fn build_lists(
 const PER_CHUNK_CLASSES: i64 = 40;
 const PER_CHUNK_RELATIONS: i64 = 30;
 const PER_CHUNK_ATTRIBUTES: i64 = 30;
+/// 「这批类身上声明的关系／属性」这道地板给多少名额。
+///
+/// 比按相似度那 30 个宽得多，因为它的池子已经被 domain 收窄过一轮——
+/// schema.org 里 person + organization + corporation 三个类身上一共只有 86 个关系。
+/// 上限只是防病态情况（一块认出上百个类），不是筛选手段。
+const PER_CHUNK_DOMAIN_RELATIONS: i64 = 120;
+const PER_CHUNK_DOMAIN_ATTRIBUTES: i64 = 40;
 
 /// 按这一块的向量检索候选，排出这一块专用的三段清单。
 ///
@@ -2038,6 +2045,42 @@ async fn chunk_lists(
         .flat_map(|r| r.domains.iter().chain(r.ranges.iter()).copied())
         .collect();
     classes.extend(sig_classes);
+
+    // **类进来了，就把本体声明在它们身上的关系也铺出去。**
+    //
+    // 上面那道祖先地板治的是「类捞不到」，这道治的是「关系捞不到」——同一个
+    // 病的两侧。实测一块讲「Jensen Huang, founder and CEO of NVIDIA」的正文：
+    // `employee` 排第 10 进了窗口，模型就用了它；而 `founder` 排 267、
+    // `job_title` 排 618、`has_occupation` 排 811，一个都没进——**四篇文档里
+    // 每个人的职务因此全部没落进图，而且不留任何丢弃信号：模型没被问到，
+    // 也就什么都没说，drops 与 misses 两张表都看不见它**（2026-09-08 实测）。
+    //
+    // 收窄的判据是本体自己声明的 domain，不是又一次相似度猜测：这一块认出了
+    // person 与 organization，那么「本体说人和组织能有什么」就该摆在模型面前。
+    // 同一块里 `founder` 升到 29、`job_title` 升到 55（池子 86）。
+    //
+    // **放在 `sig_classes` 之后，是为了不让它反过来撑大类清单。** 放在前面时
+    // 这批关系的 range 会顺着签名规则把一大票类拉进来，同一块的提示词从 11.7k
+    // 涨到 21.4k——为了一个谓词付两倍的钱。它们的 domain 侧本来就在清单里
+    // （地板正是这么选出来的），range 侧退化成 `*` 可以接受：这道地板要办的事
+    // 是「让模型看见这个说法存在」，不是把签名补全。
+    let domain_ids: Vec<Uuid> = classes.iter().copied().collect();
+    for (limit, kind) in [
+        (PER_CHUNK_DOMAIN_RELATIONS, "relation"),
+        (PER_CHUNK_DOMAIN_ATTRIBUTES, "attribute"),
+    ] {
+        rels.extend(
+            utopia_store::ontology::nearest_relation_type_ids_in_domains(
+                &state.pool,
+                kb_id,
+                embedding,
+                limit,
+                Some(kind),
+                &domain_ids,
+            )
+            .await?,
+        );
+    }
 
     // 一个候选都没检索到 = 索引还没建好，退回全量而不是给一份空清单
     if classes.len() <= seed_classes.len() && rels.is_empty() {
