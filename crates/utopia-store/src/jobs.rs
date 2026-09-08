@@ -5,12 +5,23 @@
 //! 目标数经 AtomicUsize 热读——系统设置里改并发即时生效，无需重启。
 
 use chrono::{DateTime, Utc};
+use sqlx::postgres::PgListener;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use utopia_core::AppResult;
 use uuid::Uuid;
+
+const DEFAULT_MAX_ATTEMPTS: i32 = 3;
+const MAX_ATTEMPTS_LIMIT: i32 = 32;
+const MAX_ATTEMPTS_VALIDATION_ERROR: &str = "max_attempts must be between 1 and 32";
+const RETRY_DELAY_BASE_SECS: i64 = 30;
+const JOB_WAKE_CHANNEL: &str = "utopia_jobs_wake";
+const NOTIFY_JOB_WAKE_SQL: &str = "SELECT pg_notify($1, '')";
+const WORKER_FULL_SLEEP: Duration = Duration::from_millis(200);
+const WORKER_IDLE_POLL: Duration = Duration::from_secs(2);
+const WORKER_ERROR_RETRY: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Job {
@@ -29,6 +40,7 @@ pub async fn enqueue_unless_queued(
     kind: &str,
     payload: serde_json::Value,
 ) -> AppResult<Option<i64>> {
+    let mut tx = pool.begin().await?;
     let row: Option<(i64,)> = sqlx::query_as(
         "INSERT INTO jobs (kind, payload)
          SELECT $1, $2
@@ -37,13 +49,17 @@ pub async fn enqueue_unless_queued(
     )
     .bind(kind)
     .bind(payload)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
+    if row.is_some() {
+        notify_job_wake_tx(&mut tx).await?;
+    }
+    tx.commit().await?;
     Ok(row.map(|(id,)| id))
 }
 
 pub async fn enqueue(pool: &PgPool, kind: &str, payload: serde_json::Value) -> AppResult<i64> {
-    enqueue_with_max_attempts(pool, kind, payload, 3).await
+    enqueue_with_max_attempts(pool, kind, payload, DEFAULT_MAX_ATTEMPTS).await
 }
 
 /// 入队并显式指定有限的重试预算。调用方不能把一个外部系统的任务变成无限重试。
@@ -53,19 +69,18 @@ pub async fn enqueue_with_max_attempts(
     payload: serde_json::Value,
     max_attempts: i32,
 ) -> AppResult<i64> {
-    if !(1..=32).contains(&max_attempts) {
-        return Err(utopia_core::AppError::Validation(
-            "max_attempts must be between 1 and 32".into(),
-        ));
-    }
+    validate_max_attempts(max_attempts)?;
+    let mut tx = pool.begin().await?;
     let (id,): (i64,) = sqlx::query_as(
         "INSERT INTO jobs (kind, payload, max_attempts) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(kind)
     .bind(payload)
     .bind(max_attempts)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+    notify_job_wake_tx(&mut tx).await?;
+    tx.commit().await?;
     Ok(id)
 }
 
@@ -77,11 +92,7 @@ pub async fn enqueue_with_max_attempts_tx(
     payload: serde_json::Value,
     max_attempts: i32,
 ) -> AppResult<i64> {
-    if !(1..=32).contains(&max_attempts) {
-        return Err(utopia_core::AppError::Validation(
-            "max_attempts must be between 1 and 32".into(),
-        ));
-    }
+    validate_max_attempts(max_attempts)?;
     let (id,): (i64,) = sqlx::query_as(
         "INSERT INTO jobs (kind, payload, max_attempts) VALUES ($1, $2, $3) RETURNING id",
     )
@@ -90,7 +101,54 @@ pub async fn enqueue_with_max_attempts_tx(
     .bind(max_attempts)
     .fetch_one(&mut **tx)
     .await?;
+    notify_job_wake_tx(tx).await?;
     Ok(id)
+}
+
+fn validate_max_attempts(max_attempts: i32) -> AppResult<()> {
+    if !(1..=MAX_ATTEMPTS_LIMIT).contains(&max_attempts) {
+        return Err(utopia_core::AppError::Validation(
+            MAX_ATTEMPTS_VALIDATION_ERROR.into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn notify_job_wake_tx(tx: &mut Transaction<'_, Postgres>) -> AppResult<()> {
+    sqlx::query(NOTIFY_JOB_WAKE_SQL)
+        .bind(JOB_WAKE_CHANNEL)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+async fn job_wake_listener(pool: &PgPool) -> Option<PgListener> {
+    let mut listener = match PgListener::connect_with(pool).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            tracing::warn!(error = %e, "任务唤醒通道连接失败，继续轮询");
+            return None;
+        }
+    };
+    if let Err(e) = listener.listen(JOB_WAKE_CHANNEL).await {
+        tracing::warn!(error = %e, "任务唤醒通道订阅失败，继续轮询");
+        return None;
+    }
+    Some(listener)
+}
+
+async fn wait_for_job_wake(listener: Option<&mut PgListener>) {
+    let Some(listener) = listener else {
+        tokio::time::sleep(WORKER_IDLE_POLL).await;
+        return;
+    };
+    match tokio::time::timeout(WORKER_IDLE_POLL, listener.recv()).await {
+        Ok(Ok(_)) | Err(_) => {}
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "任务唤醒通道接收失败，继续轮询");
+            tokio::time::sleep(WORKER_IDLE_POLL).await;
+        }
+    }
 }
 
 /// 重排失败任务的范围（#216）。三个条件都可空，空 = 不限。
@@ -130,13 +188,19 @@ pub async fn requeue_failed(pool: &PgPool, scope: RequeueScope<'_>) -> AppResult
             AND ($3::uuid IS NULL OR {})",
         KB_SCOPE.replace("$KB", "$3")
     );
+    let mut tx = pool.begin().await?;
     let res = sqlx::query(&sql)
         .bind(scope.kind)
         .bind(scope.failed_since)
         .bind(scope.kb_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
-    Ok(res.rows_affected())
+    let rows = res.rows_affected();
+    if rows > 0 {
+        notify_job_wake_tx(&mut tx).await?;
+    }
+    tx.commit().await?;
+    Ok(rows)
 }
 
 /// 范围内 failed 的条数——设置页那一行「N 个失败任务」
@@ -197,7 +261,7 @@ fn retry_delay(attempts: i32, max_attempts: i32, terminal: bool) -> Option<i64> 
     if terminal || attempts >= max_attempts {
         return None;
     }
-    Some(30i64 * i64::from(attempts) * i64::from(attempts))
+    Some(RETRY_DELAY_BASE_SECS * i64::from(attempts) * i64::from(attempts))
 }
 
 async fn mark_failed(pool: &PgPool, job: &Job, err: &anyhow::Error) -> AppResult<()> {
@@ -262,10 +326,11 @@ where
         concurrency = concurrency.load(Ordering::Relaxed),
         "jobs worker 已启动"
     );
+    let mut listener = job_wake_listener(&pool).await;
     loop {
         let cap = concurrency.load(Ordering::Relaxed).max(1);
         if running.load(Ordering::Relaxed) >= cap {
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(WORKER_FULL_SLEEP).await;
             continue;
         }
         match claim_one(&pool).await {
@@ -289,10 +354,10 @@ where
                     running.fetch_sub(1, Ordering::Relaxed);
                 });
             }
-            Ok(None) => tokio::time::sleep(Duration::from_secs(2)).await,
+            Ok(None) => wait_for_job_wake(listener.as_mut()).await,
             Err(e) => {
                 tracing::error!(error = %e, "任务认领失败，5s 后重试");
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(WORKER_ERROR_RETRY).await;
             }
         }
     }
@@ -300,7 +365,21 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::retry_delay;
+    use super::{enqueue, requeue_failed, retry_delay, run_worker, RequeueScope};
+    use serde_json::json;
+    use sqlx::PgPool;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Arc;
+    use tokio::sync::{Mutex, Notify};
+
+    const WAKE_TEST_JOB_KIND: &str = "wake-test";
+    const WAKE_TEST_REQUEUE_KIND: &str = "wake-test-requeue";
+    const WAKE_TEST_IDLE_SETTLE: std::time::Duration = std::time::Duration::from_secs(1);
+    const WAKE_TEST_LIMIT: std::time::Duration = std::time::Duration::from_millis(500);
+    const CLEAR_JOB_QUEUE_SQL: &str = "DELETE FROM jobs";
+    const INSERT_FAILED_WAKE_TEST_SQL: &str =
+        "INSERT INTO jobs (kind, payload, status) VALUES ($1, $2, 'failed')";
+    static WAKE_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
     /// 退避照旧：30s、120s、270s，第三次之后放弃。
     #[test]
@@ -315,5 +394,96 @@ mod tests {
     #[test]
     fn a_terminal_failure_does_not_spend_the_budget() {
         assert_eq!(retry_delay(1, 3, true), None);
+    }
+
+    #[tokio::test]
+    async fn a_queued_job_starts_without_waiting_for_the_poll() -> anyhow::Result<()> {
+        let _guard = WAKE_TEST_LOCK.lock().await;
+        let Some(url) = crate::test_db::url() else {
+            return Ok(());
+        };
+        let pool = PgPool::connect(&url).await?;
+        sqlx::query(CLEAR_JOB_QUEUE_SQL).execute(&pool).await?;
+
+        let seen = Arc::new(Notify::new());
+        let seen_by_worker = seen.clone();
+        let worker = tokio::spawn(run_worker(
+            pool.clone(),
+            Arc::new(AtomicUsize::new(1)),
+            move |job| {
+                let seen = seen_by_worker.clone();
+                async move {
+                    if job.kind == WAKE_TEST_JOB_KIND {
+                        seen.notify_one();
+                    }
+                    Ok(())
+                }
+            },
+        ));
+
+        let run = async {
+            tokio::time::sleep(WAKE_TEST_IDLE_SETTLE).await;
+            enqueue(&pool, WAKE_TEST_JOB_KIND, json!({})).await?;
+            tokio::time::timeout(WAKE_TEST_LIMIT, seen.notified()).await?;
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+
+        worker.abort();
+        let _ = worker.await;
+        let _ = sqlx::query(CLEAR_JOB_QUEUE_SQL).execute(&pool).await;
+        run
+    }
+
+    #[tokio::test]
+    async fn a_requeued_job_starts_without_waiting_for_the_poll() -> anyhow::Result<()> {
+        let _guard = WAKE_TEST_LOCK.lock().await;
+        let Some(url) = crate::test_db::url() else {
+            return Ok(());
+        };
+        let pool = PgPool::connect(&url).await?;
+        sqlx::query(CLEAR_JOB_QUEUE_SQL).execute(&pool).await?;
+        sqlx::query(INSERT_FAILED_WAKE_TEST_SQL)
+            .bind(WAKE_TEST_REQUEUE_KIND)
+            .bind(json!({}))
+            .execute(&pool)
+            .await?;
+
+        let seen = Arc::new(Notify::new());
+        let seen_by_worker = seen.clone();
+        let worker = tokio::spawn(run_worker(
+            pool.clone(),
+            Arc::new(AtomicUsize::new(1)),
+            move |job| {
+                let seen = seen_by_worker.clone();
+                async move {
+                    if job.kind == WAKE_TEST_REQUEUE_KIND {
+                        seen.notify_one();
+                    }
+                    Ok(())
+                }
+            },
+        ));
+
+        let run = async {
+            tokio::time::sleep(WAKE_TEST_IDLE_SETTLE).await;
+            let rows = requeue_failed(
+                &pool,
+                RequeueScope {
+                    kind: Some(WAKE_TEST_REQUEUE_KIND),
+                    ..Default::default()
+                },
+            )
+            .await?;
+            assert_eq!(rows, 1);
+            tokio::time::timeout(WAKE_TEST_LIMIT, seen.notified()).await?;
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+
+        worker.abort();
+        let _ = worker.await;
+        let _ = sqlx::query(CLEAR_JOB_QUEUE_SQL).execute(&pool).await;
+        run
     }
 }
