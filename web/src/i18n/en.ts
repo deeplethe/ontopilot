@@ -1128,6 +1128,8 @@ export const en = {
     /* 条件之间是合取。**写「并且」而不是一个点号**——符号读不出「全都要成立」，
        而那正是规则最容易被误读的地方 */
     ruleAnd: "and",
+    /** 组与组之间。**读起来是「或者」而不是符号**——同一条判据的另一种满足方式 */
+    ruleOr: "or",
     ruleWhere: "where",
     ruleDropCondition: "Remove this condition",
     ruleOperandPlaceholder: (kind: string): string =>
@@ -1152,6 +1154,7 @@ export const en = {
     ruleOpLte: "is at most",
     ruleOpBetween: "is between",
     ruleOpIn: "is one of",
+    ruleOpNotIn: "is not one of",
     ruleOpPresent: "is recorded",
     ruleOperandNumber: "12.0",
     ruleOperandSet: "gas anomaly, post-effect gas anomaly",

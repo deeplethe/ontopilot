@@ -324,8 +324,10 @@ export interface ChunkFact {
  * 在界面上看不出区别，而那正是「推理污染知识」的样子。 */
 /** 一条条件：这个属性、这样比、跟这个值比 */
 export interface RuleCondition {
+  /** 组号：同组「与」，组间「或」（决定记录 0026）。不带 = 第 0 组 */
+  group?: number;
   predicate_id: string;
-  /** gt | gte | lt | lte | between | in | present */
+  /** gt | gte | lt | lte | between | in | not_in | present */
   op: string;
   /** 数字 / [lo,hi] / 字符串数组；present 不带 */
   operand?: unknown;

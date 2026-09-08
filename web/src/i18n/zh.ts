@@ -1004,6 +1004,7 @@ export const zh: Strings = {
     ruleColDerived: "推出",
     ruleColStatus: "状态",
     ruleAnd: "并且",
+    ruleOr: "或者",
     ruleWhere: "满足",
     ruleDropCondition: "删掉这个条件",
     ruleOperandPlaceholder: (kind: string) =>
@@ -1024,6 +1025,7 @@ export const zh: Strings = {
     ruleOpLte: "不大于",
     ruleOpBetween: "介于",
     ruleOpIn: "属于",
+    ruleOpNotIn: "不属于",
     ruleOpPresent: "有记录",
     ruleOperandNumber: "12.0",
     ruleOperandSet: "气测异常, 气测异常后效",

@@ -52,6 +52,7 @@ const OPS: {
   { value: "lte", label: () => S.ontology.ruleOpLte, operand: "num" },
   { value: "between", label: () => S.ontology.ruleOpBetween, operand: "range" },
   { value: "in", label: () => S.ontology.ruleOpIn, operand: "set" },
+  { value: "not_in", label: () => S.ontology.ruleOpNotIn, operand: "set" },
   { value: "present", label: () => S.ontology.ruleOpPresent, operand: "none" },
 ];
 
@@ -504,21 +505,28 @@ export function RulesPanel({
 }
 
 /** 规则读成一句话。**这一段就是它的全部语义**，没有别处再藏着条件。
-    条件之间是合取——所以中间写的是「并且」，不是一个点号：符号读不出
-    「全都要成立」，而这正是规则最容易被误读的地方。 */
+    组内是合取、组间是析取（决定记录 0026），所以中间写的是「并且」与「或者」，
+    不是一个点号：符号读不出「全都要成立」，而那正是规则最容易被误读的地方。 */
 function RuleSentence({ rule }: { rule: BusinessRule }) {
+  // 按组切开，组序升序——与求值器读它的顺序一致
+  const groups = [...new Set(rule.conditions.map((c) => c.group ?? 0))]
+    .sort((a, b) => a - b)
+    .map((g) => rule.conditions.filter((c) => (c.group ?? 0) === g));
   return (
     <p className="text-small leading-relaxed text-ink-2">
       <span>{rule.subject_label}</span>
       <span> {S.ontology.ruleWhere} </span>
-      {rule.conditions.map((c, i) => (
-        <span key={i}>
-          {i > 0 && (
-            <span className="text-ink-2"> {S.ontology.ruleAnd} </span>
-          )}
-          <span className="text-ink">{c.predicate_label}</span>{" "}
-          <span>{OPS.find((o) => o.value === c.op)?.label() ?? c.op}</span>{" "}
-          <span className="u-num text-ink">{operandText(c.op, c.operand)}</span>
+      {groups.map((group, gi) => (
+        <span key={gi}>
+          {gi > 0 && <span className="text-ink"> {S.ontology.ruleOr} </span>}
+          {group.map((c, i) => (
+            <span key={i}>
+              {i > 0 && <span> {S.ontology.ruleAnd} </span>}
+              <span className="text-ink">{c.predicate_label}</span>{" "}
+              <span>{OPS.find((o) => o.value === c.op)?.label() ?? c.op}</span>{" "}
+              <span className="u-num text-ink">{operandText(c.op, c.operand)}</span>
+            </span>
+          ))}
         </span>
       ))}
     </p>
