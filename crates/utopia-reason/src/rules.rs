@@ -323,8 +323,11 @@ pub fn evaluate(
                 let mut per_slot: Vec<Vec<Uuid>> = Vec::with_capacity(slots.len());
                 let mut satisfiable = true;
                 for p in &slots {
-                    let matched: Vec<Uuid> =
-                        own.iter().filter(|f| f.predicate == *p).map(|f| f.id).collect();
+                    let matched: Vec<Uuid> = own
+                        .iter()
+                        .filter(|f| f.predicate == *p)
+                        .map(|f| f.id)
+                        .collect();
                     if matched.is_empty() {
                         satisfiable = false;
                         break;
@@ -433,11 +436,7 @@ fn cartesian(sets: &[Vec<Uuid>]) -> Vec<Vec<Uuid>> {
 ///
 /// **类型不对就是不满足，不是报错。** 一个本该是数字的属性被抽成了
 /// "十二点三"，这条规则在这个实体上不成立——而不是让整轮物化失败。
-fn satisfies(
-    c: &Condition,
-    value: &serde_json::Value,
-    bound: &HashMap<Uuid, &AttrFact>,
-) -> bool {
+fn satisfies(c: &Condition, value: &serde_json::Value, bound: &HashMap<Uuid, &AttrFact>) -> bool {
     // 算出来的门槛：先按这一轮选中的读数算个数，算不出来就是不满足（0032）
     if let Operand::Calc(e) = &c.operand {
         let Some(n) = e.eval(bound) else { return false };

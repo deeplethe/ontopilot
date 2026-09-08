@@ -63,6 +63,8 @@ type RuleRow = (
     Option<Uuid>,
     Option<String>,
     Option<serde_json::Value>,
+    // 算出来的结论那棵树（0032）
+    Option<serde_json::Value>,
     bool,
     i64,
     i32,
@@ -104,6 +106,8 @@ pub async fn create(
     conclude_type_id: Option<Uuid>,
     conclude_predicate_id: Option<Uuid>,
     conclude_value: Option<serde_json::Value>,
+    // 算出来的结论那棵树（0032）
+    conclude_expr: Option<serde_json::Value>,
     conditions: &[ConditionInput],
 ) -> AppResult<Uuid> {
     let name = name.trim();
@@ -130,6 +134,7 @@ pub async fn create(
             type_id: conclude_type_id,
             predicate_id: conclude_predicate_id,
             value: conclude_value.clone(),
+            expr: conclude_expr.clone(),
         },
     )
     .await?;
@@ -148,8 +153,8 @@ pub async fn create(
     sqlx::query(
         "INSERT INTO attribute_rules
              (id, kb_id, name, description, subject_type_id, conclusion,
-              conclude_type_id, conclude_predicate_id, conclude_value)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+              conclude_type_id, conclude_predicate_id, conclude_value, conclude_expr)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(id)
     .bind(kb_id)
@@ -160,6 +165,7 @@ pub async fn create(
     .bind(conclude_type_id)
     .bind(conclude_predicate_id)
     .bind(&conclude_value)
+    .bind(&conclude_expr)
     .execute(&mut *tx)
     .await
     .map_err(|e| match e {
@@ -181,11 +187,13 @@ pub async fn create(
 /// 结论的一次改写。**两种形状各自完整地给**，不做「只改类、别的不动」——
 /// 结论的三格是互相定义的，部分更新会留下 typing 却带着值这种半截状态。
 pub struct ConclusionInput {
-    /// typing | attribute
+    /// typing | attribute | computed
     pub kind: String,
     pub type_id: Option<Uuid>,
     pub predicate_id: Option<Uuid>,
     pub value: Option<serde_json::Value>,
+    /// 算出来的结论那棵树（0032）。`computed` 时必给，别的两支必空
+    pub expr: Option<serde_json::Value>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -224,6 +232,7 @@ pub async fn update(
                 conclude_type_id      = CASE WHEN $6 IS NULL THEN conclude_type_id      ELSE $7 END,
                 conclude_predicate_id = CASE WHEN $6 IS NULL THEN conclude_predicate_id ELSE $8 END,
                 conclude_value        = CASE WHEN $6 IS NULL THEN conclude_value        ELSE $9 END,
+                conclude_expr         = CASE WHEN $6 IS NULL THEN conclude_expr         ELSE $10 END,
                 updated_at = now()
           WHERE id = $2 AND kb_id = $1",
     )
@@ -236,6 +245,7 @@ pub async fn update(
     .bind(conclusion.and_then(|c| c.type_id))
     .bind(conclusion.and_then(|c| c.predicate_id))
     .bind(conclusion.and_then(|c| c.value.clone()))
+    .bind(conclusion.and_then(|c| c.expr.clone()))
     .execute(&mut *tx)
     .await?;
     if res.rows_affected() == 0 {
@@ -271,7 +281,7 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<serde_json::Value
     let rules: Vec<RuleRow> = sqlx::query_as(
         "SELECT r.id, r.name, r.description, r.subject_type_id, st.label,
                 r.conclusion, r.conclude_type_id, ct.label,
-                r.conclude_predicate_id, cp.label, r.conclude_value, r.enabled,
+                r.conclude_predicate_id, cp.label, r.conclude_value, r.conclude_expr, r.enabled,
                 (SELECT count(*) FROM derived_facts d
                   WHERE d.attribute_rule_id = r.id AND d.invalidated_at IS NULL),
                 r.capped_at_last_run
@@ -315,6 +325,7 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<serde_json::Value
                 cp,
                 cp_label,
                 cv,
+                cx,
                 enabled,
                 derived,
                 capped,
@@ -344,6 +355,7 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<serde_json::Value
                     "conclude_predicate_id": cp,
                     "conclude_predicate_label": cp_label,
                     "conclude_value": cv,
+                    "conclude_expr": cx,
                     "enabled": enabled,
                     "derived_count": derived,
                     "capped": capped,
@@ -501,11 +513,82 @@ async fn validate_conclusion(pool: &PgPool, kb_id: Uuid, c: &ConclusionInput) ->
             }
             attribute_predicate(pool, kb_id, p).await
         }
+        // 算出来的属性（0032）：谓词照旧要在，值换成一棵算式树
+        "computed" => {
+            let p = c.predicate_id.ok_or_else(|| {
+                AppError::invalid(
+                    "no_predicate",
+                    "A computed rule needs the attribute it sets.",
+                )
+            })?;
+            let Some(expr) = c.expr.as_ref() else {
+                return Err(AppError::invalid(
+                    "no_expression",
+                    "A computed rule needs the expression it computes.",
+                ));
+            };
+            // **这几条挡在入口而不是留给求值器。** 读不懂的树在求值时只会
+            // 「这条规则什么都不推」，而写它的人看不见任何理由（`not_in`
+            // 那次就是这么丢的，见 #494）
+            let reads = validate_expr(expr, 0)?;
+            if reads.is_empty() {
+                return Err(AppError::invalid(
+                    "constant_expression",
+                    "A computed rule that reads no attribute is a constant; set the value directly.",
+                ));
+            }
+            for r in reads {
+                attribute_predicate(pool, kb_id, r).await?;
+            }
+            attribute_predicate(pool, kb_id, p).await
+        }
         _ => Err(AppError::invalid(
             "bad_conclusion",
-            "A conclusion is either a typing or an attribute.",
+            "A conclusion is a typing, an attribute or a computed attribute.",
         )),
     }
+}
+
+/// 一棵算式树的校验，返回它读到的谓词。
+///
+/// **形状不对就说清哪里不对。** 库里的 CHECK 只管「computed 得有一棵树」，
+/// 树自己长得对不对得在这里判——否则一棵写坏的树要等到下一次物化才表现为
+/// 「这条规则不推东西」，而那时候没有任何地方说得出为什么。
+fn validate_expr(raw: &serde_json::Value, depth: usize) -> AppResult<Vec<Uuid>> {
+    use utopia_reason::rules::{Arith, MAX_EXPR_DEPTH};
+    if depth > MAX_EXPR_DEPTH {
+        return Err(AppError::invalid(
+            "expression_too_deep",
+            "That expression nests too deeply; a rule computes with a few operations, not a program.",
+        ));
+    }
+    let bad = || {
+        AppError::invalid(
+            "bad_expression",
+            "An expression is an attribute, a number, or two of those combined with + − × ÷.",
+        )
+    };
+    let obj = raw.as_object().ok_or_else(bad)?;
+    if let Some(a) = obj.get("attr") {
+        let id: Uuid = a.as_str().ok_or_else(bad)?.parse().map_err(|_| bad())?;
+        return Ok(vec![id]);
+    }
+    if let Some(c) = obj.get("const") {
+        let n = c
+            .as_f64()
+            .or_else(|| c.as_str()?.trim().parse().ok())
+            .ok_or_else(bad)?;
+        if !n.is_finite() {
+            return Err(bad());
+        }
+        return Ok(Vec::new());
+    }
+    Arith::parse(obj.get("op").and_then(|v| v.as_str()).ok_or_else(bad)?).ok_or_else(bad)?;
+    let mut reads = validate_expr(obj.get("l").ok_or_else(bad)?, depth + 1)?;
+    reads.extend(validate_expr(obj.get("r").ok_or_else(bad)?, depth + 1)?);
+    reads.sort();
+    reads.dedup();
+    Ok(reads)
 }
 
 /// 条件的校验。**报错要说人话**：库里的 CHECK 只会回一个约束名。

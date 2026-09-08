@@ -1257,6 +1257,8 @@ type RuleDefRow = (
     Option<Uuid>,
     Option<Uuid>,
     Option<serde_json::Value>,
+    // 算出来的结论那棵树（0032）
+    Option<serde_json::Value>,
     Option<String>,
     Option<String>,
 );
@@ -1272,7 +1274,7 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<LoadedRules> {
     let rows: Vec<RuleDefRow> = sqlx::query_as(
         "SELECT r.id, r.subject_type_id, r.conclusion,
                 r.conclude_type_id, r.conclude_predicate_id, r.conclude_value,
-                ct.iri, ct.key
+                r.conclude_expr, ct.iri, ct.key
            FROM attribute_rules r
            LEFT JOIN entity_types ct ON ct.id = r.conclude_type_id
           WHERE r.kb_id = $1 AND r.enabled
@@ -1343,8 +1345,17 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<LoadedRules> {
     }
 
     let mut out = Vec::new();
-    for (id, subject_type, conclusion, conclude_type, conclude_pred, conclude_value, iri, key) in
-        rows
+    for (
+        id,
+        subject_type,
+        conclusion,
+        conclude_type,
+        conclude_pred,
+        conclude_value,
+        conclude_expr,
+        iri,
+        key,
+    ) in rows
     {
         if broken.contains(&id) {
             continue;
@@ -1362,6 +1373,16 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<LoadedRules> {
                 // 变成另一条（0021 决策 2）
                 let Some(class) = iri.or(key) else { continue };
                 (Conclusion::Typing { class }, is_a)
+            }
+            // 算出来的结论（0032）：谓词照旧，值由算式在求值时按选中的读数算
+            "computed" => {
+                let (Some(p), Some(e)) = (conclude_pred, conclude_expr) else {
+                    continue;
+                };
+                let Some(expr) = parse_expr(&e, 0) else {
+                    continue;
+                };
+                (Conclusion::Computed { predicate: p, expr }, p)
             }
             "attribute" => {
                 let (Some(p), Some(v)) = (conclude_pred, conclude_value) else {
@@ -1400,6 +1421,34 @@ async fn attribute_rules(pool: &PgPool, kb_id: Uuid) -> AppResult<LoadedRules> {
     })
 }
 
+/// 算式的 JSON 形状 → 树（0032）。
+///
+/// `{"attr": "<uuid>"} | {"const": 12.5} | {"op": "sub", "l": {…}, "r": {…}}`
+///
+/// **认不出来返回 None**，调用方整条规则跳过——一棵读不懂的算式算不出数，
+/// 而算不出数的规则不该带着半棵树去求值。深度也在这里拦：太深的树是
+/// 「有人在这里写程序」的信号（0032）。
+fn parse_expr(raw: &serde_json::Value, depth: usize) -> Option<utopia_reason::rules::Expr> {
+    use utopia_reason::rules::{Arith, Expr, MAX_EXPR_DEPTH};
+    if depth > MAX_EXPR_DEPTH {
+        return None;
+    }
+    let obj = raw.as_object()?;
+    if let Some(a) = obj.get("attr") {
+        return Some(Expr::Attr(a.as_str()?.parse().ok()?));
+    }
+    if let Some(c) = obj.get("const") {
+        let n = c.as_f64().or_else(|| c.as_str()?.trim().parse().ok())?;
+        return n.is_finite().then_some(Expr::Const(n));
+    }
+    let op = Arith::parse(obj.get("op")?.as_str()?)?;
+    Some(Expr::Arith {
+        op,
+        l: Box::new(parse_expr(obj.get("l")?, depth + 1)?),
+        r: Box::new(parse_expr(obj.get("r")?, depth + 1)?),
+    })
+}
+
 /// 操作数按 op 解析。形状不对返回 None，调用方整条规则跳过。
 fn parse_operand(
     op: utopia_reason::rules::Op,
@@ -1427,10 +1476,18 @@ fn parse_operand(
                 .collect();
             (!set.is_empty()).then_some(Operand::Set(set))
         }
-        _ => Some(Operand::Num(raw?.as_f64().or_else(|| {
-            raw.and_then(|v| v.as_str())
-                .and_then(|s| s.trim().parse().ok())
-        })?)),
+        // 门槛可以是算出来的（0032）：一个对象是算式，别的照旧是一个数。
+        // 四种操作数形状互不相同——数、两元数组、字符串数组、对象——所以
+        // 认得出来，不必再加一列说「这是哪一种」
+        _ => {
+            let raw = raw?;
+            if raw.is_object() {
+                return parse_expr(raw, 0).map(Operand::Calc);
+            }
+            Some(Operand::Num(raw.as_f64().or_else(|| {
+                raw.as_str().and_then(|s| s.trim().parse().ok())
+            })?))
+        }
     }
 }
 
@@ -1703,6 +1760,16 @@ pub async fn materialize(pool: &PgPool, kb_id: Uuid) -> AppResult<DeriveReport> 
                     ),
                     utopia_reason::rules::Conclusion::Attribute { value, .. } => {
                         (serde_json::json!({ "value": value }), value.clone())
+                    }
+                    // 算出来的结论：值在命中里，**每个组合各一个**（0032）。
+                    // 求值器算不出数的组合根本不会产出命中，所以这里不会没有值
+                    utopia_reason::rules::Conclusion::Computed { .. } => {
+                        let Some(n) = h.value else { continue };
+                        let Some(v) = serde_json::Number::from_f64(n) else {
+                            continue;
+                        };
+                        let v = serde_json::Value::Number(v);
+                        (serde_json::json!({ "value": v }), v)
                     }
                 };
                 let key = (

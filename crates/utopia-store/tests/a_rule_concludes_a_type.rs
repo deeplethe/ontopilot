@@ -597,6 +597,7 @@ async fn changing_the_conclusion_retires_the_old_one() -> anyhow::Result<()> {
                 type_id: None,
                 predicate_id: Some(verdict),
                 value: Some(serde_json::json!("含气")),
+                expr: None,
             }),
         )
         .await?;
