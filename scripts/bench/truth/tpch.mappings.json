@@ -1,7 +1,7 @@
 {
   "corpus": "tpch",
   "db_schema": "tpch",
-  "notes": "Definitions come from the TPC-H specification's 22 queries rather than from anyone's reading of this schema. Scoring runs `gold` and the proposal against the same rows and compares the numbers, so what the model named its concept does not matter. `near` marks a definition that is one edit away from another and is the interesting way to be wrong. `keys` is what #502 has to recover; `traps` are columns that aggregate without error and mean nothing.",
+  "notes": "Definitions come from the TPC-H specification's 22 queries rather than from anyone's reading of this schema. Scoring runs `gold` and the proposal against the same rows and compares the numbers, so what the model named its concept does not matter. `near` marks a definition that is one edit away from another and is the interesting way to be wrong. `keys` is what #502 has to recover; `traps` are columns that aggregate without error and mean nothing. `plausible` holds definitions the benchmark's queries do not state but a reader of this schema would accept — they are counted in their own column, neither right nor wrong, the way govern.mjs counts `unlabeled`. Entries are added there only after a run proposed them, with `seen` recording which run, so the file stays a statement about the schema rather than a record of what the explorer happened to say.",
   "metrics": [
     { "id": "line_count", "label": "Order lines", "from": "Q1 count_order", "gold": "SELECT count(*) FROM tpch.lineitem" },
     { "id": "sum_qty", "label": "Units sold", "from": "Q1 sum_qty", "gold": "SELECT sum(l_quantity) FROM tpch.lineitem" },
@@ -27,6 +27,10 @@
     { "id": "supplier_count", "label": "Suppliers", "from": "Q16 supplier_cnt", "gold": "SELECT count(*) FROM tpch.supplier" },
     { "id": "part_count", "label": "Parts", "from": "catalogue size", "gold": "SELECT count(*) FROM tpch.part" },
     { "id": "avg_retail_price", "label": "Average list price", "from": "Q17", "gold": "SELECT avg(p_retailprice) FROM tpch.part" }
+  ],
+  "plausible": [
+    { "id": "return_rate", "label": "Return rate", "gold": "SELECT sum(CASE WHEN l_returnflag = 'R' THEN 1.0 ELSE 0.0 END) / count(*) * 100 FROM tpch.lineitem", "seen": "run 1, commented" },
+    { "id": "avg_customer_balance", "label": "Average customer balance", "gold": "SELECT avg(c_acctbal) FROM tpch.customer", "seen": "run 1, uncommented" }
   ],
   "dimensions": [
     { "column": "tpch.lineitem.l_returnflag", "from": "Q1 group by" },

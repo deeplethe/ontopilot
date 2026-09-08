@@ -195,11 +195,15 @@ function score(kb) {
        WHERE m.kb_id = '${kb}' ORDER BY e.canonical_name) x`));
 
   const gold = truth.metrics.map((m) => ({ ...m, value: value(m.gold).n }));
+  // 22 条查询没说、但读得懂这个 schema 的人不会反对的口径（退货率、客均余额）。
+  // **单独一栏，不算对也不算错**——头一轮把退货率记成 wrong，而它没有任何毛病，
+  // 错的是真值不全。govern.mjs 的 `unlabeled` 是同一件事
+  const plausible = (truth.plausible || []).map((m) => ({ ...m, value: value(m.gold).n }));
   const dimCols = new Set(truth.dimensions.map((d) => d.column.toLowerCase()));
   const trapCols = new Map(truth.traps.map((t) => [t.column.toLowerCase(), t.why]));
 
-  const c = { right: 0, wrong: 0, broken: 0, traps: 0, dim_right: 0, dim_wrong: 0 };
-  const hit = new Set(), wrong = [], broken = [];
+  const c = { right: 0, wrong: 0, broken: 0, traps: 0, plausible: 0, dim_right: 0, dim_wrong: 0 };
+  const hit = new Set(), wrong = [], broken = [], fair = [];
 
   for (const m of rows) {
     // 维度没有数可比：判它指的那一列在不在真值的 group-by 集合里，
@@ -219,6 +223,8 @@ function score(kb) {
 
     const matched = gold.filter((g) => same(g.value, got.n));
     if (matched.length) { c.right++; matched.forEach((g) => hit.add(g.id)); continue; }
+    const plaus = plausible.find((g) => same(g.value, got.n));
+    if (plaus) { c.plausible++; fair.push(`"${m.concept}" = ${plaus.id} (${plaus.label})`); continue; }
 
     c.wrong++;
     // 最接近的真值：告诉人这条错在哪个方向，而不是只说它错了
@@ -235,16 +241,20 @@ function score(kb) {
 
   const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
   const missed = gold.filter((g) => !hit.has(g.id));
+  // **那一轮带没带注释，问库名而不是问命令行参数。** `--score` 重打一次分时
+  // 命令行上没有 `--no-comments`，照参数写就把不带注释的那轮报成带注释的
+  const kbName = psql(`SELECT name FROM knowledge_bases WHERE id = '${kb}'`);
   const out = {
     kb, corpus: corpusName,
-    comments: !args["no-comments"],
+    comments: !kbName.includes("no-comments"),
     proposals: rows.length,
-    metrics: { right: c.right, wrong: c.wrong, broken: c.broken },
+    metrics: { right: c.right, plausible: c.plausible, wrong: c.wrong, broken: c.broken },
     dimensions: { right: c.dim_right, wrong: c.dim_wrong },
     covered: `${hit.size}/${gold.length} (${pct(hit.size, gold.length)})`,
     traps_hit: c.traps,
   };
   console.log(JSON.stringify(out, null, 2));
+  if (fair.length) console.log("\nPLAUSIBLE — 22 条查询没说，但站得住的口径\n  " + fair.join("\n  "));
   if (wrong.length) console.log("\nWRONG — 跑得通，算的不是任何一条真值\n  " + wrong.join("\n  "));
   if (broken.length) console.log("\nBROKEN — 跑不通（无害，人一眼看得见）\n  " + broken.join("\n  "));
   if (missed.length) console.log("\nMISSED — 真值里没人提的口径\n  " + missed.map((g) => `${g.id} (${g.label})`).join("\n  "));
