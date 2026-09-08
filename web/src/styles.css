@@ -114,7 +114,11 @@
   /* 动效两档：进入 fast、离开 base（见 .glass-strong 上的说明） */
   --u-fast: 120ms;
   --u-base: 260ms;
-  --u-surface-strong: rgba(10, 10, 10, 0.72);
+  /* 浮在画布上的那些面：顶栏、导航、时间岛、控件塔、停靠面板、所有弹层。
+     **0.72 → 0.68**：原先几乎是一块实底，浮在图上像贴了张纸，而这一层
+     本该让人隐约看得见它盖住了什么。一度调到 0.62，太轻——底下的图透过来
+     开始跟面板上的字抢注意力，这一层是拿来读的 */
+  --u-surface-strong: rgba(10, 10, 10, 0.68);
   /* 指针停在面上时的实底。**毛玻璃是给"没在看它"的时候用的**——
      半透让浮层不至于把画布切断；可一旦人把指针移进来，他要读的就是面板本身，
      这时候背后的图反而是噪声。所以这两档不是审美偏好，是同一块面在
@@ -154,17 +158,23 @@ body::before {
    `glass-strong border-l-0` 这种写法里 border-l-0 是输的——左栏四边都有
    1px 边框，内容整体偏 1px，两个页面左上角本该重合的输入框差一像素。 */
 @layer components {
+  /* **backdrop 要去色**。这一层的底色本身是纯中性的（rgba(10,10,10)、
+     白 2.5%，三个通道相等），可 backdrop-filter 把背后的画布糊上来一起显示——
+     图上的节点是有类型色的，蓝紫一片时透上来就是一块偏蓝的面。
+     调得更透只会让它更蓝：透上来的正是那些颜色。所以先把透上来的东西
+     去掉饱和，再谈透明度。这也正是「chrome 零色偏、彩色只属于数据」
+     那条原则该管到的地方——面板是 chrome，它不该跟着背后画的是什么变颜色 */
   .glass {
     background: var(--u-surface);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px) saturate(0.3);
+    -webkit-backdrop-filter: blur(14px) saturate(0.3);
     border: 1px solid var(--u-line);
   }
 
   .glass-strong {
     background: var(--u-surface-strong);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px) saturate(0.3);
+    -webkit-backdrop-filter: blur(20px) saturate(0.3);
     border: 1px solid var(--u-line);
     /* 基态上的时长是**离开**时用的：慢一点，指针擦过边缘不会闪。
        进入的时长写在 :hover 里，更快，为的是跟手 */
