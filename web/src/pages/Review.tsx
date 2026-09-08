@@ -122,9 +122,11 @@ function DuplicateCard({
   /** 批量选中（#428）：勾在卡片左上，选了就跟着上面的批量按钮走 */
   picked: boolean;
   onPick: (picked: boolean) => void;
-  onDecide: (action: "merge" | "keep") => void;
+  /** 第二个参数是人写的那一句（0026）：什么让你这么定。可空 */
+  onDecide: (action: "merge" | "keep", rationale?: string) => void;
 }) {
   const reasonCode = item.reason?.split("|", 1)[0];
+  const [why, setWhy] = useState("");
 
   return (
     <div className={cn("glass rounded-panel p-4", picked && "u-picked")}>
@@ -182,16 +184,25 @@ function DuplicateCard({
             {escalationText(item.reason)}
           </span>
         )}
-        <div className="ml-auto flex gap-2 shrink-0">
+        {/* 理由框（0026）：可不写；写了就跟着决定进台账，下一次先例带着它 */}
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <Input
+            size="sm"
+            className="w-56"
+            placeholder={S.review.rationalePlaceholder}
+            value={why}
+            disabled={busy || locked}
+            onChange={(e) => setWhy(e.target.value)}
+          />
           <Button variant="secondary" size="sm"
             disabled={busy || locked}
-            onClick={() => onDecide("keep")}
+            onClick={() => onDecide("keep", why)}
           >
             {S.review.keep}
           </Button>
           <Button variant="primary" size="sm"
             disabled={busy || locked}
-            onClick={() => onDecide("merge")}
+            onClick={() => onDecide("merge", why)}
           >
             {S.review.merge}
           </Button>
@@ -493,7 +504,9 @@ function precedentText(p: AgentPrecedent): string {
       : p.action === "review.keep"
         ? S.review.agentPrecedentKept
         : S.review.agentPrecedentMerged;
-  return `${p.left} ≟ ${p.right} · ${verb} · ${p.at.slice(0, 10)}`;
+  const line = `${p.left} ≟ ${p.right} · ${verb} · ${p.at.slice(0, 10)}`;
+  // 人写的那一句（0026）跟在后面：先例不只是结果
+  return p.why ? `${line} · “${p.why}”` : line;
 }
 
 function AgentRow({
@@ -503,9 +516,10 @@ function AgentRow({
 }: {
   d: AgentDecision;
   busy: boolean;
-  onAnswer: (action: "merge" | "keep" | "revert") => void;
+  onAnswer: (action: "merge" | "keep" | "revert", rationale?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [why, setWhy] = useState("");
   const precedents = d.precedents ?? [];
   const trace = d.trace ?? [];
   const hasDetail = precedents.length > 0 || trace.length > 0;
@@ -566,24 +580,35 @@ function AgentRow({
             ? S.review.agentAnsweredBy(d.decided_by_name, (d.decided_at ?? d.created_at).slice(0, 10))
             : d.created_at.slice(0, 10)}
         </span>
-        <div className="ml-auto flex gap-2 shrink-0">
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          {/* 回答 agent 也能带一句理由（0026）——它走的正是人的裁决路径 */}
+          {(d.status === "proposed" || d.status === "applied") && (
+            <Input
+              size="sm"
+              className="w-56"
+              placeholder={S.review.rationalePlaceholder}
+              value={why}
+              disabled={busy}
+              onChange={(e) => setWhy(e.target.value)}
+            />
+          )}
           {d.status === "proposed" && (
             <>
-              <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("keep")}>
+              <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("keep", why)}>
                 {S.review.keep}
               </Button>
-              <Button variant="primary" size="sm" disabled={busy} onClick={() => onAnswer("merge")}>
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => onAnswer("merge", why)}>
                 {S.review.merge}
               </Button>
             </>
           )}
           {d.status === "applied" && d.action === "merge" && (
-            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("revert")}>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("revert", why)}>
               {S.review.revert}
             </Button>
           )}
           {d.status === "applied" && d.action === "keep" && (
-            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("merge")}>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAnswer("merge", why)}>
               {S.review.merge}
             </Button>
           )}
@@ -628,6 +653,12 @@ function DecisionRow({ e }: { e: ReviewHistoryEvent }) {
         {S.review.decisionActions[e.action] ?? e.action}
       </Chip>
       <span className="text-body text-ink-2 truncate min-w-0">{text}</span>
+      {/* 人（或模型）写的那一句（0026）；老行没有 */}
+      {typeof d.why === "string" && d.why && (
+        <span className="text-small text-ink-2 truncate min-w-0">
+          “{d.why}”
+        </span>
+      )}
       {typeof d.confidence === "number" && (
         <span className="u-num text-small text-ink-2 shrink-0">
           {Math.round(d.confidence * 100)}%
@@ -1025,6 +1056,7 @@ export function Review() {
   // 之后勾着的东西已经不在眼前，留着会让「合并所选」合掉看不见的东西
   const [types, setTypes] = useState<ReviewTypeFilter>("any");
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [batchWhy, setBatchWhy] = useState("");
   useEffect(() => setPicked(new Set()), [page, sel, types]);
 
   // 队列变化经 SSE 事件流推送（useKbEvents 挂在 Shell），无需轮询。
@@ -1074,21 +1106,42 @@ export function Review() {
   };
 
   const decide = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "merge" | "keep" }) =>
-      api.decideReview(kb!.id, id, action),
+    mutationFn: ({
+      id,
+      action,
+      rationale,
+    }: {
+      id: string;
+      action: "merge" | "keep";
+      rationale?: string;
+    }) => api.decideReview(kb!.id, id, action, rationale),
     onSettled: invalidate,
   });
   // 回答 agent 的一笔（0025）：走人的裁决路径，成为下一轮的先例
   const agentAnswer = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "merge" | "keep" | "revert" }) =>
-      api.agentAnswer(kb!.id, id, action),
+    mutationFn: ({
+      id,
+      action,
+      rationale,
+    }: {
+      id: string;
+      action: "merge" | "keep" | "revert";
+      rationale?: string;
+    }) => api.agentAnswer(kb!.id, id, action, rationale),
     onError: (e) => toast.error((e as Error).message),
     onSettled: invalidate,
   });
   // 批量裁决：一批一个动作，回来逐条说成没成；没成的留在列表里，成了的消失
   const batch = useMutation({
-    mutationFn: ({ ids, action }: { ids: string[]; action: "merge" | "keep" }) =>
-      api.reviewBatch(kb!.id, ids, action),
+    mutationFn: ({
+      ids,
+      action,
+      rationale,
+    }: {
+      ids: string[];
+      action: "merge" | "keep";
+      rationale?: string;
+    }) => api.reviewBatch(kb!.id, ids, action, rationale),
     onSuccess: (r) => {
       const failed = r.outcomes.filter((o) => o.error).length;
       if (failed > 0) toast.error(S.review.batchDone(r.decided, failed));
@@ -1097,6 +1150,7 @@ export function Review() {
     onError: (e) => toast.error((e as Error).message),
     onSettled: () => {
       setPicked(new Set());
+      setBatchWhy("");
       invalidate();
     },
   });
@@ -1470,12 +1524,25 @@ export function Review() {
                         <span className="u-num text-small text-ink-2">
                           {S.review.selected(picked.size)}
                         </span>
+                        {/* 一批一句理由（0026）：这一批为什么一起这么定 */}
+                        <Input
+                          size="sm"
+                          className="w-44"
+                          placeholder={S.review.rationalePlaceholder}
+                          value={batchWhy}
+                          disabled={batch.isPending}
+                          onChange={(e) => setBatchWhy(e.target.value)}
+                        />
                         <Button
                           variant="secondary"
                           size="sm"
                           disabled={batch.isPending}
                           onClick={() =>
-                            batch.mutate({ ids: [...picked], action: "keep" })
+                            batch.mutate({
+                              ids: [...picked],
+                              action: "keep",
+                              rationale: batchWhy,
+                            })
                           }
                         >
                           {S.review.keepSelected}
@@ -1485,7 +1552,11 @@ export function Review() {
                           size="sm"
                           disabled={batch.isPending}
                           onClick={() =>
-                            batch.mutate({ ids: [...picked], action: "merge" })
+                            batch.mutate({
+                              ids: [...picked],
+                              action: "merge",
+                              rationale: batchWhy,
+                            })
                           }
                         >
                           {S.review.mergeSelected}
@@ -1516,8 +1587,8 @@ export function Review() {
                         (decide.isPending && decide.variables?.id === item.id) ||
                         (batch.isPending && picked.has(item.id))
                       }
-                      onDecide={(action) =>
-                        decide.mutate({ id: item.id, action })
+                      onDecide={(action, rationale) =>
+                        decide.mutate({ id: item.id, action, rationale })
                       }
                     />
                   ))}
@@ -1723,7 +1794,9 @@ export function Review() {
                         key={d.id}
                         d={d}
                         busy={agentAnswer.isPending && agentAnswer.variables?.id === d.id}
-                        onAnswer={(action) => agentAnswer.mutate({ id: d.id, action })}
+                        onAnswer={(action, rationale) =>
+                          agentAnswer.mutate({ id: d.id, action, rationale })
+                        }
                       />
                     ))}
                   </div>

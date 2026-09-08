@@ -1637,6 +1637,8 @@ export const en = {
       escalate_no_verdict: "The adjudicator returned no verdict",
       escalate_entity_changed: "The entity changed while being adjudicated",
       escalate_unsure: "The adjudicator was not confident enough",
+      /* 抽给人看的一份（0026）：机器有把握也不动手，detail 是它本来的答案 */
+      escalate_sample: "Sampled for a person; the adjudicator was confident",
       proposed: "The agent looked and left a proposal",
       governed: "Decided by the agent from precedent",
       namesake: "Two entities with this name in one document",
@@ -1659,6 +1661,8 @@ export const en = {
     noFacts: "No recorded facts",
     merge: "Merge",
     keep: "Keep separate",
+    /** 理由框（0026）。是一个问题，不是一张表：可以不答 */
+    rationalePlaceholder: "What told you? Optional",
     // 重复项的类型筛选与批量裁决（#428）
     typesAny: "All",
     typesSame: "Same type",

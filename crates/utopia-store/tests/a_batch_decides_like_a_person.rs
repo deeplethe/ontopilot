@@ -184,7 +184,8 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
         s.kb,
         &[s.same_a],
         "smash",
-        Uuid::now_v7()
+        Uuid::now_v7(),
+        None,
     )
     .await
     .is_err());
@@ -198,6 +199,7 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
         &[s.same_a, ghost, s.same_b],
         "merge",
         user,
+        None,
     )
     .await?;
     assert_eq!(outcomes.len(), 3, "每个 id 一条结果，顺序照旧");
@@ -226,12 +228,14 @@ async fn run(pool: &PgPool, s: &Seed) -> anyhow::Result<()> {
 
     // 已经裁过的再裁一次：报错、不重复合并
     let again =
-        utopia_store::resolution::decide_reviews(pool, s.kb, &[s.same_a], "keep", user).await?;
+        utopia_store::resolution::decide_reviews(pool, s.kb, &[s.same_a], "keep", user, None)
+            .await?;
     assert!(again[0].error.is_some());
 
     // 批量分开
     let kept =
-        utopia_store::resolution::decide_reviews(pool, s.kb, &[s.conflict], "keep", user).await?;
+        utopia_store::resolution::decide_reviews(pool, s.kb, &[s.conflict], "keep", user, None)
+            .await?;
     assert!(kept[0].error.is_none());
     let counts = utopia_store::review::counts(pool, s.kb).await?;
     assert_eq!(counts.duplicates, 1, "只剩没类型的那对");
