@@ -780,3 +780,75 @@ async fn capped_of(pool: &PgPool, kb: Uuid, rule_id: Uuid) -> anyhow::Result<i64
         .expect("规则在列表里");
     Ok(r["capped"].as_i64().expect("capped 是个数"))
 }
+
+/// 「不属于」写进库、读回来、真的判得动（0029 / #476）。
+///
+/// 钉的是编译那一步：`parse_operand` 曾经只给 `in` 留了分支，`not_in` 落到
+/// 数字那一支上解析不出来，于是**整条规则被当成写坏的跳过**——它什么都不推，
+/// 而规则页上它看着一切正常。这种病只有打在真库上才看得见：纯逻辑那层的用例
+/// 是直接构造 `Operand::Set` 的，绕过了正出问题的那一步。
+#[tokio::test]
+async fn a_rule_that_says_not_one_of_is_not_silently_skipped() -> anyhow::Result<()> {
+    let Some(url) = utopia_store::test_db::url() else {
+        return Ok(());
+    };
+    let pool = PgPool::connect(&url).await?;
+    let f = seed(&pool).await?;
+
+    let run = async {
+        attr(
+            &pool,
+            &f,
+            f.thc,
+            serde_json::json!(12.3),
+            "2023-06-01T00:00:00Z",
+        )
+        .await?;
+        attr(
+            &pool,
+            &f,
+            f.category,
+            serde_json::json!("水层"),
+            "2023-06-01T00:00:00Z",
+        )
+        .await?;
+
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO attribute_rules (id, kb_id, name, subject_type_id, conclusion, conclude_type_id)
+             VALUES ($1, $2, 'not-water', $3, 'typing', $4)",
+        )
+        .bind(id)
+        .bind(f.kb)
+        .bind(f.well)
+        .bind(f.gas_bearing)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO attribute_rule_conditions (id, rule_id, seq, predicate_id, op, operand)
+             VALUES ($1, $2, 0, $3, 'not_in', $4)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(id)
+        .bind(f.category)
+        .bind(serde_json::json!(["气测异常"]))
+        .execute(&pool)
+        .await?;
+
+        let report = utopia_store::reasoning::materialize(&pool, f.kb).await?;
+        assert_eq!(report.attribute_rules, 1, "规则要被读进来");
+        assert_eq!(
+            report.rule_hits, 1,
+            "「水层」不属于 {{气测异常}}，这条规则应当命中——从前它整条被跳过"
+        );
+        assert_eq!(derived(&pool, &f).await?.len(), 1);
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+
+    sqlx::query("DELETE FROM organizations WHERE id = $1")
+        .bind(f.org)
+        .execute(&pool)
+        .await?;
+    run
+}

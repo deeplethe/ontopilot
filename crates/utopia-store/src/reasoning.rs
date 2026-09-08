@@ -1413,7 +1413,10 @@ fn parse_operand(
             let (lo, hi) = (arr.first()?.as_f64()?, arr.get(1)?.as_f64()?);
             Some(Operand::Range(lo.min(hi), lo.max(hi)))
         }
-        Op::In => {
+        // **In 与 NotIn 同一支。** 漏掉后者的下场不是「这个条件判错了」，是
+        // `parse_operand` 返回 None、整条规则被当成写坏的跳过——一条用了
+        // 「不属于」的规则从此什么都不推，而界面上它看着好好的（0029 / #476）
+        Op::In | Op::NotIn => {
             let arr = raw?.as_array()?;
             let set: Vec<String> = arr
                 .iter()
