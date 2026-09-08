@@ -2570,7 +2570,11 @@ function ImportHistory({ kbId }: { kbId: string }) {
       <h4 className="mb-2 text-small font-medium text-ink-2">
         {S.ontology.importHistory}
       </h4>
-      {!rows.length ? (
+      {/* 还在取的时候不能说「还没有导入过」——那句话是假的，而且它跟真的
+          没导入过长得一模一样，读的人分不出自己看到的是哪一种 */}
+      {history.isLoading ? (
+        <p className="text-small text-ink-2">{S.nav.loading}</p>
+      ) : !rows.length ? (
         <p className="text-small text-ink-2">{S.ontology.importNoHistory}</p>
       ) : (
         <div className="glass overflow-hidden rounded-panel">
