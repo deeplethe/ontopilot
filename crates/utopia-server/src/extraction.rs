@@ -1764,7 +1764,9 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             .await?;
         }
     } else if needs_adjudication {
-        utopia_store::jobs::enqueue(
+        // 同库已排着的不重复——与下面的 resolve_types 一样。一批文档同时抽完
+        // 会各排一个，而它们读到的是同一批待裁项
+        utopia_store::jobs::enqueue_unless_queued(
             &state.pool,
             "adjudicate_entities",
             serde_json::json!({ "kb_id": doc.kb_id }),
