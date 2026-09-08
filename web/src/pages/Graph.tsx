@@ -2907,6 +2907,7 @@ function EntityPanel({
             return (
               <FactSection
                 key={dir}
+                dir={dir}
                 title={dir === "out" ? S.graph.fromEntity(name) : S.graph.toEntity(name)}
                 count={total}
               >
@@ -2914,6 +2915,7 @@ function EntityPanel({
                   <FactGroup
                     key={gr.key}
                     kbId={kbId}
+                    dir={dir}
                     group={gr}
                     openFact={openFact}
                     onToggle={(id) => setOpenFact(openFact === id ? null : id)}
@@ -3032,10 +3034,12 @@ interface FactGroupData {
 
 /** 一节（从这个实体出发 / 指向这个实体）：可折叠——折叠柄占图标格，正文缩进同样的 24 */
 function FactSection({
+  dir,
   title,
   count,
   children,
 }: {
+  dir: "out" | "in";
   title: string;
   count: number;
   children: ReactNode;
@@ -3053,6 +3057,7 @@ function FactSection({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex items-center gap-2 text-small font-medium">
+          {dir === "out" ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
           <span className="truncate">{title}</span>
           <span className="u-num">{count}</span>
         </span>
@@ -3064,12 +3069,14 @@ function FactSection({
 
 function FactGroup({
   kbId,
+  dir,
   group: gr,
   openFact,
   onToggle,
   onNavigate,
 }: {
   kbId: string;
+  dir: "out" | "in";
   group: FactGroupData;
   openFact: string | null;
   onToggle: (id: string) => void;
@@ -3091,6 +3098,7 @@ function FactGroup({
         <FactRow
           key={f.id}
           kbId={kbId}
+          dir={dir}
           fact={f}
           open={openFact === f.id}
           onToggle={() => onToggle(f.id)}
@@ -3116,6 +3124,7 @@ function FactGroup({
                 <FactRow
                   key={f.id}
                   kbId={kbId}
+                  dir={dir}
                   fact={f}
                   past
                   open={openFact === f.id}
@@ -3136,6 +3145,7 @@ function FactGroup({
  *  折叠柄在这块面板上只属于节与「过去」的折，行的主动作是跳过去 */
 function FactRow({
   kbId,
+  dir,
   fact,
   past,
   open,
@@ -3143,6 +3153,7 @@ function FactRow({
   onNavigate,
 }: {
   kbId: string;
+  dir: "out" | "in";
   fact: EntityFact;
   /** 已结束的那些：压淡 */
   past?: boolean;
@@ -3161,6 +3172,10 @@ function FactRow({
       title={fact.stale ? S.graph.staleFactHint : undefined}
     >
       <div className={HOVER_ROW}>
+        {/* 图标格里是方向箭头——与本体页 Relations 的行同一副样子 */}
+        <span className="shrink-0 text-violet">
+          {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
+        </span>
         {fact.other_id ? (
           <span
             role="link"
