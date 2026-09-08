@@ -625,8 +625,10 @@ select.input-dark option {
   color: var(--u-text-2);
   background: var(--u-surface);
   border: 1px solid var(--u-line);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  /* backdrop 去色，与 .glass / .glass-strong / .u-menu-glass 同一条规矩：
+     这几枚药丸就浮在图上，背后是什么颜色它就跟着染什么颜色 */
+  backdrop-filter: blur(14px) saturate(0.3);
+  -webkit-backdrop-filter: blur(14px) saturate(0.3);
   transition:
     color var(--u-fast),
     opacity var(--u-fast);
@@ -643,8 +645,12 @@ select.input-dark option {
 .u-pill.is-static:hover {
   color: var(--u-text-2);
 }
+/* 关掉的那一类：压到三成五**再划一道**。只靠淡，一排药丸里读出来是"这个不重要"
+   而不是"这个被关了"；弹层里那份清单早就是划线的（line-through），两处说的是
+   同一个状态，不该长成两个样子 */
 .u-pill.is-dim {
   opacity: 0.35;
+  text-decoration: line-through;
 }
 .u-pill:focus-visible {
   outline: 2px solid var(--u-ring);
