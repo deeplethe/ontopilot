@@ -1243,9 +1243,16 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             // 文本值的属性（schema.org 里 323 个）在这一档仍会变成实体——
             // 那里没有可靠判据，猜错会吃掉真实体，不猜
             let literal = match (&f.value, f.object.as_deref().map(str::trim)) {
-                (Some(v), None | Some("")) if !known_predicate(f.predicate.as_str()) => {
-                    Some(v.clone())
-                }
+                // **给了值、没给宾语——不管这个谓词本体认不认识。**
+                //
+                // 从前这里卡着 `!known_predicate`：`job_title` 在 schema.org 里是关系
+                //（它的 range 是 `Text|DefinedTerm`，含一个类就走关系通道），于是模型
+                // 写 `job_title` + "founder and CEO" 时既进不了属性档、又在关系档因为
+                // 缺宾语被丢掉——`object_missing` 实测 69 次，四篇文档里每个人的职务
+                // 就是这么没的。谓词认不认识与「这条事实带的是值还是实体」无关：
+                // 值在手上就收下，原词进 proposed_predicate，等本体采纳时再换谓词，
+                // 形状已经是对的（0010）
+                (Some(v), None | Some("")) => Some(v.clone()),
                 (_, Some(o))
                     if !o.is_empty()
                         && !known_predicate(f.predicate.as_str())
