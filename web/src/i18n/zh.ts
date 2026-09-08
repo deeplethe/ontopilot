@@ -791,6 +791,10 @@ export const zh: Strings = {
     historyOngoing: "未闭合",
     historicalNote: (n: number) => `另有 ${n} 条历史事实未显示——见时间线 →`,
     undated: "无日期",
+    fromEntity: (name) => `从 ${name} 出发`,
+    toEntity: (name) => `指向 ${name}`,
+    past: (n) => `${n} 条已结束`,
+    sources: (n) => `${n} 处来源`,
     timelineEmpty: "还没有带日期的事实。",
     lastConfirmed: (d: string) => `${d} 确认`,
     correctedHint:

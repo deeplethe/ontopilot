@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   useCallback,
   useEffect,
@@ -57,6 +58,7 @@ import {
   X,
   ZoomIn,
   ZoomOut,
+  ChevronRight,
 } from "lucide-react";
 import {
   api,
@@ -76,6 +78,7 @@ import {
   HOVER_ROW,
   IconButton,
   Input,
+  LinkButton,
   Pill,
   REVEAL,
   Row,
@@ -84,7 +87,6 @@ import {
   ToolDivider,
   ToolTower,
   cn,
-  localDate,
   GroupLabel,
 } from "../ui";
 import { usePopoverFlip } from "../ui/popoverFlip";
@@ -2655,9 +2657,9 @@ function EntityPanel({
   }, [derived, entityId]);
   // Relations = 按关系分组（查关系）；Timeline = 有效时间轴（事情何时成立）；
   // History = 记录时间轴（我们何时这么认为、又何时改了主意）
-  const [view, setView] = useState<
-    "relations" | "timeline" | "history" | "derived"
-  >("relations");
+  const [view, setView] = useState<"relations" | "history" | "derived">(
+    "relations",
+  );
   useEffect(() => {
     const it = intent?.current;
     if (!it) return;
@@ -2702,51 +2704,47 @@ function EntityPanel({
     setEditing(true);
   };
 
-  // Relations = 当下有效的快照（as-of now）；已闭合的历史只出现在 Timeline。
-  // 按「方向 + 谓词」分组：实体自身名不再逐行重复，谓词只出现在小节标题里
-  const { groups, historicalCount } = useMemo(() => {
+  /* Relations 是一张表，不再分「现行」和「年表」两页：**从这个实体出发 / 指向这个实体**
+     两节，节里按谓词分组，组里按起点排；此刻不成立的（0022 的口径按读出来的区间判）
+     折在组尾的「N past」里——Wikidata 把历史值留在同一列表里靠结束时间区分，
+     是同一个道理。方向靠节的措辞说，谓词标题上不再画箭头 */
+  const sections = useMemo(() => {
     const all = detail.data?.facts ?? [];
     const nowIso = new Date().toISOString();
-    // 「此刻成立」按读出来的区间判（0022）：结束了不知哪天的那条不再混进现行里
-    const current = all.filter(
-      (f) =>
-        (!f.holds_from || f.holds_from <= nowIso) &&
-        (!f.holds_to || f.holds_to > nowIso),
-    );
-    const map = new Map<
-      string,
-      {
-        key: string;
-        label: string | null;
-        inferred: boolean;
-        direction: string;
-        rows: EntityFact[];
-      }
-    >();
-    for (const f of current) {
+    const current = (f: EntityFact) =>
+      (!f.holds_from || f.holds_from <= nowIso) &&
+      (!f.holds_to || f.holds_to > nowIso);
+    const byDir: Record<"out" | "in", Map<string, FactGroupData>> = {
+      out: new Map(),
+      in: new Map(),
+    };
+    for (const f of all) {
+      const m = byDir[f.direction];
       // 谓词为空的事实归到同一组：它们的共同点就是「说不出是什么关系」
-      const k = `${f.direction}:${f.predicate_key ?? ""}`;
-      if (!map.has(k))
-        map.set(k, {
-          key: k,
-          label: f.predicate_label,
-          inferred: f.inferred,
-          direction: f.direction,
-          rows: [],
-        });
-      map.get(k)!.rows.push(f);
+      const k = f.predicate_key ?? "";
+      let g = m.get(k);
+      if (!g) {
+        g = { key: k, label: f.predicate_label, inferred: f.inferred, rows: [], past: [] };
+        m.set(k, g);
+      }
+      (current(f) ? g.rows : g.past).push(f);
     }
-    const arr = [...map.values()];
-    for (const gr of arr)
-      gr.rows.sort((a, b) =>
-        (a.valid_from ?? "9999") < (b.valid_from ?? "9999") ? -1 : 1,
+    const byTime = (a: EntityFact, b: EntityFact) =>
+      (a.valid_from ?? "9999") < (b.valid_from ?? "9999") ? -1 : 1;
+    const finish = (m: Map<string, FactGroupData>) => {
+      const arr = [...m.values()];
+      for (const g of arr) {
+        g.rows.sort(byTime);
+        g.past.sort(byTime);
+      }
+      arr.sort(
+        (a, b) =>
+          b.rows.length + b.past.length - (a.rows.length + a.past.length) ||
+          (a.label ?? "").localeCompare(b.label ?? ""),
       );
-    arr.sort(
-      (a, b) =>
-        b.rows.length - a.rows.length ||
-        (a.label ?? "").localeCompare(b.label ?? ""),
-    );
-    return { groups: arr, historicalCount: all.length - current.length };
+      return arr;
+    };
+    return { out: finish(byDir.out), in: finish(byDir.in) };
   }, [detail.data]);
 
   return (
@@ -2875,13 +2873,13 @@ function EntityPanel({
         />
       )}
 
-      {/* 视图切换：Relations（分组）| Timeline（年表） */}
+      {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}
       <div className="px-4 pt-3">
         <Segmented
           size="sm"
           value={view}
           onChange={setView}
-          options={(["relations", "timeline", "history", "derived"] as const)
+          options={(["relations", "history", "derived"] as const)
             // 推出来的那一档：**没有派生就不出现**。一个没开推理的库不该看到
             // 一个永远是空的标签页。没落地的也算——那正是这一档要说的事
             .filter(
@@ -2892,78 +2890,39 @@ function EntityPanel({
               label:
                 v === "relations"
                   ? S.graph.viewRelations
-                  : v === "timeline"
-                    ? S.graph.viewTimeline
-                    : v === "history"
-                      ? S.graph.viewHistory
-                      : S.graph.viewDerived,
+                  : v === "history"
+                    ? S.graph.viewHistory
+                    : S.graph.viewDerived,
             }))}
         />
       </div>
 
       <div className="u-scroll flex-1 overflow-y-auto px-2 py-2">
-        {view === "relations" && historicalCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mx-2 mb-2 mt-1"
-            onClick={() => setView("timeline")}
-          >
-            {S.graph.historicalNote(historicalCount)}
-          </Button>
-        )}
         {view === "relations" &&
-          groups.map((gr) => (
-            <div key={gr.key} className="mb-3 last:mb-1">
-              <GroupLabel
-                className="px-2 pb-1 pt-2"
-                icon={
-                  gr.direction === "in" ? (
-                    <ArrowLeft size={10} />
-                  ) : (
-                    <ArrowRight size={10} />
-                  )
-                }
-                count={gr.rows.length > 1 ? gr.rows.length : undefined}
+          (["out", "in"] as const).map((dir) => {
+            const groups = sections[dir];
+            if (groups.length === 0) return null;
+            const total = groups.reduce((n, g) => n + g.rows.length + g.past.length, 0);
+            const name = e?.name ?? "";
+            return (
+              <FactSection
+                key={dir}
+                title={dir === "out" ? S.graph.fromEntity(name) : S.graph.toEntity(name)}
+                count={total}
               >
-                <span
-                  className={
-                    gr.label === null ? "italic text-ink-2" : undefined
-                  }
-                  title={
-                    gr.label && gr.inferred
-                      ? S.graph.inferredPredicate
-                      : undefined
-                  }
-                >
-                  {gr.label ?? S.graph.unknownPredicate}
-                </span>
-              </GroupLabel>
-              <div>
-                {gr.rows.map((f) => (
-                  <FactRow
-                    key={f.id}
+                {groups.map((gr) => (
+                  <FactGroup
+                    key={gr.key}
                     kbId={kbId}
-                    fact={f}
-                    open={openFact === f.id}
-                    onToggle={() =>
-                      setOpenFact(openFact === f.id ? null : f.id)
-                    }
+                    group={gr}
+                    openFact={openFact}
+                    onToggle={(id) => setOpenFact(openFact === id ? null : id)}
                     onNavigate={onNavigate}
                   />
                 ))}
-              </div>
-            </div>
-          ))}
-        {view === "timeline" && (
-          <TimelineView
-            kbId={kbId}
-            facts={detail.data?.facts ?? []}
-            openFact={openFact}
-            onToggle={(id) => setOpenFact(openFact === id ? null : id)}
-            onNavigate={onNavigate}
-          />
-        )}
+              </FactSection>
+            );
+          })}
         {view === "history" && (
           <EntityHistory kbId={kbId} entityId={entityId} />
         )}
@@ -3050,193 +3009,6 @@ function EntityPanel({
   );
 }
 
-/** 年表视图：带区间的事实按起点摊开成竖直时间线；无时间的沉到底部 undated。 */
-function TimelineView({
-  kbId,
-  facts,
-  openFact,
-  onToggle,
-  onNavigate,
-}: {
-  kbId: string;
-  facts: EntityFact[];
-  openFact: string | null;
-  onToggle: (id: string) => void;
-  onNavigate: (entityId: string) => void;
-}) {
-  const dated = facts
-    .filter((f) => f.temporal !== "eternal" && (f.valid_from || f.valid_to))
-    .sort((a, b) =>
-      (a.valid_from ?? a.valid_to ?? "") < (b.valid_from ?? b.valid_to ?? "")
-        ? -1
-        : 1,
-    );
-  const undated = facts.filter((f) => !dated.includes(f));
-
-  return (
-    <div className="pt-1">
-      {/* 与 Relations 同一种行：chevron + 两行头（区间在上，谓词和值在下）。
-          年表的次序靠排序和第一行的区间说话，不另画一条线 */}
-      <div>
-        {dated.map((f) => (
-          <TimelineRow
-            key={f.id}
-            kbId={kbId}
-            fact={f}
-            open={openFact === f.id}
-            onToggle={() => onToggle(f.id)}
-            onNavigate={onNavigate}
-          />
-        ))}
-        {dated.length === 0 && (
-          <p className="py-2 text-small text-ink-2">
-            {S.graph.timelineEmpty}
-          </p>
-        )}
-      </div>
-      {undated.length > 0 && (
-        <div className="mt-3">
-          <GroupLabel className="px-2 pb-1">{S.graph.undated}</GroupLabel>
-          {undated.map((f) => (
-            <FactRow
-              key={f.id}
-              kbId={kbId}
-              fact={f}
-              open={openFact === f.id}
-              onToggle={() => onToggle(f.id)}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** 年表条目：区间 + 闭合方式标记 + 开放事实的最后确认时间；点击展开证据。 */
-function TimelineRow({
-  kbId,
-  fact,
-  open,
-  onToggle,
-  onNavigate,
-}: {
-  kbId: string;
-  fact: EntityFact;
-  open: boolean;
-  onToggle: () => void;
-  onNavigate: (entityId: string) => void;
-}) {
-  const interval = fmtInterval(fact);
-  const isOpenEnded = !fact.valid_to;
-  const literal = fmtObjectValue(fact.object_value);
-  const [editing, setEditing] = useState(false);
-  return (
-    <ExpandCard
-      open={open}
-      onToggle={onToggle}
-      dim={fact.stale}
-      title={fact.stale ? S.graph.staleFactHint : undefined}
-      header={
-        <>
-        <div className="flex items-center gap-2 u-num text-fine text-ink-2">
-          {interval || "—"}
-          {fact.corrected && (
-            <span className="text-ink-2" title={S.graph.correctedHint}>
-              ⟲
-            </span>
-          )}
-          <span className="ml-auto flex items-center gap-2">
-            {isOpenEnded && fact.last_evidence_time && (
-              <span className="text-ink-2">
-                {S.graph.lastConfirmed(localDate(fact.last_evidence_time))}
-              </span>
-            )}
-            {/* 这一档只有断言事实：派生的区间是算出来的，走 Derived 那条路径，
-                改了下一轮推理也会覆盖（服务端另有 derived_by_rule 的防线） */}
-            <span
-              role="button"
-              tabIndex={0}
-              title={S.graph.editTime}
-              aria-label={S.graph.editTime}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setEditing((v) => !v);
-              }}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" || ev.key === " ") {
-                  ev.preventDefault();
-                  ev.stopPropagation();
-                  setEditing((v) => !v);
-                }
-              }}
-              className={cn(REVEAL, "cursor-pointer rounded-cell p-1", editing && "is-on")}
-            >
-              <Pencil size={10} />
-            </span>
-          </span>
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-body text-ink">
-          <span className="text-ink-2 text-small">
-            {fact.direction === "in" ? "←" : "→"}{" "}
-            <span
-              className={
-                fact.predicate_label === null
-                  ? "italic text-ink-2"
-                  : undefined
-              }
-              title={
-                fact.predicate_label && fact.inferred
-                  ? S.graph.inferredPredicate
-                  : undefined
-              }
-            >
-              {fact.predicate_label ?? S.graph.unknownPredicate}
-            </span>
-          </span>
-          {fact.other_id ? (
-            <span
-              role="link"
-              tabIndex={0}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                onNavigate(fact.other_id!);
-              }}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter") {
-                  ev.stopPropagation();
-                  onNavigate(fact.other_id!);
-                }
-              }}
-              className="u-inline-link truncate"
-            >
-              {fact.other_name ?? "?"}
-            </span>
-          ) : (
-            <span className="truncate">
-              {fact.other_name ?? literal ?? "?"}
-            </span>
-          )}
-          {fact.stale && (
-            <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
-              {S.graph.staleFactChip}
-            </span>
-          )}
-          {fact.contested && (
-            <ContestedChip kbId={kbId} c={fact.contested} />
-          )}
-        </div>
-        </>
-      }
-    >
-      {editing && (
-        <FactTimeDialog kbId={kbId} fact={fact} onClose={() => setEditing(false)} />
-      )}
-      {open && <EvidenceList kbId={kbId} fact={fact} />}
-    </ExpandCard>
-  );
-}
-
 /** 字面值宾语的显示：属性 {value,unit} / 问数映射 {summary} / 其他 JSON 兜底。 */
 function fmtObjectValue(v: Record<string, unknown> | null): string | null {
   if (!v) return null;
@@ -3249,44 +3021,153 @@ function fmtObjectValue(v: Record<string, unknown> | null): string | null {
   return JSON.stringify(v);
 }
 
+/** 一个谓词下的事实：现行的、按起点排；过去的折在组尾 */
+interface FactGroupData {
+  key: string;
+  label: string | null;
+  inferred: boolean;
+  rows: EntityFact[];
+  past: EntityFact[];
+}
+
+/** 一节（从这个实体出发 / 指向这个实体）：可折叠——折叠柄占图标格，正文缩进同样的 24 */
+function FactSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="mb-2">
+      <Row
+        className="mt-1"
+        icon={
+          <span className="flex w-4 justify-center">
+            <ChevronRight size={12} className={cn("u-turn", open && "rotate-90")} />
+          </span>
+        }
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="flex items-center gap-2 text-small font-medium">
+          <span className="truncate">{title}</span>
+          <span className="u-num">{count}</span>
+        </span>
+      </Row>
+      {open && <div className="pl-6">{children}</div>}
+    </div>
+  );
+}
+
+function FactGroup({
+  kbId,
+  group: gr,
+  openFact,
+  onToggle,
+  onNavigate,
+}: {
+  kbId: string;
+  group: FactGroupData;
+  openFact: string | null;
+  onToggle: (id: string) => void;
+  onNavigate: (entityId: string) => void;
+}) {
+  const [pastOpen, setPastOpen] = useState(false);
+  const total = gr.rows.length + gr.past.length;
+  return (
+    <div className="mb-2 last:mb-1">
+      <GroupLabel className="px-2 pb-1 pt-2" count={total > 1 ? total : undefined}>
+        <span
+          className={gr.label === null ? "italic" : undefined}
+          title={gr.label && gr.inferred ? S.graph.inferredPredicate : undefined}
+        >
+          {gr.label ?? S.graph.unknownPredicate}
+        </span>
+      </GroupLabel>
+      {gr.rows.map((f) => (
+        <FactRow
+          key={f.id}
+          kbId={kbId}
+          fact={f}
+          open={openFact === f.id}
+          onToggle={() => onToggle(f.id)}
+          onNavigate={onNavigate}
+        />
+      ))}
+      {/* 已结束的留在同一组里，折起来：默认看现行的，要看来路展开它 */}
+      {gr.past.length > 0 && (
+        <>
+          <Row
+            icon={
+              <span className="flex w-4 justify-center">
+                <ChevronRight size={12} className={cn("u-turn", pastOpen && "rotate-90")} />
+              </span>
+            }
+            onClick={() => setPastOpen((v) => !v)}
+          >
+            <span className="text-small">{S.graph.past(gr.past.length)}</span>
+          </Row>
+          {pastOpen && (
+            <div className="pl-6">
+              {gr.past.map((f) => (
+                <FactRow
+                  key={f.id}
+                  kbId={kbId}
+                  fact={f}
+                  past
+                  open={openFact === f.id}
+                  onToggle={() => onToggle(f.id)}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** 一条事实是一行：名字（点了跳转）与标记在左，区间在右；指着这一行才露出
+ *  「N sources」（在行下摊开证据）与铅笔（区间修正弹窗）。行首不再有折叠柄——
+ *  折叠柄在这块面板上只属于节与「过去」的折，行的主动作是跳过去 */
 function FactRow({
   kbId,
   fact,
+  past,
   open,
   onToggle,
   onNavigate,
 }: {
   kbId: string;
   fact: EntityFact;
+  /** 已结束的那些：压淡 */
+  past?: boolean;
   open: boolean;
   onToggle: () => void;
   onNavigate: (entityId: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const interval = fmtInterval(fact);
   // 与 Review 的低置信口径一致：只有低到需要怀疑才挂 chip，常规置信保持沉默
   const lowConfidence = fact.confidence < 0.75;
 
   return (
-    <ExpandCard
-      open={open}
-      onToggle={onToggle}
-      dim={fact.stale}
+    <div
+      className={cn((fact.stale || past) && "opacity-55")}
       title={fact.stale ? S.graph.staleFactHint : undefined}
-      header={
-        <div className="flex items-center gap-2">
+    >
+      <div className={HOVER_ROW}>
         {fact.other_id ? (
           <span
             role="link"
             tabIndex={0}
-            onClick={(ev) => {
-              ev.stopPropagation();
-              onNavigate(fact.other_id!);
-            }}
+            onClick={() => onNavigate(fact.other_id!)}
             onKeyDown={(ev) => {
-              if (ev.key === "Enter") {
-                ev.stopPropagation();
-                onNavigate(fact.other_id!);
-              }
+              if (ev.key === "Enter") onNavigate(fact.other_id!);
             }}
             className="u-inline-link truncate text-body text-ink"
           >
@@ -3308,20 +3189,55 @@ function FactRow({
           </span>
         )}
         {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
-        {interval && (
-          <span className="ml-auto shrink-0 pl-2 u-num text-fine text-ink-2">
-            {interval}
+        {fact.corrected && (
+          <span className="shrink-0 text-fine text-ink-2" title={S.graph.correctedHint}>
+            ⟲
           </span>
         )}
+        <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+          {interval && (
+            <span className="u-num text-fine text-ink-2">{interval}</span>
+          )}
+          {fact.evidence_count > 0 && (
+            <LinkButton
+              className={cn(REVEAL, "text-fine", open && "is-on")}
+              onClick={onToggle}
+            >
+              {S.graph.sources(fact.evidence_count)}
+            </LinkButton>
+          )}
+          {/* 这一档只有断言事实：派生的区间是算出来的，走 Derived 那条路径 */}
+          <span
+            role="button"
+            tabIndex={0}
+            title={S.graph.editTime}
+            aria-label={S.graph.editTime}
+            onClick={() => setEditing(true)}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                setEditing(true);
+              }
+            }}
+            className={cn(REVEAL, "cursor-pointer rounded-cell p-1 text-ink-2")}
+          >
+            <Pencil size={10} />
+          </span>
+        </span>
+      </div>
+      {open && (
+        <div className="pb-2 pl-2 pr-2">
+          <EvidenceList kbId={kbId} fact={fact} />
         </div>
-      }
-    >
-      {open && <EvidenceList kbId={kbId} fact={fact} />}
-    </ExpandCard>
+      )}
+      {editing && (
+        <FactTimeDialog kbId={kbId} fact={fact} onClose={() => setEditing(false)} />
+      )}
+    </div>
   );
 }
 
-/** 证据展开区（FactRow 与 TimelineRow 共用）：quote + 跳原文 + 版本角标 + 置信。 */
+/** 证据展开区（FactRow 在行下摊开）：quote + 跳原文 + 版本角标 + 置信。 */
 function EvidenceList({ kbId, fact }: { kbId: string; fact: EntityFact }) {
   const evidence = useQuery({
     queryKey: ["evidence", fact.id],
