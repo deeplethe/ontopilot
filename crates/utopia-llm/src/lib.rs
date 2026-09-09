@@ -62,15 +62,15 @@ pub enum ToolStreamItem {
 }
 
 /// **没能从端点拿到一个能解析的回答。** 两种：连不上（DNS、连接、TLS、超时），
-/// 或者连上了但回来的根本不是这个 API（响应体解不成 JSON）。
+/// 或者连上了但成功响应根本不是这个 API（响应体解不成 JSON）。
 ///
 /// 合成一类是有意的：从用户那边看这两种是同一件事——"你配的这个地址不是模型 API"，
 /// 该做的也是同一件事：去看 URL、看代理。第一版只收传输层失败，结果最常见的那种
 /// 故障（URL 配错、代理挡在中间回了 HTML）一条告警都不产生，
 /// 正是"失败无声"本身。
 ///
-/// **不含**端点干干净净地回了 4xx/5xx：那说明它就是模型 API，只是密钥、
-/// 配额或模型名不对——另一类问题，该找的人也不同。
+/// **不含**端点回的 4xx/5xx，即使错误体不是 JSON：那说明服务器已经回答，
+/// 错误体本身就是诊断——另一类问题，该找的人也不同。
 ///
 /// 有类型而不是匹配错误文本：调用链上任何一层加一句 context 都会改文本，
 /// 而 `anyhow` 的 source 链让 `downcast_ref` 一路都认得出来。
@@ -147,8 +147,9 @@ fn failure(
     status: reqwest::StatusCode,
     retry_after: Option<Duration>,
     body: &serde_json::Value,
+    raw: &str,
 ) -> anyhow::Error {
-    let detail = err_detail(body);
+    let detail = err_detail(body, raw);
     // **欠费要先判，而且不能只看状态码。**
     //
     // 402 是标准答案（SiliconFlow 用它），但 OpenAI 的余额耗尽走的是 **429**，
@@ -169,6 +170,17 @@ fn failure(
         });
     }
     anyhow::anyhow!("{kind} request failed ({status}): {detail}")
+}
+
+async fn response_failure(
+    kind: &str,
+    status: reqwest::StatusCode,
+    retry_after: Option<Duration>,
+    response: reqwest::Response,
+) -> anyhow::Result<anyhow::Error> {
+    let raw = response.text().await.map_err(Unreachable)?;
+    let body = serde_json::from_str(&raw).unwrap_or_default();
+    Ok(failure(kind, status, retry_after, &body, &raw))
 }
 
 #[derive(Clone)]
@@ -198,6 +210,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// 流水线停摆而**一条错误都不报**（jobs 的孤儿回收只在进程启动时跑一次，
 /// 进程活着就永远收不了尸）。7459 块的一次灌入死在第 55 块上。
 const READ_TIMEOUT: Duration = Duration::from_secs(300);
+const LLM_REQUEST_KIND: &str = "LLM";
+const EMBEDDING_REQUEST_KIND: &str = "Embedding";
+const UNKNOWN_ERROR_DETAIL: &str = "unknown error";
 
 impl LlmClient {
     pub fn new(base_url: &str, api_key: Option<&str>, model: &str) -> Self {
@@ -248,10 +263,10 @@ impl LlmClient {
             .map_err(Unreachable)?;
         let status = resp.status();
         let retry_after = retry_after_of(resp.headers());
-        let body: serde_json::Value = resp.json().await.map_err(Unreachable)?;
         if !status.is_success() {
-            return Err(failure("LLM", status, retry_after, &body));
+            return Err(response_failure(LLM_REQUEST_KIND, status, retry_after, resp).await?);
         }
+        let body: serde_json::Value = resp.json().await.map_err(Unreachable)?;
         log_usage(&self.model, &body);
         body["choices"][0]["message"]["content"]
             .as_str()
@@ -279,10 +294,10 @@ impl LlmClient {
             .map_err(Unreachable)?;
         let status = resp.status();
         let retry_after = retry_after_of(resp.headers());
-        let body: serde_json::Value = resp.json().await.map_err(Unreachable)?;
         if !status.is_success() {
-            return Err(failure("LLM", status, retry_after, &body));
+            return Err(response_failure(LLM_REQUEST_KIND, status, retry_after, resp).await?);
         }
+        let body: serde_json::Value = resp.json().await.map_err(Unreachable)?;
         let msg = &body["choices"][0]["message"];
         if msg.is_null() {
             anyhow::bail!("Unexpected LLM response shape: {body}");
@@ -336,8 +351,7 @@ impl LlmClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let retry_after = retry_after_of(resp.headers());
-            let body: serde_json::Value = resp.json().await.unwrap_or_default();
-            return Err(failure("LLM", status, retry_after, &body));
+            return Err(response_failure(LLM_REQUEST_KIND, status, retry_after, resp).await?);
         }
 
         let mut bytes = resp.bytes_stream();
@@ -429,8 +443,7 @@ impl LlmClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let retry_after = retry_after_of(resp.headers());
-            let body: serde_json::Value = resp.json().await.unwrap_or_default();
-            return Err(failure("LLM", status, retry_after, &body));
+            return Err(response_failure(LLM_REQUEST_KIND, status, retry_after, resp).await?);
         }
 
         let mut bytes = resp.bytes_stream();
@@ -474,10 +487,10 @@ impl LlmClient {
             .map_err(Unreachable)?;
         let status = resp.status();
         let retry_after = retry_after_of(resp.headers());
-        let body: serde_json::Value = resp.json().await.map_err(Unreachable)?;
         if !status.is_success() {
-            return Err(failure("Embedding", status, retry_after, &body));
+            return Err(response_failure(EMBEDDING_REQUEST_KIND, status, retry_after, resp).await?);
         }
+        let body: serde_json::Value = resp.json().await.map_err(Unreachable)?;
         let data = body["data"]
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("Unexpected embedding response shape"))?;
@@ -519,12 +532,19 @@ fn log_usage(model: &str, body: &serde_json::Value) {
     );
 }
 
-fn err_detail(body: &serde_json::Value) -> String {
+const MAX_ERROR_DETAIL_CHARS: usize = 500;
+
+fn err_detail(body: &serde_json::Value, raw: &str) -> String {
     body["error"]["message"]
         .as_str()
         .or_else(|| body["message"].as_str())
-        .unwrap_or("unknown error")
-        .to_string()
+        .or_else(|| body["error"].as_str())
+        .map(String::from)
+        .or_else(|| {
+            let raw = raw.trim();
+            (!raw.is_empty()).then(|| raw.chars().take(MAX_ERROR_DETAIL_CHARS).collect())
+        })
+        .unwrap_or_else(|| UNKNOWN_ERROR_DETAIL.to_string())
 }
 
 /// 响应体说不说这是余额问题。
@@ -545,6 +565,206 @@ fn says_out_of_credit(body: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt;
+
+    const EPHEMERAL_LOOPBACK: &str = "127.0.0.1:0";
+    const TEST_MODEL: &str = "m";
+    const TEST_USER_ROLE: &str = "user";
+    const TEST_INPUT: &str = "hi";
+    const ERROR_STATUS: &str = "502 Bad Gateway";
+    const SUCCESS_STATUS: &str = "200 OK";
+    const TEXT_CONTENT_TYPE: &str = "text/plain";
+    const JSON_CONTENT_TYPE: &str = "application/json";
+    const CHAT_SUCCESS_BODY: &str = r#"{"choices":[{"message":{"content":"ok"}}]}"#;
+    const EMBEDDING_SUCCESS_BODY: &str = r#"{"data":[{"embedding":[1.0]}]}"#;
+    const EMBEDDING_VALUE: f32 = 1.0;
+    const SUCCESS_TEXT: &str = "ok";
+    const STRING_ERROR: &str = "model is unavailable";
+    const NESTED_ERROR: &str = "bad request";
+    const NO_RAW_BODY: &str = "";
+    const RAW_ERROR_DIAGNOSIS: &str = "proxy says the model context is too long";
+    const MULTIBYTE_FIXTURE: &str = "界";
+    const INCOMPLETE_BODY_LENGTH: usize = 100;
+    const OVER_LIMIT_CHARACTERS: usize = 1;
+
+    fn client_at(addr: std::net::SocketAddr) -> LlmClient {
+        LlmClient::new(&format!("http://{addr}"), None, TEST_MODEL)
+    }
+
+    fn no_tools() -> serde_json::Value {
+        serde_json::json!([])
+    }
+
+    async fn an_http_response(
+        status: &str,
+        content_type: &str,
+        body: &str,
+    ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind(EPHEMERAL_LOOPBACK)
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let status = status.to_string();
+        let content_type = content_type.to_string();
+        let body = body.to_string();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+        (addr, server)
+    }
+
+    async fn an_http_error(body: &str) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+        an_http_response(ERROR_STATUS, TEXT_CONTENT_TYPE, body).await
+    }
+
+    async fn an_incomplete_http_error() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind(EPHEMERAL_LOOPBACK)
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let response = format!(
+                "HTTP/1.1 {ERROR_STATUS}\r\nContent-Length: {INCOMPLETE_BODY_LENGTH}\r\nConnection: close\r\n\r\nx"
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+            socket.shutdown().await.unwrap();
+        });
+        (addr, server)
+    }
+
+    async fn assert_diagnosis<T>(
+        result: anyhow::Result<T>,
+        diagnosis: &str,
+        server: tokio::task::JoinHandle<()>,
+    ) {
+        server.await.unwrap();
+        let error = match result {
+            Ok(_) => panic!("the endpoint returned an error response"),
+            Err(error) => error,
+        };
+        assert!(!is_unreachable(&error));
+        assert!(error.to_string().contains(diagnosis), "{error:#}");
+    }
+
+    #[tokio::test]
+    async fn a_body_that_is_not_json_is_quoted_and_not_called_unreachable() {
+        let diagnosis = RAW_ERROR_DIAGNOSIS;
+        let (addr, server) = an_http_error(diagnosis).await;
+        let client = client_at(addr);
+        assert_diagnosis(
+            client
+                .chat(&[ChatMessage {
+                    role: TEST_USER_ROLE.into(),
+                    content: TEST_INPUT.into(),
+                }])
+                .await,
+            diagnosis,
+            server,
+        )
+        .await;
+
+        let (addr, server) = an_http_error(diagnosis).await;
+        let client = client_at(addr);
+        assert_diagnosis(client.chat_tools(&[], &no_tools()).await, diagnosis, server).await;
+
+        let (addr, server) = an_http_error(diagnosis).await;
+        let client = client_at(addr);
+        assert_diagnosis(
+            client.chat_tools_stream(&[], &no_tools()).await,
+            diagnosis,
+            server,
+        )
+        .await;
+
+        let (addr, server) = an_http_error(diagnosis).await;
+        let client = client_at(addr);
+        assert_diagnosis(
+            client
+                .chat_stream(&[ChatMessage {
+                    role: TEST_USER_ROLE.into(),
+                    content: TEST_INPUT.into(),
+                }])
+                .await,
+            diagnosis,
+            server,
+        )
+        .await;
+
+        let (addr, server) = an_http_error(diagnosis).await;
+        let client = client_at(addr);
+        assert_diagnosis(
+            client.embed(&[TEST_INPUT.to_string()]).await,
+            diagnosis,
+            server,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_body_that_cannot_be_read_stays_unreachable() {
+        let (addr, server) = an_incomplete_http_error().await;
+        let client = client_at(addr);
+        let result = client.chat(&[]).await;
+        server.await.unwrap();
+        let error = result.expect_err("the body is incomplete");
+        assert!(
+            is_unreachable(&error),
+            "body read error lost its source: {error:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_responses_still_parse() {
+        let (addr, server) =
+            an_http_response(SUCCESS_STATUS, JSON_CONTENT_TYPE, CHAT_SUCCESS_BODY).await;
+        let client = client_at(addr);
+        let result = client.chat(&[]).await;
+        server.await.unwrap();
+        assert_eq!(result.unwrap(), SUCCESS_TEXT);
+
+        let (addr, server) =
+            an_http_response(SUCCESS_STATUS, JSON_CONTENT_TYPE, CHAT_SUCCESS_BODY).await;
+        let client = client_at(addr);
+        let result = client.chat_tools(&[], &no_tools()).await;
+        server.await.unwrap();
+        assert_eq!(result.unwrap().content.as_deref(), Some(SUCCESS_TEXT));
+
+        let (addr, server) =
+            an_http_response(SUCCESS_STATUS, JSON_CONTENT_TYPE, EMBEDDING_SUCCESS_BODY).await;
+        let client = client_at(addr);
+        let result = client.embed(&[TEST_INPUT.to_string()]).await;
+        server.await.unwrap();
+        assert_eq!(result.unwrap(), vec![vec![EMBEDDING_VALUE]]);
+    }
+
+    #[test]
+    fn an_error_given_as_a_string_is_forwarded() {
+        let body = serde_json::json!({ "error": STRING_ERROR });
+        assert_eq!(
+            err_detail(&body, NO_RAW_BODY),
+            STRING_ERROR,
+            "a valid error field must not become unknown"
+        );
+    }
+
+    #[test]
+    fn a_body_with_error_message_still_reads_it() {
+        let body = serde_json::json!({ "error": { "message": NESTED_ERROR } });
+        assert_eq!(err_detail(&body, NO_RAW_BODY), NESTED_ERROR);
+    }
+
+    #[test]
+    fn a_long_body_is_truncated() {
+        let raw = MULTIBYTE_FIXTURE.repeat(MAX_ERROR_DETAIL_CHARS + OVER_LIMIT_CHARACTERS);
+        let detail = err_detail(&serde_json::Value::Null, &raw);
+        assert_eq!(detail.chars().count(), MAX_ERROR_DETAIL_CHARS);
+    }
 
     /// 真发一次注定失败的请求，拿一个货真价实的 `reqwest::Error`。
     /// 端口 1 上不会有东西监听，而 127.0.0.1 不走代理。
@@ -565,7 +785,9 @@ mod tests {
     /// 请求发得出去，然后没了。连接错误会立刻报，这种不会——没有超时的话
     /// `send().await` 就永远停在那里，而调用它的 worker 槽再也不释放。
     async fn a_server_that_never_answers() -> std::net::SocketAddr {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = tokio::net::TcpListener::bind(EPHEMERAL_LOOPBACK)
+            .await
+            .unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             // 收下连接就攥着不放。**必须持有 socket**：一 drop 就是 FIN，
@@ -588,7 +810,7 @@ mod tests {
         let client = LlmClient::with_timeouts(
             &format!("http://{addr}"),
             None,
-            "m",
+            TEST_MODEL,
             Duration::from_secs(5),
             Duration::from_millis(300),
         );
@@ -596,8 +818,8 @@ mod tests {
         let out = tokio::time::timeout(
             std::time::Duration::from_secs(10),
             client.chat(&[ChatMessage {
-                role: "user".into(),
-                content: "hi".into(),
+                role: TEST_USER_ROLE.into(),
+                content: TEST_INPUT.into(),
             }]),
         )
         .await;
@@ -692,7 +914,13 @@ mod tests {
         let body = serde_json::json!({
             "error": { "message": "You exceeded your current quota", "code": "insufficient_quota" }
         });
-        let e = failure("LLM", reqwest::StatusCode::TOO_MANY_REQUESTS, None, &body);
+        let e = failure(
+            LLM_REQUEST_KIND,
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            None,
+            &body,
+            NO_RAW_BODY,
+        );
         assert!(out_of_credit(&e).is_some(), "该判成欠费");
         assert!(rate_limited(&e).is_none(), "不该判成限流");
     }
@@ -701,7 +929,13 @@ mod tests {
     #[test]
     fn a_402_is_a_billing_problem() {
         let body = serde_json::json!({ "message": "Sorry, your account balance is insufficient" });
-        let e = failure("LLM", reqwest::StatusCode::PAYMENT_REQUIRED, None, &body);
+        let e = failure(
+            LLM_REQUEST_KIND,
+            reqwest::StatusCode::PAYMENT_REQUIRED,
+            None,
+            &body,
+            NO_RAW_BODY,
+        );
         assert!(out_of_credit(&e).is_some());
     }
 
@@ -709,7 +943,13 @@ mod tests {
     #[test]
     fn a_plain_429_is_still_a_rate_limit() {
         let body = serde_json::json!({ "error": { "message": "TPM limit reached" } });
-        let e = failure("LLM", reqwest::StatusCode::TOO_MANY_REQUESTS, None, &body);
+        let e = failure(
+            LLM_REQUEST_KIND,
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            None,
+            &body,
+            NO_RAW_BODY,
+        );
         assert!(rate_limited(&e).is_some());
         assert!(out_of_credit(&e).is_none());
     }
