@@ -218,6 +218,8 @@ pub async fn handle(
                 actor: Some(user.id),
                 // 「谁说的」要答到 agent 这一层：一个人可以同时挂三个客户端
                 via_token: Some(auth.token_id),
+                // agent 的意图不在请求里；同名按事实数排
+                question: None,
             };
             let mut sink = ToolSink::default();
             let (text, _step) = tools::dispatch(&ctx, &mut sink, name, &args).await;

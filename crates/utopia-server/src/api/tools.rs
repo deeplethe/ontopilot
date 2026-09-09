@@ -42,6 +42,29 @@ pub struct ToolCtx<'a> {
     /// 经 MCP 时，是哪一枚令牌在说话。**人之外还要记它**：一个人可以同时挂
     /// 三个 agent，审核卡上只写人名分不出是哪一个记的（0026）。对话里为 None
     pub via_token: Option<Uuid>,
+    /// 用户这一轮的原话。图谱工具拿它消歧：同名候选按「谁的上下文画像离这个问题近」排。
+    /// MCP 没有它（agent 的意图不在请求里），那边按事实数排
+    pub question: Option<&'a str>,
+}
+
+impl ToolCtx<'_> {
+    /// 一段文字的向量，用这个工作区配的嵌入模型。没配、或调用失败时 None：
+    /// 图谱工具照常按子串走，向量只是第二阶段
+    pub async fn embed(&self, text: &str) -> Option<Vec<f32>> {
+        let settings = utopia_store::settings::get(&self.state.pool, self.workspace_id)
+            .await
+            .ok()
+            .flatten()?;
+        let client = crate::llm_util::embed_client(&settings)?;
+        match client.embed(&[text.to_string()]).await {
+            Ok(mut v) if !v.is_empty() => Some(v.remove(0)),
+            Ok(_) => None,
+            Err(e) => {
+                tracing::warn!(error = %e, "嵌入失败，图谱工具按子串匹配");
+                None
+            }
+        }
+    }
 }
 
 /// 工具执行过程中往外攒的东西。

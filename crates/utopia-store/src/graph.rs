@@ -832,6 +832,30 @@ pub async fn neighborhood(
     Ok((nodes, edges))
 }
 
+/// 这批实体的上下文画像与一个向量的余弦距离；没有画像的不在结果里。
+/// 图谱工具拿用户的问题来比：同名的几个里，谁的画像离问题近，问的多半是谁
+pub async fn profile_distances(
+    pool: &PgPool,
+    kb_id: Uuid,
+    ids: &[Uuid],
+    embedding: &[f32],
+) -> AppResult<Vec<(Uuid, f64)>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid, f64)> = sqlx::query_as(
+        "SELECT e.id, (e.profile_embedding <=> $3)::float8
+           FROM entities e
+          WHERE e.kb_id = $1 AND e.id = ANY($2) AND e.profile_embedding IS NOT NULL",
+    )
+    .bind(kb_id)
+    .bind(ids)
+    .bind(pgvector::Vector::from(embedding.to_vec()))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// 按名字找实体。**一并回总数**——「宁分勿合」本来就会造出一堆同名，
 /// 固定十条的时候，想找的那个可能根本不在这十条里而界面上看不出来。
 pub async fn search_entities(

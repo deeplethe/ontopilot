@@ -947,6 +947,7 @@ pub async fn chat(
                     actor: Some(user.id),
                     // 网页端对话不经令牌：说话的就是这个人本人
                     via_token: None,
+                    question: Some(&query),
                 };
                 let (result, step) = tools::dispatch(&ctx, &mut sink, &call.name, &args).await;
                 // **这一步发生在正文的哪个位置。**

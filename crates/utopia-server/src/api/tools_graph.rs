@@ -16,7 +16,7 @@ use super::tools::{
     ToolSink,
 };
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use utopia_core::models::{EntityFact, GraphNode};
 use utopia_store::paths::{Limits, Path, PathEdge};
 use uuid::Uuid;
@@ -103,10 +103,8 @@ async fn resolve(ctx: &ToolCtx<'_>, sink: &mut ToolSink, raw: &str) -> Result<Re
             note: None,
         });
     }
-    let (hits, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, raw, 8, 0)
-        .await
-        .unwrap_or_default();
-    let ranked = rank(hits, raw);
+    let hits = lookup(ctx, raw).await;
+    let (ranked, by_question) = rank_by_question(ctx, rank(hits, raw), raw).await;
     let Some(first) = ranked.first() else {
         return Err(format!("no entity named \"{raw}\" in this base"));
     };
@@ -131,6 +129,9 @@ async fn resolve(ctx: &ToolCtx<'_>, sink: &mut ToolSink, raw: &str) -> Result<Re
         first.type_label.as_deref().unwrap_or("untyped"),
         first.degree
     );
+    if by_question {
+        note.push_str(", closest to the question");
+    }
     if !others.is_empty() {
         note.push_str(&format!(
             "; other matches: {}. Pass an id to choose another.",
@@ -178,13 +179,11 @@ fn contains_ci(haystack: Option<&str>, needle: &str) -> bool {
 
 pub async fn find_entities(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> ToolResult {
     let name = args["name"].as_str().unwrap_or("").to_string();
-    let (hits, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, &name, 8, 0)
-        .await
-        .unwrap_or_default();
-    let ranked = rank(hits, &name);
+    let hits = lookup(ctx, &name).await;
+    let (ranked, by_question) = rank_by_question(ctx, rank(hits, &name), &name).await;
     let text = if ranked.is_empty() {
         "No matching entities.".to_string()
-    } else if dominant(&ranked, &name) {
+    } else if by_question || dominant(&ranked, &name) {
         let mut lines = vec![format!("Best match: {}", node_line(&ranked[0]))];
         if ranked.len() > 1 {
             lines.push("Other matches:".to_string());
@@ -281,6 +280,146 @@ pub(super) fn predicates_of(facts: &[EntityFact]) -> String {
         .join(", ")
 }
 
+/// 子串找不到时按词找：每个词都在名字里的候选算命中（"OpenAI board" →
+/// "OpenAI's board of directors"）。先拿最长的词去库里捞，再在结果里筛
+async fn lookup(ctx: &ToolCtx<'_>, raw: &str) -> Vec<GraphNode> {
+    let (hits, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, raw, 8, 0)
+        .await
+        .unwrap_or_default();
+    if !hits.is_empty() {
+        return hits;
+    }
+    let words: Vec<&str> = raw.split_whitespace().collect();
+    let Some(longest) = words.iter().copied().max_by_key(|w| w.len()) else {
+        return hits;
+    };
+    if words.len() < 2 {
+        return hits;
+    }
+    let (wide, _) =
+        utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, longest, 40, 0)
+            .await
+            .unwrap_or_default();
+    wide.into_iter()
+        .filter(|n| words_all_in(&n.name, &words))
+        .collect()
+}
+
+pub(super) fn words_all_in(name: &str, words: &[&str]) -> bool {
+    let lower = name.to_lowercase();
+    words.iter().all(|w| lower.contains(&w.to_lowercase()))
+}
+
+/// 同名候选按问题排：用户的问题嵌一次，与候选的上下文画像比，近的在前。
+/// 精确命中仍在前（问 OpenAI 就先给叫 OpenAI 的），画像只在同一档里排序。
+/// 没有问题（MCP）、没有嵌入模型、只有一个候选：原样返回，第二个值说明有没有用上
+async fn rank_by_question(
+    ctx: &ToolCtx<'_>,
+    ranked: Vec<GraphNode>,
+    query: &str,
+) -> (Vec<GraphNode>, bool) {
+    if ranked.len() < 2 {
+        return (ranked, false);
+    }
+    let Some(question) = ctx.question else {
+        return (ranked, false);
+    };
+    let Some(vec) = ctx.embed(question).await else {
+        return (ranked, false);
+    };
+    let ids: Vec<Uuid> = ranked.iter().map(|n| n.id).collect();
+    let Ok(dist) =
+        utopia_store::graph::profile_distances(&ctx.state.pool, ctx.kb_id, &ids, &vec).await
+    else {
+        return (ranked, false);
+    };
+    let dist: HashMap<Uuid, f64> = dist.into_iter().collect();
+    (reorder_by_distance(ranked, query, &dist), true)
+}
+
+/// 纯函数：精确命中的一档在前；档内按画像距离升序，没有画像的垫底；再按事实数
+pub(super) fn reorder_by_distance(
+    mut ranked: Vec<GraphNode>,
+    query: &str,
+    dist: &HashMap<Uuid, f64>,
+) -> Vec<GraphNode> {
+    let q = query.trim().to_lowercase();
+    let exact = |n: &GraphNode| n.name.trim().to_lowercase() == q;
+    ranked.sort_by(|a, b| {
+        exact(b)
+            .cmp(&exact(a))
+            .then_with(|| {
+                let da = dist.get(&a.id).copied().unwrap_or(f64::MAX);
+                let db = dist.get(&b.id).copied().unwrap_or(f64::MAX);
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then(b.degree.cmp(&a.degree))
+    });
+    ranked
+}
+
+/// 谓词参数与库里的词对齐：模型说 "board member"，库里叫 `has_member`。子串对不上时
+/// 把它嵌一次，取最近的关系类型（关系向量在 `relation_types.embedding`），距离在
+/// 上限内的算它说的是那几个。自动扩本体造出的关系没有向量（#560），对不到
+const PREDICATE_DISTANCE: f32 = 0.55;
+const PREDICATE_CANDIDATES: i64 = 5;
+
+async fn aligned_predicates(ctx: &ToolCtx<'_>, word: &str) -> Vec<String> {
+    let Some(vec) = ctx.embed(word).await else {
+        return Vec::new();
+    };
+    let near = utopia_store::ontology::nearest_relation_types(
+        &ctx.state.pool,
+        ctx.kb_id,
+        &vec,
+        PREDICATE_CANDIDATES,
+        None,
+    )
+    .await
+    .unwrap_or_default();
+    for c in &near {
+        tracing::debug!(word, key = c.key, distance = c.distance, "谓词对齐候选");
+    }
+    near.into_iter()
+        .filter(|c| c.distance <= PREDICATE_DISTANCE)
+        .map(|c| c.key)
+        .collect()
+}
+
+/// 过滤；谓词按子串对不上时向量对齐一次，回一句说明给结果开头
+async fn filtered<'f>(
+    ctx: &ToolCtx<'_>,
+    facts: &'f [EntityFact],
+    filter: &FactFilter<'_>,
+) -> (Vec<&'f EntityFact>, Option<String>) {
+    let kept: Vec<&EntityFact> = facts.iter().filter(|f| filter.keeps(f)).collect();
+    let Some(word) = filter.predicate else {
+        return (kept, None);
+    };
+    if !kept.is_empty() || facts.is_empty() {
+        return (kept, None);
+    }
+    let keys: HashSet<String> = aligned_predicates(ctx, word).await.into_iter().collect();
+    if keys.is_empty() {
+        return (kept, None);
+    }
+    let widened = FactFilter {
+        predicate: None,
+        ..*filter
+    };
+    let kept: Vec<&EntityFact> = facts
+        .iter()
+        .filter(|f| {
+            widened.keeps(f) && f.predicate_key.as_deref().is_some_and(|k| keys.contains(k))
+        })
+        .collect();
+    let mut names: Vec<&str> = keys.iter().map(String::as_str).collect();
+    names.sort();
+    let note = format!("predicate \"{word}\" read as {}", names.join(", "));
+    (kept, Some(note))
+}
+
+#[derive(Clone, Copy)]
 struct FactFilter<'a> {
     predicate: Option<&'a str>,
     object_type: Option<&'a str>,
@@ -381,11 +520,14 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
         })
         .collect();
 
-    let kept: Vec<&EntityFact> = facts.iter().filter(|f| filter.keeps(f)).collect();
+    let (kept, aligned) = filtered(ctx, &facts, &filter).await;
     let shown: Vec<&EntityFact> = kept.iter().copied().take(limit).collect();
     let mut lines: Vec<String> = Vec::new();
     if let Some(note) = &who.note {
         lines.push(note.clone());
+    }
+    if let Some(a) = &aligned {
+        lines.push(a.clone());
     }
     let type_label = node.type_label.as_deref().unwrap_or("untyped");
     if facts.is_empty() && derived.is_empty() {
@@ -462,14 +604,18 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
         );
     };
     // 邻居是对端**实体**；属性值不算邻居，entity_facts 里有
-    let linked: Vec<&EntityFact> = facts
-        .iter()
-        .filter(|f| f.other_id.is_some() && filter.keeps(f))
+    let (matched, aligned) = filtered(ctx, &facts, &filter).await;
+    let linked: Vec<&EntityFact> = matched
+        .into_iter()
+        .filter(|f| f.other_id.is_some())
         .collect();
     let shown: Vec<EntityFact> = linked.iter().take(limit).map(|f| (*f).clone()).collect();
     let mut lines: Vec<String> = Vec::new();
     if let Some(note) = &who.note {
         lines.push(note.clone());
+    }
+    if let Some(a) = &aligned {
+        lines.push(a.clone());
     }
     let type_label = node.type_label.as_deref().unwrap_or("untyped");
     if shown.is_empty() {
@@ -561,9 +707,10 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
     };
     // 只要**说出了世界时间**的事实。没日期的那些起点是摄取时刻，排进时间线只会
     // 把一篇文章的日期当成事件的日期
-    let mut dated: Vec<&EntityFact> = facts
-        .iter()
-        .filter(|f| f.valid_from.is_some() && filter.keeps(f))
+    let (matched, aligned) = filtered(ctx, &facts, &filter).await;
+    let mut dated: Vec<&EntityFact> = matched
+        .into_iter()
+        .filter(|f| f.valid_from.is_some())
         .collect();
     dated.sort_by_key(|f| f.valid_from);
     let undated = facts.iter().filter(|f| f.valid_from.is_none()).count();
@@ -571,6 +718,9 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
     let mut lines: Vec<String> = Vec::new();
     if let Some(note) = &who.note {
         lines.push(note.clone());
+    }
+    if let Some(a) = &aligned {
+        lines.push(a.clone());
     }
     let type_label = node.type_label.as_deref().unwrap_or("untyped");
     if shown.is_empty() {
@@ -845,6 +995,48 @@ mod tests {
             last_evidence_time: None,
             contested: None,
         }
+    }
+
+    /// 问题的向量只在同一档里排序：精确命中的仍在前，档内近的先，没画像的垫底
+    #[test]
+    fn the_question_orders_namesakes_but_not_over_an_exact_match() {
+        let exact_far = node("Sam Altman", Some("Organization"), 66);
+        let exact_near = node("Sam Altman", Some("Person"), 27);
+        let partial_nearest = node("Sam Altman's efforts", Some("Event"), 2);
+        let no_profile = node("Sam Altman Jr", Some("Person"), 1);
+        let mut dist = HashMap::new();
+        dist.insert(exact_far.id, 0.40);
+        dist.insert(exact_near.id, 0.20);
+        dist.insert(partial_nearest.id, 0.05);
+        let ranked = reorder_by_distance(
+            vec![
+                exact_far.clone(),
+                no_profile.clone(),
+                partial_nearest.clone(),
+                exact_near.clone(),
+            ],
+            "Sam Altman",
+            &dist,
+        );
+        let ids: Vec<Uuid> = ranked.iter().map(|n| n.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                exact_near.id,
+                exact_far.id,
+                partial_nearest.id,
+                no_profile.id
+            ]
+        );
+    }
+
+    #[test]
+    fn a_multi_word_name_matches_when_every_word_is_in_the_name() {
+        assert!(words_all_in(
+            "OpenAI's board of directors",
+            &["OpenAI", "board"]
+        ));
+        assert!(!words_all_in("OpenAI LP", &["OpenAI", "board"]));
     }
 
     /// 空手而回时把实体身上的谓词报出来，多的在前
