@@ -8,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { FileText, Merge, PencilLine, Tag, Undo2 } from "lucide-react";
 import { api, type EntityHistoryEvent } from "../api";
 import { S } from "../i18n";
+import { predicateSentence } from "../predicateText";
 import { useKbId } from "../kb";
 import { Pager } from "../ui";
 
@@ -129,7 +130,10 @@ function EventRow({ e }: { e: EntityHistoryEvent }) {
             <span className="text-small text-ink-2">
               {e.direction === "in" ? "← " : ""}
               <span className={e.predicate_label === null ? "italic text-ink-2" : undefined}>
-                {e.predicate_label ?? S.graph.unknownPredicate}
+                {/* 年表也是一行一句话，与事实行同一个拆法 */}
+                {e.predicate_label
+                  ? predicateSentence(e.predicate_label)
+                  : S.graph.unknownPredicate}
               </span>
               {e.direction === "in" ? "" : " →"}
             </span>{" "}

@@ -77,6 +77,7 @@ import {
   type ProofStep,
 } from "../api";
 import { S } from "../i18n";
+import { predicateSentence } from "../predicateText";
 import {
   Button,
   CanvasLoading,
@@ -2648,7 +2649,11 @@ function EntityPanel({
       (!f.holds_from || f.holds_from <= nowIso) &&
       (!f.holds_to || f.holds_to > nowIso);
     const order = (a: EntityFact, b: EntityFact) =>
-      (a.predicate_label ?? "\uffff").localeCompare(b.predicate_label ?? "\uffff") ||
+      // 按**看到的那个写法**排序，不然 `worksFor` 与 `accessTo` 的先后
+      // 跟屏幕上读到的 “works for” / “access to” 对不上
+      predicateSentence(a.predicate_label ?? "￿").localeCompare(
+        predicateSentence(b.predicate_label ?? "￿"),
+      ) ||
       ((a.valid_from ?? "9999") < (b.valid_from ?? "9999") ? -1 : 1);
     const split = (dir: "out" | "in") => {
       const mine = all.filter((f) => f.direction === dir);
@@ -3084,12 +3089,18 @@ function FactRow({
               title={
                 fact.predicate_label
                   ? fact.inferred
-                    ? `${fact.predicate_label} · ${S.graph.inferredPredicate}`
-                    : fact.predicate_label
+                    ? `${predicateSentence(fact.predicate_label)} · ${S.graph.inferredPredicate}`
+                    : predicateSentence(fact.predicate_label)
                   : undefined
               }
             >
-              {fact.predicate_label ?? S.graph.unknownPredicate}
+              {/* **这一行是一句话，所以谓词拆开读**（见 predicateText.ts）：
+                  库里存的是词表该有的样子 `worksFor`，摆进
+                  「Li Si — ? — Meridian Systems」中间时读作 “works for”。
+                  管本体的那几个界面照旧显示驼峰，那儿认的是词本身 */}
+              {fact.predicate_label
+                ? predicateSentence(fact.predicate_label)
+                : S.graph.unknownPredicate}
             </span>
             <span className={ROW_VALUE}>
               {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
