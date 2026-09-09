@@ -39,11 +39,16 @@ const MAX_ROUNDS: usize = 6;
 /// 本来就是答案：打招呼、问这场对话、拒答，原样收尾）、其他任何文字（还在说空话，
 /// 明说没查到证据）。给它 DONE 这条出口，是为了不让「把那句话说短一点」这种
 /// 本就不需要工具的回答被追问成第二个答案。
-const STALL_NUDGE: &str = "(system) Your last message announced work that was never done: \
-    no tool was called and the turn ended. Do not describe a plan. If the question needs \
-    evidence from the data, call the tool now. If that message already answered the question \
-    from the conversation itself (a greeting, a question about this transcript, a refusal), \
-    reply with the single word DONE.";
+///
+/// 措辞把 DONE 的门开得窄：只有问题**不是关于用户数据**时才许说 DONE。实测还有
+/// 一种更坏的停法——不说「稍等」，直接写「以下是我找到的内容」然后凭记忆作答，
+/// 库里 steps、sources 全是 0。它没停住，它在撒谎。对它，「若已答完就说 DONE」
+/// 是一条太宽的出口，所以这里明说：关于数据的事实性回答没有工具就不算答。
+const STALL_NUDGE: &str = "(system) Your last message ended the turn without calling any tool, \
+    and it cites nothing. An answer about the user's data that was not gathered with a tool is \
+    not an answer, whatever the message says it found: call the tool now. Do not describe a \
+    plan. Reply with the single word DONE only if the question was not about the user's data \
+    at all: a greeting, a question about this transcript, or a refusal.";
 
 /// 追问后仍不查时补在答案末尾的话。承诺已经流给用户了，收不回来；能做的是
 /// 让文字和空白的轨迹不再互相矛盾——对一个把「每个回答可追溯」当卖点的产品，
@@ -820,7 +825,9 @@ pub async fn chat(
                                 turn = second;
                                 carry_on_with_tools = true;
                             }
-                            AfterNudge::Done => {}
+                            // 也记一笔：DONE 说得对不对没法在这里判，只能靠日志和这条
+                            // 回答的 sources 为空这个事实，事后一起看
+                            AfterNudge::Done => tracing::info!(model, "模型追问后说上一句已是答案"),
                             AfterNudge::Stalled => {
                                 tracing::warn!(model, "模型追问后仍只说不查，答案标注无证据");
                                 answer_acc.push_str(NO_EVIDENCE_NOTE);
