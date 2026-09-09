@@ -993,6 +993,8 @@ export const zh: Strings = {
     yes: "是",
     rowsShown: (n: number) => `${n} 行`,
     viewTable: "表格",
+    switchToTable: "切换到表格视图",
+    switchToGraph: "切换到图视图",
     viewDiagram: "图",
     axiomTransitive: "传递",
     axiomSymmetric: "对称",

@@ -1152,6 +1152,49 @@ a:hover > .u-mark-arrow {
   gap: 2px;
 }
 
+/* 左栏里跟着视图折起来的那一段（筛选框 + 两档 + 清单）。
+   **折的是 flex-grow 不是 height**：这一段是 `flex-1` 撑满剩余空间的，
+   它没有一个"自然高度"可以从那儿往 0 收；grow 从 1 到 0 是同一件事的
+   可动画版本，而且不必量任何东西。
+   收起时一并断掉指针事件——一个透明度为 0 的清单还能点中，是最难查的那种错 */
+.u-rail-fold {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateY(0);
+  /* 展开：与停靠面板、弹层进场同一条曲线、同一档时长（0.18s / 出挑缓动）。
+     **三条通道走同一个时长**——从前高度 260ms、不透明度 120ms，字一下子就没了，
+     剩一个空盒子慢慢收，读起来就是两件事而不是一件 */
+  transition:
+    flex-grow 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.u-rail-fold.is-folded {
+  /* 收起：离场曲线、略快，与 u-dock-out 一对（0.15s）。走的方向不同，
+     手感就不该是同一条曲线来回放 */
+  transition:
+    flex-grow 0.15s cubic-bezier(0.4, 0, 1, 1),
+    opacity 0.15s cubic-bezier(0.4, 0, 1, 1),
+    transform 0.15s cubic-bezier(0.4, 0, 1, 1);
+  flex-grow: 0;
+  opacity: 0;
+  /* 往上收一点：这一段是被上面那两行「卷」进去的，纯粹缩高度看着像被下面
+     的东西盖住 */
+  transform: translateY(-6px);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 收起态那条 transition 特异性更高，只写 `.u-rail-fold` 盖不住它 */
+  .u-rail-fold,
+  .u-rail-fold.is-folded {
+    transition: none;
+  }
+}
+
 /* ---- numbers in chrome: 默认字体（Geist）+ 等宽数字，不再用 mono ---- */
 .u-num {
   font-variant-numeric: tabular-nums;
