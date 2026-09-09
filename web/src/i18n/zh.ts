@@ -975,8 +975,8 @@ export const zh: Strings = {
     testing: "测试中…",
     chatLabel: "对话",
     embedLabel: "向量",
-    ok: (reply: string) => `已连通并通过认证（${reply}）`,
-    okDim: (dim: number) => `已连通并通过认证（维度 ${dim}）`,
+    ok: (reply: string) => `已连通，认证通过（${reply}）`,
+    okDim: (dim: number) => `已连通，认证通过（维度 ${dim}）`,
   },
   ontology: {
     title: "本体",
