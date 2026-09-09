@@ -212,7 +212,13 @@ pub async fn update(
         "kb.updated",
         "kb",
         Some(id),
-        json!({ "name": req.name, "visibility": req.visibility, "governance": req.governance }),
+        // 约定改了要留痕：那段文字进每一次问数的提示词，谁什么时候改过得查得到
+        json!({
+            "name": req.name,
+            "visibility": req.visibility,
+            "governance": req.governance,
+            "data_conventions": req.data_conventions.is_some(),
+        }),
     )
     .await;
     Ok(Json(kb))
