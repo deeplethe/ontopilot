@@ -42,6 +42,7 @@ import {
 import {
   attachDrag,
   focusNode,
+  deferToHoverLayer,
   hoveredNode,
   mutedNode,
   neighborNode,
@@ -729,7 +730,11 @@ export function OntologySchemaGraph({
           sel?.kind === "class" && g.hasNode(sel.id) ? sel.id : null;
         /* **选中压过指到**，与实例图同一条：指针落到自己选中的那个类上，读到的
            还该是选中那一副（反色底牌 + 加粗的名字）。指到别的类照常出 hover */
-        if (selClass === node) return selectedNode(res, attrs, base);
+        if (selClass === node) {
+          const picked = selectedNode(res, attrs, base);
+          // 选中的这一个同时被指着：名字改由高亮层画，标签层让开
+          return hov === node ? deferToHoverLayer(picked) : picked;
+        }
         if (hov === node) return hoveredNode(res, attrs, base);
         if (selClass) {
           // 邻居不收小：几十个类的图，收了显得瘫（实例图那边收到 0.76）

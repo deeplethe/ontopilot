@@ -183,6 +183,16 @@ export function hoveredNode(
   res.forceLabel = true;
   res.labelSlab = true;
   res.zIndex = 4;
+  return deferToHoverLayer(res);
+}
+
+/** 交给高亮层画：标签层跳过这一个（见 `drawNodeLabel` 里那段说明）。
+ *
+ * 正被指着的节点，sigma 会在标签层和高亮层各画一遍名字。这个记号是给标签层
+ * 让路用的，**只该落在此刻真被指着的那一个身上**——所以它不属于 `selectedNode`：
+ * 选中的那一个没被指着时，画它的正是标签层。 */
+export function deferToHoverLayer(res: NodeAttrs): NodeAttrs {
+  res.hideBaseLabel = true;
   return res;
 }
 

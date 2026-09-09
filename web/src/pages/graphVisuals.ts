@@ -104,7 +104,12 @@ export function drawNodeLabel(
   _settings: any,
 ): void {
   if (!data.label) return;
-  // hover 时悬浮卡（drawHoverCard）接管展示，底层标签隐去，避免双层
+  /* 正被指着的那一个不在这一层画。sigma 每帧走两趟：`renderLabels` 铺标签层，
+     `renderHighlightedNodes` 把 hoveredNode 交给 drawHoverCard 铺在上面的高亮层，
+     **而前者并不排除后者**。两趟都画，同一块底牌就在两张叠着的画布上各来一遍：
+     填色是实色时看不出来，投影看得出来——`shadowBlur` 叠两次，那圈黑深了一倍；
+     未选中时底是 `rgba(12,12,12,0.9)`，叠完接近 0.99，比令牌定的实。
+     让开的是这一层，因为高亮层画在上面 */
   if (data.hideBaseLabel) return;
   const size = CANVAS_LABEL_SIZE;
   /* 选中的那一个名字**加粗一档**：500 → 600，与界面里其余的强调同一档，
@@ -165,7 +170,13 @@ export function drawHoverCard(
   data: any,
   settings: any,
 ): void {
-  drawNodeLabel(ctx, data, settings);
+  // 这一层不认 `hideBaseLabel`：那道闸门说的正是"这一个交给高亮层画"，
+  // 高亮层自己再让开就没人画了
+  drawNodeLabel(
+    ctx,
+    data.hideBaseLabel ? { ...data, hideBaseLabel: false } : data,
+    settings,
+  );
 }
 
 /* 世界坐标网格：随相机缩放分级淡入淡出 */
