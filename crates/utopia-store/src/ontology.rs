@@ -91,6 +91,36 @@ pub async fn relation_type_views(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Re
     .await?)
 }
 
+/// 谓词的显示名统一成**小驼峰**（见迁移 0042）。
+///
+/// 类是大驼峰、谓词是小驼峰，这是 RDF/OWL 与 schema.org 的惯例，而且大小写
+/// 本身就在说这个词是类还是属性。库里同时存在 `acceptedAnswer`、`access to`、
+/// `ApplicableCertificate` 三种写法，在同一列里读起来就是没规矩。
+///
+/// **只动分隔符与首字母，不碰词内部的大小写**：`productID`、`hasLEI`、
+/// `accessibilityAPI` 要原样留着。从 `key` 反推是做不到这一点的——`to_key`
+/// 在连续大写之间不插下划线，`product_id` 拼回去只会得到 `productId`。
+pub fn lower_camel(label: &str) -> String {
+    let mut out = String::with_capacity(label.len());
+    let mut start_of_word = false;
+    for c in label.trim().chars() {
+        if c == ' ' || c == '_' || c == '-' {
+            // 连着几个分隔符只算一次，词首标记留着
+            start_of_word = !out.is_empty();
+            continue;
+        }
+        if out.is_empty() {
+            out.extend(c.to_lowercase());
+        } else if start_of_word {
+            out.extend(c.to_uppercase());
+            start_of_word = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn validate_key(key: &str) -> AppResult<()> {
     let ok = !key.is_empty()
         && key.len() <= 40
@@ -387,6 +417,7 @@ pub async fn create_relation_type(
         ));
     }
     validate_attribute_fields(kind, domains, datatype)?;
+    let label = &lower_camel(label);
     // 新建的行 id 还不存在，指向自己无从谈起——所以 self_id 传 None
     validate_property_links(pool, kb_id, None, kind, ax).await?;
     let is_attr = kind == "attribute";
@@ -481,6 +512,8 @@ pub async fn update_relation_type(
     domains: Option<&[Uuid]>,
     ranges: Option<&[Uuid]>,
 ) -> AppResult<()> {
+    // 改名也归一：不然界面上改一次就能把小驼峰改回 "access to"
+    let label = &lower_camel(label);
     if !matches!(temporal, "state" | "event" | "eternal") {
         return Err(AppError::Validation(
             "temporal must be state / event / eternal".into(),
@@ -1292,6 +1325,46 @@ pub async fn nearest_entity_type_ids(
 }
 
 /// 同上，关系与属性。`only_kind` 分道：关系清单与属性清单在提示词里是两段。
+/// 同上，但**只在 domain 落在这批类上的那些关系里**检索。
+///
+/// 存在的理由：全库检索对关系几乎没有区分度（1500 字的分块向量 vs 几个词的
+/// 关系标签，距离全挤在一条窄带里）。实测一块讲「Jensen Huang, founder and CEO
+/// of NVIDIA」的正文，`founder` 排 267、`job_title` 排 618（共 1026）——两个都进不了
+/// 前 30 的窗口，于是模型没有地方写职务，索性不写。**不是抽错，是没被问到。**
+///
+/// 把池子先按 domain 收窄到「这一块认出来的那些类身上声明的关系」，同一块里
+/// `founder` 升到 29、`job_title` 升到 55（共 86）。收窄靠的是本体自己声明的
+/// 结构，不是又一个相似度模型。
+pub async fn nearest_relation_type_ids_in_domains(
+    pool: &PgPool,
+    kb_id: Uuid,
+    embedding: &[f32],
+    limit: i64,
+    only_kind: Option<&str>,
+    domains: &[Uuid],
+) -> AppResult<Vec<Uuid>> {
+    if domains.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT r.id FROM relation_types r
+         WHERE r.kb_id = $1 AND r.embedding IS NOT NULL
+           AND ($4::text IS NULL OR r.kind = $4)
+           AND EXISTS (SELECT 1 FROM relation_type_domains d
+                       WHERE d.relation_type_id = r.id AND d.entity_type_id = ANY($5))
+         ORDER BY r.embedding <=> $2
+         LIMIT $3",
+    )
+    .bind(kb_id)
+    .bind(Vector::from(embedding.to_vec()))
+    .bind(limit)
+    .bind(only_kind)
+    .bind(domains)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 pub async fn nearest_relation_type_ids(
     pool: &PgPool,
     kb_id: Uuid,
@@ -1409,7 +1482,10 @@ pub async fn create_relation_types_bulk(
         validate_key(&r.key)?;
     }
     let keys: Vec<&str> = rows.iter().map(|r| r.key.as_str()).collect();
-    let labels: Vec<&str> = rows.iter().map(|r| r.label.as_str()).collect();
+    // 导入来的词表自己就可能不一致（unece.org 里 `brandName` 与
+    // `ApplicableCertificate` 并存）——落库前统一，真身留在 `iri` 里
+    let camel: Vec<String> = rows.iter().map(|r| lower_camel(&r.label)).collect();
+    let labels: Vec<&str> = camel.iter().map(String::as_str).collect();
     let descs: Vec<&str> = rows.iter().map(|r| r.description.as_str()).collect();
     let iris: Vec<&str> = rows.iter().map(|r| r.iri.as_str()).collect();
     let kinds: Vec<&str> = rows.iter().map(|r| r.kind).collect();
@@ -1884,4 +1960,57 @@ pub async fn link_property_axioms_bulk(
     let inv = run("inverse_of", inverse).await?;
     let sub = run("sub_property_of", sub_property).await?;
     Ok((inv, sub))
+}
+
+#[cfg(test)]
+mod name_shape_tests {
+    use super::lower_camel;
+
+    #[test]
+    fn separators_become_camel_humps() {
+        assert_eq!(lower_camel("access to"), "accessTo");
+        assert_eq!(lower_camel("collaborated with"), "collaboratedWith");
+        assert_eq!(lower_camel("works_for"), "worksFor");
+        assert_eq!(lower_camel("date-applicability"), "dateApplicability");
+        // 连着几个分隔符只算一次
+        assert_eq!(lower_camel("called   for"), "calledFor");
+        assert_eq!(lower_camel("  start date  "), "startDate");
+    }
+
+    #[test]
+    fn only_the_first_letter_is_lowered() {
+        assert_eq!(
+            lower_camel("ApplicableCertificate"),
+            "applicableCertificate"
+        );
+        assert_eq!(lower_camel("EffectiveEndDateTime"), "effectiveEndDateTime");
+    }
+
+    /// **这条是这个函数存在的理由之一**：从 `key` 反推做不到，
+    /// `product_id` 拼回去只会得到 `productId`
+    #[test]
+    fn acronyms_are_left_alone() {
+        assert_eq!(lower_camel("productID"), "productID");
+        assert_eq!(lower_camel("hasLEI"), "hasLEI");
+        assert_eq!(lower_camel("accessibilityAPI"), "accessibilityAPI");
+        assert_eq!(
+            lower_camel("checkoutPageURLTemplate"),
+            "checkoutPageURLTemplate"
+        );
+    }
+
+    #[test]
+    fn already_right_is_untouched() {
+        for s in ["owns", "acceptedAnswer", "worksFor", "3DModel"] {
+            assert_eq!(lower_camel(s), s, "{s} 不该被动");
+        }
+    }
+
+    #[test]
+    fn idempotent() {
+        for s in ["access to", "ApplicableCertificate", "productID", "owns"] {
+            let once = lower_camel(s);
+            assert_eq!(lower_camel(&once), once, "{s} 归一两次结果要一样");
+        }
+    }
 }

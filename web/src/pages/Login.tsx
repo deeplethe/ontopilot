@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 /* lucide 已移除品牌图标，GitHub mark 内联（官方 mark 路径，fill=currentColor） */
@@ -35,6 +35,7 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [leaving, setLeaving] = useState(false);
+  const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -42,6 +43,9 @@ export function Login() {
       return api.register(email, password, displayName);
     },
     onSuccess: () => {
+      // 换人先清缓存：`me`、`workspaces` 这些一次会话内不过期（queryDefaults.ts），
+      // 会话过期后同一标签页登另一个账号，不清就看见上一个人的名字和库
+      queryClient.clear();
       // 谢幕：卡片上浮淡出、巨构放大穿越，再进入图谱首页
       setLeaving(true);
       window.setTimeout(() => navigate({ to: "/" }), 650);

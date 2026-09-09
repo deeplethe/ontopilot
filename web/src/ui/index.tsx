@@ -5,6 +5,7 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import type {
   ButtonHTMLAttributes,
+  CSSProperties,
   InputHTMLAttributes,
   ReactNode,
   TextareaHTMLAttributes,
@@ -16,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  Loader2,
   Search as SearchIcon,
 } from "lucide-react";
 import { S } from "../i18n";
@@ -1070,9 +1072,102 @@ export function EmptyState({
   );
 }
 
-/* ---------- Loading / ErrorText ---------- */
+/* ---------- Loading / Skeleton / Spinner / ErrorText ---------- */
 export function Loading({ children }: { children: ReactNode }) {
   return <div className="p-8 text-body text-ink-2">{children}</div>;
+}
+
+/** 一条骨架。**形状已知的东西用它**：一行标题、一枚色点、一列树。
+ *
+ * 尺寸由调用方给（高度用字号那几档的高度，宽度用 `style`——条的长短是照
+ * 真内容的长短分布随手定的，一列等宽看着像进度条不像清单）。圆角固定 cell：
+ * 它顶替的是一格内容，不是一块面。 */
+export function Skeleton({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div className={cn("u-skel rounded-cell", className)} style={style} aria-hidden />
+  );
+}
+
+/** 一列还没到的行。左栏、列表，任何「将来是一行一行」的地方都用它。
+ *
+ * 每行只有一条通栏的灰条：**不画图标位、不画右端、不模拟缩进**。那些都是此刻
+ * 还不知道的东西，画出来就是编的——多一个灰方块，读者会当它是复选框或色点；
+ * 假装一层缩进，等来的树要是形状不同，那一下比不缩进更晃。骨架能诚实说出口的
+ * 只有两件事：**将来这里是一行一行的，每行多高**。
+ *
+ * 行本身就是真的那个 `Row`，所以行高、内边距、圆角跟真列表逐像素一致，内容
+ * 落下来时一行不跳。`density` 要跟宿主列表给的那一档一样。
+ *
+ * （放在这里而不是 `Row` 后面，是为了让三个等待用的原件挨着；函数声明会提升，
+ * 引用后面的 `Row` 没问题。） */
+export function SkeletonRows({
+  rows = 8,
+  density = "list",
+  className,
+}: {
+  /** 画几行。**够说明"这里将来是一列"就行**，不必铺满：右边那个转圈已经
+   *  说了正在加载，一列灰条从头排到底只是一堵条纹墙。 */
+  rows?: number;
+  density?: RowDensity;
+  className?: string;
+}) {
+  return (
+    <div className={cn("u-rail-list", className)} aria-hidden>
+      {Array.from({ length: rows }, (_, i) => (
+        /* 灰条**直接当行的内容**，不再套一层"撑满行高"的壳。套了之后一行 30px
+           里只有 10px 是条，上下各空 10px，一列看着比真列表松得多。现在一行
+           就是 4 + 16 + 4：条厚得像一行字，行距也回到该有的样子 */
+        <Row key={i} density={density} flush disabled>
+          <Skeleton className="h-4 w-full" />
+        </Row>
+      ))}
+    </div>
+  );
+}
+
+/** 画布中间的等待记号。**盖在已经画好的东西上，不是替掉它们**——网格、缩放塔、
+ *  静态图例都跟数据无关，先画出来，这一层只说中间那块还在路上。
+ *
+ * 比行内的转圈大一档（28）：它要在一整屏画布的正中被一眼看到，而不是挤在
+ * 一行字旁边。`pointer-events-none` 让底下的控件照常能点——等的时候缩放、
+ * 归位这些事本来就做得了。
+ *
+ * 宿主要有 `relative`（两张画布都是 `h-full relative`）。 */
+export function CanvasLoading({ size = 28 }: { size?: number }) {
+  return (
+    <div className="absolute inset-0 grid place-items-center pointer-events-none">
+      <Spinner size={size} label={S.nav.loading} />
+    </div>
+  );
+}
+
+/** 转圈。**形状未知的东西用它**：一整块区域还不知道会画成图、表还是空。
+ *  形状已知的地方别用它——那里 `Skeleton` 能多说一句"等的是什么"。 */
+export function Spinner({
+  size = 16,
+  label,
+  className,
+}: {
+  size?: number;
+  /** 读屏用；不给就整个当装饰藏起来 */
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <Loader2
+      size={size}
+      className={cn("animate-spin text-ink-2", className)}
+      role={label ? "status" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+    />
+  );
 }
 
 export function ErrorText({ children }: { children: ReactNode }) {
@@ -1201,6 +1296,11 @@ export function rowClass(
 }
 /** 行右端小字：小一档、淡一档，整行被指着时跟着提亮 */
 export const ROW_TRAILING = "ml-auto shrink-0 text-fine text-ink-2 group-hover:text-ink";
+/** 紧跟在标签后面的值——与 `ROW_TRAILING` 同一副颜色，但**不推到右边**。
+ *  一左一右适合"名字 …… 数量"这种两栏读法；「谓词 宾语」是一句话，中间隔一
+ *  整行空白就读不成句子了 */
+export const ROW_VALUE =
+  "min-w-0 flex-1 truncate text-fine text-ink-2 group-hover:text-ink";
 
 export function Row({
   active,

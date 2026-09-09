@@ -281,6 +281,27 @@ pub fn build_messages(
          8. If no listed relation fits, do not force the nearest one — write the predicate the \
             text itself uses, in snake_case (e.g. \"available_on\", \"runs_on\"). A relation \
             named after the text is worth more than a listed one that says something false.\n\
+         8a. The same holds for a literal the text states outright — an amount, a share count, \
+            a percentage, a capacity, a date, a job title, a ticker. Write it as a fact with \
+            \"value\" and no \"object\": {{\"subject\":\"NVIDIA\",\"subject_ref\":\"e1\",\
+            \"predicate\":\"purchase_price\",\"value\":\"$11.9 billion\",\"confidence\":0.9,\
+            \"quote\":\"...\"}}. Name the predicate after the text when no listed attribute \
+            fits — \"purchase_price\", \"job_title\", \"generation_capacity\", \"record_date\". \
+            Attach it to the entity the text attaches it to, and keep the literal as written, \
+            units and all. **A stated figure left out is the loss that costs most**: the reader \
+            came for those numbers, and no later step can recover one that was never written \
+            down.\n\
+         8b. A **listed** relation also takes \"value\" when what the text gives is a \
+            string rather than another entity — a job title, a designation, a ticker, a \
+            model number. Never invent an entity for a string. And when the text introduces \
+            someone by their role — \"X, founder and CEO of Y\", \"Z, co-CEO of W\" — write \
+            both facts: the tie to the organization, and the role itself as a value on the \
+            person. The tie alone says they are connected; the role is what the sentence \
+            was actually telling you.\n\
+         8c. A list of named parties is a list of facts — one per name. \"partners \
+            including A, B, C and D\" is four facts, not one; \"advisors A and B\" is two. \
+            Do not collapse an enumeration into a summary or into its first member. \
+            The same applies to the entities: each named party is its own entity.\n\
          9. The same holds for entity types: if none of the listed types fits, write the type \
             the text implies, in snake_case (e.g. \"model\", \"technology\"). Do not fall back \
             to a broad listed type such as \"thing\" or \"creative_work\" merely because \

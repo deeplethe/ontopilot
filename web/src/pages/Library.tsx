@@ -2276,18 +2276,26 @@ function DocRow({
           两件事挤在一格里，读的人得先分辨哪个字是可点的。
           这一格至多一个动作：重跑解析要 status=failed，重抽要 status=ready，
           两者互斥——所以不必再排一次谁在前 */}
+      {/* **一个图标，不是三种字。** 这一列上下几十行，从前写着「重新抽取」
+          「抽取」「重新解析」——三种长度不一的文字排成一竖列，读的人得逐行认
+          哪个字是可点的，而它们说的是同一件事：把这份文档再跑一遍。字挪进
+          tooltip：那里说得准，而这一列只需要说「这里有个再跑一遍的按钮」 */}
       <td className="px-4 py-3">
         {doc.status === "failed" ? (
           /* 解析管道失败：重跑 解析→索引→嵌入（解析器升级/瞬时故障重试） */
-          <LinkButton underline onClick={onReprocess}>
-            {S.library.reprocess}
-          </LinkButton>
+          <IconButton label={S.library.reprocess} size="sm" onClick={onReprocess}>
+            <RefreshCw size={12} />
+          </IconButton>
         ) : doc.status === "ready" &&
           ["none", "failed", "done"].includes(doc.graph_status) ? (
           /* done 也可重抽：本体（描述/新类）调整后强制全量重抽正是常规操作 */
-          <LinkButton underline onClick={onExtract}>
-            {doc.graph_status === "done" ? S.library.reExtract : S.library.extract}
-          </LinkButton>
+          <IconButton
+            label={doc.graph_status === "done" ? S.library.reExtract : S.library.extract}
+            size="sm"
+            onClick={onExtract}
+          >
+            <RefreshCw size={12} />
+          </IconButton>
         ) : null}
       </td>
       <td className="px-4 py-3 text-right">

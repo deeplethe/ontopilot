@@ -5,12 +5,14 @@
 //! 目标数经 AtomicUsize 热读——系统设置里改并发即时生效，无需重启。
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{postgres::PgListener, PgPool, Postgres, Transaction};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use utopia_core::AppResult;
 use uuid::Uuid;
+
+pub const JOB_CHANNEL: &str = "utopia_jobs";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Job {
@@ -29,6 +31,7 @@ pub async fn enqueue_unless_queued(
     kind: &str,
     payload: serde_json::Value,
 ) -> AppResult<Option<i64>> {
+    let mut tx = pool.begin().await?;
     let row: Option<(i64,)> = sqlx::query_as(
         "INSERT INTO jobs (kind, payload)
          SELECT $1, $2
@@ -37,8 +40,12 @@ pub async fn enqueue_unless_queued(
     )
     .bind(kind)
     .bind(payload)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
+    if row.is_some() {
+        notify_worker_tx(&mut tx).await?;
+    }
+    tx.commit().await?;
     Ok(row.map(|(id,)| id))
 }
 
@@ -58,14 +65,9 @@ pub async fn enqueue_with_max_attempts(
             "max_attempts must be between 1 and 32".into(),
         ));
     }
-    let (id,): (i64,) = sqlx::query_as(
-        "INSERT INTO jobs (kind, payload, max_attempts) VALUES ($1, $2, $3) RETURNING id",
-    )
-    .bind(kind)
-    .bind(payload)
-    .bind(max_attempts)
-    .fetch_one(pool)
-    .await?;
+    let mut tx = pool.begin().await?;
+    let id = enqueue_with_max_attempts_tx(&mut tx, kind, payload, max_attempts).await?;
+    tx.commit().await?;
     Ok(id)
 }
 
@@ -90,7 +92,72 @@ pub async fn enqueue_with_max_attempts_tx(
     .bind(max_attempts)
     .fetch_one(&mut **tx)
     .await?;
+    notify_worker_tx(tx).await?;
     Ok(id)
+}
+
+/// Wake idle workers only after the transaction containing the job is committed.
+/// PostgreSQL delivers `NOTIFY` at commit, so a worker can never wake up before
+/// the row it needs to claim is visible.
+pub(crate) async fn notify_worker_tx(tx: &mut Transaction<'_, Postgres>) -> AppResult<()> {
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(JOB_CHANNEL)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// 空闲轮询间隔。有通知时用不到它；它兜的是 `run_at` 在未来的重试、
+/// 重连期间丢掉的通知，以及几个 worker 被同一条通知叫醒后没抢到的那些（#517）。
+pub const IDLE_POLL: Duration = Duration::from_secs(2);
+
+/// 一次空闲等待是怎么结束的。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wake {
+    /// 有人入队，通知到了
+    Notified,
+    /// 等满一个轮询间隔，什么也没来
+    Polled,
+}
+
+/// 建立唤醒监听。`None` = 建不起来，worker 只靠轮询，行为与没有通知时一样。
+///
+/// 这条连接从池里取出后**一直握着**：LISTEN 是连接级状态，还回去就没了。
+/// 池上限（`db.rs`）从此少一条给别人用；jobs 只起一个 worker，所以只少这一条。
+pub async fn listen_for_jobs(pool: &PgPool) -> Option<PgListener> {
+    let mut listener = match PgListener::connect_with(pool).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            tracing::error!(error = %e, "jobs worker 建立通知监听失败，退回轮询");
+            return None;
+        }
+    };
+    if let Err(e) = listener.listen(JOB_CHANNEL).await {
+        tracing::error!(error = %e, "jobs worker 监听通知失败，退回轮询");
+        return None;
+    }
+    Some(listener)
+}
+
+/// 空闲等待：通知先到就先醒，否则等满 `poll`。
+///
+/// 监听出错不能立刻再认领：库能认领而监听连接重连不上（池满就是一种）的话，
+/// 循环会变成「认领一次、警告一行」的紧循环。出错就按轮询的节奏睡一觉，
+/// 下一轮 `recv` 自己会重连。
+pub async fn wait_for_work(listener: Option<&mut PgListener>, poll: Duration) -> Wake {
+    let Some(listener) = listener else {
+        tokio::time::sleep(poll).await;
+        return Wake::Polled;
+    };
+    match tokio::time::timeout(poll, listener.recv()).await {
+        Ok(Ok(_)) => Wake::Notified,
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "jobs worker 通知监听失败，继续轮询");
+            tokio::time::sleep(poll).await;
+            Wake::Polled
+        }
+        Err(_) => Wake::Polled,
+    }
 }
 
 /// 重排失败任务的范围（#216）。三个条件都可空，空 = 不限。
@@ -121,6 +188,7 @@ const KB_SCOPE: &str = "(
 /// 其他处理器都是幂等的（启动时回收孤儿就靠这一点）；
 /// 此前 `failed` 是终点，余额耗尽一批文档全失败，充值之后只能逐个点或整源重抽
 pub async fn requeue_failed(pool: &PgPool, scope: RequeueScope<'_>) -> AppResult<u64> {
+    let mut tx = pool.begin().await?;
     let sql = format!(
         "UPDATE jobs j
             SET status = 'queued', attempts = 0, run_at = now(), updated_at = now()
@@ -134,9 +202,14 @@ pub async fn requeue_failed(pool: &PgPool, scope: RequeueScope<'_>) -> AppResult
         .bind(scope.kind)
         .bind(scope.failed_since)
         .bind(scope.kb_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
-    Ok(res.rows_affected())
+    let count = res.rows_affected();
+    if count > 0 {
+        notify_worker_tx(&mut tx).await?;
+    }
+    tx.commit().await?;
+    Ok(count)
 }
 
 /// 范围内 failed 的条数——设置页那一行「N 个失败任务」
@@ -231,7 +304,7 @@ async fn mark_failed(pool: &PgPool, job: &Job, err: &anyhow::Error) -> AppResult
 }
 
 /// worker 调度循环：运行中任务数低于目标并发就继续认领（有活立即续派），
-/// 空闲时 2s 轮询；每个任务在独立 tokio task 中执行，长抽取不再阻塞同步。
+/// 空闲时等入队通知、2s 轮询兜底（#517）；每个任务在独立 tokio task 中执行，长抽取不再阻塞同步。
 /// `concurrency` 每轮热读——系统设置里改并发数即时生效。
 /// 任务分发逻辑由调用方以 handler 注入（store 不依赖上层 crate）。
 pub async fn run_worker<F, Fut>(pool: PgPool, concurrency: Arc<AtomicUsize>, handler: F)
@@ -262,6 +335,7 @@ where
         concurrency = concurrency.load(Ordering::Relaxed),
         "jobs worker 已启动"
     );
+    let mut listener = listen_for_jobs(&pool).await;
     loop {
         let cap = concurrency.load(Ordering::Relaxed).max(1);
         if running.load(Ordering::Relaxed) >= cap {
@@ -275,7 +349,22 @@ where
                 let handler = handler.clone();
                 let running = running.clone();
                 tokio::spawn(async move {
-                    let result = handler(job.clone()).await;
+                    // **处理器 panic 也要收尸。** 直接 `handler(job).await` 的话，
+                    // panic 会把这个 spawn 出来的 future 一起掀掉：`mark_failed`
+                    // 不会跑（任务行永远停在 running，无错误无重试），`running`
+                    // 也不会减（每 panic 一次就永久少一个并发名额，攒够 cap 之后
+                    // 整个队列不再认领任何任务）。套一层 spawn，panic 变成
+                    // JoinError 拿回来，两件事就都还在。
+                    let inner = {
+                        let (handler, job) = (handler.clone(), job.clone());
+                        tokio::spawn(async move { handler(job).await })
+                    };
+                    let result = match inner.await {
+                        Ok(r) => r,
+                        Err(join) => {
+                            Err(anyhow::anyhow!("任务处理器 panic（详情见 stderr）：{join}"))
+                        }
+                    };
                     let outcome = match result {
                         Ok(()) => mark_done(&pool, job.id).await,
                         Err(e) => {
@@ -289,7 +378,9 @@ where
                     running.fetch_sub(1, Ordering::Relaxed);
                 });
             }
-            Ok(None) => tokio::time::sleep(Duration::from_secs(2)).await,
+            Ok(None) => {
+                wait_for_work(listener.as_mut(), IDLE_POLL).await;
+            }
             Err(e) => {
                 tracing::error!(error = %e, "任务认领失败，5s 后重试");
                 tokio::time::sleep(Duration::from_secs(5)).await;

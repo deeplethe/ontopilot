@@ -413,6 +413,7 @@ export function RulesPanel({
             <THead>
               <Tr>
                 <Th>{S.ontology.ruleColRule}</Th>
+                <Th>{S.ontology.ruleConditions}</Th>
                 <Th>{S.ontology.ruleConcludes}</Th>
                 <Th>{S.ontology.ruleColDerived}</Th>
                 <Th>{S.ontology.ruleColStatus}</Th>
@@ -430,14 +431,17 @@ export function RulesPanel({
                 >
                   <Td>
                     <div className="text-body text-ink">{r.name}</div>
-                    <RuleSentence rule={r} />
                     {r.description && (
-                      <div className="mt-1 text-fine text-ink-2">
-                        {r.description}
-                      </div>
+                      <div className="text-fine text-ink-2">{r.description}</div>
                     )}
                   </Td>
-                  <Td className="text-small text-ink">
+                  <Td>
+                    <RuleCriterion rule={r} />
+                  </Td>
+                  {/* **主类跟结论写在一起**：一条规则说的是「这样的 Person 是个
+                      Veteran」，主类是这句话的左半边，不是判据的一部分 */}
+                  <Td className="whitespace-nowrap text-small text-ink">
+                    <span className="text-ink-2">{r.subject_label} → </span>
                     {r.conclusion === "typing"
                       ? r.conclude_type_label
                       : `${r.conclude_predicate_label} = ${JSON.stringify(r.conclude_value)}`}
@@ -528,29 +532,35 @@ export function RulesPanel({
   );
 }
 
-/** 规则读成一句话。**这一段就是它的全部语义**，没有别处再藏着条件。
-    组内是合取、组间是析取（决定记录 0029），所以中间写的是「并且」与「或者」，
-    不是一个点号：符号读不出「全都要成立」，而那正是规则最容易被误读的地方。 */
-function RuleSentence({ rule }: { rule: BusinessRule }) {
+/** 判据。**这一格就是规则的全部语义**，没有别处再藏着条件。
+ *
+ *  一个条件一行，摞在一起就是「与」——一列条件读作「全都要成立」，是筛选器
+ *  一贯的读法，不必再印一个连词。**唯一印出来的连词是「或」**，因为只有它
+ *  需要标：组与组之间换的是判据的满足方式，不是又加一条要求（0029）。
+ *
+ *  从前这里是一句连排的话，`A and B or C` 里两个连词一样重，谁先结合读不出来
+ *  ——而那正是规则最容易被误读的地方。 */
+function RuleCriterion({ rule }: { rule: BusinessRule }) {
   const groups = byGroup(rule.conditions);
   return (
-    <p className="text-small leading-relaxed text-ink-2">
-      <span>{rule.subject_label}</span>
-      <span> {S.ontology.ruleWhere} </span>
-      {groups.map((group, gi) => (
-        <span key={gi}>
-          {gi > 0 && <span className="text-ink"> {S.ontology.ruleOr} </span>}
-          {group.map((c, i) => (
-            <span key={i}>
-              {i > 0 && <span> {S.ontology.ruleAnd} </span>}
+    <div className="space-y-1">
+      {groups.map((group, gi) =>
+        group.map((c, i) => (
+          <div key={`${gi}-${i}`} className="flex items-baseline gap-2">
+            {/* 「或」占住行首那一竖列：只有每一块的第一行写它，读的人扫一眼
+                左边就知道这条规则有几种满足方式 */}
+            <span className="w-6 shrink-0 text-right text-fine text-ink">
+              {gi > 0 && i === 0 ? S.ontology.ruleOr : ""}
+            </span>
+            <span className="text-small text-ink-2">
               <span className="text-ink">{c.predicate_label}</span>{" "}
-              <span>{OPS.find((o) => o.value === c.op)?.label() ?? c.op}</span>{" "}
+              {OPS.find((o) => o.value === c.op)?.label() ?? c.op}{" "}
               <span className="u-num text-ink">{operandText(c.op, c.operand)}</span>
             </span>
-          ))}
-        </span>
-      ))}
-    </p>
+          </div>
+        )),
+      )}
+    </div>
   );
 }
 

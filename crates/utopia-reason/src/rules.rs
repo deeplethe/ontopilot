@@ -77,7 +77,111 @@ pub enum Operand {
     /// 类别集合。**逐字匹配**——同一类别换个语言就不算命中，这是 0021 记下的
     /// 未决问题，不在这里偷偷做模糊
     Set(Vec<String>),
+    /// 算出来的数（0032）：拿这个实体别的读数算一个门槛，而不是写死一个
+    Calc(Expr),
     None,
+}
+
+/// 四则。**只有这四个**：再多一个就得回答它对缺读数、对除零、对单位各是什么
+/// 语义，而那是一门语言的开头（0002 / 0032）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arith {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+impl Arith {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Arith::Add => "add",
+            Arith::Sub => "sub",
+            Arith::Mul => "mul",
+            Arith::Div => "div",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "add" => Arith::Add,
+            "sub" => Arith::Sub,
+            "mul" => Arith::Mul,
+            "div" => Arith::Div,
+            _ => return None,
+        })
+    }
+}
+
+/// 一个数是怎么算出来的（0032）。叶子要么是这个实体的一条属性读数，要么是
+/// 写死的数；中间是四则。
+///
+/// **树，不是字符串。** 存下来的就是这棵树，界面照着它渲染，求值照着它算——
+/// 两者不会漂移，而这正是 0002 拒掉「用户自定义规则语言」时真正在守的东西。
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expr {
+    /// 这个实体在这个谓词上的读数
+    Attr(Uuid),
+    Const(f64),
+    Arith {
+        op: Arith,
+        l: Box<Expr>,
+        r: Box<Expr>,
+    },
+}
+
+/// 一棵算式最深几层。太深的树是「有人在这里写程序」的信号，编译时就该拦下
+pub const MAX_EXPR_DEPTH: usize = 4;
+
+impl Expr {
+    /// 这棵树读了哪些谓词，按出现顺序、去重。求值前要为它们各留一个槽位
+    pub fn predicates(&self, out: &mut Vec<Uuid>) {
+        match self {
+            Expr::Attr(p) => {
+                if !out.contains(p) {
+                    out.push(*p);
+                }
+            }
+            Expr::Const(_) => {}
+            Expr::Arith { l, r, .. } => {
+                l.predicates(out);
+                r.predicates(out);
+            }
+        }
+    }
+
+    pub fn depth(&self) -> usize {
+        match self {
+            Expr::Attr(_) | Expr::Const(_) => 1,
+            Expr::Arith { l, r, .. } => 1 + l.depth().max(r.depth()),
+        }
+    }
+
+    /// 按这一轮选中的读数算一个数。
+    ///
+    /// **算不出来就是 None，不是 0**：读数不在（没记 ≠ 零）、值不是数、除零，
+    /// 三种情况一律没有值，于是这条规则在这个组合上不出结论（0032）。把它们
+    /// 当零，等于在无知的地方填一个确定的答案。
+    pub fn eval(&self, bound: &HashMap<Uuid, &AttrFact>) -> Option<f64> {
+        Some(match self {
+            Expr::Attr(p) => num(&bound.get(p)?.value)?,
+            Expr::Const(n) => *n,
+            Expr::Arith { op, l, r } => {
+                let (a, b) = (l.eval(bound)?, r.eval(bound)?);
+                match op {
+                    Arith::Add => a + b,
+                    Arith::Sub => a - b,
+                    Arith::Mul => a * b,
+                    Arith::Div => {
+                        if b == 0.0 {
+                            return None;
+                        }
+                        a / b
+                    }
+                }
+            }
+        })
+        .filter(|n: &f64| n.is_finite())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +198,9 @@ pub struct Condition {
 pub enum Conclusion {
     /// 派生归类：结论是一个类，落成 `is_a` 上的字面值
     Typing { class: String },
+    /// 派生属性：算出来的数（0032）。与上面那支的区别只在值从哪来——
+    /// 算式读的那几条读数**一并进前提**，所以结论仍然说得出「凭什么」
+    Computed { predicate: Uuid, expr: Expr },
     /// 派生属性：某个属性谓词上的一个字面值
     Attribute {
         predicate: Uuid,
@@ -119,6 +226,9 @@ pub struct RuleHit {
     pub premises: Vec<Uuid>,
     pub from: Option<i64>,
     pub to: Option<i64>,
+    /// 算出来的结论值（0032）。**每个组合各算各的**——两条 revenue 三条 cost
+    /// 就是六个数、六段区间、六行结论；常量结论这里是 None
+    pub value: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -180,53 +290,108 @@ pub fn evaluate(
         for (subject, own) in &by_subject {
             // 同一实体上，一条规则的多个组可能推出同一段区间。去重跨组，
             // 因为它们落成的是同一行派生事实
-            let mut seen: Vec<(Option<i64>, Option<i64>)> = Vec::new();
+            // 去重的键带上算出来的值（0032）：同一区间上两个不同的值是两行
+            let mut seen: Vec<(Option<i64>, Option<i64>, Option<u64>)> = Vec::new();
             // 这条规则在这个实体上有没有哪一组因组合太多没展开完。**按 (规则, 实体)
             // 记一次**：报出来的是「这里少推了东西」，不是「少推了几组」
             let mut capped_here = false;
             for group in &groups {
-                // 每个条件的命中集。任何一个为空，这一组在这个实体上就不成立
-                let mut per_condition: Vec<Vec<Uuid>> = Vec::with_capacity(group.len());
-                let mut satisfiable = true;
+                // ---- 槽位：这一组要各挑一条读数的那几处。
+                //
+                // 前 group.len() 个是条件自己的谓词（**一个条件一个槽**，与
+                // 0032 之前一样：两个写在同一属性上的条件仍然各挑各的读数）；
+                // 后面是算式里读到、而条件没覆盖的谓词（0032）。算式引用一个
+                // 谓词时绑到**第一个**同谓词的槽——`thc > thc * 0.5` 两边说的
+                // 就是同一条读数，而不是同一属性的两条
+                let mut slots: Vec<Uuid> = group.iter().map(|c| c.predicate).collect();
+                let mut extra: Vec<Uuid> = Vec::new();
                 for c in group {
+                    if let Operand::Calc(e) = &c.operand {
+                        e.predicates(&mut extra);
+                    }
+                }
+                if let Conclusion::Computed { expr, .. } = &rule.conclusion {
+                    expr.predicates(&mut extra);
+                }
+                for p in extra {
+                    if !slots.contains(&p) {
+                        slots.push(p);
+                    }
+                }
+
+                // 每个槽位的候选读数。任何一个为空，这一组在这个实体上就不成立
+                let mut per_slot: Vec<Vec<Uuid>> = Vec::with_capacity(slots.len());
+                let mut satisfiable = true;
+                for p in &slots {
                     let matched: Vec<Uuid> = own
                         .iter()
-                        .filter(|f| f.predicate == c.predicate && satisfies(c, &f.value))
+                        .filter(|f| f.predicate == *p)
                         .map(|f| f.id)
                         .collect();
                     if matched.is_empty() {
                         satisfiable = false;
                         break;
                     }
-                    per_condition.push(matched);
+                    per_slot.push(matched);
                 }
                 if !satisfiable {
                     continue;
                 }
 
                 // 封顶按组算：一组展不开，不该把另一组也拦下
-                let combos: usize = per_condition.iter().map(|v| v.len()).product();
+                let combos: usize = per_slot.iter().map(|v| v.len()).product();
                 if combos > MAX_COMBOS {
                     capped_here = true;
                     continue;
                 }
 
-                // 笛卡尔积。同一区间可能由多个组合得出（同一读数报了两遍），
-                // 按区间去重——它们本来就会落成同一行
-                for combo in cartesian(&per_condition) {
+                let by_id: HashMap<Uuid, &AttrFact> = own.iter().map(|f| (f.id, *f)).collect();
+
+                // 笛卡尔积。**条件要等组合定下来才判得了**（0032）：一个算出来的
+                // 门槛读的是这一轮选中的那几条读数，判断不再只看一条事实。
+                // 同一区间可能由多个组合得出（同一读数报了两遍），按区间去重
+                for combo in cartesian(&per_slot) {
+                    // 槽位 → 这一轮选中的那条读数。算式与条件都照着它读
+                    let mut bound: HashMap<Uuid, &AttrFact> = HashMap::new();
+                    for (i, id) in combo.iter().enumerate() {
+                        let Some(f) = by_id.get(id) else { continue };
+                        bound.entry(slots[i]).or_insert(f);
+                    }
+                    let holds = group.iter().enumerate().all(|(i, c)| {
+                        combo
+                            .get(i)
+                            .and_then(|id| by_id.get(id))
+                            .is_some_and(|f| satisfies(c, &f.value, &bound))
+                    });
+                    if !holds {
+                        continue;
+                    }
+                    // 算出来的结论：这个组合上算不出数就不出结论（缺读数、
+                    // 不是数、除零），而不是落一行没有值的派生
+                    let value = match &rule.conclusion {
+                        Conclusion::Computed { expr, .. } => match expr.eval(&bound) {
+                            Some(v) => Some(v),
+                            None => continue,
+                        },
+                        _ => None,
+                    };
                     let Some((from, to)) = validity(&combo, spans) else {
                         continue;
                     };
-                    if seen.contains(&(from, to)) {
+                    // 去重按 (区间, 值)：算出来的结论同一区间可以有不同的值，
+                    // 那是两行，不是一行
+                    let key = (from, to, value.map(f64::to_bits));
+                    if seen.contains(&key) {
                         continue;
                     }
-                    seen.push((from, to));
+                    seen.push(key);
                     hits.push(RuleHit {
                         rule: rule.id,
                         subject: *subject,
                         premises: combo,
                         from,
                         to,
+                        value,
                     });
                 }
             }
@@ -271,7 +436,20 @@ fn cartesian(sets: &[Vec<Uuid>]) -> Vec<Vec<Uuid>> {
 ///
 /// **类型不对就是不满足，不是报错。** 一个本该是数字的属性被抽成了
 /// "十二点三"，这条规则在这个实体上不成立——而不是让整轮物化失败。
-fn satisfies(c: &Condition, value: &serde_json::Value) -> bool {
+fn satisfies(c: &Condition, value: &serde_json::Value, bound: &HashMap<Uuid, &AttrFact>) -> bool {
+    // 算出来的门槛：先按这一轮选中的读数算个数，算不出来就是不满足（0032）
+    if let Operand::Calc(e) = &c.operand {
+        let Some(n) = e.eval(bound) else { return false };
+        let Some(v) = num(value) else { return false };
+        return match c.op {
+            Op::Gt => v > n,
+            Op::Gte => v >= n,
+            Op::Lt => v < n,
+            Op::Lte => v <= n,
+            // 算式给的是一个数：区间、集合、有记录都不是它能填的位置
+            _ => false,
+        };
+    }
     match (&c.op, &c.operand) {
         (Op::Present, _) => !value.is_null(),
         // 值不在集合里就算满足；**没有值不算**——那是「没记」，不是「不是它」
@@ -706,5 +884,183 @@ mod tests {
         let (hits, report) = evaluate(&[rule], &facts, &spans);
         assert_eq!(report.capped, 1, "100 种组合超过上限，要计数");
         assert!(hits.is_empty());
+    }
+
+    fn attr(p: u8) -> Expr {
+        Expr::Attr(id(p))
+    }
+    fn arith(op: Arith, l: Expr, r: Expr) -> Expr {
+        Expr::Arith {
+            op,
+            l: Box::new(l),
+            r: Box::new(r),
+        }
+    }
+
+    /// 结论是算出来的：margin = revenue − cost。**算式读的两条读数都进前提**，
+    /// 所以这条结论说得出凭什么，也会在任一条读数变了的时候退场（0032）
+    #[test]
+    fn a_computed_conclusion_carries_the_readings_it_read() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Computed {
+                predicate: id(12),
+                expr: arith(Arith::Sub, attr(10), attr(11)),
+            },
+            conditions: vec![Condition {
+                group: 0,
+                predicate: id(10),
+                op: Op::Present,
+                operand: Operand::None,
+            }],
+        };
+        let facts = vec![fact(1, 50, 10, json!(300.0)), fact(2, 50, 11, json!(120.0))];
+        let spans = HashMap::from([(id(1), (Some(100), None)), (id(2), (Some(100), None))]);
+        let (hits, _) = evaluate(&[rule], &facts, &spans);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].value, Some(180.0));
+        // 条件只提到 revenue，可 cost 也读了——它照样是前提
+        assert_eq!(hits[0].premises.len(), 2);
+        assert!(hits[0].premises.contains(&id(1)) && hits[0].premises.contains(&id(2)));
+    }
+
+    /// **每个组合各算各的。** 两条 revenue 一条 cost，就是两个数、两段区间、
+    /// 两行结论——而不是挑一条算一次（0032 里说的「行数才是真代价」）
+    #[test]
+    fn each_combination_of_readings_computes_its_own_value() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Computed {
+                predicate: id(12),
+                expr: arith(Arith::Sub, attr(10), attr(11)),
+            },
+            conditions: vec![Condition {
+                group: 0,
+                predicate: id(10),
+                op: Op::Present,
+                operand: Operand::None,
+            }],
+        };
+        let facts = vec![
+            fact(1, 50, 10, json!(300.0)),
+            fact(2, 50, 10, json!(400.0)),
+            fact(3, 50, 11, json!(120.0)),
+        ];
+        let spans = HashMap::from([
+            (id(1), (Some(100), Some(200))),
+            (id(2), (Some(200), Some(300))),
+            (id(3), (Some(100), Some(300))),
+        ]);
+        let (hits, _) = evaluate(&[rule], &facts, &spans);
+        assert_eq!(hits.len(), 2, "两条 revenue 各算一个 margin");
+        let mut values: Vec<f64> = hits.iter().filter_map(|h| h.value).collect();
+        values.sort_by(f64::total_cmp);
+        assert_eq!(values, vec![180.0, 280.0]);
+    }
+
+    /// 缺一条读数就不出结论——**不是当零**。没记不等于零，在无知的地方填一个
+    /// 确定的答案正是这套账本最不该做的事
+    #[test]
+    fn a_missing_reading_computes_nothing_rather_than_zero() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Computed {
+                predicate: id(12),
+                expr: arith(Arith::Sub, attr(10), attr(11)),
+            },
+            conditions: vec![Condition {
+                group: 0,
+                predicate: id(10),
+                op: Op::Present,
+                operand: Operand::None,
+            }],
+        };
+        let facts = vec![fact(1, 50, 10, json!(300.0))];
+        let spans = HashMap::from([(id(1), (Some(100), None))]);
+        let (hits, _) = evaluate(&[rule], &facts, &spans);
+        assert!(hits.is_empty(), "cost 没记，margin 就不该有");
+    }
+
+    /// 除零同样什么都不出。一条算不出来的结论与一条不成立的结论一样：没有
+    #[test]
+    fn dividing_by_zero_computes_nothing() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Computed {
+                predicate: id(12),
+                expr: arith(Arith::Div, attr(10), attr(11)),
+            },
+            conditions: vec![Condition {
+                group: 0,
+                predicate: id(10),
+                op: Op::Present,
+                operand: Operand::None,
+            }],
+        };
+        let facts = vec![fact(1, 50, 10, json!(300.0)), fact(2, 50, 11, json!(0.0))];
+        let spans = HashMap::from([(id(1), (Some(100), None)), (id(2), (Some(100), None))]);
+        let (hits, _) = evaluate(&[rule], &facts, &spans);
+        assert!(hits.is_empty());
+    }
+
+    /// 门槛也能是算出来的：`revenue > cost × 1.5`。判断要等组合定下来才做得了，
+    /// 因为门槛读的正是这一轮选中的那条 cost
+    #[test]
+    fn a_threshold_can_be_computed_from_another_reading() {
+        let rule = |factor: f64| BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Typing {
+                class: "Healthy".into(),
+            },
+            conditions: vec![Condition {
+                group: 0,
+                predicate: id(10),
+                op: Op::Gt,
+                operand: Operand::Calc(arith(Arith::Mul, attr(11), Expr::Const(factor))),
+            }],
+        };
+        let facts = vec![fact(1, 50, 10, json!(300.0)), fact(2, 50, 11, json!(120.0))];
+        let spans = HashMap::from([(id(1), (Some(100), None)), (id(2), (Some(100), None))]);
+
+        let (hits, _) = evaluate(&[rule(1.5)], &facts, &spans);
+        assert_eq!(hits.len(), 1, "300 > 120 × 1.5");
+        assert_eq!(hits[0].premises.len(), 2, "门槛读的那条也是前提");
+
+        let (none, _) = evaluate(&[rule(3.0)], &facts, &spans);
+        assert!(none.is_empty(), "300 不大于 120 × 3");
+    }
+
+    /// 同一区间上两个不同的值是**两行**，不是一行。去重的键带上值，否则
+    /// 后算出来的那个会被当成重复丢掉
+    #[test]
+    fn two_values_on_one_interval_are_two_hits() {
+        let rule = BusinessRule {
+            id: id(90),
+            conclusion: Conclusion::Computed {
+                predicate: id(12),
+                expr: attr(10),
+            },
+            conditions: vec![Condition {
+                group: 0,
+                predicate: id(10),
+                op: Op::Present,
+                operand: Operand::None,
+            }],
+        };
+        let facts = vec![fact(1, 50, 10, json!(300.0)), fact(2, 50, 10, json!(400.0))];
+        let spans = HashMap::from([(id(1), (Some(100), None)), (id(2), (Some(100), None))]);
+        let (hits, _) = evaluate(&[rule], &facts, &spans);
+        assert_eq!(hits.len(), 2, "同一段区间，两个值");
+    }
+
+    /// 算式的深度算得对——编译那一侧靠它拦住「有人在这里写程序」
+    #[test]
+    fn depth_counts_the_deepest_branch() {
+        assert_eq!(attr(10).depth(), 1);
+        assert_eq!(arith(Arith::Add, attr(10), attr(11)).depth(), 2);
+        assert_eq!(
+            arith(Arith::Div, arith(Arith::Sub, attr(10), attr(11)), attr(10)).depth(),
+            3
+        );
     }
 }

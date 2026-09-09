@@ -662,6 +662,24 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             classes = etypes.len(),
             "本体超出提示词预算，改为按分块检索候选"
         );
+        // **这一篇要靠检索，那就先把检索用的向量补齐——不要跟补齐任务赛跑。**
+        //
+        // 建库装包、随手上传，是产品里最自然的一条路，而它踩的正是这个坑：
+        // `embed_ontology` 与 `extract_document` 同时排队，向量没就绪时按块检索
+        // 取不到候选，退回全量本体——实测每块 109k tokens（正文只占 0.2%），
+        // 且**多给的那些类会吃掉实体**（build_lists 上面那段注释量过：25 → 18）。
+        // 更糟的是连锁：109k × 并发把端点打到限流，退避五次仍失败就整块跳过，
+        // 一轮 13 块抽出来的同时 24 块被丢掉；抽取又占着端点，向量补得更慢。
+        //
+        // `refresh` 是幂等的、按库串行的（ontology_index::PER_KB），所以：
+        // 第一篇文档把向量补出来，同时到的其余文档在锁上等一下，进来时已经没事可做。
+        // 没配嵌入模型时它直接返回 0，退回全量那条路原样保留——那种部署本来就没有检索。
+        //
+        // 代价是新库的第一篇要多等几分钟。**换来的是它不会被一份烂抽取永久写坏**：
+        // 事实一旦落库，没有人会回头发现「这篇当初是在本体看不见的时候抽的」。
+        if let Err(e) = crate::ontology_index::refresh(state, doc.kb_id).await {
+            tracing::warn!(%document_id, error = %e, "本体向量补齐失败，这一篇按全量本体抽");
+        }
     }
     // 内置类恒在：检索漏掉的分块仍要有地方落脚，否则模型无类可选
     let seed_classes: HashSet<Uuid> = etypes.iter().filter(|t| t.builtin).map(|t| t.id).collect();
@@ -1243,9 +1261,16 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             // 文本值的属性（schema.org 里 323 个）在这一档仍会变成实体——
             // 那里没有可靠判据，猜错会吃掉真实体，不猜
             let literal = match (&f.value, f.object.as_deref().map(str::trim)) {
-                (Some(v), None | Some("")) if !known_predicate(f.predicate.as_str()) => {
-                    Some(v.clone())
-                }
+                // **给了值、没给宾语——不管这个谓词本体认不认识。**
+                //
+                // 从前这里卡着 `!known_predicate`：`job_title` 在 schema.org 里是关系
+                //（它的 range 是 `Text|DefinedTerm`，含一个类就走关系通道），于是模型
+                // 写 `job_title` + "founder and CEO" 时既进不了属性档、又在关系档因为
+                // 缺宾语被丢掉——`object_missing` 实测 69 次，四篇文档里每个人的职务
+                // 就是这么没的。谓词认不认识与「这条事实带的是值还是实体」无关：
+                // 值在手上就收下，原词进 proposed_predicate，等本体采纳时再换谓词，
+                // 形状已经是对的（0010）
+                (Some(v), None | Some("")) => Some(v.clone()),
                 (_, Some(o))
                     if !o.is_empty()
                         && !known_predicate(f.predicate.as_str())
@@ -1258,17 +1283,55 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             };
             if let Some(value) = literal {
                 let subject_name = f.subject.trim();
-                let Some(&subject_id) = entity_ids.get(subject_name) else {
-                    drop_signal(
-                        state,
-                        doc.kb_id,
-                        document_id,
-                        utopia_store::extraction_drops::reason::SUBJECT_NOT_DECLARED,
-                        &f.predicate,
-                        Some(subject_name),
-                    )
-                    .await;
-                    continue;
+                // **主语按关系那条路解，不要求它在本次回复里重新声明过。**
+                //
+                // 从前这里只查 `entity_ids`，模型用「已知实体」句柄带进来的、
+                // 或者只写了名字没重列的主语一律落空——实测一轮 51 块里
+                // `subject_not_declared` 丢掉 113 条，丢的是 NVIDIA 的营收、
+                // 净利、每股收益，是十位董事的赞成票与反对票，全是有名有姓的
+                // 主语。属性那一档要求主语有类型（domain 要校验），这一档没有
+                // domain 可校验，也就没有理由比关系那条路更严
+                let subject_id = match f.subject_ref.as_deref().map(str::trim) {
+                    Some(handle) => match referenced_entity(&ref_entities, handle) {
+                        Some(bound) => bound.id,
+                        None => {
+                            drop_signal(
+                                state,
+                                doc.kb_id,
+                                document_id,
+                                utopia_store::extraction_drops::reason::MALFORMED_ITEM,
+                                &f.predicate,
+                                Some(handle),
+                            )
+                            .await;
+                            continue;
+                        }
+                    },
+                    None => {
+                        match no_ref_name_binding(&entity_ids, &handled_by_name, subject_name) {
+                            NoRefNameBinding::Legacy(id) => id,
+                            NoRefNameBinding::AmbiguousHandled | NoRefNameBinding::Missing => {
+                                touched_names.insert(
+                                    utopia_store::resolution::normalize_name(subject_name)
+                                        .to_lowercase(),
+                                );
+                                resolve_bare(
+                                    &state.pool,
+                                    doc.kb_id,
+                                    entity_type_of.get(subject_name).copied().flatten(),
+                                    subject_name,
+                                    ctx,
+                                    Some(&chunk.text),
+                                    &mut doc_cache,
+                                    &handled_by_name,
+                                    &mut ambiguous_bare_cache,
+                                    &mut needs_adjudication,
+                                    &mut human_reviews_found,
+                                )
+                                .await?
+                            }
+                        }
+                    }
                 };
                 let _ = utopia_store::ontology::record_miss(
                     &state.pool,
@@ -1764,7 +1827,9 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             .await?;
         }
     } else if needs_adjudication {
-        utopia_store::jobs::enqueue(
+        // 同库已排着的不重复——与下面的 resolve_types 一样。一批文档同时抽完
+        // 会各排一个，而它们读到的是同一批待裁项
+        utopia_store::jobs::enqueue_unless_queued(
             &state.pool,
             "adjudicate_entities",
             serde_json::json!({ "kb_id": doc.kb_id }),
@@ -1937,6 +2002,13 @@ fn build_lists(
 const PER_CHUNK_CLASSES: i64 = 40;
 const PER_CHUNK_RELATIONS: i64 = 30;
 const PER_CHUNK_ATTRIBUTES: i64 = 30;
+/// 「这批类身上声明的关系／属性」这道地板给多少名额。
+///
+/// 比按相似度那 30 个宽得多，因为它的池子已经被 domain 收窄过一轮——
+/// schema.org 里 person + organization + corporation 三个类身上一共只有 86 个关系。
+/// 上限只是防病态情况（一块认出上百个类），不是筛选手段。
+const PER_CHUNK_DOMAIN_RELATIONS: i64 = 120;
+const PER_CHUNK_DOMAIN_ATTRIBUTES: i64 = 40;
 
 /// 按这一块的向量检索候选，排出这一块专用的三段清单。
 ///
@@ -2029,6 +2101,42 @@ async fn chunk_lists(
         .flat_map(|r| r.domains.iter().chain(r.ranges.iter()).copied())
         .collect();
     classes.extend(sig_classes);
+
+    // **类进来了，就把本体声明在它们身上的关系也铺出去。**
+    //
+    // 上面那道祖先地板治的是「类捞不到」，这道治的是「关系捞不到」——同一个
+    // 病的两侧。实测一块讲「Jensen Huang, founder and CEO of NVIDIA」的正文：
+    // `employee` 排第 10 进了窗口，模型就用了它；而 `founder` 排 267、
+    // `job_title` 排 618、`has_occupation` 排 811，一个都没进——**四篇文档里
+    // 每个人的职务因此全部没落进图，而且不留任何丢弃信号：模型没被问到，
+    // 也就什么都没说，drops 与 misses 两张表都看不见它**（2026-09-08 实测）。
+    //
+    // 收窄的判据是本体自己声明的 domain，不是又一次相似度猜测：这一块认出了
+    // person 与 organization，那么「本体说人和组织能有什么」就该摆在模型面前。
+    // 同一块里 `founder` 升到 29、`job_title` 升到 55（池子 86）。
+    //
+    // **放在 `sig_classes` 之后，是为了不让它反过来撑大类清单。** 放在前面时
+    // 这批关系的 range 会顺着签名规则把一大票类拉进来，同一块的提示词从 11.7k
+    // 涨到 21.4k——为了一个谓词付两倍的钱。它们的 domain 侧本来就在清单里
+    // （地板正是这么选出来的），range 侧退化成 `*` 可以接受：这道地板要办的事
+    // 是「让模型看见这个说法存在」，不是把签名补全。
+    let domain_ids: Vec<Uuid> = classes.iter().copied().collect();
+    for (limit, kind) in [
+        (PER_CHUNK_DOMAIN_RELATIONS, "relation"),
+        (PER_CHUNK_DOMAIN_ATTRIBUTES, "attribute"),
+    ] {
+        rels.extend(
+            utopia_store::ontology::nearest_relation_type_ids_in_domains(
+                &state.pool,
+                kb_id,
+                embedding,
+                limit,
+                Some(kind),
+                &domain_ids,
+            )
+            .await?,
+        );
+    }
 
     // 一个候选都没检索到 = 索引还没建好，退回全量而不是给一份空清单
     if classes.len() <= seed_classes.len() && rels.is_empty() {

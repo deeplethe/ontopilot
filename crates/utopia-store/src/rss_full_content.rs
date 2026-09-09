@@ -74,7 +74,7 @@ pub async fn requeue_failed(pool: &PgPool, scope: crate::jobs::RequeueScope<'_>)
              ORDER BY j.id LIMIT $4 FOR UPDATE OF e, j",
         ).bind(source_id).bind(generation).bind(scope.failed_since).bind(capacity)
             .fetch_all(&mut *tx).await?;
-        count += sqlx::query(
+        let requeued = sqlx::query(
             "UPDATE jobs SET status = 'queued', attempts = 0, last_error = NULL,
              locked_at = NULL, run_at = now(), updated_at = now()
              WHERE id = ANY($1) AND status = 'failed'",
@@ -83,6 +83,10 @@ pub async fn requeue_failed(pool: &PgPool, scope: crate::jobs::RequeueScope<'_>)
         .execute(&mut *tx)
         .await?
         .rows_affected();
+        if requeued > 0 {
+            crate::jobs::notify_worker_tx(&mut tx).await?;
+        }
+        count += requeued;
         tx.commit().await?;
     }
     Ok(count)

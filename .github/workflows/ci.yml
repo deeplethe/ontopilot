@@ -109,5 +109,7 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Test
+        run: pnpm test
       - name: Build (含类型检查)
         run: pnpm build

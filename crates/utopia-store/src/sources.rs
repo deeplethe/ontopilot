@@ -84,37 +84,50 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<SourceView>> {
     // config 剔掉凭据：列表给 Viewer 看，哪一种连接器的密钥都不下发。
     // 键在 `SOURCE_SECRET_KEYS` 一张表上——从前这里只减 `auth_header`，五种连接器
     // 的密钥就这么漏出去的（#246）
+    // 外层别名不能与 ENTRY_SELECT 的来源别名重名；来源和当前代谓词必须留在投影内部，
+    // 否则 PostgreSQL 会先计算部署中的全部 observation，再丢弃与当前来源无关的行。
     let rows: Vec<SourceView> = sqlx::query_as(
-        &format!("WITH projected AS ({}) SELECT s.id, s.kind, s.name, s.config - $2::text[] AS config, s.icon,
-                s.sync_interval_minutes, s.sync_cron,
-                s.last_sync_at, s.last_sync_status, s.last_sync_error, s.last_sync_added,
+        &format!("SELECT listed_source.id, listed_source.kind, listed_source.name,
+                listed_source.config - $2::text[] AS config, listed_source.icon,
+                listed_source.sync_interval_minutes, listed_source.sync_cron,
+                listed_source.last_sync_at, listed_source.last_sync_status,
+                listed_source.last_sync_error, listed_source.last_sync_added,
                 (SELECT count(*) FROM documents d
-                 WHERE d.source_id = s.id AND d.deleted_at IS NULL) AS doc_count,
+                 WHERE d.source_id = listed_source.id AND d.deleted_at IS NULL) AS doc_count,
                 (SELECT count(*) FROM documents d
-                 WHERE d.source_id = s.id AND d.missing_since IS NOT NULL
+                 WHERE d.source_id = listed_source.id AND d.missing_since IS NOT NULL
                    AND d.deleted_at IS NULL) AS missing_count,
-                CASE WHEN s.kind <> 'rss' THEN NULL
-                  WHEN s.config->>'content_mode' IS DISTINCT FROM 'full_new_items' THEN 'disabled'
-                  WHEN s.rss_baselined_at IS NULL THEN 'pending' ELSE 'active' END AS rss_full_content_state,
-                CASE WHEN s.kind='rss' THEN s.rss_generation END AS rss_full_content_generation,
-                (SELECT count(*)::int FROM projected e
-                 WHERE e.source_id=s.id AND e.activation_generation=s.rss_generation AND e.state='baseline') AS rss_full_content_baseline_count,
-                COALESCE((SELECT count(*) FROM projected e
-                 WHERE e.source_id = s.id AND e.activation_generation = s.rss_generation
-                   AND e.state = 'pending'), 0) AS rss_full_content_pending_count,
-                COALESCE((SELECT count(*) FROM projected e
-                 WHERE e.source_id = s.id AND e.activation_generation = s.rss_generation
-                   AND e.state IN ('queued', 'hydrating')), 0) AS rss_full_content_queued_count,
-                COALESCE((SELECT count(*) FROM projected e
-                 WHERE e.source_id = s.id AND e.activation_generation = s.rss_generation
-                   AND e.state = 'retry_wait'), 0) AS rss_full_content_retrying_count,
-                COALESCE((SELECT count(*) FROM projected e
-                 WHERE e.source_id = s.id AND e.activation_generation = s.rss_generation
-                   AND e.state = 'complete'), 0) AS rss_full_content_complete_count,
-                COALESCE((SELECT count(*) FROM projected e
-                 WHERE e.source_id = s.id AND e.activation_generation = s.rss_generation
-                   AND e.state IN ('terminal','deleted','superseded')), 0) AS rss_full_content_terminal_count
-         FROM sources s WHERE s.kb_id = $1 ORDER BY s.created_at", crate::rss_full_content::ENTRY_SELECT),
+                CASE WHEN listed_source.kind <> 'rss' THEN NULL
+                  WHEN listed_source.config->>'content_mode' IS DISTINCT FROM 'full_new_items' THEN 'disabled'
+                  WHEN listed_source.rss_baselined_at IS NULL THEN 'pending' ELSE 'active' END AS rss_full_content_state,
+                CASE WHEN listed_source.kind='rss' THEN listed_source.rss_generation END AS rss_full_content_generation,
+                COALESCE(hydration.baseline_count, 0) AS rss_full_content_baseline_count,
+                COALESCE(hydration.pending, 0) AS rss_full_content_pending_count,
+                COALESCE(hydration.queued, 0) AS rss_full_content_queued_count,
+                COALESCE(hydration.retrying, 0) AS rss_full_content_retrying_count,
+                COALESCE(hydration.complete, 0) AS rss_full_content_complete_count,
+                COALESCE(hydration.terminal, 0) AS rss_full_content_terminal_count
+         FROM sources listed_source
+         LEFT JOIN LATERAL (
+             SELECT
+                 (count(*) FILTER (WHERE projected.state = 'baseline'))::int AS baseline_count,
+                 count(*) FILTER (WHERE projected.state = 'pending') AS pending,
+                 count(*) FILTER (WHERE projected.state IN ('queued', 'hydrating')) AS queued,
+                 count(*) FILTER (WHERE projected.state = 'retry_wait') AS retrying,
+                 count(*) FILTER (WHERE projected.state = 'complete') AS complete,
+                 count(*) FILTER (
+                     WHERE projected.state IN ('terminal', 'deleted', 'superseded')
+                 ) AS terminal
+             FROM (
+                 {}
+                 WHERE listed_source.kind = 'rss'
+                   AND e.source_id = listed_source.id
+                   AND e.activation_generation = listed_source.rss_generation
+             ) projected
+         ) hydration ON listed_source.kind = 'rss'
+         WHERE listed_source.kb_id = $1 ORDER BY listed_source.created_at",
+            crate::rss_full_content::ENTRY_SELECT
+        ),
     )
     .bind(kb_id)
     .bind(SOURCE_SECRET_KEYS)

@@ -358,16 +358,6 @@ pub async fn upsert_source_document_tx(
     Ok(document)
 }
 
-pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Document>> {
-    let rows = sqlx::query_as(
-        "SELECT * FROM documents WHERE kb_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
-    )
-    .bind(kb_id)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
-}
-
 /// 文库一页，**带筛选与统计**。
 ///
 /// 从前是 `SELECT * FROM documents WHERE kb_id = $1` 不带上限、前端客户端分页。
@@ -970,20 +960,23 @@ pub async fn purge(pool: &PgPool, kb_id: Uuid, id: Uuid) -> AppResult<PurgeRepor
     .bind(id)
     .execute(&mut *tx)
     .await?;
-    // 原文按内容寻址，别的文档（任何库）可能共用同一份：只交出没人再引用的
-    let mut blobs = Vec::new();
-    for s in shas {
-        let (referenced,): (bool,) = sqlx::query_as(
-            "SELECT EXISTS (SELECT 1 FROM documents WHERE sha256 = $1 AND purged_at IS NULL)
-                 OR EXISTS (SELECT 1 FROM document_versions WHERE sha256 = $1)",
-        )
-        .bind(&s)
-        .fetch_one(&mut *tx)
-        .await?;
-        if !referenced {
-            blobs.push(s);
-        }
-    }
+    // 原文按内容寻址，别的文档（任何库）可能共用同一份：只交出没人再引用的。
+    //
+    // **一句话判完所有指纹，而且必须站在这个位置。** 判断看的是版本行删掉之后的
+    // 状态：这篇文档的旧版本不再算引用，它独占的原文才收得回来。把这一问挪到
+    // 删除之前，每份原文都显得有人引用、永远交不出去，而且不报任何错（#516）。
+    // 从前每个指纹各问一次，一篇重解析过三十次的文档就是三十个往返，全在已握着
+    // 来源锁与文档行锁的事务里；现在是一个往返，两问各走 0043 的 sha 索引。
+    // 名单顺序照 shas：现行指纹排在历史之后，与从前一样。
+    let blobs: Vec<String> = sqlx::query_scalar(
+        "SELECT s FROM unnest($1::text[]) WITH ORDINALITY AS u(s, n)
+          WHERE NOT EXISTS (SELECT 1 FROM documents WHERE sha256 = s AND purged_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM document_versions WHERE sha256 = s)
+          ORDER BY n",
+    )
+    .bind(&shas)
+    .fetch_all(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(PurgeReport { blobs, chunks })
 }
@@ -1134,6 +1127,7 @@ pub async fn queue_extraction_one(pool: &PgPool, document_id: Uuid) -> AppResult
     .bind(document_id)
     .fetch_one(&mut *tx)
     .await?;
+    crate::jobs::notify_worker_tx(&mut tx).await?;
     tx.commit().await?;
     Ok(job_id)
 }
@@ -1354,6 +1348,7 @@ pub async fn queue_extraction(
     .bind(&ids)
     .execute(&mut *tx)
     .await?;
+    crate::jobs::notify_worker_tx(&mut tx).await?;
     tx.commit().await?;
     Ok(ids)
 }

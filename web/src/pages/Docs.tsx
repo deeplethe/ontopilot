@@ -118,7 +118,7 @@ export function DocsPage() {
   usePageTitle(S.app.name, doc.title);
   // 公开页也感知登录态：已登录给用户菜单，未登录给 Sign in
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false });
-  const health = useQuery({ queryKey: ["health"], queryFn: api.health, staleTime: Infinity });
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health });
 
   // 滚动跟随：视口上沿之上最近的标题为当前小节；
   // 滚到底强制激活最后一节（短末节永远越不过判定线）

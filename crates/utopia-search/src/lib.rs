@@ -183,3 +183,41 @@ pub fn rrf_fuse(lists: &[Vec<String>], limit: usize) -> Vec<String> {
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     ranked.into_iter().take(limit).map(|(id, _)| id).collect()
 }
+
+#[cfg(test)]
+mod rrf_tests {
+    use super::rrf_fuse;
+
+    fn ids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// 一路召回就是那一路的顺序，融合不许重排
+    #[test]
+    fn one_list_comes_back_in_its_own_order() {
+        let lists = vec![ids(&["a", "b", "c"])];
+        assert_eq!(rrf_fuse(&lists, 10), ids(&["a", "b", "c"]));
+    }
+
+    /// 两路都点名的排最前；只在一路里的按各自名次的倒数相加比大小：
+    /// a = 1/61 + 1/62，c = 1/63 + 1/61，b = 1/62
+    #[test]
+    fn two_lists_follow_the_reciprocal_rank_arithmetic() {
+        let lists = vec![ids(&["a", "b", "c"]), ids(&["c", "a"])];
+        assert_eq!(rrf_fuse(&lists, 10), ids(&["a", "c", "b"]));
+    }
+
+    /// 空的那一路不是失败的那一路：它什么分都不加，也不影响别人
+    #[test]
+    fn an_empty_list_contributes_nothing() {
+        let lists = vec![ids(&["a", "b"]), Vec::new()];
+        assert_eq!(rrf_fuse(&lists, 10), ids(&["a", "b"]));
+    }
+
+    /// 上限在融合之后裁，不是每路各裁
+    #[test]
+    fn the_limit_cuts_after_fusion() {
+        let lists = vec![ids(&["a", "b"]), ids(&["b", "c"])];
+        assert_eq!(rrf_fuse(&lists, 1), ids(&["b"]));
+    }
+}

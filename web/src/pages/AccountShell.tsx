@@ -26,7 +26,7 @@ export function AccountShell() {
   const onAdmin = loc.pathname === "/admin";
   const adminTab = (loc.search as { tab?: string }).tab ?? "models";
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
-  const health = useQuery({ queryKey: ["health"], queryFn: api.health, staleTime: Infinity });
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health });
   // 标题：`Utopia | Persona`——账户区整体一个名字，不逐页细分
   usePageTitle(S.app.name, S.account.titleTag);
 

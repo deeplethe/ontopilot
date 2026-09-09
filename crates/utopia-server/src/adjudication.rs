@@ -8,6 +8,7 @@ use crate::llm_util;
 use crate::state::AppState;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
 use utopia_core::models::ReviewItem;
 use utopia_core::AppError;
 use utopia_store::governance as gov;
@@ -114,7 +115,31 @@ async fn record_look(
     Ok(())
 }
 
+/// 同一个库的裁决一次只跑一个（与 `ontology_index::PER_KB` 同一套理由）。
+///
+/// 入队去重只挡得住「还排着队的」；一批文档陆续抽完时，后一个入队时前一个
+/// 已经是 `running`，于是七个任务同时跑同一个库。它们各自 `pending_adjudications`
+/// 拿到**同一批**待裁项：模型调用翻七倍，而两个任务对同一对下判断时，第二个
+/// 撞 `agent_decisions_open_idx` 唯一索引直接失败（2026-09-08 实测：七个任务里
+/// 两个这样挂掉）。
+///
+/// **等而不是跳过**：后到的等前一个跑完再进，进来时重新查一遍待裁项，
+/// 通常只剩前一个读完之后才新增的那几对。
+static PER_KB: LazyLock<Mutex<HashMap<Uuid, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(Default::default);
+
+fn lock_for(kb_id: Uuid) -> Arc<tokio::sync::Mutex<()>> {
+    PER_KB
+        .lock()
+        .expect("per-kb adjudication lock table poisoned")
+        .entry(kb_id)
+        .or_default()
+        .clone()
+}
+
 pub async fn adjudicate_entities(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
+    let lock = lock_for(kb_id);
+    let _serial = lock.lock().await;
     let kb = utopia_store::kbs::get(&state.pool, kb_id).await?;
     let settings = utopia_store::settings::get(&state.pool, kb.workspace_id).await?;
     let client = settings.as_ref().and_then(llm_util::chat_client);

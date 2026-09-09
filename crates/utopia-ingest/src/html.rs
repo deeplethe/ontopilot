@@ -1,5 +1,74 @@
 //! Canonical HTML conversion shared by file, URL and feed ingestion.
 #[cfg(test)]
+mod table_tests {
+    use super::{markdown_from_html, promote_first_row_headers};
+
+    #[test]
+    fn a_table_without_headers_still_keeps_its_rows() {
+        let html = "<table><tr><td>Revenue</td><td>Q2 FY27</td><td>Q1 FY27</td></tr>\
+                    <tr><td>total</td><td>$96,221</td><td>$81,615</td></tr></table>";
+        let md = markdown_from_html(html).expect("converts");
+        // 行列关系还在：同一行的三格在同一行文本里
+        let row = md
+            .lines()
+            .find(|l| l.contains("96,221"))
+            .expect("the numbers survive");
+        assert!(row.contains("81,615"), "同一行的两个数应当在一行里: {md}");
+        assert!(row.contains("total"), "行标签应当与它的数在一行: {md}");
+    }
+
+    #[test]
+    fn empty_spacer_columns_do_not_survive() {
+        let html = "<table><tr><td>Revenue</td><td></td><td>$96,221</td><td></td></tr>\
+                    <tr><td>Margin</td><td></td><td>75.0</td><td></td></tr></table>";
+        let md = markdown_from_html(html).expect("converts");
+        let row = md
+            .lines()
+            .find(|l| l.contains("96,221"))
+            .expect("row survives");
+        assert!(!row.contains("|  |"), "空列应当被砍掉: {row}");
+        assert!(row.contains("Revenue"), "有内容的列一个不能少: {row}");
+    }
+
+    #[test]
+    fn a_blank_header_row_gives_way_to_the_real_one() {
+        let md = super::prune_empty_table_columns(
+            "|  |  |\n| --- | --- |\n| a. Tench Coxe |  |\n| shares For | 15,411 |",
+        );
+        let first = md.lines().next().expect("a line");
+        assert!(first.contains("Tench Coxe"), "表头该是真正的抬头: {md}");
+        assert!(md.contains("15,411"), "行不能丢: {md}");
+    }
+
+    #[test]
+    fn a_column_with_any_content_is_kept() {
+        let md = super::prune_empty_table_columns("| a |  | c |\n| --- | --- | --- |\n|  | b |  |");
+        assert!(md.contains("| a |  | c |") || md.contains("a"), "{md}");
+        assert!(md.contains("b"), "有内容的列不能砍: {md}");
+    }
+
+    #[test]
+    fn a_table_that_already_has_headers_is_untouched() {
+        let html = "<table><thead><tr><th>a</th></tr></thead><tr><td>1</td></tr></table>";
+        assert_eq!(promote_first_row_headers(html), html);
+    }
+
+    #[test]
+    fn a_nested_table_does_not_promote_the_outer_row() {
+        // 内层先被处理；外层因此看得见 <th>，跳过——不猜哪一行属于谁
+        let html = "<table><tr><td><table><tr><td>inner</td></tr></table></td></tr></table>";
+        let out = promote_first_row_headers(html);
+        assert_eq!(out.to_ascii_lowercase().matches("<th").count(), 1, "{out}");
+    }
+
+    #[test]
+    fn text_outside_tables_is_left_alone() {
+        let html = "<p>plain</p>";
+        assert_eq!(promote_first_row_headers(html), html);
+    }
+}
+
+#[cfg(test)]
 mod evidence_tests {
     use super::*;
 
@@ -235,7 +304,191 @@ pub fn looks_like_challenge_shell(markdown: &str) -> bool {
         && !has_substantive_prose(markdown)
 }
 
+/// 没有 `<th>` 的表格，把第一行的 `<td>` 提成 `<th>`。
+///
+/// **理由是一整类文档在解析这一步就把行列关系丢了。** htmd 的表格处理器要求
+/// 表里有显式表头（`<th>` 或 `<thead>`），否则整张退回逐格摊平——一格一行。
+/// 而 SEC 的 XBRL 报表一个都没有：实测 NVIDIA 那份财报 11 张表、那份投票结果
+/// 8-K 21 张表，`<th>` 计数都是 0。摊平之后模型看到的是一列孤立标签跟一列
+/// 孤立数字，只能按顺序猜哪个数配哪一列，于是抽出 `NVIDIA net_worth Net income`
+/// 这种边，十位董事的四类票数也全部退化成分不出类别的裸数字。
+///
+/// 第一行提成表头是这类表格的实际语义（"Q2 FY27 | Q1 FY27 | Q2 FY26"），
+/// 而且**判据很窄**：整张表一个 `<th>`/`<thead>` 都没有时才动。已经有表头的
+/// 表格一个字不改。
+///
+/// 嵌套表格按**从内到外**处理（`</table>` 出现的顺序天然如此）：内层改过之后
+/// 外层就带着 `<th>` 了，于是外层跳过——宁可少改一张，不去猜哪一行属于谁。
+fn promote_first_row_headers(html: &str) -> String {
+    let lower = html.to_ascii_lowercase();
+    let mut out = html.to_string();
+    // (开标签结束位置, 表格结束位置)，按闭合顺序 = 从内到外
+    let mut opens: Vec<usize> = Vec::new();
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0usize;
+    while i < lower.len() {
+        let next_open = lower[i..].find("<table").map(|x| i + x);
+        let next_close = lower[i..].find("</table").map(|x| i + x);
+        match (next_open, next_close) {
+            (Some(o), Some(c)) if o < c => {
+                opens.push(o);
+                i = o + 6;
+            }
+            (_, Some(c)) => {
+                if let Some(o) = opens.pop() {
+                    spans.push((o, c));
+                }
+                i = c + 7;
+            }
+            (Some(o), None) => {
+                opens.push(o);
+                i = o + 6;
+            }
+            (None, None) => break,
+        }
+    }
+    // 位置会随改写移动，所以从后往前改
+    spans.sort_by_key(|(o, _)| std::cmp::Reverse(*o));
+    for (open, close) in spans {
+        let seg = &out[open..close.min(out.len())];
+        let seg_lower = seg.to_ascii_lowercase();
+        if seg_lower.contains("<th") || seg_lower.contains("<thead") {
+            continue;
+        }
+        let Some(tr) = seg_lower.find("<tr") else {
+            continue;
+        };
+        let Some(tr_end) = seg_lower[tr..].find("</tr").map(|x| tr + x) else {
+            continue;
+        };
+        let row = &seg[tr..tr_end];
+        if !row.to_ascii_lowercase().contains("<td") {
+            continue;
+        }
+        let rewritten = replace_td_with_th(row);
+        out.replace_range(open + tr..open + tr_end, &rewritten);
+    }
+    out
+}
+
+/// 只换标签名，属性原样留着。
+fn replace_td_with_th(row: &str) -> String {
+    let mut out = String::with_capacity(row.len());
+    let lower = row.to_ascii_lowercase();
+    let mut i = 0usize;
+    while i < row.len() {
+        if lower[i..].starts_with("<td") {
+            out.push_str("<th");
+            i += 3;
+        } else if lower[i..].starts_with("</td") {
+            out.push_str("</th");
+            i += 4;
+        } else {
+            let ch = row[i..].chars().next().expect("char boundary");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
+/// 表格里整列都空的，砍掉；对齐用的空格也不留。
+///
+/// **不砍的代价是三倍。** 排版用的空单元格（XBRL 的缩进列、货币符号列）在
+/// HTML 里不占地方，转成 markdown 管道表之后每一行都要为它们写一个 `|` 和
+/// 一片对齐空格。实测那份财报：24 块 2.6 万字符 → 78 块 9.2 万字符，多出来的
+/// 全是 `|  |  |  |`。分块数进了抽取的成本，一列空格不值这个钱。
+///
+/// 判据是「这一列在**每一行**都空」，所以有内容的列一个不动；分隔行不参与判断
+/// （它本来就只有横线），但跟着一起砍列。
+fn prune_empty_table_columns(markdown: &str) -> String {
+    let is_row = |l: &str| {
+        let t = l.trim();
+        t.starts_with('|') && t.ends_with('|') && t.len() > 1
+    };
+    let cells = |l: &str| -> Vec<String> {
+        let t = l.trim();
+        t[1..t.len() - 1]
+            .split('|')
+            .map(|c| c.trim().to_string())
+            .collect()
+    };
+    let is_sep = |c: &[String]| {
+        !c.is_empty()
+            && c.iter()
+                .all(|x| !x.is_empty() && x.chars().all(|ch| ch == '-' || ch == ':'))
+    };
+
+    let lines: Vec<&str> = markdown.split('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        if !is_row(lines[i]) {
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < lines.len() && is_row(lines[i]) {
+            i += 1;
+        }
+        let rows: Vec<Vec<String>> = lines[start..i].iter().map(|l| cells(l)).collect();
+        let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+        let keep: Vec<bool> = (0..width)
+            .map(|c| {
+                rows.iter()
+                    .any(|r| !is_sep(r) && r.get(c).is_some_and(|x| !x.is_empty()))
+            })
+            .collect();
+        // 一列都不剩就原样留着，不去猜
+        if !keep.iter().any(|k| *k) {
+            out.extend(lines[start..i].iter().map(|l| l.to_string()));
+            continue;
+        }
+        let render = |r: &Vec<String>| {
+            let sep = is_sep(r);
+            let kept: Vec<String> = (0..width)
+                .filter(|c| keep[*c])
+                .map(|c| {
+                    let v = r.get(c).cloned().unwrap_or_default();
+                    if sep && v.is_empty() {
+                        "---".to_string()
+                    } else {
+                        v
+                    }
+                })
+                .collect();
+            format!("| {} |", kept.join(" | "))
+        };
+        // **表头整行是空的就让位。** 提上来的第一行有时只是排版用的占位行
+        // （SEC 那份投票结果 8-K 的每张表都这样），留着它，模型看到的是
+        // 一张列名全空的表——没有信息，还占着「表头」这个位置。下一行顶上，
+        // 表的第一行才是它真正的抬头（"a. Tench Coxe"）。
+        let head_blank = rows.first().is_some_and(|r| {
+            (0..width)
+                .filter(|c| keep[*c])
+                .all(|c| r.get(c).is_none_or(String::is_empty))
+        });
+        let body_start = if head_blank && rows.len() > 2 { 2 } else { 0 };
+        if body_start == 2 {
+            out.push(render(&rows[2]));
+            if let Some(sep) = rows.get(1) {
+                out.push(render(sep));
+            }
+            for r in &rows[3..] {
+                out.push(render(r));
+            }
+        } else {
+            for r in &rows {
+                out.push(render(r));
+            }
+        }
+    }
+    out.join("\n")
+}
+
 fn markdown_from_html(html: &str) -> Result<String, HtmlError> {
+    let html = &promote_first_row_headers(html);
     let markdown = htmd::HtmlToMarkdown::builder()
         .skip_tags(vec![
             "script", "style", "iframe", "object", "embed", "img", "svg", "math",
@@ -252,7 +505,7 @@ fn markdown_from_html(html: &str) -> Result<String, HtmlError> {
     {
         return Err(HtmlError::Interstitial);
     }
-    normalize_markdown(&markdown)
+    normalize_markdown(&prune_empty_table_columns(&markdown))
 }
 
 /// Normalize direct Markdown with the same link policy as HTML conversion.

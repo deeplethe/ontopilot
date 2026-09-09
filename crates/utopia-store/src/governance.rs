@@ -347,7 +347,11 @@ pub fn name_shape(a: &str, b: &str) -> NameShape {
             if before_ok && after_ok {
                 return Some(i);
             }
-            from = i + 1;
+            // **前进一个字符，不是一个字节。** `i + 1` 落在多字节字符中间时，
+            // 下一轮的 `long[from..]` 直接 panic——中文名字一撞上就炸，而这条
+            // 路在裁决里跑，panic 掉的是整个任务：任务行永远停在 running，
+            // 没有报错、没有重试，队列静默少一格（2026-09-08 实测）
+            from = i + long[i..].chars().next().map_or(1, char::len_utf8);
         }
         None
     };
@@ -1295,6 +1299,19 @@ mod tests {
             Version
         );
         assert_eq!(name_shape("DeepMind Health", "DeepMind"), Extension);
+        // **中文名字不能把它炸掉。** 下面每一对都要走进「整词判定失败、
+        // 换个位置再找」那条路，而那条路从前按字节前进，落在多字节字符
+        // 中间就 panic——测试断言的是「有个答案」，不是答案是什么
+        for (a, b) in [
+            ("繪圖處理器", "繪圖"),
+            ("英伟达繪圖繪圖", "繪圖"),
+            ("北京中关村科技园", "中关村"),
+            ("東京都渋谷区", "渋谷"),
+            ("Nvidia 繪圖處理器", "繪圖"),
+        ] {
+            let _ = name_shape(a, b);
+            let _ = name_shape(b, a);
+        }
         assert_eq!(
             name_shape("Gemini Robotics-ER", "Gemini Robotics"),
             Extension
