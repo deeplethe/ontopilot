@@ -60,6 +60,8 @@ import {
   RailItem,
   Row,
   ROW_TRAILING,
+  SkeletonRows,
+  Spinner,
   rowClass,
   Segmented,
   RAIL_CLS,
@@ -248,10 +250,21 @@ export function Ontology() {
   };
 
   if (!kb) return <Loading>{S.nav.loading}</Loading>;
-  if (data.isPending) return <Loading>{S.nav.loading}</Loading>;
   if (data.isError) return <Loading>{(data.error as Error).message}</Loading>;
 
-  const { entity_types, relation_types, misses, dismissed_misses } = data.data;
+  /* 本体还没到的时候**照样把这一页搭出来**。
+     从前这里一句 `data.isPending` 就把整页换成一行 "Loading"：一个九百多个类
+     的库要等好几秒，这几秒里人看到的是一片空白，连自己有没有点错页都不知道
+     ——而左栏那两组入口（换视图、Import / Rules / Refine…）跟本体取没取回来
+     根本无关，它们本可以立刻就在。
+     现在等的只是内容：左栏清单出骨架（一列缩进的树，形状是已知的），
+     右边那块还不知道会画成图还是表，出转圈。 */
+  const loading = data.isPending;
+  const ont = data.data;
+  const entity_types = ont?.entity_types ?? [];
+  const relation_types = ont?.relation_types ?? [];
+  const misses = ont?.misses ?? [];
+  const dismissed_misses = ont?.dismissed_misses ?? [];
   // 属性不进 Properties 列表：它们挂在类下，在类详情区编辑
   const relations = relation_types.filter((r) => r.kind !== "attribute");
   // 面板要演完退场再卸载：一取消选中就 unmount 是瞬间消失（图谱页同一个做法）。
@@ -349,7 +362,8 @@ export function Ontology() {
           className="flex-1 min-h-0 overflow-hidden px-2 pb-2 flex flex-col"
         >
           {/* 新建行置顶：随当前段建类/建关系 */}
-          {!filter.trim() && (
+          {/* 本体还没到就不给建：新类要挑父类，而父类清单此刻是空的 */}
+          {!loading && !filter.trim() && (
             <Row
               className="mb-1"
               icon={<Plus size={14} />}
@@ -370,7 +384,9 @@ export function Ontology() {
               理由是"搜的时候未必知道要找的是哪一种"；代价是标签明明停在
               Classes 上却不算数，而它就在上面两厘米处。一个选中却被无视的
               控件，比多点一下糟。想找关系就切过去，那一下是明的 */}
-          {railTab === "classes" ? (
+          {loading ? (
+            <SkeletonRows />
+          ) : railTab === "classes" ? (
             <ClassTree
               types={entity_types}
               filter={filter}
@@ -432,7 +448,7 @@ export function Ontology() {
         <RailItem
           active={sel?.kind === "uniqueness"}
           icon={<Split size={14} />}
-          count={overlaps.length}
+          count={loading ? undefined : overlaps.length}
           onClick={() => setSel({ kind: "uniqueness" })}
         >
           {S.ontology.uniquenessShort}
@@ -441,7 +457,7 @@ export function Ontology() {
         <RailItem
           active={sel?.kind === "misses"}
           icon={<Inbox size={14} />}
-          count={misses.length}
+          count={loading ? undefined : misses.length}
           onClick={() => setSel({ kind: "misses" })}
         >
           {S.ontology.missesShort}
@@ -456,7 +472,16 @@ export function Ontology() {
           选中关系，三条路径落到同一个 sel，也就落到同一份表单——
           不再各画一遍。import/refine/misses 仍是独立整页视图,那三个
           不是「关于某个类或关系」的事，没有跟模式图共享背景的道理 */}
-      {sel?.kind === "import" ||
+      {/* **转圈只留给接管主区的那几页**（Import / Rules / Refine / Overlaps /
+          Unmatched）：它们整块是表单和列表，本体没到就什么都画不出来。
+          图和表不走这条路——它们各自都有一大半跟本体无关的东西可以先画出来
+          （网格、缩放塔、静态图例；分段控件、过滤框），所以 `loading` 传下去，
+          由它们自己决定哪一块该等 */}
+      {loading && inWorkflow ? (
+        <div className="flex-1 min-w-0 grid place-items-center">
+          <Spinner size={20} label={S.nav.loading} />
+        </div>
+      ) : sel?.kind === "import" ||
       sel?.kind === "refine" ||
       sel?.kind === "misses" ||
       sel?.kind === "uniqueness" ||
@@ -512,6 +537,7 @@ export function Ontology() {
         <div className="flex-1 min-w-0 relative">
           {view === "table" ? (
             <OntologyTables
+              loading={loading}
               entityTypes={entity_types}
               relationTypes={relation_types}
               onOpenClass={(t) => setSel({ kind: "class", id: t.id })}
@@ -530,6 +556,7 @@ export function Ontology() {
             />
           ) : (
             <OntologySchemaGraph
+            loading={loading}
             entityTypes={entity_types}
             relationTypes={relation_types}
             rules={rules.data?.rules ?? []}

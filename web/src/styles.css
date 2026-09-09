@@ -1235,6 +1235,44 @@ a:hover > .u-mark-arrow {
   }
 }
 
+/* ---- 骨架：还没到的内容先占住它将来的位置 ----
+   与转圈的分工是明的：**转圈说「在等」，骨架说「等的是什么形状」**。
+   一列将来有多少行、每行多长、缩进几层，等的时候就看得出来，内容落下来
+   时位置不跳；而一块还不知道会画成什么样的区域（比如一张力导向图），
+   没有形状可占，那里才该是转圈。
+
+   底取 surface-2（4.5% 白）——比 surface 重一档，因为它此刻是画面上唯一
+   有内容的东西；扫光只有 5%，它是"还在动"的信号，不是要人去看的东西。 */
+.u-skel {
+  position: relative;
+  overflow: hidden;
+  background: var(--u-surface-2);
+}
+.u-skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.05),
+    transparent
+  );
+  animation: u-skel-kf 1.4s ease-in-out infinite;
+}
+@keyframes u-skel-kf {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-skel::after {
+    animation: none;
+  }
+}
+
+
 /* ---- numbers in chrome: 默认字体（Geist）+ 等宽数字，不再用 mono ---- */
 .u-num {
   font-variant-numeric: tabular-nums;

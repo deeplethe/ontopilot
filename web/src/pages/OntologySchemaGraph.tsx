@@ -59,6 +59,7 @@ import { S } from "../i18n";
 import {
   Pill,
   Row,
+  Spinner,
   ToolButton,
   ToolDivider,
   ToolTower,
@@ -576,6 +577,7 @@ export function OntologySchemaGraph({
   rules = [],
   selected,
   onSelect,
+  loading = false,
 }: {
   entityTypes: EntityTypeView[];
   /** 业务规则：画成主类 → 结论类的一条紫弧，点它打开规则那一页 */
@@ -588,6 +590,9 @@ export function OntologySchemaGraph({
    *  和点左栏的类名走的是同一条状态,右侧停靠的表单也就自然是同一份 */
   selected: SchemaSelection;
   onSelect: (sel: SchemaSelection) => void;
+  /** 本体还没到。网格、缩放塔、静态图例照常画，中间摆一个转圈——
+   *  **与"真的没有类"分开**：那句话是结论，这个圈是过程 */
+  loading?: boolean;
 }) {
   const entityById = useMemo(
     () => new Map(entityTypes.map((t) => [t.id, t])),
@@ -1027,13 +1032,21 @@ export function OntologySchemaGraph({
         </ToolTower>
       </div>
 
-      {empty && (
+      {/* 本体还在路上：**这块地方大半已经可以画了**。世界坐标网格、左下的缩放塔、
+          三条静态图例，都跟本体取没取回来无关；缺的只是节点。所以转圈落在画布
+          中间，而不是把整块换成一个转圈——后者等于把已经就绪的东西一起藏起来。
+          与"真的没有类"分开：那句话是结论，这个圈是过程，长得一样就读错了 */}
+      {loading ? (
+        <div className="absolute inset-0 grid place-items-center pointer-events-none">
+          <Spinner size={20} label={S.nav.loading} />
+        </div>
+      ) : empty ? (
         <div className="absolute inset-0 grid place-items-center pointer-events-none">
           <div className="text-center text-body text-ink-2 max-w-xs">
             {S.ontology.schemaEmpty}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

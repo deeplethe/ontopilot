@@ -26,6 +26,7 @@ import {
   LinkButton,
   ROW_TRAILING,
   Segmented,
+  SkeletonRows,
   Table,
   TBody,
   Td,
@@ -452,6 +453,7 @@ export function OntologyTables({
   onOpenProperty,
   onOpenAttribute,
   onSeeInstances,
+  loading = false,
 }: {
   entityTypes: EntityTypeView[];
   relationTypes: RelationTypeView[];
@@ -459,6 +461,9 @@ export function OntologyTables({
   onOpenProperty: (r: RelationTypeView) => void;
   onOpenAttribute: (a: RelationTypeView) => void;
   onSeeInstances: (t: EntityTypeView) => void;
+  /** 本体还没到。控件照常渲染、表身出骨架，**计数与行数一律不报**——
+   *  这时候它们只会是 0，而 0 是个结论，不是「还不知道」 */
+  loading?: boolean;
 }) {
   const [tab, setTab] = useState<TableTab>("classes");
   const [filter, setFilter] = useState("");
@@ -487,7 +492,7 @@ export function OntologyTables({
                   : v === "properties"
                     ? S.ontology.tabProperties
                     : S.ontology.schemaTabAttributes,
-              count: counts[v],
+              count: loading ? undefined : counts[v],
             }),
           )}
         />
@@ -499,17 +504,22 @@ export function OntologyTables({
           onChange={(e) => setFilter(e.target.value)}
         />
         <GroupLabel className={cn(ROW_TRAILING, "shrink-0")}>
-          {S.ontology.rowsShown(
-            tab === "classes"
-              ? counts.classes
-              : tab === "properties"
-                ? counts.properties
-                : counts.attributes,
-          )}
+          {loading
+            ? null
+            : S.ontology.rowsShown(
+                tab === "classes"
+                  ? counts.classes
+                  : tab === "properties"
+                    ? counts.properties
+                    : counts.attributes,
+              )}
         </GroupLabel>
       </div>
       <div className="u-scroll min-h-0 flex-1 overflow-y-auto px-8 pb-6">
-        {tab === "classes" && (
+        {/* 表身出骨架，**表头不画**：列名是什么此刻还没定（三张表的列不一样），
+            画一排灰条冒充列名是在编。分段控件、过滤框、滚动区都已经在了 */}
+        {loading && <SkeletonRows rows={10} />}
+        {!loading && tab === "classes" && (
           <ClassesTable
             types={entityTypes}
             attributes={attributes}
@@ -518,7 +528,7 @@ export function OntologyTables({
             onSeeInstances={onSeeInstances}
           />
         )}
-        {tab === "properties" && (
+        {!loading && tab === "properties" && (
           <PropertiesTable
             relations={relations}
             types={entityTypes}
@@ -526,7 +536,7 @@ export function OntologyTables({
             onOpen={onOpenProperty}
           />
         )}
-        {tab === "attributes" && (
+        {!loading && tab === "attributes" && (
           <AttributesTable
             attributes={attributes}
             types={entityTypes}
