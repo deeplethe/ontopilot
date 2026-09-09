@@ -518,9 +518,16 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
     // 规则的结论也是这个实体的一部分（0021）。**不给的话模型会拿那些读数自己再判
     // 一遍**——而阈值写在规则里，它看不见，于是两处判断迟早不一致
     let derived =
-        utopia_store::reasoning::derived_for_entity(&ctx.state.pool, ctx.kb_id, who.id, m.at)
-            .await
-            .unwrap_or_default();
+        // 两根轴一起传（#549）：as_of 回到三月，派生也回到三月
+        utopia_store::reasoning::derived_for_entity(
+            &ctx.state.pool,
+            ctx.kb_id,
+            who.id,
+            m.at,
+            m.as_of,
+        )
+        .await
+        .unwrap_or_default();
     let derived: Vec<String> = derived
         .iter()
         .map(|d| {
