@@ -1001,6 +1001,35 @@ async fn update_profile(pool: &PgPool, id: Uuid, n: i32, ctx: &[f32]) -> AppResu
 ///
 /// 没有谓词的事实（`predicate_id IS NULL`，0010）不参与：原话留在证据里，
 /// 不是本体承认的说法，不该被当成一个人的身份写进后缀。
+/// 库里有没有叫这个名字的实体，**不问类型**、并掉的不算。
+///
+/// 抽取用它判断一个没声明的主宾是不是已知的东西（#559）：模型偶尔漏报一个实体
+/// 却在事实里用了它，那时库里多半已经有它；库里也没有的，就不是漏报，是一个
+/// 描述（"lawsuit against OpenAI"），不该成节点。同名多个时取事实最多的那个——
+/// 这里只回答「有没有」，谁是谁交给消解
+pub async fn existing_by_name(
+    pool: &PgPool,
+    kb_id: Uuid,
+    raw_name: &str,
+) -> AppResult<Option<Uuid>> {
+    let name = normalize_name(raw_name);
+    let keys = recall_keys(&name);
+    let id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT e.id FROM entities e
+          WHERE e.kb_id = $1 AND e.merged_into IS NULL
+            AND (lower(e.canonical_name) = ANY($2)
+                 OR EXISTS (SELECT 1 FROM unnest(e.aliases) a WHERE lower(a) = ANY($2)))
+          ORDER BY (SELECT count(*) FROM facts f
+                     WHERE f.subject_id = e.id OR f.object_id = e.id) DESC, e.created_at
+          LIMIT 1",
+    )
+    .bind(kb_id)
+    .bind(&keys)
+    .fetch_optional(pool)
+    .await?;
+    Ok(id)
+}
+
 pub async fn refresh_disambiguators(pool: &PgPool, kb_id: Uuid, name: &str) -> AppResult<()> {
     let group: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM entities
