@@ -51,6 +51,10 @@ pub struct UpdateKbReq {
     /// 打开那一刻就排一轮，关掉后任务在两簇之间看到就停。见 docs/decisions/0025
     #[serde(default)]
     pub governance: Option<bool>,
+    /// 人写的数据约定（「测试单不算数」这类 schema 里没有的规则），问数与探索的
+    /// 提示词都读它。探索生成的描述在另一个字段，PATCH 不了。见 #570
+    #[serde(default)]
+    pub data_conventions: Option<String>,
 }
 
 /// 用户可见的 KB 列表（restricted 库仅矩阵成员与系统管理员可见）。
@@ -104,6 +108,7 @@ pub async fn create(
             None,
             None,
             Some(v),
+            None,
             None,
             None,
             None,
@@ -191,6 +196,7 @@ pub async fn update(
         req.inference_interval_minutes,
         req.auto_type_resolution,
         req.governance,
+        req.data_conventions.as_deref().map(str::trim),
     )
     .await?;
     // 打开开关就自动开始处理：排一轮，同库已排着的不重复

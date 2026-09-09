@@ -92,6 +92,13 @@ async function fresh() {
   log(`kb ${kb}，源 ${dsName} 已挂载，schema 文档 ${mounted.schema_tables ?? "?"} 张表`);
   if (mounted.schema_error) log(`  schema 同步报错：${mounted.schema_error}`);
 
+  // --conventions：探索之前把真值文件里的约定写进库，它的提示词会读（#570）。
+  // 这是探索在 wide 上从 0/18 动起来的第一个机会：schema 里没有「测试单不算数」
+  if (args.conventions) {
+    if (!truth.conventions?.length) throw new Error(`${corpusName} 的真值里没有 conventions`);
+    await api("PATCH", `/api/v1/kbs/${kb}`, { data_conventions: truth.conventions.join("\n") });
+    log(`约定已写进库：${truth.conventions.length} 条`);
+  }
   await api("POST", `/api/v1/kbs/${kb}/data-sources/explore`);
   log("探索已入队，等提议落库");
   let said = "";

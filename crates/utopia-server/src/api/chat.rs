@@ -625,6 +625,11 @@ pub async fn chat(
     )
     .await?;
     let workspace_id = kb.workspace_id;
+    // 数据描述（探索从 schema 写的）与约定（人写的）跟着进 system prompt。
+    // **每次都在，不靠检索碰运气**：约定写成一页文档只靠检索也到过 14/18，
+    // 但那是因为这批问题都在问指标才每题命中（#520）
+    let data_description = kb.data_description.clone().filter(|s| !s.trim().is_empty());
+    let data_conventions = kb.data_conventions.clone().filter(|s| !s.trim().is_empty());
 
     // 注册表在生成器之前取出来：下面那个 `async_stream!` 会把 `state` 整个搬走
     let live = state.live.clone();
@@ -657,6 +662,19 @@ pub async fn chat(
                  first, then query. State units and the time range you used in the answer.",
                 ds_names.join(", ")
             ));
+            // 描述说的是 schema 里有的（粒度、单位、码值、时间轴），约定说的是 schema 里
+            // 没有的（哪些行算数、哪列才是那个数）。后者是问数从 2/18 到 14/18 的那一半
+            if let Some(d) = &data_description {
+                system_prompt.push_str(&format!(
+                    "\nAbout the data (written from the schema; states only what the schema says):\n{d}"
+                ));
+            }
+            if let Some(c) = &data_conventions {
+                system_prompt.push_str(&format!(
+                    "\nConventions stated by the owner of this base — apply them in every query \
+                     and every answer (filters, units, which column is the figure):\n{c}"
+                ));
+            }
             if !mappings.is_empty() {
                 system_prompt.push_str(
                     "\nSemantic layer (confirmed definitions — use these instead of guessing from schema):",

@@ -201,6 +201,12 @@ const main = async () => {
   const kb = args.kb;
   if (!kb || kb === true) throw new Error("要一个 --kb <id>");
 
+  // --conventions：把真值文件里的约定写进库（人写约定那条路，#570）
+  if (args.conventions) {
+    if (!truth.conventions?.length) throw new Error(`${corpusName} 的真值里没有 conventions`);
+    await api("PATCH", `/api/v1/kbs/${kb}`, { data_conventions: truth.conventions.join("\n") });
+    log(`约定已写进库：${truth.conventions.length} 条`);
+  }
   if (args.seed) seedTruth(kb);
   if (args.confirm) confirmProposals(kb);
 

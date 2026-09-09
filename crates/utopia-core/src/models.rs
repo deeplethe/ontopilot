@@ -983,6 +983,14 @@ pub struct KnowledgeBase {
     /// 上次推完的时间。**答的是「上次看过没有」，不是「上次改过没有」**
     pub last_inference_at: Option<DateTime<Utc>>,
     pub ontology_lang: String,
+    /// 探索从 schema 写的数据描述：一行是什么、键、单位、码值、时间轴、相似列。
+    /// 只写 schema 说了的；每次探索重写
+    pub data_description: Option<String>,
+    /// 探索拿不准、需要库的主人答的问题（JSON 字符串数组）
+    pub data_questions: serde_json::Value,
+    /// 人写的约定：「测试单不算数」「有效订单是 2/3/4」这类 schema 里没有的规则。
+    /// 探索不碰它——量过：宽表语料上问数没有约定 2/18，有 14/18（#520）
+    pub data_conventions: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

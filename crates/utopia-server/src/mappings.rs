@@ -31,6 +31,98 @@ fn proposal_cap(tables: i32) -> i32 {
     (tables * 3).clamp(12, 60)
 }
 
+/// 模型回的 JSON 常裹着代码栅栏；剥掉它。
+fn json_body(reply: &str) -> &str {
+    reply
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+}
+
+/// 一轮描述最多留几个问题。多了没人答；八个已经是一页
+const MAX_DATA_QUESTIONS: usize = 8;
+
+/// 模型回的 `{"description": …, "questions": […]}`。描述空的整个不要——
+/// 一个空描述盖掉上一轮的好描述，比没写更糟
+fn parse_description(reply: &str) -> Option<(String, Vec<String>)> {
+    let v: serde_json::Value = serde_json::from_str(json_body(reply)).ok()?;
+    let description = v["description"].as_str()?.trim().to_string();
+    if description.is_empty() {
+        return None;
+    }
+    let questions = v["questions"]
+        .as_array()
+        .map(|qs| {
+            qs.iter()
+                .filter_map(|q| q.as_str())
+                .map(str::trim)
+                .filter(|q| !q.is_empty())
+                .map(str::to_string)
+                .take(MAX_DATA_QUESTIONS)
+                .collect()
+        })
+        .unwrap_or_default();
+    Some((description, questions))
+}
+
+/// 探索写库的数据描述，并列出它拿不准的地方（#570）。
+///
+/// **两半，两个来路。** schema 与注释说了的——一行是什么、键、单位、码值、时间轴、
+/// 哪两列长得像——探索读得出来，这里写；schema 没说的——测试单不算数、有效订单是
+/// 2/3/4、GMV 用实付不用优惠前——探索生成不了，**而且不能猜**：猜出来的约定进了
+/// 提示词，问数会照着算，比没有更糟。所以拿不准的写成问题，人答，答案进
+/// `data_conventions`，这里不碰那一列。
+///
+/// 语言跟本体语言走（0004：生成的文字跟语料走，不跟界面走）。
+async fn describe_data(
+    state: &AppState,
+    client: &utopia_llm::LlmClient,
+    settings: &utopia_core::models::LlmSettings,
+    kb: &utopia_core::models::KnowledgeBase,
+    schema_txt: &str,
+) -> anyhow::Result<()> {
+    let lang = if kb.ontology_lang == "zh" {
+        "Chinese"
+    } else {
+        "English"
+    };
+    let prompt = format!(
+        "You are documenting a database for analysts who will ask questions about it in plain \
+         language. Reply with ONLY a JSON object {{\"description\": \"...\", \"questions\": [\"...\"]}}.\n\
+         description ({lang}, 10 to 20 short lines): what each table is a table of and what one \
+         row is; which columns are keys; the unit of money and quantity columns ONLY where a \
+         comment states it; what status or code values mean ONLY where a comment states it; \
+         which columns are the time axis; which columns look alike and how they differ (gross vs \
+         net, list vs paid). State only what the schema and its comments say. Do not invent \
+         business rules, thresholds, or which rows count.\n\
+         questions ({lang}, at most {MAX_DATA_QUESTIONS}): the conventions you would need to \
+         compute business figures correctly but the schema does not state, each phrased so the \
+         owner of the data can answer in one line — which status values count, whether flagged \
+         rows (test, internal, gift) are excluded, which of two similar amount columns is the \
+         figure, units where no comment states them, whether net figures subtract refunds. Ask \
+         only what the schema leaves open.\n\
+         Schemas:\n{schema_txt}"
+    );
+    let _permit = llm_util::acquire_chat(state, settings).await;
+    let reply = client
+        .chat(&[utopia_llm::ChatMessage {
+            role: "user".into(),
+            content: prompt,
+        }])
+        .await?;
+    let Some((description, questions)) = parse_description(&reply) else {
+        anyhow::bail!(
+            "description reply did not parse: {}",
+            reply.chars().take(120).collect::<String>()
+        );
+    };
+    utopia_store::kbs::set_data_description(&state.pool, kb.id, &description, &questions).await?;
+    tracing::info!(kb_id = %kb.id, lines = description.lines().count(), questions = questions.len(), "数据描述已写");
+    Ok(())
+}
+
 /// 探索把 schema 里的量与维度落成 Metric / Dimension 实体，而这两个类不在任何
 /// 内置本体包里——0009 之后建库不再自带类。没有它们，下面的 `type_id` 查不到，
 /// 每条提议都被 `continue` 吞掉，页面只说"已排队"就再无下文（#223）。
@@ -148,6 +240,13 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
     )
     .await;
 
+    // 先写库的数据描述与拿不准的问题，再提口径。**描述不依赖提议成不成**：
+    // 提议那一步解析失败整轮报错，描述已经落下了；反过来描述写不出来也不该
+    // 拖垮提议——它是顺手的，warn 一句继续
+    if let Err(e) = describe_data(state, &client, &settings, &kb, &schema_txt).await {
+        tracing::warn!(%kb_id, error = %e, "数据描述没写成，提议照常");
+    }
+
     // 既有概念（供归并复用，避免重复起名）
     let existing: Vec<(String,)> = sqlx::query_as(
         "SELECT e.canonical_name FROM entities e
@@ -160,10 +259,20 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
     .await?;
     let existing_names: Vec<String> = existing.into_iter().map(|(n,)| n).collect();
 
+    // 人写的约定进提议的提示词。schema 里没有「测试单不算数」这句话，探索在宽表上
+    // 0/18 正是因为它；有了这句，一条提议才可能长出 FILTER (WHERE is_test = 0)（#570）
+    let conventions = kb
+        .data_conventions
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(none stated)");
     let prompt = format!(
         "You are building the semantic layer of a BI system. Given database schemas, propose \
          business concepts a user would ask about, each mapped to a concrete definition.\n\
          Existing concepts (reuse these names when the meaning matches): {}\n\
+         Conventions stated by the owner of this base — apply them in every definition, as \
+         filters, unit conversions, or the choice of column: {conventions}\n\
          Schemas:\n{}\n\
          Reply with ONLY a JSON array, each item:\n\
          {{\"name\": \"business concept name\", \"kind\": \"metric\"|\"dimension\", \
@@ -394,7 +503,30 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
 
 #[cfg(test)]
 mod tests {
-    use super::proposal_cap;
+    use super::{parse_description, proposal_cap};
+
+    #[test]
+    fn a_description_is_kept_only_when_it_says_something() {
+        let (d, qs) = parse_description(
+            "```json\n{\"description\": \"dw.dwd_ord_dtl: one row per order line.\", \
+             \"questions\": [\" Which ord_st values count? \", \"\", \"Exclude is_test = 1?\"]}\n```",
+        )
+        .unwrap();
+        assert_eq!(d, "dw.dwd_ord_dtl: one row per order line.");
+        // 空问题丢掉、首尾空白剥掉，顺序保留
+        assert_eq!(
+            qs,
+            vec!["Which ord_st values count?", "Exclude is_test = 1?"]
+        );
+        // 空描述整个不要：一个空描述盖掉上一轮的好描述，比没写更糟
+        assert!(parse_description("{\"description\": \"  \", \"questions\": []}").is_none());
+        assert!(parse_description("not json").is_none());
+        // 问题没给也行，描述照收
+        assert_eq!(
+            parse_description("{\"description\": \"x\"}").unwrap().1,
+            Vec::<String>::new()
+        );
+    }
 
     #[test]
     fn a_bigger_schema_gets_a_bigger_cap() {
