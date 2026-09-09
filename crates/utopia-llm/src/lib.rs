@@ -587,7 +587,41 @@ mod tests {
         serde_json::json!([])
     }
 
-    /// 一个只答一次的 HTTP 服务：收下连接就把这份响应原样写回去，不看请求。
+    /// 把请求整个读完：头读到空行，正文按 Content-Length。
+    ///
+    /// **必须先读再答。** 收到的数据还没读就关连接，Windows 会发 RST，客户端那边
+    /// 已经到手的响应连同错误一起变成「连接被中止」（os error 10053）——这组测试
+    /// 在 Linux 上绿、在 Windows 上红，就是这个原因
+    async fn read_request(socket: &mut tokio::net::TcpStream) {
+        use tokio::io::AsyncReadExt;
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 1024];
+        let header_end = loop {
+            let n = socket.read(&mut chunk).await.unwrap();
+            if n == 0 {
+                return;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                break pos + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&buf[..header_end]).to_ascii_lowercase();
+        let want: usize = head
+            .lines()
+            .find_map(|l| l.strip_prefix("content-length:"))
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(0);
+        while buf.len() - header_end < want {
+            let n = socket.read(&mut chunk).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+        }
+    }
+
+    /// 一个只答一次的 HTTP 服务：读完请求，把这份响应原样写回去，关掉。
     /// 用裸 socket 而不是 mock 库，是因为要造的正是「不像模型 API 的回答」——
     /// 纯文本、不完整、什么都行。返回的句柄要 await：它跑完才说明响应真的发出去了
     async fn an_http_response(
@@ -602,11 +636,13 @@ mod tests {
         let body = body.to_string();
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
+            read_request(&mut socket).await;
             let response = format!(
                 "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
             socket.write_all(response.as_bytes()).await.unwrap();
+            socket.shutdown().await.unwrap();
         });
         (addr, server)
     }
@@ -621,10 +657,11 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
-            let response = format!(
-                "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 100\r\nConnection: close\r\n\r\nx"
-            );
-            socket.write_all(response.as_bytes()).await.unwrap();
+            read_request(&mut socket).await;
+            socket
+                .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 100\r\nConnection: close\r\n\r\nx")
+                .await
+                .unwrap();
             socket.shutdown().await.unwrap();
         });
         (addr, server)
