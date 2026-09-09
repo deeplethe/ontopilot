@@ -173,8 +173,10 @@ pub async fn entity_detail(
     // 推出来的那些**单独回一个键**，不掺进 `facts`。前端据此给它们自己的一档：
     // 一条派生边跟一条断言边混在同一个列表里，用户看不出「这条是文档里写的」
     // 和「这条是引擎推的」的区别，而那正是推理会污染知识的样子
+    // 同一个 as_of（#549）：回放中的面板上，派生那一档也是**当时**推出的
     let derived =
-        utopia_store::reasoning::derived_for_entity(&state.pool, kb_id, entity_id, None).await?;
+        utopia_store::reasoning::derived_for_entity(&state.pool, kb_id, entity_id, None, as_of)
+            .await?;
     // 同名的那些**打开面板时就给**，不是等改名之后才回。
     //
     // 从前它只随 `update_entity` 的响应回来，于是「把同名的合并进来」这个动作

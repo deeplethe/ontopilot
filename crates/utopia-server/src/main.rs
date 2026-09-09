@@ -460,6 +460,36 @@ async fn dispatch(st: &state::AppState, job: &utopia_store::jobs::Job) -> anyhow
                 .ok_or_else(|| anyhow::anyhow!("payload 缺少 kb_id"))?;
             ontology_index::refresh(st, kb_id).await.map(|_| ())
         }
+        // 向量索引（0035 / #512）：第一次写下某个维度的向量时排的，事务外
+        // CONCURRENTLY 建。维度超过 HNSW 上限的到此为止，重试也建不出来
+        "build_vector_index" => {
+            let target = job
+                .payload
+                .get("table")
+                .and_then(|v| v.as_str())
+                .and_then(utopia_store::vector_index::Target::parse)
+                .ok_or_else(|| anyhow::anyhow!("payload 缺少 table"))?;
+            let dims =
+                job.payload
+                    .get("dims")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| anyhow::anyhow!("payload 缺少 dims"))? as usize;
+            let built = utopia_store::vector_index::build(&st.pool, target, dims)
+                .await
+                .map_err(|e| match e {
+                    utopia_core::AppError::Validation(_) => {
+                        anyhow::Error::from(e).context(utopia_core::Terminal)
+                    }
+                    other => anyhow::Error::from(other),
+                })?;
+            tracing::info!(
+                index = %built.name,
+                created = built.created,
+                seconds = format!("{:.1}", built.seconds),
+                "向量索引就绪"
+            );
+            Ok(())
+        }
         "resolve_types" => {
             let kb_id: Uuid = job
                 .payload

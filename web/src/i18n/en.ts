@@ -1099,7 +1099,6 @@ export const en = {
     tabClasses: "Classes",
     colName: "Name",
     multiParentHint: "This class has more than one parent; the indentation follows one of them, and the Parent column lists them all",
-    colKey: "Key",
     colSignature: "Subject → Object",
     colInstances: "Instances",
     colFacts: "Facts",
@@ -1279,6 +1278,8 @@ export const en = {
     shapeColor: "Shape & color",
     parent: "Parent class",
     noParent: "(top level)",
+    subclasses: "Subclasses",
+    noSubclasses: "None",
     disjoint: "Cannot also be",
     disjointHint:
       "Classes nothing can belong to at the same time. A Person is not an Organisation. The consistency check uses this to find classes that can never have an instance.",
@@ -1547,7 +1548,8 @@ export const en = {
     schemaBundle: (n: number) => `${n} relations`,
     schemaOutgoing: "From this class",
     schemaIncoming: "To this class",
-    schemaNoRelationships: "No relationships yet.",
+    schemaNoRelationships:
+      "This class takes part in no relationships. Its inheritance is shown under Definition.",
     schemaNoInstances: "No instances yet.",
     schemaConnectHint: "Connect using an existing relationship",
     schemaConnectPlaceholder: "Search relationships…",

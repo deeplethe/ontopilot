@@ -965,6 +965,7 @@ async fn update_profile(pool: &PgPool, id: Uuid, n: i32, ctx: &[f32]) -> AppResu
         }
         _ => (ctx.to_vec(), 1),
     };
+    let dims = new_vec.len();
     sqlx::query(
         "UPDATE entities SET profile_embedding = $2, profile_n = $3, updated_at = now()
          WHERE id = $1",
@@ -974,6 +975,8 @@ async fn update_profile(pool: &PgPool, id: Uuid, n: i32, ctx: &[f32]) -> AppResu
     .bind(new_n)
     .execute(pool)
     .await?;
+    // 画像表也要索引（0035 / #514）：类型消解按主语逐个扫它。在了的话这一句是一次查找
+    crate::vector_index::request(pool, crate::vector_index::Target::EntityProfiles, dims).await?;
     Ok(())
 }
 
@@ -2480,23 +2483,78 @@ pub async fn set_specific_type(pool: &PgPool, entity_id: Uuid, value: &str) -> A
 ///
 /// 已知弱点：只出现在一篇文档里的实体，语境向量就是那一块的向量，同文档的实体
 /// 会互相成为近邻。调用方要看得到 `same_document`，别把它当成类型证据。
+/// 一批之内 [`descendants_of`] 的记忆（#514）。
+///
+/// 粗类来自抽取的小词表（person、organization、product 加几个），六十个主语里
+/// 同一个 `coarse_id` 反复出现，同一个递归 CTE 就反复发。批内本体不动，同一输入
+/// 同一结果，记住不改答案。**没有粗类的主语不进这张表**：它没有「后代」这个轴
+/// （0009），整张类表都是候选；用 `Option` 当键会把它和某个真实的类混在一起
+#[derive(Default)]
+pub struct DescendantsMemo {
+    sets: std::collections::HashMap<Uuid, HashSet<Uuid>>,
+}
+
+impl DescendantsMemo {
+    pub async fn get(
+        &mut self,
+        pool: &PgPool,
+        kb_id: Uuid,
+        root: Option<Uuid>,
+    ) -> AppResult<HashSet<Uuid>> {
+        let Some(root) = root else {
+            return Ok(HashSet::new());
+        };
+        if let Some(set) = self.sets.get(&root) {
+            return Ok(set.clone());
+        }
+        let set: HashSet<Uuid> = descendants_of(pool, kb_id, root)
+            .await?
+            .into_iter()
+            .collect();
+        self.sets.insert(root, set.clone());
+        Ok(set)
+    }
+
+    /// 记住了几个根
+    pub fn len(&self) -> usize {
+        self.sets.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sets.is_empty()
+    }
+}
+
+/// 一个主语的近邻：语境相似的已定类实体，连同「是否同一篇文档」。
+///
+/// 主语自己的向量先取出来再查：维度要写进 SQL（`vector_index` 规矩 1），SQL 里的
+/// 子查询给不了这个数。没有向量的主语没有近邻，回空
 pub async fn nearest_typed_entities(
     pool: &PgPool,
     kb_id: Uuid,
     entity_id: Uuid,
     limit: i64,
 ) -> AppResult<Vec<(String, Uuid, String, f64, bool)>> {
-    Ok(sqlx::query_as(
-        "WITH me AS (
-             SELECT profile_embedding AS v FROM entities WHERE id = $2 AND kb_id = $1
-         ),
-         my_docs AS (
+    let me: Option<(Option<Vector>,)> =
+        sqlx::query_as("SELECT profile_embedding FROM entities WHERE id = $2 AND kb_id = $1")
+            .bind(kb_id)
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?;
+    let Some(query_vec) = me.and_then(|(v,)| v) else {
+        return Ok(Vec::new());
+    };
+    let dims = query_vec.as_slice().len();
+    let mut tx = pool.begin().await?;
+    crate::vector_index::relaxed_order(pool, &mut tx).await?;
+    let rows = sqlx::query_as(&format!(
+        "WITH my_docs AS (
              SELECT DISTINCT ev.document_id FROM fact_evidence ev
              JOIN facts f ON f.id = ev.fact_id
              WHERE f.kb_id = $1 AND (f.subject_id = $2 OR f.object_id = $2)
          )
          SELECT e.canonical_name, t.id, t.key,
-                (e.profile_embedding <=> (SELECT v FROM me))::float8 AS distance,
+                ({distance})::float8 AS distance,
                 EXISTS (SELECT 1 FROM fact_evidence ev2
                         JOIN facts f2 ON f2.id = ev2.fact_id
                         WHERE f2.kb_id = $1 AND (f2.subject_id = e.id OR f2.object_id = e.id)
@@ -2507,16 +2565,54 @@ pub async fn nearest_typed_entities(
          FROM entities e
          JOIN entity_types t ON t.id = e.type_id
          WHERE e.kb_id = $1 AND e.merged_into IS NULL AND e.id <> $2
-           AND e.profile_embedding IS NOT NULL
-           AND (SELECT v FROM me) IS NOT NULL
-         ORDER BY e.profile_embedding <=> (SELECT v FROM me)
-         LIMIT $3",
-    )
+           AND e.profile_embedding IS NOT NULL AND {same_dims}
+         ORDER BY {distance}
+         LIMIT $4",
+        distance = crate::vector_index::distance("e.profile_embedding", 3, dims),
+        same_dims = crate::vector_index::same_dims("e.profile_embedding", dims),
+    ))
     .bind(kb_id)
     .bind(entity_id)
+    .bind(&query_vec)
     .bind(limit)
-    .fetch_all(pool)
-    .await?)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(rows)
+}
+
+/// 同时跑几个近邻查询。池是 32、按「同时跑的短查询」定的（`db.rs`）；六十个
+/// 全表扫一起上就是那里记的池子被吃空的样子——慢请求和超时，没有一句话说池小了。
+/// 八个留足了给请求的余量，而 HNSW 就位之后每个查询只有几毫秒，再高也没意义
+pub const NEIGHBOUR_SCANS: usize = 8;
+
+/// 一批主语各自的近邻，**按送进来的顺序回**：下游裁决按这个顺序读。
+///
+/// 六十个查询彼此无关，串行只因为循环是串行的（#514）。这里有界并发地取，
+/// `buffered` 保序，推理仍在原顺序上做
+pub async fn nearest_typed_for_each(
+    pool: &PgPool,
+    kb_id: Uuid,
+    ids: &[Uuid],
+    limit: i64,
+) -> AppResult<Vec<Vec<(String, Uuid, String, f64, bool)>>> {
+    nearest_typed_for_each_with(pool, kb_id, ids, limit, NEIGHBOUR_SCANS).await
+}
+
+/// 同上，并发上限由调用方给（测试用它证明上限不改答案）
+pub async fn nearest_typed_for_each_with(
+    pool: &PgPool,
+    kb_id: Uuid,
+    ids: &[Uuid],
+    limit: i64,
+    at_once: usize,
+) -> AppResult<Vec<Vec<(String, Uuid, String, f64, bool)>>> {
+    use futures_util::{stream, StreamExt, TryStreamExt};
+    stream::iter(ids.iter().copied())
+        .map(|id| nearest_typed_entities(pool, kb_id, id, limit))
+        .buffered(at_once.max(1))
+        .try_collect()
+        .await
 }
 
 /// 按实体逐个改类，写进同一本账。返回 (批次 id, 改动数)。
