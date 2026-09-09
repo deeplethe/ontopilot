@@ -663,6 +663,22 @@ export function OntologySchemaGraph({
    * 闪一下。 */
   const pendingSelectRef = useRef<SchemaSelection>(null);
 
+  /** 这条关系在图上**有没有落点**。
+   *
+   * 没有主语也没有宾语的属性（图例里那批 "Unscoped properties"，一个 schema.org
+   * 库里有一百八十多条）连不到任何类，也就画不出边。选中它时两个 reducer 会
+   * 各自走"跟选中无关的一律压暗"那条路，结果是整张图暗下去、一个亮点都没有——
+   * 读起来像"选中了但坏了"。
+   *
+   * 图上没它可指的时候，**画面就不该动**：细节在右边面板里，那里写着
+   * Subject / Object 都是 Any type，已经把话说清楚了。 */
+  const relationHasFootingRef = useRef<(id: string) => boolean>(() => true);
+  relationHasFootingRef.current = (id: string) => {
+    const rel = relationById.get(id);
+    if (!rel) return false;
+    return rel.domains.length > 0 || rel.ranges.length > 0;
+  };
+
   useEffect(() => {
     const live = graphRef.current;
     const notDrawnYet =
@@ -803,6 +819,7 @@ export function OntologySchemaGraph({
           return mutedNode(res, base);
         }
         if (sel?.kind === "relation") {
+          if (!relationHasFootingRef.current(sel.id)) return res;
           const rel = relationByIdRef.current.get(sel.id);
           if (rel) {
             // 选中一条关系，亮的是它的两端——类之间没有「邻居」可言，
@@ -867,7 +884,13 @@ export function OntologySchemaGraph({
           res.zIndex = 3;
           return res;
         }
-        if (sel) {
+        if (
+          sel &&
+          !(
+            sel.kind === "relation" &&
+            !relationHasFootingRef.current(sel.id)
+          )
+        ) {
           // 选中了什么但这条边跟它无关：压到背景色附近去
           res.color = EDGE_DIM;
           res.label = "";
