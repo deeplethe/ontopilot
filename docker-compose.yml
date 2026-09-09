@@ -7,6 +7,12 @@ services:
       POSTGRES_PASSWORD: ${UTOPIA_DB_PASSWORD:-utopia}
       POSTGRES_DB: utopia
       # 应用运行时用的受限角色口令。设了才建角色，不设则应用仍以 owner 身份跑。
+      #
+      # **这一条故意保留 `${VAR:-}` 写法**，与下面 app 服务里那三条只写键名的
+      # 不同。区别不在风格，在于收它的人：那三条交给 Rust，空串会盖掉默认值；
+      # 这一条交给 `docker/init-app-role.sh`，它用 `[ -z ]` 判断，空串与未设
+      # 本来就是同一件事。改成只写键名不会坏，但也换不来什么，而写在这里
+      # 是为了让下一个想"顺手统一"的人先读到这段。
       UTOPIA_APP_DB_PASSWORD: ${UTOPIA_APP_DB_PASSWORD:-}
     ports:
       # 宿主机侧避开 5432：开发机上常有本地装的 PG 占着那个端口，撞上就是
