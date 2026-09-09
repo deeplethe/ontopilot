@@ -364,22 +364,28 @@ impl MappingText {
     }
 }
 
-/// 确认口径里还没嵌、或嵌的时候文本 / 模型跟现在不一样的（#574）。
-/// 与 `ontology::types_needing_embedding` 同一条规则：改了文本或换了模型就重嵌
+/// 确认口径里还没嵌、或嵌的时候文本 / 模型跟现在不一样的（#574），最多 `limit` 条。
+/// 与 `ontology::types_needing_embedding` 同一条规则：改了文本或换了模型就重嵌。
+/// 有上限是因为补嵌跑在问数的请求路径上：换了嵌入模型之后第一问不该把几百条
+/// 一口气嵌完才开口，剩下的下一问接着补
 pub async fn needing_embedding(
     pool: &PgPool,
     kb_id: Uuid,
     model: &str,
+    limit: i64,
 ) -> AppResult<Vec<MappingText>> {
     let rows: Vec<MappingText> = sqlx::query_as(
         "SELECT m.id, e.canonical_name AS concept_name, m.summary, m.unit, m.table_name, m.expr
            FROM concept_mappings m
            JOIN entities e ON e.id = m.concept_id
           WHERE m.kb_id = $1 AND m.status = 'confirmed'
-            AND (m.embedding IS NULL OR m.embedded_model IS DISTINCT FROM $2)",
+            AND (m.embedding IS NULL OR m.embedded_model IS DISTINCT FROM $2)
+          ORDER BY m.id
+          LIMIT $3",
     )
     .bind(kb_id)
     .bind(model)
+    .bind(limit)
     .fetch_all(pool)
     .await?;
     // 文本变了的也要重嵌。SQL 里拼这段文字要把 `embed_text` 抄一遍，
@@ -420,6 +426,7 @@ pub async fn needing_embedding(
             }
         }
     }
+    out.truncate(limit.max(0) as usize);
     Ok(out)
 }
 
@@ -445,10 +452,13 @@ pub async fn set_embeddings(
     Ok(())
 }
 
-/// 向量一路：离问题最近的确认口径。维度对不上的行跳过（换过嵌入模型、还没重嵌的）
+/// 向量一路：离问题最近的确认口径。只比同一个模型嵌出来的行——换过模型、还没重嵌的
+/// 不参与：维度碰巧相同时两个模型的空间也对不上，比出来的近远是假的。维度不同的
+/// 再多挡一道，免得 pgvector 直接报错
 pub async fn vector_search(
     pool: &PgPool,
     kb_id: Uuid,
+    model: &str,
     embedding: &[f32],
     limit: i64,
 ) -> AppResult<Vec<Uuid>> {
@@ -456,6 +466,7 @@ pub async fn vector_search(
     let rows: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM concept_mappings
           WHERE kb_id = $1 AND status = 'confirmed' AND embedding IS NOT NULL
+            AND embedded_model = $4
             AND vector_dims(embedding) = vector_dims($2)
           ORDER BY embedding <=> $2
           LIMIT $3",
@@ -463,6 +474,7 @@ pub async fn vector_search(
     .bind(kb_id)
     .bind(&q)
     .bind(limit)
+    .bind(model)
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())

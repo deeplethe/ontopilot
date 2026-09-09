@@ -74,7 +74,7 @@ async fn only_what_changed_gets_embedded_and_neighbours_come_back_in_order() -> 
         let freight = definition(&pool, kb, "Freight", "freight collected").await?;
 
         // 一开始三条都要嵌
-        let stale = m::needing_embedding(&pool, kb, "bge-m3").await?;
+        let stale = m::needing_embedding(&pool, kb, "bge-m3", 100).await?;
         assert_eq!(stale.len(), 3);
         let text_of = |id: Uuid| stale.iter().find(|t| t.id == id).unwrap().clone();
         assert_eq!(text_of(gmv).embed_text(), "GMV: paid, non-test, yuan");
@@ -91,14 +91,25 @@ async fn only_what_changed_gets_embedded_and_neighbours_come_back_in_order() -> 
         )
         .await?;
         assert!(
-            m::needing_embedding(&pool, kb, "bge-m3").await?.is_empty(),
+            m::needing_embedding(&pool, kb, "bge-m3", 100)
+                .await?
+                .is_empty(),
             "嵌过且没变的不该再嵌"
         );
 
         // 换模型：全部要重嵌；改文本：只有那一条要重嵌
         assert_eq!(
-            m::needing_embedding(&pool, kb, "other-model").await?.len(),
+            m::needing_embedding(&pool, kb, "other-model", 100)
+                .await?
+                .len(),
             3
+        );
+        // 补嵌有上限：一问只嵌这么多，剩下的下一问接着补
+        assert_eq!(
+            m::needing_embedding(&pool, kb, "other-model", 2)
+                .await?
+                .len(),
+            2
         );
         sqlx::query(
             "UPDATE concept_mappings SET summary = 'freight, paid orders only' WHERE id = $1",
@@ -106,7 +117,7 @@ async fn only_what_changed_gets_embedded_and_neighbours_come_back_in_order() -> 
         .bind(freight)
         .execute(&pool)
         .await?;
-        let again = m::needing_embedding(&pool, kb, "bge-m3").await?;
+        let again = m::needing_embedding(&pool, kb, "bge-m3", 100).await?;
         assert_eq!(
             again.iter().map(|t| t.id).collect::<Vec<_>>(),
             vec![freight],
@@ -114,12 +125,18 @@ async fn only_what_changed_gets_embedded_and_neighbours_come_back_in_order() -> 
         );
 
         // 向量一路：离 (1,0,0) 最近的是 GMV，其次 Net sales；Freight 最远
-        let near = m::vector_search(&pool, kb, &[1.0, 0.0, 0.0], 3).await?;
+        let near = m::vector_search(&pool, kb, "bge-m3", &[1.0, 0.0, 0.0], 3).await?;
         assert_eq!(near, vec![gmv, net, freight]);
         // 维度对不上的查询一条都不回（换过模型还没重嵌的那种状态）
-        assert!(m::vector_search(&pool, kb, &[1.0, 0.0], 3)
+        assert!(m::vector_search(&pool, kb, "bge-m3", &[1.0, 0.0], 3)
             .await?
             .is_empty());
+        // 换了模型、还没重嵌的行不参与：维度一样也不比
+        assert!(
+            m::vector_search(&pool, kb, "other-model", &[1.0, 0.0, 0.0], 3)
+                .await?
+                .is_empty()
+        );
 
         // 按 id 取回保持给定顺序
         let got = m::by_ids(&pool, kb, &[freight, gmv]).await?;

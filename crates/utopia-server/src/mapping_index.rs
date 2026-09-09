@@ -27,6 +27,9 @@ pub const DEFINITIONS_IN_PROMPT: usize = 8;
 const RECALL_PER_CHANNEL: usize = 24;
 /// 一次嵌几条
 const BATCH: usize = 32;
+/// 一问最多补嵌几条。补嵌跑在问数的请求路径上：换了嵌入模型之后的第一问不该把
+/// 几百条口径一口气嵌完才开口——补不完的下一问接着补，这期间少的那些由词面一路兜着
+const REFRESH_PER_TURN: usize = 64;
 
 /// 把还没嵌的确认口径补上。没配嵌入模型就什么都不做（词面一路照常）。
 pub async fn refresh(state: &AppState, kb_id: Uuid, workspace_id: Uuid) -> anyhow::Result<usize> {
@@ -39,9 +42,18 @@ pub async fn refresh(state: &AppState, kb_id: Uuid, workspace_id: Uuid) -> anyho
     ) else {
         return Ok(0);
     };
-    let stale = utopia_store::mappings::needing_embedding(&state.pool, kb_id, model).await?;
+    let stale = utopia_store::mappings::needing_embedding(
+        &state.pool,
+        kb_id,
+        model,
+        REFRESH_PER_TURN as i64,
+    )
+    .await?;
     if stale.is_empty() {
         return Ok(0);
+    }
+    if stale.len() >= REFRESH_PER_TURN {
+        tracing::info!(%kb_id, "口径向量这一问只补一部分，剩下的下一问接着补");
     }
     let mut done = 0usize;
     for batch in stale.chunks(BATCH) {
@@ -117,13 +129,17 @@ async fn vector_channel(
     workspace_id: Uuid,
     query: &str,
 ) -> anyhow::Result<Option<Vec<String>>> {
-    let settings = utopia_store::settings::get(&state.pool, workspace_id).await?;
-    let Some(client) = settings.as_ref().and_then(llm_util::embed_client) else {
+    let Some(settings) = utopia_store::settings::get(&state.pool, workspace_id).await? else {
+        return Ok(None);
+    };
+    let (Some(client), Some(model)) = (
+        llm_util::embed_client(&settings),
+        settings.embed_model.as_deref().filter(|m| !m.is_empty()),
+    ) else {
         return Ok(None);
     };
     let mut vectors = {
-        let _permit =
-            llm_util::acquire_embed(state, settings.as_ref().expect("checked above")).await;
+        let _permit = llm_util::acquire_embed(state, &settings).await;
         client.embed(&[query.to_string()]).await?
     };
     if vectors.is_empty() {
@@ -132,6 +148,7 @@ async fn vector_channel(
     let ids = utopia_store::mappings::vector_search(
         &state.pool,
         kb_id,
+        model,
         &vectors.remove(0),
         RECALL_PER_CHANNEL as i64,
     )
