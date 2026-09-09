@@ -6,7 +6,7 @@
 //
 // 审批留在同一个端点上（`review/mappings/{id}`，那里已经在写审计流水），
 // 搬的是界面不是逻辑：判断一条口径对不对要看得见表结构，而那在这一页。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Database, Plus } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -33,6 +33,34 @@ import {
 const PAGE = 25;
 
 type StatusFilter = "all" | "proposed" | "confirmed" | "rejected";
+type MappingDecision = Extract<
+  ConceptMapping["status"],
+  "confirmed" | "rejected"
+>;
+const NO_PENDING_MAPPING_IDS: ReadonlySet<string> = new Set();
+
+export const decideMappings = async (
+  ids: string[],
+  decide: (id: string) => Promise<unknown>,
+) => {
+  const outcomes = await Promise.allSettled(ids.map((id) => decide(id)));
+  const failure = outcomes.find((outcome) => outcome.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+};
+
+export const selectedMappingIds = (
+  mappings: Pick<ConceptMapping, "id" | "status">[],
+  picked: ReadonlySet<string>,
+  pending: ReadonlySet<string> = NO_PENDING_MAPPING_IDS,
+) =>
+  mappings
+    .filter(
+      (mapping) =>
+        mapping.status === "proposed" &&
+        picked.has(mapping.id) &&
+        !pending.has(mapping.id),
+    )
+    .map((mapping) => mapping.id);
 
 const TONE: Record<string, ChipTone> = {
   proposed: "warn",
@@ -59,6 +87,9 @@ export function Mappings() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [deciding, setDeciding] = useState<Set<string>>(() => new Set());
+  useEffect(() => setPicked(new Set()), [kb?.id, page, q, status, tab]);
 
   const data = useQuery({
     queryKey: ["mappings", kb?.id, status, q, page],
@@ -75,9 +106,27 @@ export function Mappings() {
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["mappings", kb?.id] });
 
+  const batch = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: MappingDecision }) =>
+      decideMappings(ids, (id) => api.decideMapping(kb!.id, id, status)),
+    onSuccess: () => setPicked(new Set()),
+    onError: (e: unknown) => toast.error((e as Error).message),
+    onSettled: refresh,
+  });
+
   if (!kb) return <Loading>{S.nav.loading}</Loading>;
 
   const counts = data.data?.counts;
+  const selectable =
+    data.data?.items.filter(
+      (m) => m.status === "proposed" && !deciding.has(m.id),
+    ) ?? [];
+  const selectedIds = selectedMappingIds(
+    data.data?.items ?? [],
+    picked,
+    deciding,
+  );
+  const individualPending = deciding.size > 0;
   const FILTERS: { key: StatusFilter; label: string; n?: number }[] = [
     { key: "all", label: S.mapping.filterAll },
     { key: "proposed", label: S.mapping.filterProposed, n: counts?.proposed },
@@ -158,6 +207,55 @@ export function Mappings() {
             />
           </div>
 
+          {selectable.length > 0 && (
+            <div className="flex items-center justify-end gap-3 flex-wrap">
+              <Checkbox
+                checked={selectable.every((m) => picked.has(m.id))}
+                disabled={batch.isPending || individualPending}
+                onChange={(e) =>
+                  setPicked(
+                    e.target.checked
+                      ? new Set(selectable.map((m) => m.id))
+                      : new Set(),
+                  )
+                }
+                label={S.mapping.selectPage}
+              />
+              {selectedIds.length > 0 && (
+                <>
+                  <span className="u-num text-small text-ink-2">
+                    {S.mapping.selected(selectedIds.length)}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={batch.isPending || individualPending}
+                    onClick={() =>
+                      batch.mutate({
+                        ids: selectedIds,
+                        status: "confirmed",
+                      })
+                    }
+                  >
+                    {S.mapping.approve}
+                  </Button>
+                  <LinkButton
+                    tone="danger"
+                    disabled={batch.isPending || individualPending}
+                    onClick={() =>
+                      batch.mutate({
+                        ids: selectedIds,
+                        status: "rejected",
+                      })
+                    }
+                  >
+                    {S.mapping.reject}
+                  </LinkButton>
+                </>
+              )}
+            </div>
+          )}
+
           {status === "rejected" && (
             <p className="text-small text-ink-2">{S.mapping.rejectedHint}</p>
           )}
@@ -181,6 +279,24 @@ export function Mappings() {
                   key={m.id}
                   kbId={kb.id}
                   mapping={m}
+                  picked={selectedIds.includes(m.id)}
+                  batchPending={batch.isPending}
+                  onDecisionPending={(pending) =>
+                    setDeciding((prev) => {
+                      const next = new Set(prev);
+                      if (pending) next.add(m.id);
+                      else next.delete(m.id);
+                      return next;
+                    })
+                  }
+                  onPick={(on) =>
+                    setPicked((prev) => {
+                      const next = new Set(prev);
+                      if (on) next.add(m.id);
+                      else next.delete(m.id);
+                      return next;
+                    })
+                  }
                   onChanged={refresh}
                 />
               ))}
@@ -203,10 +319,18 @@ export function Mappings() {
 function MappingRow({
   kbId,
   mapping: m,
+  picked,
+  batchPending,
+  onDecisionPending,
+  onPick,
   onChanged,
 }: {
   kbId: string;
   mapping: ConceptMapping;
+  picked: boolean;
+  batchPending: boolean;
+  onDecisionPending: (pending: boolean) => void;
+  onPick: (picked: boolean) => void;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -215,14 +339,29 @@ function MappingRow({
   const decide = useMutation({
     mutationFn: (s: "confirmed" | "rejected") =>
       api.decideMapping(kbId, m.id, s),
+    onMutate: () => onDecisionPending(true),
     onSuccess: onChanged,
     onError: (e: unknown) => toast.error((e as Error).message),
+    onSettled: () => onDecisionPending(false),
   });
 
   const how = howComputed(m);
   return (
-    <div className="px-4 py-3">
+    <div className={cn("px-4 py-3", picked && "u-picked")}>
       <div className="flex items-baseline gap-2 flex-wrap">
+        {m.status === "proposed" && (
+          <Checkbox
+            className="shrink-0 self-center"
+            checked={picked}
+            disabled={decide.isPending || batchPending}
+            onChange={(e) => onPick(e.target.checked)}
+            label={
+              <span className="sr-only">
+                {S.mapping.selectMapping(m.concept_name, m.source)}
+              </span>
+            }
+          />
+        )}
         <span className="text-body text-ink">{m.concept_name}</span>
         <span className="text-fine text-ink-2">{m.source}</span>
         {m.unit && (
@@ -269,14 +408,17 @@ function MappingRow({
           {m.status === "proposed" && (
             <>
               <Button variant="secondary" size="sm"
-                disabled={decide.isPending}
+                disabled={decide.isPending || batchPending || picked}
                 onClick={() => decide.mutate("confirmed")}
               >
                 {S.mapping.approve}
               </Button>
               <LinkButton
                 tone="danger"
-                onClick={() => !decide.isPending && decide.mutate("rejected")}
+                disabled={batchPending || picked}
+                onClick={() =>
+                  !picked && !decide.isPending && decide.mutate("rejected")
+                }
               >
                 {S.mapping.reject}
               </LinkButton>

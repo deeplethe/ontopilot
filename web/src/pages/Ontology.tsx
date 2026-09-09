@@ -642,6 +642,7 @@ export function Ontology() {
                 <ClassDefinition
                   cls={selectedClass}
                   allTypes={entity_types}
+                  onSelectClass={(id) => setSel({ kind: "class", id })}
                   onNewSub={() =>
                     setEdit({ kind: "class", existing: null, parentId: selectedClass.id })
                   }
@@ -1272,21 +1273,36 @@ function Description({ text }: { text: string | null | undefined }) {
   );
 }
 
-function ClassDefinition({
+export function ClassDefinition({
   cls,
   allTypes,
+  onSelectClass,
   onNewSub,
 }: {
   cls: EntityTypeView;
   allTypes: EntityTypeView[];
+  onSelectClass: (id: string) => void;
   /** 以当前类为父级新建子类：开弹窗 */
   onNewSub: () => void;
 }) {
   const nameOf = (id: string) => allTypes.find((t) => t.id === id)?.label ?? id;
+  const classLinks = (ids: string[]) =>
+    ids.map((id, index) => (
+      <span key={id}>
+        {index > 0 && ", "}
+        <LinkButton onClick={() => onSelectClass(id)}>{nameOf(id)}</LinkButton>
+      </span>
+    ));
+  const subclasses = allTypes.filter((type) => type.parents.includes(cls.id));
   return (
     <div>
       <Def label={S.ontology.parent}>
-        {cls.parents.length > 0 ? cls.parents.map(nameOf).join(", ") : S.ontology.noParent}
+        {cls.parents.length > 0 ? classLinks(cls.parents) : S.ontology.noParent}
+      </Def>
+      <Def label={S.ontology.subclasses}>
+        {subclasses.length > 0
+          ? classLinks(subclasses.map((type) => type.id))
+          : S.ontology.noSubclasses}
       </Def>
       <Def label={S.ontology.disjoint}>
         {cls.disjoint.length > 0 ? cls.disjoint.map(nameOf).join(", ") : S.ontology.noDisjoint}
