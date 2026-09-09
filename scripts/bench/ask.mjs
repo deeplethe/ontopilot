@@ -146,7 +146,10 @@ function seedTruth(kb) {
     // sql 改成了 gold——上界那一轮顺手污染了产品路径那一轮的语料
     const label = `${m.label} (truth)`.replace(/'/g, "''");
     const gold = m.gold.replace(/'/g, "''");
-    const summary = `${m.label} — ${m.from ?? "bench truth"}`.replace(/'/g, "''");
+    // **说明要是真的说明。** 从前写的是 `label — from`（wide 上就是「Paid orders — bench
+    // truth」），嵌进去的文字基本是句废话；中文问题对着它一个词都不沾，recall@8 只有
+    // 13/18（#574）。真值里有 `summary` 就用它——那是一个人会写的那句话，用提问的语言
+    const summary = (m.summary ?? m.note ?? `${m.label} — ${m.from ?? "bench truth"}`).replace(/'/g, "''");
     const ent = psql(`
       WITH found AS (SELECT id FROM entities
                       WHERE kb_id = '${kb}' AND lower(canonical_name) = lower('${label}')
