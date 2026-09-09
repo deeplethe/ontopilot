@@ -88,7 +88,11 @@ async fn a_known_name_is_found_by_any_spelling_and_an_unknown_one_is_not() -> an
         assert_eq!(find("Acme Corporation").await?, Some(f.acme), "原名");
         assert_eq!(find("acme corporation").await?, Some(f.acme), "大小写不论");
         assert_eq!(find("ACME").await?, Some(f.acme), "别名也算");
-        assert_eq!(find("Acme").await?, Some(f.acme), "泛用后缀词干互推：Acme ↔ Acme Corporation");
+        assert_eq!(
+            find("Acme").await?,
+            Some(f.acme),
+            "泛用后缀词干互推：Acme ↔ Acme Corporation"
+        );
         assert_eq!(find("Nova Labs").await?, None, "并掉的不算");
         assert_eq!(find("lawsuit against Acme").await?, None, "描述不是实体");
         let _ = f.merged;
