@@ -79,6 +79,7 @@ import {
 import { S } from "../i18n";
 import {
   Button,
+  CanvasLoading,
   DangerConfirm,
   ExpandCard,
   HOVER_ROW,
@@ -1473,7 +1474,9 @@ export function Graph() {
           <div className="pointer-events-none pt-1 u-num text-fine text-ink-2">
           {/* 画满上限时说清「画了多少 / 共多少」。**这个数从前是上限冒充规模**——
               一个上万实体的库右上角永远写着 150 */}
-          {capped ? (
+          {/* 图还没到就一个字都不写。**「0 entities · 0 facts」是个结论**，
+              而此刻只是还不知道——旁边正转着圈，两句话摆在一起是自相矛盾的 */}
+          {data.isPending ? null : capped ? (
             <span title={S.graph.cappedHint(nodeCount, totalNodes)}>
               {/* **事实也用「已画 / 共」的口径**：从前这里给的是库里的总数，
                   而实体给的是「画了多少 / 共多少」——同一句话里两套口径，
@@ -1629,6 +1632,12 @@ export function Graph() {
           />
         </ToolTower>
       </div>
+
+      {/* 图还没到。**左下那三座控件塔、顶上那排都已经在了**，缺的只是画布中间
+          那团东西，所以这一层是盖上去的转圈，不是把整块换掉。
+          与空状态分开：空状态是一句"接下来做什么"的结论，这个圈是过程，
+          两者长得一样就会被读成同一件事 */}
+      {data.isPending && <CanvasLoading />}
 
       {/* pb 把这块从几何正中抬起 40px：视觉重心比几何中心略高一点，
           正居中的短文字块看上去总是偏下 */}

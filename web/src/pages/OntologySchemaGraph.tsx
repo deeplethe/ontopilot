@@ -57,9 +57,9 @@ import { Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
 import {
+  CanvasLoading,
   Pill,
   Row,
-  Spinner,
   ToolButton,
   ToolDivider,
   ToolTower,
@@ -1037,9 +1037,7 @@ export function OntologySchemaGraph({
           中间，而不是把整块换成一个转圈——后者等于把已经就绪的东西一起藏起来。
           与"真的没有类"分开：那句话是结论，这个圈是过程，长得一样就读错了 */}
       {loading ? (
-        <div className="absolute inset-0 grid place-items-center pointer-events-none">
-          <Spinner size={20} label={S.nav.loading} />
-        </div>
+        <CanvasLoading />
       ) : empty ? (
         <div className="absolute inset-0 grid place-items-center pointer-events-none">
           <div className="text-center text-body text-ink-2 max-w-xs">

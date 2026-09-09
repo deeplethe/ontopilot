@@ -1131,6 +1131,22 @@ export function SkeletonRows({
   );
 }
 
+/** 画布中间的等待记号。**盖在已经画好的东西上，不是替掉它们**——网格、缩放塔、
+ *  静态图例都跟数据无关，先画出来，这一层只说中间那块还在路上。
+ *
+ * 比行内的转圈大一档（28）：它要在一整屏画布的正中被一眼看到，而不是挤在
+ * 一行字旁边。`pointer-events-none` 让底下的控件照常能点——等的时候缩放、
+ * 归位这些事本来就做得了。
+ *
+ * 宿主要有 `relative`（两张画布都是 `h-full relative`）。 */
+export function CanvasLoading({ size = 28 }: { size?: number }) {
+  return (
+    <div className="absolute inset-0 grid place-items-center pointer-events-none">
+      <Spinner size={size} label={S.nav.loading} />
+    </div>
+  );
+}
+
 /** 转圈。**形状未知的东西用它**：一整块区域还不知道会画成图、表还是空。
  *  形状已知的地方别用它——那里 `Skeleton` 能多说一句"等的是什么"。 */
 export function Spinner({
