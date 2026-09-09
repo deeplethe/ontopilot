@@ -208,6 +208,8 @@ export function selectedNode(
   // **反色**：浅底深字。指到的那一个是深底浅字，同一副形状调个个儿——
   // 一眼分得出"我正指着"和"我选中了"，而不必再多一种记号
   res.labelInvert = true;
+  // 再加粗一档。反色要看向它才读得出来，字重在余光里也分得清
+  res.labelBold = true;
   res.zIndex = 3;
   return res;
 }

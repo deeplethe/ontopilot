@@ -725,11 +725,15 @@ export function OntologySchemaGraph({
         const base = attrs.size as number;
         const sel = selectedRef.current;
         const hov = hoverRef.current;
+        const selClass =
+          sel?.kind === "class" && g.hasNode(sel.id) ? sel.id : null;
+        /* **选中压过指到**，与实例图同一条：指针落到自己选中的那个类上，读到的
+           还该是选中那一副（反色底牌 + 加粗的名字）。指到别的类照常出 hover */
+        if (selClass === node) return selectedNode(res, attrs, base);
         if (hov === node) return hoveredNode(res, attrs, base);
-        if (sel?.kind === "class" && g.hasNode(sel.id)) {
-          if (node === sel.id) return selectedNode(res, attrs, base);
+        if (selClass) {
           // 邻居不收小：几十个类的图，收了显得瘫（实例图那边收到 0.76）
-          if (g.areNeighbors(sel.id, node)) return neighborNode(res, base);
+          if (g.areNeighbors(selClass, node)) return neighborNode(res, base);
           return mutedNode(res, base);
         }
         if (sel?.kind === "relation") {

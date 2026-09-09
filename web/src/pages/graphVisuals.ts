@@ -107,7 +107,12 @@ export function drawNodeLabel(
   // hover 时悬浮卡（drawHoverCard）接管展示，底层标签隐去，避免双层
   if (data.hideBaseLabel) return;
   const size = CANVAS_LABEL_SIZE;
-  ctx.font = `500 ${size}px ${CANVAS_FONT}`;
+  /* 选中的那一个名字**加粗一档**：500 → 600，与界面里其余的强调同一档，
+     不另起一个字重。反色的底牌要看向它才读得出来，字重在余光里就分得清——
+     一屏名字里只有一个更重的。
+     **得在量宽之前设好**：底牌是按 `measureText` 撑开的，先量后改字重，
+     粗出来的字会顶到底牌外面去 */
+  ctx.font = `${data.labelBold ? 600 : 500} ${size}px ${CANVAS_FONT}`;
   ctx.textBaseline = "middle";
   const padX = 8;
   const padY = 3;
