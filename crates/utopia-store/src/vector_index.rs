@@ -16,9 +16,12 @@
 //! 3. **`hnsw.iterative_scan = relaxed_order`。** HNSW 先取 `ef_search` 个候选再过
 //!    WHERE；一张按 kb 分租的表上，小库的行在候选里占不到几个，`LIMIT 10` 会回
 //!    三行甚至零行（实测 1 万行的库在 6 万行的表上：关着回 3/24，开着回满）。
-//!    iterative_scan 让它继续往下走到凑够为止。`hnsw.max_scan_tuples` 提到 100,000：
-//!    默认的 20,000 实测撞到过——229 行的库在 5 万行旁边、查询离它远，扫到顶回零行。
-//!    十万把最坏情况变成半秒左右而不是零行：少回是悄悄的，慢是看得见的。
+//!    iterative_scan 让它继续往下走到凑够为止。它有两个停下来的条件，都在这里放宽：
+//!    `hnsw.scan_mem_multiplier` 从 1 提到 4（默认 work_mem 4 MB 时即 16 MB）——实测
+//!    这一个才是绑住它的：真实库各占索引 1%、旁边一个 5 万行的合成租户、强制走索引，
+//!    倍数 1 时 522 问里 154 问回不满、recall 0.705、每问 32 ms；倍数 4 时全部回满、
+//!    recall 1.0、每问 74 ms，16 与 4 无异。`hnsw.max_scan_tuples` 从 20,000 提到
+//!    100,000，实测里它没绑住，提的理由是把「到顶」留成看得见的慢，而不是悄悄少回。
 //!
 //! 走不走索引由规划器定：有 `chunks_kb_idx` 时小库、中库它自己选精确路径，只有
 //! 占表大头的库才走 HNSW（实测 6 万行：20 行和 1 万行的库走精确，5 万的走索引）。
@@ -240,7 +243,11 @@ pub async fn relaxed_order(pool: &PgPool, tx: &mut Transaction<'_, Postgres>) ->
         (&mut **tx)
             .execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
             .await?;
-        // 两个参数同一个版本来的（0.8）。上限见模块注释：宁可慢半秒，不悄悄少回
+        // 三个参数同一个版本来的（0.8）。两个停止条件见模块注释：内存那个是实测绑住
+        // 扫描的，元组上限那个没绑住，放宽是为了把「到顶」留成看得见的慢
+        (&mut **tx)
+            .execute("SET LOCAL hnsw.scan_mem_multiplier = 4")
+            .await?;
         (&mut **tx)
             .execute("SET LOCAL hnsw.max_scan_tuples = 100000")
             .await?;
