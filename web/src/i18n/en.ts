@@ -1099,7 +1099,6 @@ export const en = {
     tabClasses: "Classes",
     colName: "Name",
     multiParentHint: "This class has more than one parent; the indentation follows one of them, and the Parent column lists them all",
-    colKey: "Key",
     colSignature: "Subject → Object",
     colInstances: "Instances",
     colFacts: "Facts",
