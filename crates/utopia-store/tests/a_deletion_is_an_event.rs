@@ -176,8 +176,9 @@ async fn chunk_live(pool: &PgPool, id: Uuid) -> anyhow::Result<(bool, String)> {
 }
 
 async fn listed(pool: &PgPool, f: &Fx, id: Uuid) -> anyhow::Result<bool> {
-    Ok(documents::list(pool, f.kb)
+    Ok(documents::page(pool, f.kb, None, None, None, false, 200, 0)
         .await?
+        .docs
         .iter()
         .any(|d| d.id == id))
 }
