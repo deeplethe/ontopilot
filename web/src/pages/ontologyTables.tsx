@@ -24,6 +24,8 @@ import {
   GroupLabel,
   Input,
   LinkButton,
+  Pager,
+  pageSlice,
   ROW_TRAILING,
   Segmented,
   SkeletonRows,
@@ -36,6 +38,17 @@ import {
 } from "../ui";
 
 export type TableTab = "classes" | "properties" | "attributes";
+
+/** 一页画多少行。
+ *
+ * 三张表分别是 916 / 1102 / 599 行，从前一次全画进 DOM——**滚动条那一下就能
+ * 感觉到**，而且真正在看的从来只有屏幕里那十几行。左栏的类树早就是分页的
+ * （每页 14），这里只是把同一件事补上；50 比 14 大，是因为整幅宽度的表一屏
+ * 本来就装得下更多，翻页翻得太勤也烦。
+ *
+ * 类那张表分的是**已经拍平的树**，所以一页仍是树序里连续的一段，父子关系
+ * 不会被切散到两页去（与左栏同一个做法）。 */
+const TABLE_PAGE = 50;
 
 /** 这一行挂在谁下面。**没有主父类就退回第一个父类**：`primary_parent` 只在
  *  人手动指定时才写，而导入的包一个都没有——schema.org 那 916 个类里是 0 个。
@@ -148,6 +161,7 @@ function ClassesTable({
   onSeeInstances: (t: EntityTypeView) => void;
 }) {
   const [sort, setSort] = useState<Sort>(null);
+  const [page, setPage] = useState(0);
   const nameOf = useMemo(
     () => new Map(types.map((t) => [t.id, t.label])),
     [types],
@@ -171,8 +185,11 @@ function ClassesTable({
     : t.label,
   ), !!sort || !!q);
 
+  const { rows: paged, safe } = pageSlice(rows, page, TABLE_PAGE);
+
   return (
-    <Table>
+    <>
+      <Table>
       <THead>
         <Tr>
           <Th>{S.ontology.colName}</Th>
@@ -190,7 +207,7 @@ function ClassesTable({
         </Tr>
       </THead>
       <TBody>
-        {rows.map(({ t, depth }) => (
+        {paged.map(({ t, depth }) => (
           <Tr key={t.id} interactive onClick={() => onOpen(t)}>
             <Td>
               <span
@@ -252,7 +269,16 @@ function ClassesTable({
           </Tr>
         ))}
       </TBody>
-    </Table>
+      </Table>
+      {/* 翻页器跟在表后面，不做固定底栏：这一块本来就是滚动区，
+          再钉一条栏会把最后一行压掉半截 */}
+      <Pager
+        total={rows.length}
+        pageSize={TABLE_PAGE}
+        page={safe}
+        onPage={setPage}
+      />
+    </>
   );
 }
 
@@ -294,6 +320,7 @@ function PropertiesTable({
   onOpen: (r: RelationTypeView) => void;
 }) {
   const [sort, setSort] = useState<Sort>(null);
+  const [page, setPage] = useState(0);
   const nameOf = useMemo(
     () => new Map(types.map((t) => [t.id, t.label])),
     [types],
@@ -315,8 +342,11 @@ function PropertiesTable({
     : r.label,
   );
 
+  const { rows: paged, safe } = pageSlice(rows, page, TABLE_PAGE);
+
   return (
-    <Table>
+    <>
+      <Table>
       <THead>
         <Tr>
           <Th>{S.ontology.colName}</Th>
@@ -333,7 +363,7 @@ function PropertiesTable({
         </Tr>
       </THead>
       <TBody>
-        {rows.map((r) => (
+        {paged.map((r) => (
           <Tr key={r.id} interactive onClick={() => onOpen(r)}>
             <Td>
               <span className="flex items-center gap-2">
@@ -364,7 +394,16 @@ function PropertiesTable({
           </Tr>
         ))}
       </TBody>
-    </Table>
+      </Table>
+      {/* 翻页器跟在表后面，不做固定底栏：这一块本来就是滚动区，
+          再钉一条栏会把最后一行压掉半截 */}
+      <Pager
+        total={rows.length}
+        pageSize={TABLE_PAGE}
+        page={safe}
+        onPage={setPage}
+      />
+    </>
   );
 }
 
@@ -384,6 +423,7 @@ function AttributesTable({
   onOpen: (a: RelationTypeView) => void;
 }) {
   const [sort, setSort] = useState<Sort>(null);
+  const [page, setPage] = useState(0);
   const nameOf = useMemo(
     () => new Map(types.map((t) => [t.id, t.label])),
     [types],
@@ -400,8 +440,11 @@ function AttributesTable({
     : a.label,
   );
 
+  const { rows: paged, safe } = pageSlice(rows, page, TABLE_PAGE);
+
   return (
-    <Table>
+    <>
+      <Table>
       <THead>
         <Tr>
           <Th>{S.ontology.colName}</Th>
@@ -420,7 +463,7 @@ function AttributesTable({
         </Tr>
       </THead>
       <TBody>
-        {rows.map((a) => (
+        {paged.map((a) => (
           <Tr key={a.id} interactive onClick={() => onOpen(a)}>
             <Td className="truncate">{a.label}</Td>
             <Td className="hidden font-mono text-small text-ink-2 md:table-cell">
@@ -440,7 +483,16 @@ function AttributesTable({
           </Tr>
         ))}
       </TBody>
-    </Table>
+      </Table>
+      {/* 翻页器跟在表后面，不做固定底栏：这一块本来就是滚动区，
+          再钉一条栏会把最后一行压掉半截 */}
+      <Pager
+        total={rows.length}
+        pageSize={TABLE_PAGE}
+        page={safe}
+        onPage={setPage}
+      />
+    </>
   );
 }
 
