@@ -975,8 +975,8 @@ export const zh: Strings = {
     testing: "测试中…",
     chatLabel: "对话",
     embedLabel: "向量",
-    ok: (reply: string) => `已连接（${reply}）`,
-    okDim: (dim: number) => `已连接（维度 ${dim}）`,
+    ok: (reply: string) => `已连通，认证通过（${reply}）`,
+    okDim: (dim: number) => `已连通，认证通过（维度 ${dim}）`,
   },
   ontology: {
     title: "本体",
@@ -984,7 +984,6 @@ export const zh: Strings = {
     tabClasses: "类",
     colName: "名称",
     multiParentHint: "这个类有不止一个父类；缩进挂在其中一个，父类那一列把它们都列着",
-    colKey: "键",
     colSignature: "主语 → 宾语",
     colInstances: "实例",
     colFacts: "事实",

@@ -748,7 +748,10 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   if (turn.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="u-bubble-user max-w-[85%] rounded-panel px-4 py-2 text-body whitespace-pre-wrap text-ink">
+        {/* **对话按 title 那一档读**（16/24，不是正文的 14/22）。这一页是这个
+            产品里唯一一块拿来"读"的长文本，其余都是表格、清单、面板里的字段，
+            14px 在那些地方是对的，成段读就偏小了。仍在五档之内，不新增字号 */}
+        <div className="u-bubble-user max-w-[85%] rounded-panel px-4 py-2 text-title whitespace-pre-wrap text-ink">
           {turn.content}
         </div>
       </div>
@@ -761,7 +764,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   return (
     <div className="max-w-[95%]">
       {/* agent 回复无气泡：正文直接落在画布上（用户消息保留气泡以区分角色） */}
-      <div className="py-1 text-body text-ink leading-relaxed">
+      <div className="py-1 text-title text-ink leading-relaxed">
         {/* **轨迹按发生的顺序穿在正文里。**
             模型是边说边查的：说一句、调一次、再说一句。把调用整块提到最前面，
             读起来就成了「先查七次再一口气说完」——那不是它做的事，而且相邻两次

@@ -29,6 +29,66 @@ const KNOWN_ENTITY_LIMIT: usize = 20;
 const MAX_HISTORY: usize = 20;
 const MAX_ROUNDS: usize = 6;
 
+/// 模型说「我去查」却一个工具都没调就结束了一轮时，追问的那句话（#509）。
+///
+/// 实测 DeepSeek-V3 会答「请稍等，我将进行相关搜索」然后什么都不做；再问一次，
+/// 还是「稍等，我正在搜索」。提示词第 1、2 条早就禁了这种叙述，所以这不是缺一句
+/// 指令，是模型没听、而循环把它当成了最终答案。守卫放在循环里，不放在提示词里。
+///
+/// 追问只给一次、不流式、只认三种回复：调工具（照常执行）、一个词 DONE（上一句
+/// 本来就是答案：打招呼、问这场对话、拒答，原样收尾）、其他任何文字（还在说空话，
+/// 明说没查到证据）。给它 DONE 这条出口，是为了不让「把那句话说短一点」这种
+/// 本就不需要工具的回答被追问成第二个答案。
+///
+/// 措辞把 DONE 的门开得窄：只有问题**不是关于用户数据**时才许说 DONE。实测还有
+/// 一种更坏的停法——不说「稍等」，直接写「以下是我找到的内容」然后凭记忆作答，
+/// 库里 steps、sources 全是 0。它没停住，它在撒谎。对它，「若已答完就说 DONE」
+/// 是一条太宽的出口，所以这里明说：关于数据的事实性回答没有工具就不算答。
+const STALL_NUDGE: &str = "(system) Your last message ended the turn without calling any tool, \
+    and it cites nothing. An answer about the user's data that was not gathered with a tool is \
+    not an answer, whatever the message says it found: call the tool now. Do not describe a \
+    plan. Reply with the single word DONE only if the question was not about the user's data \
+    at all: a greeting, a question about this transcript, or a refusal.";
+
+/// 追问后仍不查时补在答案末尾的话。承诺已经流给用户了，收不回来；能做的是
+/// 让文字和空白的轨迹不再互相矛盾——对一个把「每个回答可追溯」当卖点的产品，
+/// 一句叙述了从未发生的查证的回答比「不知道」更糟。
+const NO_EVIDENCE_NOTE: &str =
+    "\n\n(No evidence was gathered for this answer: the model announced a search it did not perform.)";
+
+/// 一轮结束、正文非空、整场没调过工具也没有引用：这个答案什么都不站在上面。
+/// 「问这场对话」的消息也满足这两条，所以追问必须便宜、安静，且留有 DONE 出口。
+fn answer_rests_on_nothing(steps: &[serde_json::Value], sources: &[serde_json::Value]) -> bool {
+    steps.is_empty() && sources.is_empty()
+}
+
+/// 追问之后模型的回复算哪种
+#[derive(Debug, PartialEq, Eq)]
+enum AfterNudge {
+    /// 调了工具：照常执行，接着走
+    Tools,
+    /// 说上一句已经是答案，或者什么都没说：原样收尾
+    Done,
+    /// 又是一段文字：还在说空话
+    Stalled,
+}
+
+fn after_nudge(turn: &utopia_llm::AssistantTurn) -> AfterNudge {
+    if !turn.tool_calls.is_empty() {
+        return AfterNudge::Tools;
+    }
+    let said = turn
+        .content
+        .as_deref()
+        .map(|t| t.trim().trim_matches(|c: char| !c.is_alphanumeric()))
+        .unwrap_or_default();
+    if said.is_empty() || said.eq_ignore_ascii_case("done") {
+        AfterNudge::Done
+    } else {
+        AfterNudge::Stalled
+    }
+}
+
 /// `remember` 曾整个停用过一段（见 `docs/decisions/0015`）：它那时会把一句话直接
 /// 变成图上一条活边，实测里「记住 Acme 把总部搬到了深圳」落成的是一条**空谓词、
 /// 0.9 置信**的边，而助手宣称的和图里得到的不是一回事。
@@ -628,6 +688,8 @@ pub async fn chat(
         let mut exchange_acc: Vec<serde_json::Value> = Vec::new();
 
         let mut rounds = 0usize;
+        // #509 的追问只给一次
+        let mut nudged = false;
         loop {
             if rounds >= MAX_ROUNDS {
                 // 弹药耗尽：命令模型就现有证据作答（流式）
@@ -730,7 +792,7 @@ pub async fn chat(
                     }
                 }
             }
-            let Some(turn) = turn else {
+            let Some(mut turn) = turn else {
                 yield error_event("LLM stream ended unexpectedly");
                 return;
             };
@@ -738,7 +800,45 @@ pub async fn chat(
             if turn.tool_calls.is_empty() {
                 if answer_acc.is_empty() {
                     yield error_event("Model returned an empty answer");
-                } else {
+                    return;
+                }
+                // **没调工具的一轮不一定是答完了，也可能是停住了**（#509）：正文说
+                // 「我去查」，然后轮次就结束。循环分不出这两种，靠一次追问让模型自己
+                // 表态。追问不流式：模型若只是确认 DONE，用户不该看见那个词
+                let mut carry_on_with_tools = false;
+                if !nudged && answer_rests_on_nothing(&steps_acc, &sink.sources) {
+                    nudged = true;
+                    let model = settings.chat_model.clone().unwrap_or_default();
+                    msgs.push(turn.to_message());
+                    msgs.push(json!({ "role": "user", "content": STALL_NUDGE }));
+                    match client.chat_tools(&msgs, &tools).await {
+                        Ok(second) => match after_nudge(&second) {
+                            AfterNudge::Tools => {
+                                tracing::warn!(model, "模型只说了要查没查，追问后调了工具");
+                                // 追问那轮的叙述没有流过，这里补上，接在承诺后面
+                                if let Some(text) = second.content.as_deref().filter(|t| !t.trim().is_empty()) {
+                                    answer_acc.push_str("\n\n");
+                                    yield delta_event("\n\n");
+                                    answer_acc.push_str(text);
+                                    yield delta_event(text);
+                                }
+                                turn = second;
+                                carry_on_with_tools = true;
+                            }
+                            // 也记一笔：DONE 说得对不对没法在这里判，只能靠日志和这条
+                            // 回答的 sources 为空这个事实，事后一起看
+                            AfterNudge::Done => tracing::info!(model, "模型追问后说上一句已是答案"),
+                            AfterNudge::Stalled => {
+                                tracing::warn!(model, "模型追问后仍只说不查，答案标注无证据");
+                                answer_acc.push_str(NO_EVIDENCE_NOTE);
+                                yield delta_event(NO_EVIDENCE_NOTE);
+                            }
+                        },
+                        // 追问本身失败不能拖垮已经到手的答案
+                        Err(e) => tracing::warn!(model, error = %e, "追问失败，按原答案收尾"),
+                    }
+                }
+                if !carry_on_with_tools {
                     let _ = utopia_store::conversations::append_message(
                         &state.pool, conversation_id, "assistant", &answer_acc,
                         &utopia_store::conversations::TurnRecord {
@@ -749,8 +849,8 @@ pub async fn chat(
                         },
                     ).await;
                     yield done_event();
+                    return;
                 }
-                return;
             }
 
             // 工具轮带了叙述文本：与后续轮次的正文之间补一个段落分隔
@@ -1152,5 +1252,67 @@ mod tests {
         assert!(check_call(&tools, "changes", "{}").is_err());
         check_call(&tools, "changes", "{\"since\": \"2026-13-45\"}")
             .expect("格式错的日期不归这一关管，交给 changes_window");
+    }
+}
+
+#[cfg(test)]
+mod stall_tests {
+    use super::{after_nudge, answer_rests_on_nothing, AfterNudge};
+    use utopia_llm::{AssistantTurn, ToolCall};
+
+    fn says(text: Option<&str>) -> AssistantTurn {
+        AssistantTurn {
+            content: text.map(String::from),
+            tool_calls: Vec::new(),
+        }
+    }
+
+    /// 整场没调过工具、没有引用，才算「什么都不站在上面」；任一边有东西都不追问
+    #[test]
+    fn an_answer_with_a_step_or_a_source_is_not_questioned() {
+        let step = serde_json::json!({ "kind": "search" });
+        let source = serde_json::json!({ "n": 1 });
+        assert!(answer_rests_on_nothing(&[], &[]));
+        assert!(!answer_rests_on_nothing(std::slice::from_ref(&step), &[]));
+        assert!(!answer_rests_on_nothing(&[], std::slice::from_ref(&source)));
+    }
+
+    /// 追问后调了工具就接着走，不管它顺带说了什么
+    #[test]
+    fn a_tool_call_after_the_nudge_carries_on() {
+        let turn = AssistantTurn {
+            content: Some("Searching now.".into()),
+            tool_calls: vec![ToolCall {
+                id: "c1".into(),
+                name: "search_chunks".into(),
+                arguments: "{}".into(),
+            }],
+        };
+        assert_eq!(after_nudge(&turn), AfterNudge::Tools);
+    }
+
+    /// DONE 怎么写都算：大小写、句号、前后空白；什么都没说也算——没有可补的
+    #[test]
+    fn done_in_any_dress_keeps_the_answer() {
+        for text in ["DONE", "done", " Done. ", "DONE!", ""] {
+            assert_eq!(after_nudge(&says(Some(text))), AfterNudge::Done, "{text:?}");
+        }
+        assert_eq!(after_nudge(&says(None)), AfterNudge::Done);
+    }
+
+    /// 再来一段文字，不管哪种语言、说得多客气，都是又停住了
+    #[test]
+    fn more_prose_after_the_nudge_is_a_second_stall() {
+        for text in [
+            "稍等，我正在搜索OpenAI的时间线信息。",
+            "Let me search for that now.",
+            "Done searching, here is the timeline: ...",
+        ] {
+            assert_eq!(
+                after_nudge(&says(Some(text))),
+                AfterNudge::Stalled,
+                "{text:?}"
+            );
+        }
     }
 }
