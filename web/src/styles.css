@@ -998,9 +998,11 @@ select.input-dark option {
 }
 
 /* ---- interactive accents ---- */
+/* 自己发的那条。**只有一块底，没有描边**：这一屏上带框的东西都是可以操作的
+   （输入框、控件、卡片），一条已经说完的话不是其中之一，给它描边就是在暗示
+   还能点。角色靠这块 8% 的底区分就够了 */
 .u-bubble-user {
   background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 .u-highlight {
   border-color: rgba(255, 255, 255, 0.45) !important;
