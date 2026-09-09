@@ -22,3 +22,13 @@ ALTER TABLE documents
 UPDATE sources
    SET config = config || '{"extract": false}'::jsonb
  WHERE kind = 'folder' AND name = 'Data schemas';
+
+-- 已有的库里这份文档可能早就排过抽取。没抽成的（还没排到、或者失败了）标成
+-- skipped：留着 `failed`，Library 的「重试失败」会把它原样送回抽取，而这正是
+-- 上面说了不做的事。抽完了的（`done`）不动——它抽出来的列名实体要靠重建清掉
+UPDATE documents d
+   SET graph_status = 'skipped', graph_error = NULL
+  FROM sources s
+ WHERE s.id = d.source_id
+   AND s.config -> 'extract' = 'false'::jsonb
+   AND d.graph_status IN ('none', 'failed');
