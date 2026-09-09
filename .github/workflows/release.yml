@@ -72,8 +72,14 @@ jobs:
           done
           # 故意不给 UTOPIA_JWT_SECRET：让这一跑覆盖自动生成那条路径。
           # 下面的注册请求会签发并携带 token，密钥没生成好就过不了。
+          #
+          # UTOPIA_MIGRATION_URL 显式传空串，而不是不传：compose 的
+          # `${VAR:-}` 在变量没设时发出去的就是空串，而这条冒烟测试原本直接
+          # docker run、从不传它，于是 #343 全绿发布、用户照 README 起就退出
+          # （"relative URL without a base"）。空串必须等同于未设，在这里钉住。
           docker run -d --name app --network smoke -p 1516:1516 \
             -e UTOPIA_DATABASE_URL=postgres://utopia:utopia@pg:5432/utopia \
+            -e UTOPIA_MIGRATION_URL= \
             utopia:smoke
 
           # 必须打 /api/v1/health 并核对 JSON：健康检查挂在 nest("/api/v1") 里，
