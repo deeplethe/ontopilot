@@ -24,6 +24,7 @@
 //   node scripts/bench/ask.mjs --kb <id> --confirm       # 先确认探索提的那些（产品路径）
 //   node scripts/bench/ask.mjs --kb <id> --seed          # 先把真值写成确认口径（上界）
 //   node scripts/bench/ask.mjs --kb <id> --replay        # 不重问，拿库里上一轮的回答重判
+//   node scripts/bench/ask.mjs --kb <id> --parallel 4    # 同时问四题（缺省一题一题来）
 //
 // 环境变量见 lib.mjs。
 
@@ -231,21 +232,24 @@ const main = async () => {
   const questions = qs.questions.filter((q) => (args.only && args.only !== true ? q.id === args.only : true));
   const c = { right: 0, sql_only: 0, answer_only: 0, wrong: 0, no_sql: 0, failed: 0 };
   const rows = [];
-  for (const q of questions) {
+  // **一题一个会话，互不共享状态，所以能并发问**（`--parallel N`，缺省 1）。
+  // 串行时一题 2–6 个模型回合、平均一分半，十八题半小时；服务端的
+  // `model_concurrency` 缺省 10，闸门不是我们。上限别开太高：模型端会限流
+  async function one(q, i) {
     const g = gold.get(q.id);
-    if (!g || !Number.isFinite(g.value)) { log(`跳过 ${q.id}：真值算不出来`); continue; }
+    if (!g || !Number.isFinite(g.value)) { log(`跳过 ${q.id}：真值算不出来`); return; }
     let r;
     if (replay) {
       const prev = replay.get(q.ask.trim());
-      if (!prev) { log(`跳过 ${q.id}：库里没有问过这一句`); continue; }
+      if (!prev) { log(`跳过 ${q.id}：库里没有问过这一句`); return; }
       r = { conversation: prev.id, text: prev.said ?? "", exchange: prev.ex ?? [] };
     } else {
       try {
         r = await ask(kb, q.ask);
       } catch (e) {
         c.failed++;
-        rows.push(`FAILED  ${q.id} — ${String(e.message).slice(0, 120)}`);
-        continue;
+        rows.push({ i, text: `FAILED  ${q.id} — ${String(e.message).slice(0, 120)}` });
+        return;
       }
       r.exchange = r.conversation
         ? JSON.parse(psql(`SELECT coalesce(json_agg(tool_exchange), '[]') FROM conversation_messages
@@ -275,16 +279,26 @@ const main = async () => {
     const flag = mapped.has(q.id) ? "mapped" : "UNMAPPED";
     log(`${verdict.padEnd(11)} ${q.id} (${flag})`);
     if (verdict !== "RIGHT") {
-      rows.push(
+      rows.push({ i, text:
         `${verdict}  ${q.id} (${flag})  truth ${g.value}\n` +
         `    asked: ${q.ask}\n` +
         (ran.length
           ? ran.map((x) => `    ran:   ${x.s.replace(/\s+/g, " ").slice(0, 150)}  → ${x.ns.join(", ")}`).join("\n")
           : "    ran:   (没跑任何 SQL)") +
         `\n    said:  ${r.text.replace(/\s+/g, " ").slice(0, 200)}`,
-      );
+      });
     }
   }
+  const parallel = Math.max(1, Math.min(8, Number(args.parallel) || 1));
+  let next = 0;
+  await Promise.all(Array.from({ length: parallel }, async () => {
+    while (next < questions.length) {
+      const i = next++;
+      await one(questions[i], i);
+    }
+  }));
+  // 并发之后完成顺序是乱的；报告按题目顺序排，两轮之间才好对着看
+  rows.sort((a, b) => a.i - b.i);
 
   const n = questions.length;
   const pct = (a) => (n ? `${Math.round((a / n) * 100)}%` : "—");
@@ -300,7 +314,7 @@ const main = async () => {
     // 剩下的错就都不是覆盖率的问题
     mapped_definitions: `${[...gold.keys()].filter((id) => mapped.has(id)).length}/${gold.size}`,
   }, null, 2));
-  if (rows.length) console.log("\n" + rows.join("\n\n"));
+  if (rows.length) console.log("\n" + rows.map((r) => r.text).join("\n\n"));
 };
 
 main().catch((e) => { console.error(e); process.exit(1); });

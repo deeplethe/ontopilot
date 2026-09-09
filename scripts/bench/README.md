@@ -166,6 +166,10 @@ node scripts/bench/mappings.mjs --kb <id> --score      # 只打分，不动库
 ```
 node scripts/bench/ask.mjs --kb <id>                  # 跑全部问题
 node scripts/bench/ask.mjs --kb <id> --only disc_revenue
+node scripts/bench/ask.mjs --kb <id> --seed           # 先把真值写成确认口径（上界）
+node scripts/bench/ask.mjs --kb <id> --confirm        # 先确认探索提的那些（产品路径）
+node scripts/bench/ask.mjs --kb <id> --replay         # 不重问，拿库里上一轮的回答重判
+node scripts/bench/ask.mjs --kb <id> --parallel 4     # 同时问四题：一题 2–6 个模型回合、串行半小时
 ```
 
 **与 `mappings.mjs` 量的不是一回事，一个也推不出另一个。** 口径确认得再准，

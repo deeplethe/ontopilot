@@ -1,9 +1,15 @@
 # 0035 · Exploration aligns a schema to the ontology
 
-- **Status**: written, not implemented · overturns where a mapping hangs, and keeps what
-  [0011](0011-a-mapping-is-not-a-fact.md) said about what a mapping is · the two builtin
-  classes `metric` / `dimension` are to retire (their revision notes are on 0009 and 0011) ·
-  the migration that carries the exploration ledger (#503) is unaffected
+- **Status**: written · decision 7 implemented (#553 → #561: the schema document is
+  indexed and never extracted, `sources.config.extract`, `graph_status = skipped`; the
+  column-name entities went from 93 to 12 on the wide bench base) · a definition can be
+  written by hand (#562 → #563), the door the seeded upper bound simulated · the
+  conventions-as-prose dead end was measured at 14/18 and revised in place (see Dead ends) ·
+  cuts remaining: #554 alignment, #555 the conversion tree, #556 retiring the two classes ·
+  overturns where a mapping hangs, and keeps what [0011](0011-a-mapping-is-not-a-fact.md)
+  said about what a mapping is · the two builtin classes `metric` / `dimension` are to
+  retire (their revision notes are on 0009 and 0011) · the migration that carries the
+  exploration ledger (#503) is unaffected
 - **Written**: 2026-09-09 (conventions in the [README](README.md))
 - **Related**: [0011](0011-a-mapping-is-not-a-fact.md) moved a mapping out of the ledger and
   is right that it is configuration; this record moves the *concept* out of the entity table.
@@ -70,6 +76,20 @@ Three things then have nowhere to live, and the benches measured each:
   sentences describe: a filter on an attribute, a unit on a column. Once those have a home
   the box is redundant, and a box that stays is where the next undocumented convention goes
   instead of into the ontology.
+
+  > **Revised 2026-09-09, after measuring it.** The paragraph above rejected the box on
+  > principle and gave no number. The number: a one-page markdown of the six conventions,
+  > dropped into the "Data schemas" folder (retrieval only, after #553) and reached through
+  > `search_chunks`, takes the wide corpus from **2/18 to 14/18** (#520). Zero code, zero
+  > mappings. That is two-thirds of the gap to the seeded 17/18, and it says the cheap thing
+  > should exist — a person needs somewhere to write conventions *today*, and a document
+  > already works. What the four misses show is the reason the principle still stands: two
+  > of them are the page contradicting itself (its "refund total" counted fully-refunded
+  > orders GMV never held; "valid" and "paid" were both defined and the model divided by the
+  > wrong one). Prose lets two definitions be written that do not compose; an expression
+  > over attributes cannot be. So the order of work follows: a written definition (#562) now,
+  > the alignment and rules for what prose cannot make unambiguous. The dead end is not the
+  > box; it is the box as the *only* place.
 - **Natural-language mappings.** Not executable, therefore not verifiable: the bench cannot
   run "divide by a hundred". Every question re-translates the sentence, and #520's baseline
   is the record of how that goes.
