@@ -48,12 +48,22 @@ export async function login() {
   }
 }
 
+/// 把命令行里的 `-d <库>` 换成指定的库；命令行里本来没写 `-d`（PGDATABASE 那种写法）
+/// 就插在 SQL 前面——**不能是「换不到就算了」**：那样每条 onDb() 都落到命令的默认库，
+/// 而 DROP SCHEMA 与模型写的 SQL 都走 onDb()
+function withDb(cmdline, db) {
+  const parts = cmdline.split(" ");
+  const i = parts.indexOf("-d");
+  if (i >= 0 && i + 1 < parts.length) parts[i + 1] = db;
+  else parts.splice(parts.length - 1, 0, "-d", db);
+  return parts.join(" ");
+}
 function run(cmdline, sql) {
   const parts = cmdline.split(" ");
   return execFileSync(parts[0], [...parts.slice(1), sql], { encoding: "utf8", maxBuffer: 64 << 20 }).trim();
 }
-export const psql = (sql) => run(PSQL.replace(/-d \S+/, `-d ${APP_DB}`), sql);
-export const onDb = (db, sql) => run(PSQL.replace(/-d \S+/, `-d ${db}`), sql);
+export const psql = (sql) => run(withDb(PSQL, APP_DB), sql);
+export const onDb = (db, sql) => run(withDb(PSQL, db), sql);
 export const num = (sql) => Number(psql(sql) || 0);
 
 /// 一条 SQL 第一行里的所有数字。

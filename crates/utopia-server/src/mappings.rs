@@ -287,7 +287,7 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
         if let Some(t) = s("table") {
             covered.insert(t);
         }
-        utopia_store::mappings::propose(
+        let (_, written) = utopia_store::mappings::propose(
             &state.pool,
             kb_id,
             resolved.entity_id,
@@ -301,7 +301,25 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
             def["derived"].as_bool().unwrap_or(false),
         )
         .await?;
-        accepted += 1;
+        if written {
+            accepted += 1;
+        } else {
+            note(
+                drop_reason::DECIDED,
+                format!("{name:?} on {source}: already confirmed or rejected"),
+            );
+        }
+    }
+    // 超过上限的那些一条没看，也得记：不然 returned 与 accepted + dropped 对不上，
+    // 而账本的用处正是让人看出「模型回了六十条、我们只看了三十六条」
+    if proposals.len() > cap as usize {
+        drops.insert(
+            drop_reason::CAP,
+            (
+                (proposals.len() - cap as usize) as i64,
+                format!("model returned {}, cap {cap}", proposals.len()),
+            ),
+        );
     }
 
     let dropped = serde_json::Value::Object(
@@ -316,7 +334,7 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
             .collect(),
     );
     let covered: Vec<String> = covered.into_iter().collect();
-    let _ = utopia_store::exploration_runs::finish(
+    if let Err(e) = utopia_store::exploration_runs::finish(
         &state.pool,
         run,
         proposals.len() as i32,
@@ -324,7 +342,11 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
         dropped,
         &covered,
     )
-    .await;
+    .await
+    {
+        // 账没记上不该让提议白跑，但也不能装作记上了：留在日志里
+        tracing::warn!(%kb_id, run = %run, error = %e, "探索账没记上");
+    }
     tracing::info!(
         %kb_id,
         proposals = accepted,

@@ -32,7 +32,7 @@ pub async fn propose(
     unit: Option<&str>,
     summary: Option<&str>,
     derived: bool,
-) -> AppResult<Uuid> {
+) -> AppResult<(Uuid, bool)> {
     // **`DO UPDATE ... WHERE` 不满足时 `RETURNING` 一行都不返回。**
     //
     // 这是 Postgres 的实情而不是直觉：条件挡住更新，那一行就不算被这条语句
@@ -50,7 +50,7 @@ pub async fn propose(
     .fetch_optional(pool)
     .await?;
     let id = existing.map(|(i,)| i).unwrap_or_else(Uuid::now_v7);
-    sqlx::query(
+    let written = sqlx::query(
         "INSERT INTO concept_mappings
              (id, kb_id, concept_id, source, table_name, expr, sql, unit, summary, derived)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -72,8 +72,11 @@ pub async fn propose(
     .bind(summary)
     .bind(derived)
     .execute(pool)
-    .await?;
-    Ok(id)
+    .await?
+    .rows_affected();
+    // 插入或刷新了算写入；撞上已确认 / 已拒绝的那一行，WHERE 挡下更新，写入数为零——
+    // 调用方靠这一位区分「进了待看」与「决定还在」
+    Ok((id, written > 0))
 }
 
 /// 还等着人表态的。Review 页读它。

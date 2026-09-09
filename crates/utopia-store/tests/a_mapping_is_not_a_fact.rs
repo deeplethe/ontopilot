@@ -66,9 +66,10 @@ async fn one_concept_one_source_one_mapping() -> anyhow::Result<()> {
                 false,
             )
         };
-        let a = p("orders").await?;
-        let b = p("orders_v2").await?;
+        let (a, wrote_a) = p("orders").await?;
+        let (b, wrote_b) = p("orders_v2").await?;
         assert_eq!(a, b, "同一个 (概念, 源) 该是同一行，不是两行");
+        assert!(wrote_a && wrote_b, "第一次插入、第二次刷新，都算写入");
 
         let got = utopia_store::mappings::proposed(&pool, kb, 100, 0).await?;
         assert_eq!(got.len(), 1, "只该有一条");
@@ -132,7 +133,7 @@ async fn a_rejected_mapping_does_not_come_back() -> anyhow::Result<()> {
         .execute(&pool)
         .await?;
 
-        let id = utopia_store::mappings::propose(
+        let (id, _) = utopia_store::mappings::propose(
             &pool,
             kb,
             ent,
@@ -147,8 +148,8 @@ async fn a_rejected_mapping_does_not_come_back() -> anyhow::Result<()> {
         .await?;
         utopia_store::mappings::decide(&pool, kb, id, "rejected", user).await?;
 
-        // 下一轮探索会再次算出同一条——它不该被刷回待看
-        utopia_store::mappings::propose(
+        // 下一轮探索会再次算出同一条——它不该被刷回待看，也不算写入
+        let (_, written) = utopia_store::mappings::propose(
             &pool,
             kb,
             ent,
@@ -161,6 +162,7 @@ async fn a_rejected_mapping_does_not_come_back() -> anyhow::Result<()> {
             false,
         )
         .await?;
+        assert!(!written, "撞上决定的提议不算写入，探索账把它记成 decided");
         assert!(
             utopia_store::mappings::proposed(&pool, kb, 100, 0)
                 .await?

@@ -30,6 +30,12 @@ pub mod drop_reason {
     pub const TYPE: &str = "type";
     /// `definition` 不是一个对象，或者拿不出可执行的定义
     pub const DEFINITION: &str = "definition";
+    /// 模型回的条数超过这一轮的上限，超出的没看。上限按表数定，回得比它多，
+    /// 多半是模型把列当成了口径——宽表上常见
+    pub const CAP: &str = "cap";
+    /// 这条概念在这个源上已经有人表过态（确认或拒绝）。提议不覆盖决定，
+    /// 所以下一轮探索算出同一条时它既不回到待看，也不算这一轮写入的
+    pub const DECIDED: &str = "decided";
 }
 
 /// 开一轮。**先开行再干活**，跑挂了那一轮也有账可查——
