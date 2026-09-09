@@ -280,8 +280,9 @@ pub(super) fn predicates_of(facts: &[EntityFact]) -> String {
         .join(", ")
 }
 
-/// 子串找不到时按词找：每个词都在名字里的候选算命中（"OpenAI board" →
-/// "OpenAI's board of directors"）。先拿最长的词去库里捞，再在结果里筛
+/// 子串找不到时按词找：每个词各去库里捞一把，名字里含的词数达到「全部减一、至少两个」
+/// 的候选算命中（"OpenAI board members" → "OpenAI's board of directors"）。
+/// 模型给的名字常带一个库里没有的词（members、公司、这个），全词命中会把它们全漏掉
 async fn lookup(ctx: &ToolCtx<'_>, raw: &str) -> Vec<GraphNode> {
     let (hits, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, raw, 8, 0)
         .await
@@ -289,25 +290,38 @@ async fn lookup(ctx: &ToolCtx<'_>, raw: &str) -> Vec<GraphNode> {
     if !hits.is_empty() {
         return hits;
     }
-    let words: Vec<&str> = raw.split_whitespace().collect();
-    let Some(longest) = words.iter().copied().max_by_key(|w| w.len()) else {
-        return hits;
-    };
+    let words: Vec<&str> = raw.split_whitespace().filter(|w| w.len() >= 2).collect();
     if words.len() < 2 {
         return hits;
     }
-    let (wide, _) =
-        utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, longest, 40, 0)
+    let mut pool: Vec<GraphNode> = Vec::new();
+    for w in &words {
+        let (found, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, w, 40, 0)
             .await
             .unwrap_or_default();
-    wide.into_iter()
-        .filter(|n| words_all_in(&n.name, &words))
-        .collect()
+        for n in found {
+            if !pool.iter().any(|p| p.id == n.id) {
+                pool.push(n);
+            }
+        }
+    }
+    let need = words.len().saturating_sub(1).max(2);
+    let mut scored: Vec<(usize, GraphNode)> = pool
+        .into_iter()
+        .map(|n| (word_score(&n.name, &words), n))
+        .filter(|(s, _)| *s >= need)
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.degree.cmp(&a.1.degree)));
+    scored.into_iter().map(|(_, n)| n).take(8).collect()
 }
 
-pub(super) fn words_all_in(name: &str, words: &[&str]) -> bool {
+/// 名字里含了几个词（大小写不敏感）
+pub(super) fn word_score(name: &str, words: &[&str]) -> usize {
     let lower = name.to_lowercase();
-    words.iter().all(|w| lower.contains(&w.to_lowercase()))
+    words
+        .iter()
+        .filter(|w| lower.contains(&w.to_lowercase()))
+        .count()
 }
 
 /// 同名候选按问题排：用户的问题嵌一次，与候选的上下文画像比，近的在前。
@@ -361,7 +375,7 @@ pub(super) fn reorder_by_distance(
 /// 谓词参数与库里的词对齐：模型说 "board member"，库里叫 `has_member`。子串对不上时
 /// 把它嵌一次，取最近的关系类型（关系向量在 `relation_types.embedding`），距离在
 /// 上限内的算它说的是那几个。自动扩本体造出的关系没有向量（#560），对不到
-const PREDICATE_DISTANCE: f32 = 0.55;
+const PREDICATE_DISTANCE: f32 = 0.45;
 const PREDICATE_CANDIDATES: i64 = 5;
 
 async fn aligned_predicates(ctx: &ToolCtx<'_>, word: &str) -> Vec<String> {
@@ -582,7 +596,10 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
 // ---- neighbors -------------------------------------------------------------------
 
 pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> ToolResult {
-    let raw = args["entity"].as_str().unwrap_or("");
+    let raw = args["entity"]
+        .as_str()
+        .or_else(|| args["entity_id"].as_str())
+        .unwrap_or("");
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
         Err(e) => {
@@ -684,7 +701,10 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
 // ---- timeline --------------------------------------------------------------------
 
 pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> ToolResult {
-    let raw = args["entity"].as_str().unwrap_or("");
+    let raw = args["entity"]
+        .as_str()
+        .or_else(|| args["entity_id"].as_str())
+        .unwrap_or("");
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
         Err(e) => {
@@ -1031,12 +1051,11 @@ mod tests {
     }
 
     #[test]
-    fn a_multi_word_name_matches_when_every_word_is_in_the_name() {
-        assert!(words_all_in(
-            "OpenAI's board of directors",
-            &["OpenAI", "board"]
-        ));
-        assert!(!words_all_in("OpenAI LP", &["OpenAI", "board"]));
+    fn a_multi_word_name_is_scored_by_the_words_it_contains() {
+        let words = ["OpenAI", "board", "members"];
+        assert_eq!(word_score("OpenAI's board of directors", &words), 2);
+        assert_eq!(word_score("OpenAI LP", &words), 1);
+        assert_eq!(word_score("openai board members list", &words), 3);
     }
 
     /// 空手而回时把实体身上的谓词报出来，多的在前
