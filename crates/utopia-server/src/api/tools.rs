@@ -342,10 +342,17 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
             // 规则的结论也是这个实体的一部分（0021）。**不给的话模型会拿那些
             // 读数自己再判一遍**——而阈值写在规则里，它看不见，于是两处判断
             // 迟早不一致，agent 那次还没有前提链、没有区间、也不进账本
-            let derived =
-                utopia_store::reasoning::derived_for_entity(&ctx.state.pool, ctx.kb_id, id, at)
-                    .await
-                    .unwrap_or_default();
+            // 两根轴一起传（#549）：as_of 回到三月，派生也回到三月，不然模型
+            // 拿到的是「三月的断言 + 今天的结论」，一条前提都不在，结论却在
+            let derived = utopia_store::reasoning::derived_for_entity(
+                &ctx.state.pool,
+                ctx.kb_id,
+                id,
+                at,
+                as_of,
+            )
+            .await
+            .unwrap_or_default();
             let mut derived: Vec<String> = derived
                 .iter()
                 .map(|d| {
