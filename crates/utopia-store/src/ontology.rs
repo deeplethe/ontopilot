@@ -1979,7 +1979,10 @@ mod name_shape_tests {
 
     #[test]
     fn only_the_first_letter_is_lowered() {
-        assert_eq!(lower_camel("ApplicableCertificate"), "applicableCertificate");
+        assert_eq!(
+            lower_camel("ApplicableCertificate"),
+            "applicableCertificate"
+        );
         assert_eq!(lower_camel("EffectiveEndDateTime"), "effectiveEndDateTime");
     }
 
@@ -1990,7 +1993,10 @@ mod name_shape_tests {
         assert_eq!(lower_camel("productID"), "productID");
         assert_eq!(lower_camel("hasLEI"), "hasLEI");
         assert_eq!(lower_camel("accessibilityAPI"), "accessibilityAPI");
-        assert_eq!(lower_camel("checkoutPageURLTemplate"), "checkoutPageURLTemplate");
+        assert_eq!(
+            lower_camel("checkoutPageURLTemplate"),
+            "checkoutPageURLTemplate"
+        );
     }
 
     #[test]
