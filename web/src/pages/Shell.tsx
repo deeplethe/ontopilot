@@ -49,7 +49,6 @@ export function Shell() {
   const health = useQuery({
     queryKey: ["health"],
     queryFn: api.health,
-    staleTime: Infinity,
   });
   const { kb, kbs, setKb } = useKb();
   // 标题跟随当前 tab：`Graph · Utopia`；文档查看页归入 Library

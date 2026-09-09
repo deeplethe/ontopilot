@@ -2,6 +2,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { STREAM_KEYS } from "./queryDefaults";
 import { api, DEFAULT_ONTOLOGY_PACKS, type Kb, type Workspace } from "./api";
 import { kbStore, wsStore } from "./wsStore";
 
@@ -99,11 +100,17 @@ export function useKb(): {
   const setKb = useCallback(
     (id: string) => {
       kbStore.set(id);
+      // 事件流只订当前库，目标库在没人订的这段时间里的变化没人失效过；这些键又不再
+      // 一挂载就重拉（queryDefaults.ts），所以切过去时主动失效一次。代价就是今天
+      // 切库本来就有的那一轮请求
+      for (const head of STREAM_KEYS) {
+        queryClient.invalidateQueries({ queryKey: [head, id] });
+      }
       if (currentKbId && currentKbId !== id) {
         navigate({ to: samePageInKb(pathname, currentKbId, id), replace: false });
       }
     },
-    [navigate, pathname, currentKbId],
+    [navigate, pathname, currentKbId, queryClient],
   );
 
   return {
