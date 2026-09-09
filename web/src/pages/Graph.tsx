@@ -2803,7 +2803,13 @@ function EntityPanel({
       )}
 
       {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}
-      <div className="px-4 pt-3">
+      {/* **左边比头部多一档**（24 而不是 16）。两个盒子本来都从 px-4 起，可
+          分段控件自己还有一圈内距（p-1 加按钮的 px-2），于是「Relations」四个字
+          落在 29，而标题「OpenAI」落在 35——标题前面是色点加 gap，正好差 6px，
+          看着就是这一排比标题往左漏出去一截。加一档之后字落在 37，压回标题上。
+          这一条只给这里：本体页那条是 `fill` 的整条，与下面正文同宽，
+          它的左缘该跟正文对齐，不跟标题对齐 */}
+      <div className="pl-6 pr-4 pt-3">
         <Segmented
           size="sm"
           value={view}
@@ -2998,7 +3004,11 @@ function FactSection({
           <span className="u-num">{count}</span>
         </span>
       </Row>
-      {open && <div className="pl-6">{children}</div>}
+      {/* 比标题再进一档。`pl-6` 时这两行的箭头**落在同一个 x 上**（实测都是 41）：
+          标题行自己有 px-2 加一个 16px 的图标位，正好把 24px 的缩进吃光了，
+          于是这一节读起来是平的，看不出行是挂在标题下面的。
+          间距只有六档，24 往上就是 32 */}
+      {open && <div className="pl-8">{children}</div>}
     </div>
   );
 }
