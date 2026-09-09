@@ -645,6 +645,8 @@ pub struct EntityFact {
     pub temporal: Option<String>,
     pub other_id: Option<Uuid>,
     pub other_name: Option<String>,
+    /// 对端实体的类型标签；属性事实没有对端时为 None
+    pub other_type: Option<String>,
     /// 字面值宾语（属性事实/问数映射）：{"value":…,"unit":…} 或 {"summary":…}
     pub object_value: Option<serde_json::Value>,
     pub valid_from: Option<DateTime<Utc>>,

@@ -891,7 +891,7 @@ pub async fn entity_detail(
                 COALESCE(r.label, fact_surface_predicate(f.id)) AS predicate_label,
                 r.id IS NULL AS inferred, r.temporal,
                 CASE WHEN {subject} = $2 THEN {object} ELSE {subject} END AS other_id,
-                o.canonical_name AS other_name, f.object_value,
+                o.canonical_name AS other_name, ot.label AS other_type, f.object_value,
                 f.valid_from, f.valid_from_precision, f.valid_to, f.valid_to_precision,
                 {holds_from} AS holds_from, {holds_to} AS holds_to, f.confidence,
                 (SELECT count(*) FROM fact_evidence fe WHERE fe.fact_id = f.id) AS evidence_count,
@@ -926,6 +926,7 @@ pub async fn entity_detail(
          LEFT JOIN relation_types r ON r.id = f.predicate_id
          LEFT JOIN entities o
            ON o.id = CASE WHEN {subject} = $2 THEN {object} ELSE {subject} END
+         LEFT JOIN entity_types ot ON ot.id = o.type_id
          WHERE f.kb_id = $1 AND {facts_held} AND {facts_hold}
            AND ({subject} = $2 OR {object} = $2)
          ORDER BY f.valid_from NULLS LAST, f.recorded_at",

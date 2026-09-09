@@ -1178,7 +1178,17 @@ export interface Source {
 
 /** Agentic 对话的行动轨迹（工具调用一步一条）。 */
 export interface ChatStep {
-  kind: "search" | "docs" | "entity" | "facts" | "changes" | "query" | "tool";
+  kind:
+    | "search"
+    | "docs"
+    | "entity"
+    | "facts"
+    | "neighbors"
+    | "timeline"
+    | "path"
+    | "changes"
+    | "query"
+    | "tool";
   label: string;
   detail: string;
   /** `remember` 那一步带着它：那句记忆落成的 chunk。对话里的确认卡按它取

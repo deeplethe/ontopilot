@@ -23,6 +23,7 @@ pub mod memory;
 pub mod model_limits;
 pub mod ontology;
 pub mod palette;
+pub mod paths;
 pub mod pending;
 pub mod reasoning;
 pub mod record_axis;

@@ -73,8 +73,11 @@ pub async fn dispatch(
         "search_chunks" => search_chunks(ctx, sink, args).await,
         "get_document" => get_document(ctx, sink, args).await,
         "search_docs" => search_docs(ctx, sink, args).await,
-        "find_entities" => find_entities(ctx, sink, args).await,
-        "entity_facts" => entity_facts(ctx, args).await,
+        "find_entities" => super::tools_graph::find_entities(ctx, sink, args).await,
+        "entity_facts" => super::tools_graph::entity_facts(ctx, sink, args).await,
+        "neighbors" => super::tools_graph::neighbors(ctx, sink, args).await,
+        "timeline" => super::tools_graph::timeline(ctx, sink, args).await,
+        "paths_between" => super::tools_graph::paths_between(ctx, sink, args).await,
         "changes" => changes(ctx, args).await,
         // 业务规则只读（0021）：判据要看得见，但**写规则不开给模型**——
         // 「推理的判据由人写」是 0002 与 0021 共同的那条线，而一个工具调用
@@ -268,129 +271,6 @@ pub async fn search_docs(
         text,
         json!({ "kind": "docs", "label": q, "detail": format!("{} sections", hits.len()) }),
     )
-}
-
-pub async fn find_entities(
-    ctx: &ToolCtx<'_>,
-    sink: &mut ToolSink,
-    args: &serde_json::Value,
-) -> ToolResult {
-    let name = args["name"].as_str().unwrap_or("").to_string();
-    let (hits, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, &name, 8, 0)
-        .await
-        .unwrap_or_default();
-    let text = if hits.is_empty() {
-        "No matching entities.".to_string()
-    } else {
-        hits.iter()
-            .map(|n| {
-                let dis = n
-                    .disambiguator
-                    .as_deref()
-                    .map(|d| format!(" ({d})"))
-                    .unwrap_or_default();
-                format!(
-                    "{} | {}{} | {} | {} facts",
-                    n.id,
-                    n.name,
-                    dis,
-                    // 没判出类型的实体照样能被搜到、被引用（0009）
-                    n.type_label.as_deref().unwrap_or("untyped"),
-                    n.degree
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    for n in &hits {
-        sink.resolved.push(json!({
-            "id": n.id.to_string(), "name": n.name, "type": n.type_label
-        }));
-    }
-    (
-        text,
-        json!({ "kind": "entity", "label": name, "detail": format!("{} matches", hits.len()) }),
-    )
-}
-
-pub async fn entity_facts(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult {
-    let id = args["entity_id"]
-        .as_str()
-        .and_then(|s| s.parse::<Uuid>().ok());
-    // 世界轴过滤在 SQL 里（world_axis，0022）：没起点的事实从最早的证据起，结束了
-    // 不知哪天的到说出它的那份文档为止。这里只把 T 传下去，不自己解释 NULL
-    let at = args["at"].as_str().and_then(parse_when);
-    // 记录轴（0019 / #347）：那一刻**我们持有**的事实。两根轴两个参数，绝不合成
-    // 一个——合起来就会拿「三月的世界，以今天的认知」去答「三月的世界，以三月的认知」
-    // 「更正到来之前」（#416）：`before` 是 changes 里印出来的那个时刻，原样抄过来。
-    // 账本的钟是微秒，「严格早于 T」就是「不晚于 T 减一微秒」——这一步在这里做，
-    // 不让模型对着 ISO 字符串算小数秒的借位：算错一位，答的就是更正**之后**的状态，
-    // 而且看不出来（#351 那种错）。给了 before 就以它为准
-    let before = args["before"].as_str().and_then(parse_when);
-    let as_of = match before {
-        Some(t) => Some(just_before(t)),
-        None => args["as_of"].as_str().and_then(parse_when),
-    };
-    let Some(id) = id else {
-        return (
-            "Invalid entity_id (expected the uuid returned by find_entities).".to_string(),
-            json!({ "kind": "facts", "label": "?", "detail": "invalid id" }),
-        );
-    };
-    match utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, id, at, as_of).await {
-        Ok((node, facts)) => {
-            // 规则的结论也是这个实体的一部分（0021）。**不给的话模型会拿那些
-            // 读数自己再判一遍**——而阈值写在规则里，它看不见，于是两处判断
-            // 迟早不一致，agent 那次还没有前提链、没有区间、也不进账本
-            // 两根轴一起传（#549）：as_of 回到三月，派生也回到三月，不然模型
-            // 拿到的是「三月的断言 + 今天的结论」，一条前提都不在，结论却在
-            let derived = utopia_store::reasoning::derived_for_entity(
-                &ctx.state.pool,
-                ctx.kb_id,
-                id,
-                at,
-                as_of,
-            )
-            .await
-            .unwrap_or_default();
-            let mut derived: Vec<String> = derived
-                .iter()
-                .map(|d| {
-                    format!(
-                        "{} · {} · {} [rule: {}]",
-                        d.subject,
-                        d.predicate,
-                        d.object,
-                        d.rule_name.as_deref().unwrap_or(&d.rule),
-                    )
-                })
-                .collect();
-
-            let text = if facts.is_empty() && derived.is_empty() {
-                match at {
-                    Some(t) => format!(
-                        "{}: no facts valid as of {}.",
-                        node.name,
-                        crate::time_text::instant(t)
-                    ),
-                    None => format!("{}: no recorded facts.", node.name),
-                }
-            } else {
-                let mut lines: Vec<String> = facts.iter().map(fact_line).collect();
-                lines.append(&mut derived);
-                lines.join("\n")
-            };
-            let detail = entity_facts_detail(facts.len(), at, as_of, before);
-            (
-                text,
-                json!({ "kind": "facts", "label": node.name, "detail": detail }),
-            )
-        }
-        Err(_) => (
-            "Entity not found.".to_string(),
-            json!({ "kind": "facts", "label": "?", "detail": "not found" }),
-        ),
-    }
 }
 
 /// 这个库的判据。**把阈值原样给出来**——模型要能解释「凭什么算含气井」，
@@ -733,7 +613,7 @@ async fn run_query(state: &AppState, ds_id: Uuid, sql: &str) -> anyhow::Result<S
 }
 
 /// 事实行："works at → 星云科技 (2023-08 → now) [90%]"，in 方向用 ←。
-fn fact_line(f: &EntityFact) -> String {
+pub(super) fn fact_line(f: &EntityFact) -> String {
     // 属性事实没有对端实体，值在 `object_value` 里（0004）。从前这里只看 `other_name`，
     // 于是薪资、职位到了模型眼前是 `salary → ?`——区间和置信度都在，唯独值没到，
     // 模型只能说"没有薪资信息"（#348）。渲染规则与客户端 `fmtObjectValue` 一致
@@ -781,11 +661,11 @@ fn record_stamp(time: chrono::DateTime<chrono::Utc>) -> String {
 /// 严格早于 T，按账本的分辨率（timestamptz 是微秒）：不晚于 T − 1µs。
 /// `recorded_at <= T−1µs` 恰好是 `recorded_at < T`，`invalidated_at > T−1µs` 恰好是
 /// `invalidated_at >= T`——0019 的 held_at 一个字不用改
-fn just_before(t: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+pub(super) fn just_before(t: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
     t - chrono::Duration::microseconds(1)
 }
 
-fn entity_facts_detail(
+pub(super) fn entity_facts_detail(
     count: usize,
     at: Option<chrono::DateTime<chrono::Utc>>,
     as_of: Option<chrono::DateTime<chrono::Utc>>,
@@ -807,7 +687,7 @@ fn entity_facts_detail(
 
 /// 时刻参数：`YYYY-MM-DD` 或 RFC3339。`at` 与 `as_of` 共用一个解析——记录轴上的
 /// 时刻常常是一个带时间的戳（"第一波灌完那一刻"），日期粒度装不下它
-fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+pub(super) fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     let s = raw.trim();
     // 完整的 RFC3339 时刻原样收下，小数秒也留着——记录轴上同一秒内可以先录入再更正
     // （#351），这里截掉一位就把两次认知叠回一起。日期形式（YYYY / YYYY-MM / YYYY-MM-DD，
@@ -821,7 +701,7 @@ fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 /// 字面值宾语给模型看的样子：`{value, unit}` → "28000 CNY"，布尔 → ✓/✗，
 /// 映射那类 `{summary}` → 摘要本身。与 `web/src/pages/Graph.tsx::fmtObjectValue` 同一条规则，
 /// 两边分叉的话，人看到的和模型看到的就不是同一个值
-fn literal_text(v: &serde_json::Value) -> Option<String> {
+pub(super) fn literal_text(v: &serde_json::Value) -> Option<String> {
     // 裸标量（`changes` 那头的旧数据长这样）：字符串读成它自己，不带引号
     match v {
         serde_json::Value::Null => return None,
@@ -1142,6 +1022,7 @@ mod tests {
             temporal: Some("state".into()),
             other_id: None,
             other_name: None,
+            other_type: None,
             object_value: Some(value),
             valid_from: Some(t("2023-06-01T00:00:00Z")),
             valid_to: Some(t("2024-02-20T00:00:00Z")),

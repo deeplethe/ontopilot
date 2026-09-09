@@ -711,8 +711,9 @@ function segments(turn: Turn): Segment[] {
 function stepIcon(kind: ChatStep["kind"]) {
   if (kind === "search") return <SearchIcon size={11} />;
   if (kind === "docs") return <BookOpen size={11} />;
-  if (kind === "entity") return <Waypoints size={11} />;
-  if (kind === "facts") return <History size={11} />;
+  if (kind === "entity" || kind === "neighbors" || kind === "path")
+    return <Waypoints size={11} />;
+  if (kind === "facts" || kind === "timeline") return <History size={11} />;
   // facts 读世界轴、changes 读认知轴，两个图谱工具给不同的图标——
   // 用户看步骤条时该看得出问的是哪根轴
   if (kind === "changes") return <GitCompareArrows size={11} />;
@@ -723,8 +724,10 @@ function stepIcon(kind: ChatStep["kind"]) {
 /** 工具步骤 → 球体状态：思考球讲当前动作的语言 */
 function orbState(kind?: ChatStep["kind"]): OrbState {
   if (kind === "search" || kind === "docs") return "searching";
-  if (kind === "entity") return "connecting";
-  if (kind === "facts" || kind === "changes") return "solving";
+  if (kind === "entity" || kind === "neighbors" || kind === "path")
+    return "connecting";
+  if (kind === "facts" || kind === "timeline" || kind === "changes")
+    return "solving";
   if (kind === "query" || kind === "tool") return "working";
   return "listening"; // 尚无步骤：刚接到消息
 }
