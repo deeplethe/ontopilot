@@ -238,7 +238,16 @@ pub async fn search_docs(
     // 必填参数由 `chat::check_call` 在派发之前挡下，所以这里不再回落到
     // 用户那句原话——回落产出的是一个看起来没问题的错误答案
     let q = args["query"].as_str().unwrap_or_default().to_string();
-    let hits = ctx.state.docs.search(&q, 4).unwrap_or_default();
+    // Tantivy 是同步的，放到阻塞线程池上，别占 runtime 线程（#515，与 retrieval.rs 同理）
+    let hits = {
+        let docs = ctx.state.docs.clone();
+        let q = q.clone();
+        tokio::task::spawn_blocking(move || docs.search(&q, 4))
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default()
+    };
     let mut lines = Vec::new();
     for h in &hits {
         let key = format!("charter:{}#{}", h.slug, h.anchor);
