@@ -1090,8 +1090,8 @@ export const en = {
     testing: "Testing…",
     chatLabel: "Chat",
     embedLabel: "Embedding",
-    ok: (reply: string) => `Connected (${reply})`,
-    okDim: (dim: number) => `Connected (dim ${dim})`,
+    ok: (reply: string) => `Reachable and authenticated (${reply})`,
+    okDim: (dim: number) => `Reachable and authenticated (dim ${dim})`,
   },
   ontology: {
     title: "Ontology",
