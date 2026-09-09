@@ -4,7 +4,7 @@
   this record), a standalone Data Mappings page (#140), moved out of the Review queue (#148)
   · of the three things to rebuild, the Review flow and history are done, the evidence chain
   is not · one of two open questions answered (2026-09-02 check) · **revised in part by
-  [0034](0034-exploration-aligns-a-schema-to-the-ontology.md)** (2026-09-09): what a mapping
+  [0035](0035-exploration-aligns-a-schema-to-the-ontology.md)** (2026-09-09): what a mapping
   is stands; what a concept is changes, and the table becomes a rendered one
 - **Written**: 2026-08-31 · condensed into English 2026-09-03
 - **Related**: [0009](0009-no-type-is-a-type.md) removes the builtin entity classes,
@@ -88,7 +88,7 @@ rebuilding all three.
   definitions and the extractor filed 28 column names as concept entities (#501); a
   convention such as "test orders do not count" had nowhere to live, and its absence moved
   chat from 17 of 18 right answers to 1 of 18 (#520).
-  [0034](0034-exploration-aligns-a-schema-to-the-ontology.md) keeps every decision above and
+  [0035](0035-exploration-aligns-a-schema-to-the-ontology.md) keeps every decision above and
   changes the concept: an attribute of a real class, or a rule over such attributes; the
   mapping is how a column becomes that attribute's value; `concept_mappings` becomes a
   rendered table. Decision 4 (evidence recorded separately) and the second open question

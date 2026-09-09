@@ -1,4 +1,4 @@
-# 0034 · Exploration aligns a schema to the ontology
+# 0035 · Exploration aligns a schema to the ontology
 
 - **Status**: written, not implemented · overturns where a mapping hangs, and keeps what
   [0011](0011-a-mapping-is-not-a-fact.md) said about what a mapping is · the two builtin

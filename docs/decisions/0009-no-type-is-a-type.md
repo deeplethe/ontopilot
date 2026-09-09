@@ -8,7 +8,7 @@
   (ancestor, descendant or a shared non-root ancestor) go to Review; `CONFUSABLE_TYPE_KEYS` stays
   as the fallback when nothing is declared · `metric` /
   `dimension` were created on demand by mapping exploration (#231); **they are to retire**
-  under [0034](0034-exploration-aligns-a-schema-to-the-ontology.md), which found them to be
+  under [0035](0035-exploration-aligns-a-schema-to-the-ontology.md), which found them to be
   the same species this record removed
 - **Written**: 2026-08-30 · condensed into English 2026-09-03
 - **Related**: [0008](0008-ontology-packs-as-cold-start.md) makes a real vocabulary the
@@ -101,7 +101,7 @@ in the ontology as a class, as if someone had decided it.
   argument — a class that is control flow leaves the ontology — applies to them. Measured on
   a flattened order table, exploration filed every column name as an entity of those classes
   (28 of 40 concept entities were column names) and proposed 0 of 18 usable definitions.
-  [0034](0034-exploration-aligns-a-schema-to-the-ontology.md) retires both classes; a
+  [0035](0035-exploration-aligns-a-schema-to-the-ontology.md) retires both classes; a
   concept becomes an attribute of a real class or a rule over such attributes. The
   semantic-layer pack (0016 D2) is superseded by the same record: there is no vocabulary to
   pack, only an alignment to propose.
