@@ -1,4 +1,4 @@
-# 0035 · Exploration aligns a schema to the ontology
+# 0036 · Exploration aligns a schema to the ontology
 
 - **Status**: written · decision 7 implemented (#553 → #561: the schema document is
   indexed and never extracted, `sources.config.extract`, `graph_status = skipped`; the
