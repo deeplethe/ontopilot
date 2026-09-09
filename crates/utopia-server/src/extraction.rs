@@ -1307,29 +1307,31 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                             continue;
                         }
                     },
-                    None => match no_ref_name_binding(&entity_ids, &handled_by_name, subject_name) {
-                        NoRefNameBinding::Legacy(id) => id,
-                        NoRefNameBinding::AmbiguousHandled | NoRefNameBinding::Missing => {
-                            touched_names.insert(
-                                utopia_store::resolution::normalize_name(subject_name)
-                                    .to_lowercase(),
-                            );
-                            resolve_bare(
-                                &state.pool,
-                                doc.kb_id,
-                                entity_type_of.get(subject_name).copied().flatten(),
-                                subject_name,
-                                ctx,
-                                Some(&chunk.text),
-                                &mut doc_cache,
-                                &handled_by_name,
-                                &mut ambiguous_bare_cache,
-                                &mut needs_adjudication,
-                                &mut human_reviews_found,
-                            )
-                            .await?
+                    None => {
+                        match no_ref_name_binding(&entity_ids, &handled_by_name, subject_name) {
+                            NoRefNameBinding::Legacy(id) => id,
+                            NoRefNameBinding::AmbiguousHandled | NoRefNameBinding::Missing => {
+                                touched_names.insert(
+                                    utopia_store::resolution::normalize_name(subject_name)
+                                        .to_lowercase(),
+                                );
+                                resolve_bare(
+                                    &state.pool,
+                                    doc.kb_id,
+                                    entity_type_of.get(subject_name).copied().flatten(),
+                                    subject_name,
+                                    ctx,
+                                    Some(&chunk.text),
+                                    &mut doc_cache,
+                                    &handled_by_name,
+                                    &mut ambiguous_bare_cache,
+                                    &mut needs_adjudication,
+                                    &mut human_reviews_found,
+                                )
+                                .await?
+                            }
                         }
-                    },
+                    }
                 };
                 let _ = utopia_store::ontology::record_miss(
                     &state.pool,

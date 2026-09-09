@@ -287,9 +287,9 @@ where
                     };
                     let result = match inner.await {
                         Ok(r) => r,
-                        Err(join) => Err(anyhow::anyhow!(
-                            "任务处理器 panic（详情见 stderr）：{join}"
-                        )),
+                        Err(join) => {
+                            Err(anyhow::anyhow!("任务处理器 panic（详情见 stderr）：{join}"))
+                        }
                     };
                     let outcome = match result {
                         Ok(()) => mark_done(&pool, job.id).await,

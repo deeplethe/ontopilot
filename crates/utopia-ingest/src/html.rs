@@ -22,7 +22,10 @@ mod table_tests {
         let html = "<table><tr><td>Revenue</td><td></td><td>$96,221</td><td></td></tr>\
                     <tr><td>Margin</td><td></td><td>75.0</td><td></td></tr></table>";
         let md = markdown_from_html(html).expect("converts");
-        let row = md.lines().find(|l| l.contains("96,221")).expect("row survives");
+        let row = md
+            .lines()
+            .find(|l| l.contains("96,221"))
+            .expect("row survives");
         assert!(!row.contains("|  |"), "空列应当被砍掉: {row}");
         assert!(row.contains("Revenue"), "有内容的列一个不能少: {row}");
     }
@@ -448,7 +451,11 @@ fn prune_empty_table_columns(markdown: &str) -> String {
                 .filter(|c| keep[*c])
                 .map(|c| {
                     let v = r.get(c).cloned().unwrap_or_default();
-                    if sep && v.is_empty() { "---".to_string() } else { v }
+                    if sep && v.is_empty() {
+                        "---".to_string()
+                    } else {
+                        v
+                    }
                 })
                 .collect();
             format!("| {} |", kept.join(" | "))
@@ -457,9 +464,11 @@ fn prune_empty_table_columns(markdown: &str) -> String {
         // （SEC 那份投票结果 8-K 的每张表都这样），留着它，模型看到的是
         // 一张列名全空的表——没有信息，还占着「表头」这个位置。下一行顶上，
         // 表的第一行才是它真正的抬头（"a. Tench Coxe"）。
-        let head_blank = rows
-            .first()
-            .is_some_and(|r| (0..width).filter(|c| keep[*c]).all(|c| r.get(c).is_none_or(String::is_empty)));
+        let head_blank = rows.first().is_some_and(|r| {
+            (0..width)
+                .filter(|c| keep[*c])
+                .all(|c| r.get(c).is_none_or(String::is_empty))
+        });
         let body_start = if head_blank && rows.len() > 2 { 2 } else { 0 };
         if body_start == 2 {
             out.push(render(&rows[2]));
