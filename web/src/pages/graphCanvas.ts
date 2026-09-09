@@ -171,7 +171,8 @@ export function softMutedNode(
 }
 
 /** 指着的那一个：×1.08，最小 10.4，偏白的环——为的是跳出来。
- *  悬浮卡接管标签展示；`label` 本身保留，悬浮卡靠它渲染标题 */
+ *  名字出一块**深底浅字**的底牌，与选中那一档同一副形状（选中是反过来的
+ *  浅底深字）。从前这里是一张浮起来的两行卡片，与选中完全不像 */
 export function hoveredNode(
   res: NodeAttrs,
   attrs: NodeAttrs,
@@ -179,13 +180,22 @@ export function hoveredNode(
 ): NodeAttrs {
   res.size = Math.max(base * 1.08, 10.4);
   res.ringColor = mix(ownColorOf(attrs), "#ffffff", RING_HOVER_MIX);
-  res.hideBaseLabel = true;
+  res.forceLabel = true;
+  res.labelSlab = true;
   res.zIndex = 4;
   return res;
 }
 
-/** 选中的那一个：×1.02，最小 9.2，偏本色的环——为的是认得出。
- *  再补一块底：其余都压暗了，它得读得最清楚 */
+/** 选中的那一个：**名字反色**。
+ *
+ * 反的是标签底牌，不是节点自己。节点四层解剖（环/描边/壳/核心）一律不动——
+ * 试过让壳吃满类型色、核心退到深色，画面立刻变吵：一个实心亮圈把周围一圈
+ * 邻居都压下去了，而邻居正是选中之后最该读的东西。**大小也几乎不动
+ * （×1.02）**，一选中就胖一圈，整张图的疏密看着就变了。
+ *
+ * 于是"选中"全部落在名字上：底牌浅底深字，与指到的那一个（深底浅字）同一副
+ * 形状调个个儿，一眼分得出"我正指着"和"我选中了"，不必再添第三种记号。
+ * 环仍留着，取偏本色那一档，与悬停那圈偏白的分得开。 */
 export function selectedNode(
   res: NodeAttrs,
   attrs: NodeAttrs,
@@ -195,6 +205,9 @@ export function selectedNode(
   res.ringColor = mix(ownColorOf(attrs), "#ffffff", RING_SELECT_MIX);
   res.forceLabel = true;
   res.labelSlab = true;
+  // **反色**：浅底深字。指到的那一个是深底浅字，同一副形状调个个儿——
+  // 一眼分得出"我正指着"和"我选中了"，而不必再多一种记号
+  res.labelInvert = true;
   res.zIndex = 3;
   return res;
 }

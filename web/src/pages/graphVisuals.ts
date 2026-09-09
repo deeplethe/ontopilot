@@ -123,13 +123,16 @@ export function drawNodeLabel(
   const y = data.y - dy - size / 2 < 0 ? data.y + dy : data.y - dy;
   ctx.save();
   if (data.labelSlab) {
-    // 选中的那一个：一块底，圆角 cell（4）、无描边——底已经把它托起来了
+    /* 一块底，圆角 cell（4）、无描边——底已经把它托起来了。
+       **两档**：指到的是深底浅字，选中的反过来，浅底深字。同一副形状、同一个
+       位置，只有明暗调个个儿——"指着"与"选中"是同一件事的两个程度，从前一个是
+       浮起来的两行卡片、一个是这块底牌，看着像两种不同的东西 */
     const h = size + padY * 2;
     ctx.shadowColor = "rgba(0,0,0,0.6)";
     ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
-    ctx.fillStyle = PILL_BG;
+    ctx.fillStyle = data.labelInvert ? PILL_TEXT : PILL_BG;
     ctx.fill();
     ctx.shadowBlur = 0;
   } else {
@@ -140,67 +143,27 @@ export function drawNodeLabel(
     ctx.strokeStyle = LABEL_HALO;
     ctx.strokeText(data.label, x, y);
   }
-  ctx.fillStyle = PILL_TEXT;
+  ctx.fillStyle = data.labelInvert ? LABEL_HALO : PILL_TEXT;
   ctx.fillText(data.label, x, y);
   ctx.restore();
 }
 
-/* Hover 悬浮卡（Semantica hoverCard 规格）：径向柔光 + 名称 + 类型行 */
+/* 指到一个节点时画什么。**就是那块标签底牌**（`drawNodeLabel`），不是另一张卡。
+   从前这里是一张浮起来的两行卡片——名字一行、类型一行，位置在节点右上方——
+   于是"指着"和"选中"这两个相邻的状态长成了两种完全不同的东西：一个浮层，
+   一个贴着节点的底牌。类型那一行的信息在右边面板里说得更清楚，代价是每划过
+   一个节点画面上就多一张卡。
+   保留这个函数名是因为 sigma 的 `defaultDrawNodeHover` 认它 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function drawHoverCard(
   ctx: CanvasRenderingContext2D,
   data: any,
-  _settings: any,
+  settings: any,
 ): void {
-  if (!data.label) return;
-  ctx.save();
-
-  /* 它就是一个 Tooltip，只是画在 canvas 上：皮照抄 `ui/tooltip.tsx` 的那一行——
-     `.u-pop`（近实底 + line-strong 的边）、`rounded-cell`（4）、`px-2 py-1`（8 / 4）、
-     `text-fine`（12）。名字一行、类型一行，名字用正文色加粗一档，类型用第二色。
-     没有光晕、没有大投影：指着的节点自己已经亮了环，卡片只负责说名字 */
-  const size = CANVAS_META_SIZE;
-  const padX = 8;
-  const padY = 4;
-  const gap = 2;
-  const meta = String(data.typeLabel ?? "");
-  ctx.textBaseline = "top";
-  ctx.font = `500 ${size}px ${CANVAS_FONT}`;
-  const titleW = ctx.measureText(data.label).width;
-  ctx.font = `400 ${size}px ${CANVAS_FONT}`;
-  const metaW = meta ? ctx.measureText(meta).width : 0;
-  const w = Math.max(titleW, metaW) + padX * 2;
-  const h = padY * 2 + size + (meta ? gap + size : 0);
-  const x = data.x + Math.max(data.size * 0.9, 16);
-  const y = data.y - Math.max(data.size * 1.1, 16) - h;
-
-  ctx.shadowColor = "rgba(0,0,0,0.35)";
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetY = 4;
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 4); // --radius-cell
-  ctx.fillStyle = POP_BG;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = PILL_BORDER; // --u-line-strong
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  ctx.fillStyle = CANVAS_TEXT;
-  ctx.font = `500 ${size}px ${CANVAS_FONT}`;
-  ctx.fillText(data.label, x + padX, y + padY);
-  if (meta) {
-    ctx.fillStyle = CANVAS_TEXT_2;
-    ctx.font = `400 ${size}px ${CANVAS_FONT}`;
-    ctx.fillText(meta, x + padX, y + padY + size + gap);
-  }
-  ctx.restore();
+  drawNodeLabel(ctx, data, settings);
 }
 
-/* 世界坐标网格：随相机平移/缩放（Figma/tldraw 式无限画布惯例）。
-   4 倍细分 LOD：每层 alpha 随其屏幕间距连续淡入（13px 进场 → 52px 满亮 5.5%），
-   粗层与细层线重合处自然叠亮，形成"大小格"层次；无任何跳变。 */
+/* 世界坐标网格：随相机缩放分级淡入淡出 */
 const GRID_BASE_WORLD = 24; // 基准世界格距（匹配 ~300 尺度的布局）
 const GRID_FADE_IN_PX = 13;
 const GRID_FULL_PX = 52;
