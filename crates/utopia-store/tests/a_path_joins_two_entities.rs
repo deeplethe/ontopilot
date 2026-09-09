@@ -129,6 +129,13 @@ async fn seed(pool: &PgPool) -> anyhow::Result<Fixture> {
             span("2016-01-01T00:00:00Z", Some("2019-01-01T00:00:00Z")),
         ),
         (dan, founder, beta, span("2021-01-01T00:00:00Z", None)),
+        // 同一条边的第二份事实（只有锚点、没日期的那种）：路径不该因此多出一条
+        (
+            bob,
+            founder,
+            beta,
+            Validity::starting(None, None).attested(Some(t("2024-05-01T00:00:00Z"))),
+        ),
     ] {
         let (id, _) = utopia_store::graph::insert_fact(pool, kb, s, Some(p), o, v, 0.9).await?;
         if s == acme && p == partner {
@@ -179,7 +186,11 @@ async fn paths_come_shortest_first_and_stop_at_max_hops() -> anyhow::Result<()> 
     let run = async {
         let all = paths_between(&pool, f.kb, f.acme, f.beta, None, None, Limits::default()).await?;
         let hops: Vec<usize> = all.iter().map(Path::hops).collect();
-        assert_eq!(hops, vec![1, 2, 2, 3], "短的在前：直连、两条两跳、一条三跳");
+        assert_eq!(
+            hops,
+            vec![1, 2, 2, 3],
+            "短的在前：直连、两条两跳、一条三跳；Bob 那条边有两份事实，仍是一条路"
+        );
         assert!(via(&all[0]).is_empty());
         let two: Vec<Vec<Uuid>> = all[1..3].iter().map(via).collect();
         assert!(two.contains(&vec![f.bob]) && two.contains(&vec![f.dan]));

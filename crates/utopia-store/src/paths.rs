@@ -273,17 +273,31 @@ pub async fn paths_between(
             .then(y.2.partial_cmp(&x.2).unwrap_or(std::cmp::Ordering::Equal))
     });
 
+    // 同一串节点、同一串谓词只回一条：同一条边常有两份事实（一份带日期，一份只有
+    // 锚点），不去重的话十个名额里有三个是同一条路
+    let mut seen: HashSet<(Vec<Uuid>, Vec<String>)> = HashSet::new();
     let mut out = Vec::new();
-    for (_, spec, _, c) in scored.into_iter().take(limits.max_paths) {
+    for (_, spec, _, c) in scored {
+        if out.len() >= limits.max_paths {
+            break;
+        }
         let edges: Option<Vec<PathEdge>> = c.facts.iter().map(|f| detail.get(f).cloned()).collect();
         // 细节查不到的边（as_of 时刻两端之一不可见）整条路径不要：链断了一环就不是链
-        if let Some(edges) = edges {
-            out.push(Path {
-                nodes: c.nodes,
-                edges,
-                specificity: spec,
-            });
+        let Some(edges) = edges else {
+            continue;
+        };
+        let predicates: Vec<String> = edges
+            .iter()
+            .map(|e| e.predicate.clone().unwrap_or_default())
+            .collect();
+        if !seen.insert((c.nodes.clone(), predicates)) {
+            continue;
         }
+        out.push(Path {
+            nodes: c.nodes,
+            edges,
+            specificity: spec,
+        });
     }
     Ok(out)
 }
