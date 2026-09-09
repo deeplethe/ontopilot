@@ -16,8 +16,9 @@
 //! 3. **`hnsw.iterative_scan = relaxed_order`。** HNSW 先取 `ef_search` 个候选再过
 //!    WHERE；一张按 kb 分租的表上，小库的行在候选里占不到几个，`LIMIT 10` 会回
 //!    三行甚至零行（实测 1 万行的库在 6 万行的表上：关着回 3/24，开着回满）。
-//!    iterative_scan 让它继续往下走到凑够为止。`hnsw.max_scan_tuples` 留默认的
-//!    20,000：占表不到万分之五的库才会撞到顶，那种库规划器本来就走精确路径。
+//!    iterative_scan 让它继续往下走到凑够为止。`hnsw.max_scan_tuples` 提到 100,000：
+//!    默认的 20,000 实测撞到过——229 行的库在 5 万行旁边、查询离它远，扫到顶回零行。
+//!    十万把最坏情况变成半秒左右而不是零行：少回是悄悄的，慢是看得见的。
 //!
 //! 走不走索引由规划器定：有 `chunks_kb_idx` 时小库、中库它自己选精确路径，只有
 //! 占表大头的库才走 HNSW（实测 6 万行：20 行和 1 万行的库走精确，5 万的走索引）。
@@ -171,6 +172,9 @@ pub async fn build(pool: &PgPool, target: Target, dims: usize) -> AppResult<Buil
     let outcome = async {
         conn.execute("SET max_parallel_maintenance_workers = 0")
             .await?;
+        // 默认 64 MB 的 maintenance_work_mem 到一万四千行 1024 维就装不下图，之后
+        // 每一行都要落盘再读，5 万行建了 4 分 20 秒；512 MB 只在建的这一会儿占着
+        conn.execute("SET maintenance_work_mem = '512MB'").await?;
         let before = status(pool, target, dims).await?;
         if before == Some(false) {
             conn.execute(format!("DROP INDEX CONCURRENTLY IF EXISTS {name}").as_str())
@@ -193,6 +197,7 @@ pub async fn build(pool: &PgPool, target: Target, dims: usize) -> AppResult<Buil
     .await;
     // 会话级 SET 跟着连接回池，成败都复位
     let _ = conn.execute("RESET max_parallel_maintenance_workers").await;
+    let _ = conn.execute("RESET maintenance_work_mem").await;
     let created = outcome?;
     remember(&name);
     Ok(Built {
@@ -234,6 +239,10 @@ pub async fn relaxed_order(pool: &PgPool, tx: &mut Transaction<'_, Postgres>) ->
     if iterative_scan_available(pool).await {
         (&mut **tx)
             .execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
+            .await?;
+        // 两个参数同一个版本来的（0.8）。上限见模块注释：宁可慢半秒，不悄悄少回
+        (&mut **tx)
+            .execute("SET LOCAL hnsw.max_scan_tuples = 100000")
             .await?;
     }
     Ok(())
