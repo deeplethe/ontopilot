@@ -12,7 +12,6 @@ import {
   Inbox,
   Link2,
   Scale,
-  Network,
   Pencil,
   Plus,
   Search,
@@ -34,6 +33,7 @@ import {
   type RelationTypeView,
   type UniquenessCandidate,
 } from "../api";
+import { OntologyTables, treeParent } from "./ontologyTables";
 import { S } from "../i18n";
 import { useKb } from "../kb";
 import { toast } from "../toast";
@@ -62,7 +62,6 @@ import {
   RAIL_CLS,
   cn,
   pageSlice,
-  GroupLabel,
   PageHeader,
   Dialog,
   LinkButton,
@@ -81,7 +80,6 @@ const RAIL_RESERVED = 80;
 /** 兜底页行数（首帧未量到高度时用） */
 const RAIL_PAGE = 14;
 /** 过滤模式两节混排时每节的行数 */
-const RAIL_PAGE_MIXED = 6;
 
 /** 右侧详情区当前展示什么。
  *
@@ -128,6 +126,10 @@ export function Ontology() {
   const [sel, setSel] = useState<Sel>(null);
   const [edit, setEdit] = useState<Edit>(null);
   const [railTab, setRailTab] = useState<"classes" | "properties">("classes");
+  /* 主区看表还是看图（#498）。**默认表**：哪些属性单值、哪些类一个实例都没有、
+     这个库有哪些属性——这些问题全是扫一列就答得出的；图回答的是另一种问题
+     （整体形状、有没有孤岛）。两种都是这份本体，切一下就换 */
+  const [view, setView] = useState<"table" | "diagram">("table");
   // 模式图详情面板停在哪一段。**跨选中保留**：在实例上挨个类看下去，
   // 是一种真实的读法，每换一个类就被弹回定义页会打断它
   const [panelTab, setPanelTab] = useState<
@@ -248,45 +250,62 @@ export function Ontology() {
       <aside className={`${RAIL_CLS} flex flex-col`}>
         {/* 与图谱页的搜索框同一副身材、同一个角落（左上各 12px、中号、232 宽）：
             两个标签页切来切去，框留在原地 */}
-        <div className="px-2 pt-3 pb-1">
-          <Input
-            icon={<Search size={12} />}
-            placeholder={S.ontology.filter}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-        </div>
+        {/* 筛选框、两档、清单**只属于图那一档**。表格自己就是清单，而且比
+            这一列强——有列、能排序、带计数；两份同样的层级并排摆着，读者要先
+            决定看哪一份，这正是这一页原来最费解的地方 */}
+        {view === "diagram" && (
+          <div className="px-2 pt-3 pb-1">
+            <Input
+              icon={<Search size={12} />}
+              placeholder={S.ontology.filter}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </div>
+        )}
         {/* 模式图：本体结构的主视图,不是 Import/Refine/Unmatched 那种管理性操作——
             放在筛选框正下方、列表上方,与那三个钉在底部的按钮拉开位置,
             视觉上就说明了「这是浏览本体的另一种方式」而不是「这是一项维护动作」 */}
         <div className="px-2 pb-1">
-          <Row
-            density="nav"
-            active={sel?.kind === "schema"}
-            icon={<Network size={14} />}
-            onClick={() => setSel({ kind: "schema" })}
-          >
-            {S.ontology.schemaDiagram}
-          </Row>
+          {/* 表 / 图：同一份本体的两种画法。**放在筛选框正下方**，与钉在底部
+              那几个维护性入口拉开——它说的是「这一页怎么读」，不是一项动作 */}
+          <Segmented<"table" | "diagram">
+            fill
+            size="sm"
+            value={view}
+            onChange={(v) => {
+              setView(v);
+              if (v === "diagram" && !onPanel(sel)) setSel({ kind: "schema" });
+            }}
+            options={[
+              { value: "table", label: S.ontology.viewTable },
+              { value: "diagram", label: S.ontology.viewDiagram },
+            ]}
+          />
         </div>
         {/* 分段切换：与登录页模式切换/日程选择器同一语汇（bg-surface-2 容器 + 激活反白）；
             过滤时列表例外：两节混排同时给出命中 */}
         {/* 撑满的东西不能再带外边距：w-full 是按父容器算的，mx-3 只会把它往右
             推出侧栏 12px。缩进交给外层 */}
-        <div className="px-2 pb-1">
-          <Segmented
-            fill
-            value={railTab}
-            onChange={setRailTab}
-            options={[
-              { value: "classes", label: S.ontology.tabClasses },
-              { value: "properties", label: S.ontology.tabProperties },
-            ]}
-          />
-        </div>
+        {view === "diagram" && (
+          <div className="px-2 pb-1">
+            <Segmented
+              fill
+              value={railTab}
+              onChange={setRailTab}
+              options={[
+                { value: "classes", label: S.ontology.tabClasses },
+                { value: "properties", label: S.ontology.tabProperties },
+              ]}
+            />
+          </div>
+        )}
         <div
           ref={listRef}
-          className="flex-1 min-h-0 overflow-hidden px-2 pb-2 flex flex-col"
+          className={cn(
+            "flex-1 min-h-0 overflow-hidden px-2 pb-2 flex flex-col",
+            view === "table" && "hidden",
+          )}
         >
           {/* 新建行置顶：随当前段建类/建关系 */}
           {!filter.trim() && (
@@ -306,28 +325,11 @@ export function Ontology() {
                 : S.ontology.newProperty}
             </Row>
           )}
-          {filter.trim() ? (
-            <>
-              <GroupLabel className="px-2 pt-2 pb-1">{S.ontology.tabClasses}</GroupLabel>
-              <ClassTree
-                types={entity_types}
-                filter={filter}
-                collapsed={collapsed}
-                onToggle={() => {}}
-                selectedId={selectedClass?.id ?? null}
-                onSelect={(id) => setSel({ kind: "class", id })}
-                pageSize={RAIL_PAGE_MIXED}
-              />
-              <GroupLabel className="px-2 pt-3 pb-1">{S.ontology.tabProperties}</GroupLabel>
-              <PropertyList
-                relations={relations}
-                filter={filter}
-                selectedId={selectedProp?.id ?? null}
-                onSelect={(id) => setSel({ kind: "relation", id })}
-                pageSize={RAIL_PAGE_MIXED}
-              />
-            </>
-          ) : railTab === "classes" ? (
+          {/* **筛选也认这两档**。从前一有筛选词就两节混排、类与关系一起给，
+              理由是"搜的时候未必知道要找的是哪一种"；代价是标签明明停在
+              Classes 上却不算数，而它就在上面两厘米处。一个选中却被无视的
+              控件，比多点一下糟。想找关系就切过去，那一下是明的 */}
+          {railTab === "classes" ? (
             <ClassTree
               types={entity_types}
               filter={filter}
@@ -466,7 +468,26 @@ export function Ontology() {
         </div>
       ) : (
         <div className="flex-1 min-w-0 relative">
-          <OntologySchemaGraph
+          {view === "table" ? (
+            <OntologyTables
+              entityTypes={entity_types}
+              relationTypes={relation_types}
+              onOpenClass={(t) => setSel({ kind: "class", id: t.id })}
+              onOpenProperty={(r) => setSel({ kind: "relation", id: r.id })}
+              onOpenAttribute={(a) =>
+                setEdit({
+                  kind: "attribute",
+                  typeId: a.domains[0] ?? "",
+                  existing: a,
+                })
+              }
+              onSeeInstances={(t) => {
+                setPanelTab("instances");
+                setSel({ kind: "class", id: t.id });
+              }}
+            />
+          ) : (
+            <OntologySchemaGraph
             entityTypes={entity_types}
             relationTypes={relation_types}
             rules={rules.data?.rules ?? []}
@@ -487,7 +508,8 @@ export function Ontology() {
                   )
                 : closePanel()
             }
-          />
+            />
+          )}
           {selectedClass && (
             <DockedPanel
               onClose={closePanel}
@@ -1035,7 +1057,7 @@ function ClassTree({
     }
     const children = new Map<string | null, EntityTypeView[]>();
     for (const t of types) {
-      const p = t.primary_parent ?? null;
+      const p = treeParent(t);
       if (!children.has(p)) children.set(p, []);
       children.get(p)!.push(t);
     }
