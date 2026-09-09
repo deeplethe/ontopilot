@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -11,5 +11,10 @@ export default defineConfig({
       // 后端端口可用 UTOPIA_DEV_API 覆盖（默认 1516，与 .env 的 UTOPIA_BIND_ADDR 一致）
       "/api": process.env.UTOPIA_DEV_API ?? "http://127.0.0.1:1516",
     },
+  },
+  test: {
+    // 纯逻辑单测，不起 DOM：queryDefaults 那张表、事件失效的合并
+    include: ["src/**/*.test.ts"],
+    environment: "node",
   },
 });
