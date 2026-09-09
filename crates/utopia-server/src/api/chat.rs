@@ -580,11 +580,8 @@ pub async fn chat(
     //
     // 从前这里按 `confidence >= 0.75` 捞事实,而那个阈值是拿浮点数编码一个
     // 二值状态(提议 0.6 / 确认 1.0)。现在读 `status = confirmed`(0011)
-    let mappings = if mounted_sources.is_empty() {
-        Vec::new()
-    } else {
-        utopia_store::mappings::confirmed(&state.pool, kb_id, 30).await?
-    };
+    // 口径在下面按问题挑（`mapping_index::relevant`）——从前这里 `confirmed(kb, 30)`
+    // 按字典序取前三十条，一百条口径的库有七十条永远进不了提示词（#574）
     let can_write = utopia_store::access::kb_role(&state.pool, &user, &kb)
         .await?
         .is_some_and(|r| r >= Role::Editor);
@@ -600,6 +597,22 @@ pub async fn chat(
     if query.is_empty() {
         return Err(AppError::Validation("Missing user message".into()).into());
     }
+    // 语义层：跟这个问题有关的那几条确认口径进 system prompt——问数优先用确认口径，
+    // 而不是每次从 schema 猜。按问题挑而不是全塞：二十七条的上界 17/18 是在
+    // 三十条的上限之下量的，一百条口径靠字典序截断就不成立了（#574）
+    let mappings = if mounted_sources.is_empty() {
+        Vec::new()
+    } else {
+        crate::mapping_index::relevant(
+            &state,
+            kb_id,
+            kb.workspace_id,
+            &query,
+            crate::mapping_index::DEFINITIONS_IN_PROMPT,
+        )
+        .await
+        .map_err(AppError::Other)?
+    };
 
     // 会话持久化：有 id 则校验归属，无则以首句为题新建；用户消息即刻落库,
     // 上下文由服务端从库里拼——前端只送新消息

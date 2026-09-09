@@ -155,6 +155,8 @@ pub fn router(state: AppState, cfg: &AppConfig) -> Router {
         )
         // 静态段排在 `{mapping_id}` 前面：先跑一遍看数，不落库
         .route("/kbs/{id}/mappings/preview", post(mapping_routes::preview))
+        // 跟一个问题有关的口径（问数用的同一条检索）
+        .route("/kbs/{id}/mappings/relevant", get(mapping_routes::relevant))
         .route(
             "/kbs/{id}/mappings/{mapping_id}",
             axum::routing::patch(mapping_routes::revise),

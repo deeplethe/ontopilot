@@ -15,6 +15,7 @@ mod ingest_sources;
 mod jira_issues;
 mod live;
 mod llm_util;
+mod mapping_index;
 mod mappings;
 mod notion;
 mod object_storage;

@@ -324,6 +324,180 @@ pub async fn status_counts(pool: &PgPool, kb_id: Uuid) -> AppResult<(i64, i64, i
     Ok(row)
 }
 
+/// 一条口径给检索用的两段文字：嵌入的一段（名字 + 说明 + 单位——问题跟这些对得上），
+/// 词面匹配的一段（再加表名与表达式——问题里偶尔直接说列名）。
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct MappingText {
+    pub id: Uuid,
+    pub concept_name: String,
+    pub summary: Option<String>,
+    pub unit: Option<String>,
+    pub table_name: Option<String>,
+    pub expr: Option<String>,
+}
+
+impl MappingText {
+    pub fn embed_text(&self) -> String {
+        let mut s = self.concept_name.clone();
+        if let Some(x) = self.summary.as_deref().filter(|x| !x.trim().is_empty()) {
+            s.push_str(": ");
+            s.push_str(x.trim());
+        }
+        if let Some(u) = self.unit.as_deref().filter(|u| !u.trim().is_empty()) {
+            s.push_str(" (");
+            s.push_str(u.trim());
+            s.push(')');
+        }
+        s
+    }
+    pub fn lexical_text(&self) -> String {
+        [
+            Some(self.concept_name.as_str()),
+            self.summary.as_deref(),
+            self.table_name.as_deref(),
+            self.expr.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ")
+    }
+}
+
+/// 确认口径里还没嵌、或嵌的时候文本 / 模型跟现在不一样的（#574）。
+/// 与 `ontology::types_needing_embedding` 同一条规则：改了文本或换了模型就重嵌
+pub async fn needing_embedding(
+    pool: &PgPool,
+    kb_id: Uuid,
+    model: &str,
+) -> AppResult<Vec<MappingText>> {
+    let rows: Vec<MappingText> = sqlx::query_as(
+        "SELECT m.id, e.canonical_name AS concept_name, m.summary, m.unit, m.table_name, m.expr
+           FROM concept_mappings m
+           JOIN entities e ON e.id = m.concept_id
+          WHERE m.kb_id = $1 AND m.status = 'confirmed'
+            AND (m.embedding IS NULL OR m.embedded_model IS DISTINCT FROM $2)",
+    )
+    .bind(kb_id)
+    .bind(model)
+    .fetch_all(pool)
+    .await?;
+    // 文本变了的也要重嵌。SQL 里拼这段文字要把 `embed_text` 抄一遍，
+    // 两处迟早不一样，所以拉回来在 Rust 里比
+    let stale_text: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT m.id FROM concept_mappings m
+          WHERE m.kb_id = $1 AND m.status = 'confirmed'
+            AND m.embedding IS NOT NULL AND m.embedded_model = $2",
+    )
+    .bind(kb_id)
+    .bind(model)
+    .fetch_all(pool)
+    .await?;
+    let mut out = rows;
+    if !stale_text.is_empty() {
+        let ids: Vec<Uuid> = stale_text.into_iter().map(|(id,)| id).collect();
+        let current: Vec<MappingText> = sqlx::query_as(
+            "SELECT m.id, e.canonical_name AS concept_name, m.summary, m.unit, m.table_name, m.expr
+               FROM concept_mappings m JOIN entities e ON e.id = m.concept_id
+              WHERE m.id = ANY($1)",
+        )
+        .bind(&ids)
+        .fetch_all(pool)
+        .await?;
+        let embedded: std::collections::HashMap<Uuid, Option<String>> =
+            sqlx::query_as::<_, (Uuid, Option<String>)>(
+                "SELECT id, embedded_text FROM concept_mappings WHERE id = ANY($1)",
+            )
+            .bind(&ids)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .collect();
+        for t in current {
+            let was = embedded.get(&t.id).cloned().flatten();
+            if was.as_deref() != Some(t.embed_text().as_str()) {
+                out.push(t);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 写回向量，连同嵌的是哪段文字、哪个模型。
+pub async fn set_embeddings(
+    pool: &PgPool,
+    model: &str,
+    items: &[(MappingText, Vec<f32>)],
+) -> AppResult<()> {
+    for (t, v) in items {
+        sqlx::query(
+            "UPDATE concept_mappings
+                SET embedding = $2, embedded_model = $3, embedded_text = $4
+              WHERE id = $1",
+        )
+        .bind(t.id)
+        .bind(pgvector::Vector::from(v.clone()))
+        .bind(model)
+        .bind(t.embed_text())
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+/// 向量一路：离问题最近的确认口径。维度对不上的行跳过（换过嵌入模型、还没重嵌的）
+pub async fn vector_search(
+    pool: &PgPool,
+    kb_id: Uuid,
+    embedding: &[f32],
+    limit: i64,
+) -> AppResult<Vec<Uuid>> {
+    let q = pgvector::Vector::from(embedding.to_vec());
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM concept_mappings
+          WHERE kb_id = $1 AND status = 'confirmed' AND embedding IS NOT NULL
+            AND vector_dims(embedding) = vector_dims($2)
+          ORDER BY embedding <=> $2
+          LIMIT $3",
+    )
+    .bind(kb_id)
+    .bind(&q)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
+/// 全部确认口径的文字，词面一路在 Rust 里打分——一个库几十到几百条，
+/// 拉回来比在 SQL 里做中文分词便宜得多，也不用 pg_trgm
+pub async fn confirmed_texts(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<MappingText>> {
+    Ok(sqlx::query_as(
+        "SELECT m.id, e.canonical_name AS concept_name, m.summary, m.unit, m.table_name, m.expr
+           FROM concept_mappings m JOIN entities e ON e.id = m.concept_id
+          WHERE m.kb_id = $1 AND m.status = 'confirmed'",
+    )
+    .bind(kb_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// 按 id 取回口径，**保持给定的顺序**——顺序是检索排出来的，提示词里靠前的先被读
+pub async fn by_ids(pool: &PgPool, kb_id: Uuid, ids: &[Uuid]) -> AppResult<Vec<ConceptMapping>> {
+    let rows: Vec<ConceptMapping> = sqlx::query_as(
+        "SELECT m.id, m.concept_id, e.canonical_name AS concept_name, m.source,
+                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status
+           FROM concept_mappings m JOIN entities e ON e.id = m.concept_id
+          WHERE m.kb_id = $1 AND m.id = ANY($2)",
+    )
+    .bind(kb_id)
+    .bind(ids)
+    .fetch_all(pool)
+    .await?;
+    let mut by_id: std::collections::HashMap<Uuid, ConceptMapping> =
+        rows.into_iter().map(|m| (m.id, m)).collect();
+    Ok(ids.iter().filter_map(|id| by_id.remove(id)).collect())
+}
+
 /// 一条口径改过几次、每次改之前是什么样。
 ///
 /// `revise` 从建表起就在写 `concept_mapping_revisions`，而**在此之前没有任何

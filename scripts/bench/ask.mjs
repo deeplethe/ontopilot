@@ -219,9 +219,11 @@ const main = async () => {
   // 答错的题分两种，一种是口径没配（去补映射），一种是配了还错（去看提示词
   // 或工具）。两种该做的事完全不同，而从前它们在结果里长得一样
   const confirmed = JSON.parse(psql(`SELECT coalesce(json_agg(x), '[]') FROM (
-      SELECT m.table_name, m.expr, m.sql FROM concept_mappings m
+      SELECT m.id, m.table_name, m.expr, m.sql FROM concept_mappings m
        WHERE m.kb_id = '${kb}' AND m.status = 'confirmed') x`));
   const mapped = new Set();
+  // 每条真值口径由哪几行确认映射算出来（按数判，不看名字）——recall@k 的答案卷
+  const rowsFor = new Map();
   for (const m of confirmed) {
     const sql = m.sql?.trim()
       || (m.expr && m.table_name
@@ -230,7 +232,34 @@ const main = async () => {
     if (!sql) continue;
     const got = value(CORPUS_DB, sql);
     if (got.n === undefined) continue;
-    for (const [id, g] of gold) if (same(g.value, got.n)) mapped.add(id);
+    for (const [id, g] of gold) if (same(g.value, got.n)) {
+      mapped.add(id);
+      if (!rowsFor.has(id)) rowsFor.set(id, new Set());
+      rowsFor.get(id).add(m.id);
+    }
+  }
+
+  // --recall K：不问，只量检索——那条对的口径在不在前 K 里（#574）。
+  // 几秒钟一轮，不调对话模型；漏在 `near` 对上的，才是 reranker 的活
+  if (args.recall) {
+    const K = Number(args.recall) || 8;
+    const qs2 = qs.questions.filter((q) => rowsFor.has(q.id));
+    let hit = 0; const misses = [];
+    for (const q of qs2) {
+      const r = await api("GET", `/api/v1/kbs/${kb}/mappings/relevant?q=${encodeURIComponent(q.ask)}&k=${K}`);
+      const top = r.items.map((m) => m.id);
+      const want = rowsFor.get(q.id);
+      const at = top.findIndex((id) => want.has(id));
+      if (at >= 0) hit++;
+      else {
+        const g = gold.get(q.id);
+        misses.push(`${q.id}${g?.near ? ` (near ${g.near})` : ""}: 前 ${K} 是 ${r.items.map((m) => m.concept_name).join(" | ")}`);
+      }
+    }
+    console.log(JSON.stringify({ kb, corpus: corpusName, k: K, questions_with_a_definition: qs2.length,
+      recall: `${hit}/${qs2.length} (${qs2.length ? Math.round(100 * hit / qs2.length) : 0}%)` }, null, 2));
+    if (misses.length) console.log("\nMISSED\n  " + misses.join("\n  "));
+    return;
   }
 
   // --replay：不重问，拿库里上一轮的回答重判

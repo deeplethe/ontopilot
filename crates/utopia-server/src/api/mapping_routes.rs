@@ -154,6 +154,33 @@ pub async fn revisions(
     Ok(Json(json!({ "revisions": rows })))
 }
 
+#[derive(Deserialize)]
+pub struct RelevantQuery {
+    q: String,
+    k: Option<usize>,
+}
+
+/// 跟一个问题有关的口径，按相关度排——问数进提示词用的正是这一条检索（#574）。
+///
+/// 开成端点是为了两件事：测量台直接量 recall@k（那条对的口径在不在前 k 里），
+/// 不用真的问一遍；页面以后能在问题旁边列出「用到的口径」。Viewer 就能看，
+/// 与列表同一个理由——看得见答案却看不见口径，等于要人信一个不给看的算法。
+pub async fn relevant(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(kb_id): Path<Uuid>,
+    Query(q): Query<RelevantQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let kb = require_kb(&state, &user, kb_id, Role::Viewer).await?;
+    let k =
+        q.k.unwrap_or(crate::mapping_index::DEFINITIONS_IN_PROMPT)
+            .clamp(1, 50);
+    let items = crate::mapping_index::relevant(&state, kb_id, kb.workspace_id, &q.q, k)
+        .await
+        .map_err(AppError::Other)?;
+    Ok(Json(json!({ "items": items, "k": k })))
+}
+
 /// 空白等于没填：前端清空一个输入框传来的是 ""，落库该是 NULL 而不是空串。
 fn clean(s: &Option<String>) -> Option<String> {
     s.as_deref()

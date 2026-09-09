@@ -91,6 +91,19 @@ async function fresh() {
   const mounted = await api("PUT", `/api/v1/kbs/${kb}/data-sources/${ds}`);
   log(`kb ${kb}，源 ${dsName} 已挂载，schema 文档 ${mounted.schema_tables ?? "?"} 张表`);
   if (mounted.schema_error) log(`  schema 同步报错：${mounted.schema_error}`);
+  // --also <corpus>：再挂一个源进同一个库（那份语料得已经建好）。两个源、四十多条
+  // 口径，才撑得爆提示词那个 30 的上限，检索才有得量（#574）
+  if (args.also && args.also !== true) {
+    const other = args.also;
+    const ex = (await api("GET", "/api/v1/admin/data-sources")).data_sources.find((d) => d.name === other);
+    const dsOther = ex?.id
+      ?? (await api("POST", "/api/v1/admin/data-sources", {
+        name: other, conn_string: process.env.BENCH_ALSO_CONN || `postgres://utopia:utopia@localhost:5432/bench_${other}`,
+      })).id;
+    await api("PUT", `/api/v1/admin/data-sources/${dsOther}/grants/${ws}`);
+    const m2 = await api("PUT", `/api/v1/kbs/${kb}/data-sources/${dsOther}`);
+    log(`源 ${other} 也挂上了，schema 文档 ${m2.schema_tables ?? "?"} 张表`);
+  }
 
   // --conventions：探索之前把真值文件里的约定写进库，它的提示词会读（#570）。
   // 这是探索在 wide 上从 0/18 动起来的第一个机会：schema 里没有「测试单不算数」
