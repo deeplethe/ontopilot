@@ -1201,6 +1201,11 @@ export function rowClass(
 }
 /** 行右端小字：小一档、淡一档，整行被指着时跟着提亮 */
 export const ROW_TRAILING = "ml-auto shrink-0 text-fine text-ink-2 group-hover:text-ink";
+/** 紧跟在标签后面的值——与 `ROW_TRAILING` 同一副颜色，但**不推到右边**。
+ *  一左一右适合"名字 …… 数量"这种两栏读法；「谓词 宾语」是一句话，中间隔一
+ *  整行空白就读不成句子了 */
+export const ROW_VALUE =
+  "min-w-0 flex-1 truncate text-fine text-ink-2 group-hover:text-ink";
 
 export function Row({
   active,

@@ -7,16 +7,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
+  ArrowLeftRight,
   ArrowRight,
   ChevronRight,
   Inbox,
   Link2,
-  Scale,
   Network,
   Pencil,
   Plus,
+  Scale,
   Search,
   Split,
+  Table as TableIcon,
   Upload,
   Wand2,
   X,
@@ -34,6 +36,7 @@ import {
   type RelationTypeView,
   type UniquenessCandidate,
 } from "../api";
+import { OntologyTables, treeParent } from "./ontologyTables";
 import { S } from "../i18n";
 import { useKb } from "../kb";
 import { toast } from "../toast";
@@ -62,7 +65,6 @@ import {
   RAIL_CLS,
   cn,
   pageSlice,
-  GroupLabel,
   PageHeader,
   Dialog,
   LinkButton,
@@ -78,10 +80,12 @@ import {
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
 const RAIL_ROW_H = 34;
 const RAIL_RESERVED = 80;
+/** 上次看的是表还是图。**per 浏览器不 per 库**：这是读法的习惯，
+ *  换个知识库不会换读法 */
+const VIEW_KEY = "utopia.ontology.view";
 /** 兜底页行数（首帧未量到高度时用） */
 const RAIL_PAGE = 14;
 /** 过滤模式两节混排时每节的行数 */
-const RAIL_PAGE_MIXED = 6;
 
 /** 右侧详情区当前展示什么。
  *
@@ -128,6 +132,33 @@ export function Ontology() {
   const [sel, setSel] = useState<Sel>(null);
   const [edit, setEdit] = useState<Edit>(null);
   const [railTab, setRailTab] = useState<"classes" | "properties">("classes");
+  /* 主区看图还是看表（#498）。**默认图**，而且**记住上次那一版**——这是
+     "我习惯怎么读这一页"，不是"这个链接指向什么"，所以进 localStorage 不进
+     URL（与知识库切换器同一条判断，见 KbScope）。隐私模式下读写都会抛，
+     catch 掉回落到默认，别让整页挂掉 */
+  const [view, setView] = useState<"table" | "diagram">(() => {
+    try {
+      return localStorage.getItem(VIEW_KEY) === "table" ? "table" : "diagram";
+    } catch {
+      return "diagram";
+    }
+  });
+  const switchView = (v: "table" | "diagram") => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // 存不下就只在这一次会话里记着
+    }
+    if (!onPanel(sel)) setSel({ kind: "schema" });
+  };
+  /** Import / Rules / Refine / Overlaps / Unmatched 那几页把主区整个接管了 */
+  const inWorkflow =
+    sel?.kind === "import" ||
+    sel?.kind === "refine" ||
+    sel?.kind === "uniqueness" ||
+    sel?.kind === "rules" ||
+    sel?.kind === "misses";
   // 模式图详情面板停在哪一段。**跨选中保留**：在实例上挨个类看下去，
   // 是一种真实的读法，每换一个类就被弹回定义页会打断它
   const [panelTab, setPanelTab] = useState<
@@ -248,42 +279,71 @@ export function Ontology() {
       <aside className={`${RAIL_CLS} flex flex-col`}>
         {/* 与图谱页的搜索框同一副身材、同一个角落（左上各 12px、中号、232 宽）：
             两个标签页切来切去，框留在原地 */}
-        <div className="px-2 pt-3 pb-1">
-          <Input
-            icon={<Search size={12} />}
-            placeholder={S.ontology.filter}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-        </div>
-        {/* 模式图：本体结构的主视图,不是 Import/Refine/Unmatched 那种管理性操作——
-            放在筛选框正下方、列表上方,与那三个钉在底部的按钮拉开位置,
-            视觉上就说明了「这是浏览本体的另一种方式」而不是「这是一项维护动作」 */}
-        <div className="px-2 pb-1">
+        {/* 图 / 表：这一页的两种画法。**排在筛选框上面**——它定的是这一页
+            是什么，筛选框是在里面找东西；而且表格那一档筛选框是收起的，
+            切换键排在下面的话位置会跟着跳。
+
+            **一个键，写的是要去的那一版**：两档并排的话，得先读出哪一档亮着
+            才知道自己在看什么，而主区摆的是表还是图一眼就看得出。
+
+            **Import / Rules / Refine / Overlaps / Unmatched 接管主区时，它是
+            回去的路**——那时候写的是你原本在看的那一版，点了就回去。从前这条路
+            是「Schema diagram」那一行，换成切换键之后断过一阵：进了 Import
+            再没有任何一处能回到图或表。
+
+            **自成一组**：与底下钉住那一组同一个做法，外层一条线加 py-2 隔开，
+            行本身不画框——它跟筛选框不是同一类东西，只隔 4px 会读成一串 */}
+        {/* 上面一行是**动作**（换到另一版），下面一行是**位置**（现在看的是哪一版）。
+            一行里塞两件事，就成了「这个键写的到底是我在哪儿、还是我要去哪儿」；
+            分成两行之后，位置那一行还兼着从 Import / Rules 那几页回来的路——
+            它们把主区整个接管，从前没有任何一处能回到图或表。
+            **自成一组**：与底下钉住那一组同一个做法，外层一条线加 py-2 隔开 */}
+        <div className="u-rail-list shrink-0 border-b border-line px-2 py-2">
           <Row
             density="nav"
-            active={sel?.kind === "schema"}
-            icon={<Network size={14} />}
+            icon={<ArrowLeftRight size={14} />}
+            onClick={() => switchView(view === "diagram" ? "table" : "diagram")}
+          >
+            {view === "diagram"
+              ? S.ontology.switchToTable
+              : S.ontology.switchToGraph}
+          </Row>
+          <Row
+            density="nav"
+            active={!inWorkflow}
+            icon={
+              view === "diagram" ? <Network size={14} /> : <TableIcon size={14} />
+            }
             onClick={() => setSel({ kind: "schema" })}
           >
-            {S.ontology.schemaDiagram}
+            {view === "diagram" ? S.ontology.viewDiagram : S.ontology.viewTable}
           </Row>
         </div>
-        {/* 分段切换：与登录页模式切换/日程选择器同一语汇（bg-surface-2 容器 + 激活反白）；
-            过滤时列表例外：两节混排同时给出命中 */}
-        {/* 撑满的东西不能再带外边距：w-full 是按父容器算的，mx-3 只会把它往右
-            推出侧栏 12px。缩进交给外层 */}
-        <div className="px-2 pb-1">
-          <Segmented
-            fill
-            value={railTab}
-            onChange={setRailTab}
-            options={[
-              { value: "classes", label: S.ontology.tabClasses },
-              { value: "properties", label: S.ontology.tabProperties },
-            ]}
-          />
-        </div>
+        {/* 筛选框、两档、清单**只属于图那一档**——表格自己就是清单，而且比这一列
+            强（有列、能排序、带计数）。换档时它们**折起来**而不是瞬间消失：
+            左栏是一直在的，一整段凭空没掉会让人以为跳到了别的页 */}
+        <div
+          className={cn("u-rail-fold", view === "table" && "is-folded")}
+        >
+          <div className="px-2 pt-3 pb-1">
+            <Input
+              icon={<Search size={12} />}
+              placeholder={S.ontology.filter}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </div>
+          <div className="px-2 pb-1">
+            <Segmented
+              fill
+              value={railTab}
+              onChange={setRailTab}
+              options={[
+                { value: "classes", label: S.ontology.tabClasses },
+                { value: "properties", label: S.ontology.tabProperties },
+              ]}
+            />
+          </div>
         <div
           ref={listRef}
           className="flex-1 min-h-0 overflow-hidden px-2 pb-2 flex flex-col"
@@ -306,28 +366,11 @@ export function Ontology() {
                 : S.ontology.newProperty}
             </Row>
           )}
-          {filter.trim() ? (
-            <>
-              <GroupLabel className="px-2 pt-2 pb-1">{S.ontology.tabClasses}</GroupLabel>
-              <ClassTree
-                types={entity_types}
-                filter={filter}
-                collapsed={collapsed}
-                onToggle={() => {}}
-                selectedId={selectedClass?.id ?? null}
-                onSelect={(id) => setSel({ kind: "class", id })}
-                pageSize={RAIL_PAGE_MIXED}
-              />
-              <GroupLabel className="px-2 pt-3 pb-1">{S.ontology.tabProperties}</GroupLabel>
-              <PropertyList
-                relations={relations}
-                filter={filter}
-                selectedId={selectedProp?.id ?? null}
-                onSelect={(id) => setSel({ kind: "relation", id })}
-                pageSize={RAIL_PAGE_MIXED}
-              />
-            </>
-          ) : railTab === "classes" ? (
+          {/* **筛选也认这两档**。从前一有筛选词就两节混排、类与关系一起给，
+              理由是"搜的时候未必知道要找的是哪一种"；代价是标签明明停在
+              Classes 上却不算数，而它就在上面两厘米处。一个选中却被无视的
+              控件，比多点一下糟。想找关系就切过去，那一下是明的 */}
+          {railTab === "classes" ? (
             <ClassTree
               types={entity_types}
               filter={filter}
@@ -351,6 +394,7 @@ export function Ontology() {
               pageSize={railRows}
             />
           )}
+        </div>
         </div>
         {/* 底部常驻：关于本体的几个入口——从外部拿一份本体、业务规则、类型消解，
             以及数据顶回来的两种信号。一条分隔线说明它们是钉住的，行本身与上面
@@ -466,7 +510,26 @@ export function Ontology() {
         </div>
       ) : (
         <div className="flex-1 min-w-0 relative">
-          <OntologySchemaGraph
+          {view === "table" ? (
+            <OntologyTables
+              entityTypes={entity_types}
+              relationTypes={relation_types}
+              onOpenClass={(t) => setSel({ kind: "class", id: t.id })}
+              onOpenProperty={(r) => setSel({ kind: "relation", id: r.id })}
+              onOpenAttribute={(a) =>
+                setEdit({
+                  kind: "attribute",
+                  typeId: a.domains[0] ?? "",
+                  existing: a,
+                })
+              }
+              onSeeInstances={(t) => {
+                setPanelTab("instances");
+                setSel({ kind: "class", id: t.id });
+              }}
+            />
+          ) : (
+            <OntologySchemaGraph
             entityTypes={entity_types}
             relationTypes={relation_types}
             rules={rules.data?.rules ?? []}
@@ -487,7 +550,8 @@ export function Ontology() {
                   )
                 : closePanel()
             }
-          />
+            />
+          )}
           {selectedClass && (
             <DockedPanel
               onClose={closePanel}
@@ -1035,7 +1099,7 @@ function ClassTree({
     }
     const children = new Map<string | null, EntityTypeView[]>();
     for (const t of types) {
-      const p = t.primary_parent ?? null;
+      const p = treeParent(t);
       if (!children.has(p)) children.set(p, []);
       children.get(p)!.push(t);
     }

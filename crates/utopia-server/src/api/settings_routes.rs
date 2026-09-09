@@ -70,6 +70,25 @@ pub async fn put(
         req.embed_dim,
     )
     .await?;
+    // **配好嵌入模型的这一刻，就是本体索引能开工的最早时刻。**
+    //
+    // 注册时自动建的默认库会装上本体包，而那一刻还没有模型：`embed_ontology`
+    // 空转即报 done，此后没有任何东西会再排一次——库里躺着一份没有向量的本体，
+    // 直到有人去编辑本体或跑一次类型消解。于是默认库的第一批文档必然走
+    // 「全量铺本体」那条又贵又差的路。
+    //
+    // 在这里补一次，索引在用户还在想上传什么的时候就建起来了。抽取那边也各自
+    // 兜底（见 extraction.rs），这里只是把它提前，不是唯一的保障。
+    if nonempty(&req.embed_model).is_some() {
+        for kb in utopia_store::kbs::list(&state.pool, workspace_id).await? {
+            let _ = utopia_store::jobs::enqueue_unless_queued(
+                &state.pool,
+                "embed_ontology",
+                serde_json::json!({ "kb_id": kb.id }),
+            )
+            .await;
+        }
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
