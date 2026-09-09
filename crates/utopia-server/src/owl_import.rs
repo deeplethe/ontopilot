@@ -27,6 +27,11 @@ pub enum Disposition {
     /// key 被另一个 IRI 占着，但对齐表说那两个是**同一个东西** → 跳过且不算冲突。
     /// 与 KeyTaken 分开，是因为它不需要人裁：少建一个重复的类正是想要的结果
     Aligned,
+    /// 词表自己说这条属性已被另一条取代（`schema:supersededBy`），而取代它的那条
+    /// 在这个文件里或库里 → 不建。建了就是两个 key 指同一个关系：抽取的精确 key
+    /// 命中让 `employees` 与 `employee` 永久分家，屈折归一根本没机会开口（#560）。
+    /// 不建之后，模型说 `employees` 会折到 `employee` 上
+    Superseded,
 }
 
 /// 一个属性在这次导入里会不会被建出来，以及为什么。
@@ -141,6 +146,10 @@ impl ImportPlan {
         for a in &self.attributes {
             if a.disposition == Disposition::KeyTaken {
                 *out.entry("key_taken").or_default() += 1;
+                continue;
+            }
+            if a.disposition == Disposition::Superseded {
+                *out.entry("superseded").or_default() += 1;
                 continue;
             }
             let reason = match a.attr.as_ref() {
@@ -272,8 +281,17 @@ pub async fn plan(
 
     let mut relations = Vec::new();
     let mut attributes = Vec::new();
+    // 让位的属性只在取代它的那条**能落地**时才跳过：取代者在这个文件里，或库里已有。
+    // 取代者不在场时照建——否则一份只带了让位方的小词表会一条都建不出来
+    let prop_iris: HashSet<&str> = proj.properties.iter().map(|p| p.iri.as_str()).collect();
     for p in &proj.properties {
-        let (disposition, conflict_with) = if let Some(prev) = claimed_prop.get(p.key.as_str()) {
+        let successor = p
+            .superseded_by
+            .as_deref()
+            .filter(|s| prop_iris.contains(s) || r_by_iri.contains_key(s));
+        let (disposition, conflict_with) = if let Some(s) = successor {
+            (Disposition::Superseded, Some(s.to_string()))
+        } else if let Some(prev) = claimed_prop.get(p.key.as_str()) {
             (Disposition::KeyTaken, Some((*prev).to_string()))
         } else if r_by_iri.contains_key(p.iri.as_str()) {
             (Disposition::Update, None)
@@ -282,7 +300,7 @@ pub async fn plan(
         } else {
             (Disposition::Create, None)
         };
-        if disposition != Disposition::KeyTaken {
+        if !matches!(disposition, Disposition::KeyTaken | Disposition::Superseded) {
             claimed_prop.insert(p.key.as_str(), p.iri.as_str());
         }
         let mut item = PlannedItem {
@@ -490,7 +508,8 @@ pub async fn apply(
                     }
                 }
             }
-            Disposition::KeyTaken => {}
+            // 类没有让位一说（schema:supersededBy 只标属性），穷举是为了编译器替我们看着
+            Disposition::KeyTaken | Disposition::Superseded => {}
         }
     }
 
@@ -551,7 +570,10 @@ pub async fn apply(
     // (key, domains, ranges)：关系 id 要等批量插完才有，先按 key 记着
     let mut pending_links: Vec<(String, Vec<Uuid>, Vec<Uuid>)> = Vec::new();
     for item in &plan.relations {
-        if item.disposition == Disposition::KeyTaken {
+        if matches!(
+            item.disposition,
+            Disposition::KeyTaken | Disposition::Superseded
+        ) {
             continue;
         }
         let Some(p) = by_prop_iri.get(item.iri.as_str()) else {
@@ -657,7 +679,10 @@ pub async fn apply(
     let mut new_attrs: Vec<utopia_store::ontology::BulkRelation> = Vec::new();
     let mut pending_attr_domains: Vec<(String, Vec<Uuid>)> = Vec::new();
     for item in &plan.attributes {
-        if item.disposition == Disposition::KeyTaken {
+        if matches!(
+            item.disposition,
+            Disposition::KeyTaken | Disposition::Superseded
+        ) {
             continue;
         }
         let (Some(note), Some(p)) = (item.attr.as_ref(), by_prop_iri.get(item.iri.as_str())) else {
@@ -716,6 +741,8 @@ pub async fn apply(
         "inverse_linked": linked_inv,
         "sub_property_linked": linked_sub,
         "relations_created": created_rels,
+        // 词表自己让位的那些：不建，也不算冲突
+        "relations_superseded": plan.relations.iter().filter(|r| r.disposition == Disposition::Superseded).count(),
         "relations_updated": updated_rels,
         "attributes_seen": plan.attributes.len(),
         "attributes_created": created_attrs,

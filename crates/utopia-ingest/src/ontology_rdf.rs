@@ -50,6 +50,10 @@ pub struct OwlProperty {
     /// `rdfs:subPropertyOf` 的父属性 IRI。多写几条只留第一条——
     /// OWL 允许多父，而 R1 的规则一次只升一级，多父要另一套形状
     pub sub_property_of: Option<String>,
+    /// `schema:supersededBy` 的对端 IRI：这条属性已经被另一条取代。schema.org 里
+    /// `employees` 让位给 `employee`、`founders` 让位给 `founder`，两条都还在词表里。
+    /// 不读这一位，两条都建成关系，抽取时精确 key 各自命中，一个关系永久分成两个（#560）
+    pub superseded_by: Option<String>,
     pub domains: Vec<String>,
     pub ranges: Vec<String>,
     /// **多条 range 是并集还是交集**。`rdfs:range` 写多条是交集
@@ -229,6 +233,7 @@ pub fn project(bytes: &[u8], format: RdfFormat) -> anyhow::Result<OwlProjection>
     // 属性之间的两条关系（不是类型声明，所以单独收）
     let mut inverse_of: BTreeMap<String, String> = BTreeMap::new();
     let mut sub_property_of: BTreeMap<String, String> = BTreeMap::new();
+    let mut superseded_by: BTreeMap<String, String> = BTreeMap::new();
     let mut asymmetric: BTreeSet<String> = BTreeSet::new();
     let mut irreflexive: BTreeSet<String> = BTreeSet::new();
     let mut plain_props: BTreeSet<String> = BTreeSet::new();
@@ -315,6 +320,7 @@ pub fn project(bytes: &[u8], format: RdfFormat) -> anyhow::Result<OwlProjection>
             || is_schema(p, "rangeIncludes")
             || p == format!("{OWL}disjointWith")
             || p == format!("{OWL}inverseOf")
+            || is_schema(p, "supersededBy")
     };
     for t in &triples {
         let p = t.predicate.as_str();
@@ -351,6 +357,11 @@ pub fn project(bytes: &[u8], format: RdfFormat) -> anyhow::Result<OwlProjection>
             // `inverse_not_mutual` 检查恰恰要区分这两者
             if let Some(o) = &t.object_iri {
                 inverse_of.entry(t.subject.clone()).or_insert(o.clone());
+            }
+        } else if is_schema(p, "supersededBy") {
+            // 取代关系只在 schema.org 词表里出现；多写几条只留第一条
+            if let Some(o) = &t.object_iri {
+                superseded_by.entry(t.subject.clone()).or_insert(o.clone());
             }
         } else if p == format!("{RDFS}subPropertyOf") {
             // 从前这条只出现在 `known()` 白名单里——认得出、不报警、**然后扔掉**。
@@ -509,6 +520,7 @@ pub fn project(bytes: &[u8], format: RdfFormat) -> anyhow::Result<OwlProjection>
             asymmetric: asymmetric.contains(iri),
             inverse_of: inverse_of.get(iri).cloned(),
             sub_property_of: sub_property_of.get(iri).cloned(),
+            superseded_by: superseded_by.get(iri).cloned(),
             irreflexive: irreflexive.contains(iri),
             domains: domains.get(iri).cloned().unwrap_or_default(),
             ranges: rs,
@@ -1479,6 +1491,39 @@ mod against_real_packs {
 #[cfg(test)]
 mod property_axiom_tests {
     use super::*;
+
+    /// `schema:supersededBy` 要被读出来：让位的属性带着它让给了谁
+    #[test]
+    fn a_superseded_property_names_its_successor() {
+        let ttl = r#"
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema: <https://schema.org/> .
+schema:Organization a rdfs:Class ; rdfs:label "Organization" .
+schema:Person a rdfs:Class ; rdfs:label "Person" .
+schema:employee a rdf:Property ; rdfs:label "employee" ;
+    schema:domainIncludes schema:Organization ; schema:rangeIncludes schema:Person .
+schema:employees a rdf:Property ; rdfs:label "employees" ;
+    schema:domainIncludes schema:Organization ; schema:rangeIncludes schema:Person ;
+    schema:supersededBy schema:employee .
+"#;
+        let p = project(ttl.as_bytes(), RdfFormat::Turtle).expect("解析");
+        let by = |k: &str| {
+            p.properties
+                .iter()
+                .find(|x| x.key == k)
+                .unwrap_or_else(|| panic!("没有 {k}"))
+        };
+        assert_eq!(
+            by("employees").superseded_by.as_deref(),
+            Some("https://schema.org/employee")
+        );
+        assert!(by("employee").superseded_by.is_none());
+        assert!(
+            !p.unprojected.keys().any(|k| k.contains("supersededBy")),
+            "认了就不该再算进「暂未投影」"
+        );
+    }
 
     /// `owl:inverseOf` 与 `rdfs:subPropertyOf` 要被读出来。
     ///

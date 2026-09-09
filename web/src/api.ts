@@ -1110,7 +1110,7 @@ export interface PlannedItem {
   key: string;
   label: string;
   has_description: boolean;
-  disposition: "create" | "update" | "key_taken";
+  disposition: "create" | "update" | "key_taken" | "aligned" | "superseded";
   functional?: boolean;
   conflict_with?: string | null;
 }
@@ -1137,6 +1137,7 @@ export interface OntologyImportSummary {
   classes_without_description?: number;
   relations_seen?: number;
   relations_created?: number;
+  relations_superseded?: number;
   relations_updated?: number;
   functional_relations?: number;
   /** 逆属性 / 父属性连上了几条——目标 IRI 不在这个库里时会静默跳过 */
