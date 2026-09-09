@@ -21,6 +21,14 @@ import {
   Search as SearchIcon,
 } from "lucide-react";
 import { S } from "../i18n";
+// 表格原件在 ./table 里，下面 re-export；`SkeletonTableRows` 自己也要用，
+// 所以这里另取一份别名，避免与 re-export 的同名标识撞车
+import {
+  Table as SkelTable,
+  TBody as SkelTBody,
+  Td as SkelTd,
+  Tr as SkelTr,
+} from "./table";
 
 /** 应用内左栏统一底座：宽度 + 玻璃面（各页在此之上加 flex/padding）。
     以最宽的 Ontology（w-64）为基准——rail 装的是名字，宽一档少截断。 */
@@ -1144,6 +1152,34 @@ export function CanvasLoading({ size = 28 }: { size?: number }) {
     <div className="absolute inset-0 grid place-items-center pointer-events-none">
       <Spinner size={size} label={S.nav.loading} />
     </div>
+  );
+}
+
+/** 表格版的骨架行。
+ *
+ * 与 `SkeletonRows` 同一条道理，只是行的形状换成表的：用**真的 `Tr` / `Td`**
+ * 搭，行高就由构造保证（8 + 22 + 8 = 38），不靠写死一个数。
+ *
+ * 这一条是踩出来的：表格的骨架一度直接用了左栏那一档的行（24px），比真表行
+ * 矮了三分之一，一列排下来又矮又密，一眼就看得出不是那张表将来的样子。
+ * 骨架说的是"等的是什么形状"，形状说错了就不如不说。 */
+export function SkeletonTableRows({ rows = 8 }: { rows?: number }) {
+  return (
+    <SkelTable>
+      <SkelTBody>
+        {Array.from({ length: rows }, (_, i) => (
+          <SkelTr key={i}>
+            <SkelTd>
+              {/* 这一层撑的是一个行高（见 styles.css 的 .u-skel-line）：
+                  真单元格里是一行字，少了它整表矮一截 */}
+              <span className="u-skel-line">
+                <Skeleton className="h-4 w-full" />
+              </span>
+            </SkelTd>
+          </SkelTr>
+        ))}
+      </SkelTBody>
+    </SkelTable>
   );
 }
 

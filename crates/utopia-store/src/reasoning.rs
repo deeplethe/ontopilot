@@ -2458,7 +2458,12 @@ pub async fn derived_for_entity(
     kb_id: Uuid,
     entity_id: Uuid,
     at: Option<chrono::DateTime<chrono::Utc>>,
+    as_of: Option<chrono::DateTime<chrono::Utc>>,
 ) -> AppResult<Vec<DerivedFactView>> {
+    // 记录轴（0019 / #549）：断言那一半早就走 `held_at`，这一半曾写死
+    // `invalidated_at IS NULL`——回放到三月的面板上挂着四月才推出的结论，
+    // 前提一条都不在，结论却在。谓词只在 record_axis 里拼，这里不自己写。
+    //
     // **宾语与规则两侧都是 LEFT JOIN。** 表拓宽之后（0021）一条派生的宾语可能
     // 是字面值而不是实体，规则可能是业务规则而不是公理——内连接会把这两种
     // 结论**静默地**从面板上抹掉，而它们恰恰是最需要解释的那种。
@@ -2500,15 +2505,17 @@ pub async fn derived_for_entity(
            LEFT JOIN rules ru ON ru.id = d.rule_id
            LEFT JOIN attribute_rules ar ON ar.id = d.attribute_rule_id
            LEFT JOIN entity_types ct ON ct.id = ar.conclude_type_id
-          WHERE d.kb_id = $1 AND d.invalidated_at IS NULL
+          WHERE d.kb_id = $1 AND {derived_held}
             AND (d.subject_id = $2 OR d.object_id = $2)
             AND {derived_hold}
           ORDER BY d.derived_at DESC",
         derived_hold = crate::world_axis::derived_hold_at("d", 3),
+        derived_held = crate::record_axis::derived_held_at("d", 4),
     ))
     .bind(kb_id)
     .bind(entity_id)
     .bind(at)
+    .bind(as_of)
     .fetch_all(pool)
     .await?)
 }

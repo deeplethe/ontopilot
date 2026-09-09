@@ -20,6 +20,7 @@ mod settings_routes;
 mod sources_routes;
 mod token_routes;
 mod tools;
+mod tools_graph;
 mod workspaces;
 
 use axum::extract::DefaultBodyLimit;

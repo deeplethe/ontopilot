@@ -180,6 +180,14 @@ async fn preview_with(
         slots.push((pi, slot));
     }
 
+    // 邻居先一起取（#514）：六十个查询彼此无关，有界并发取回来，下面再按原顺序推理。
+    // 后代集合按粗类记一批：同一个粗类的递归 CTE 一批里只发一次
+    let ids: Vec<Uuid> = subjects.iter().map(|s| s.id).collect();
+    let mut neighbour_lists =
+        utopia_store::resolution::nearest_typed_for_each(&state.pool, kb_id, &ids, NEIGHBOURS)
+            .await?;
+    let mut descendants_memo = utopia_store::resolution::DescendantsMemo::default();
+
     let mut out = Vec::with_capacity(subjects.len());
     for (i, s) in subjects.iter().enumerate() {
         // 粗类的后代**排前面，但不是唯一能选的**。
@@ -193,13 +201,9 @@ async fn preview_with(
         // 该说不的是裁决那一步：它看得到描述、看得到粗类，能说出"这不是"。
         // 还没有类的实体没有"粗类的后代"这个轴可用（0009），整张类表都是候选，
         // 排序就纯按检索顺序来
-        let descendants: std::collections::HashSet<_> = match s.coarse_id {
-            Some(c) => utopia_store::resolution::descendants_of(&state.pool, kb_id, c)
-                .await?
-                .into_iter()
-                .collect(),
-            None => std::collections::HashSet::new(),
-        };
+        let descendants = descendants_memo
+            .get(&state.pool, kb_id, s.coarse_id)
+            .await?;
         // **两路交替取，不按距离合并。**
         //
         // 距离在两路之间不可比：短查询（"医药集团"）产生的距离系统性地小于
@@ -242,10 +246,8 @@ async fn preview_with(
         // 剩下的顺序就是两路交替的检索序:检索决定端什么上去,裁决决定它是什么,
         // `crosses_axis` 决定要不要人看。一层一件事。
         let candidates: Vec<_> = ranked.into_iter().take(CANDIDATES as usize).collect();
-        // 第二路：语境相似的已定类实体，按类投票
-        let raw =
-            utopia_store::resolution::nearest_typed_entities(&state.pool, kb_id, s.id, NEIGHBOURS)
-                .await?;
+        // 第二路：语境相似的已定类实体，按类投票（上面一起取回来的，这里按序拿）
+        let raw = std::mem::take(&mut neighbour_lists[i]);
         let mut votes: std::collections::BTreeMap<String, (usize, f64, Vec<String>, bool)> =
             std::collections::BTreeMap::new();
         for (name, _tid, key, distance, same_doc) in raw {

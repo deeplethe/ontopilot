@@ -366,11 +366,18 @@ pub(super) fn base_tools() -> serde_json::Value {
                     always do this for \"who was X in <year/month>\" questions. \
                     Conclusions a business rule reached about this entity come back too, \
                     marked `[rule: <name>]` with the readings that made them true — take \
-                    those as given rather than re-deriving them from the readings yourself.",
+                    those as given rather than re-deriving them from the readings yourself. \
+                    Output is grouped by predicate and cut at `limit`; narrow with predicate, \
+                    object_type, since / until, or use timeline / neighbors / paths_between.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "entity_id": { "type": "string", "description": "Entity id (uuid) from find_entities." },
+                        "entity_id": { "type": "string", "description": "Entity id (uuid) from find_entities, or an entity name (the server picks the best match and says which)." },
+                        "predicate": { "type": "string", "description": "Optional: only facts whose relation name contains this (e.g. 'founder')." },
+                        "object_type": { "type": "string", "description": "Optional: only facts whose other end is of this type (e.g. 'Person')." },
+                        "since": { "type": "string", "description": "Optional WORLD-time window start: facts still holding after it." },
+                        "until": { "type": "string", "description": "Optional WORLD-time window end: facts that had started by it." },
+                        "limit": { "type": "integer", "description": "How many facts to return (default 80, max 300); the reply says when it is cut." },
                         "at": {
                             "type": "string",
                             "description": "Optional as-of moment on the WORLD axis (YYYY, YYYY-MM, \
@@ -387,6 +394,62 @@ pub(super) fn base_tools() -> serde_json::Value {
                         }
                     },
                     "required": ["entity_id"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "paths_between",
+                "description": "How two entities are connected in the knowledge graph: the chains of facts that join them, up to 3 hops, shortest first. THE tool for 'what is the relation between A and B', 'how is X linked to Y', 'who connects A and B'. Both ends take an entity name or an id; with a name the server picks the best match and says which. Pass `at` to require every edge to hold at that moment (world time), `as_of` to read the base as recorded then. Each edge comes with its validity range.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "from": { "type": "string", "description": "One end: entity name, or an id from find_entities." },
+                        "to": { "type": "string", "description": "The other end: entity name, or an id." },
+                        "max_hops": { "type": "integer", "description": "Longest chain to consider, 1-3 (default 3)." },
+                        "at": { "type": "string", "description": "Optional WORLD-time moment (YYYY, YYYY-MM, YYYY-MM-DD): every edge on a path must hold then." },
+                        "as_of": { "type": "string", "description": "Optional RECORD-time moment: the paths as the base held them then." }
+                    },
+                    "required": ["from", "to"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "neighbors",
+                "description": "The entities linked to one entity, grouped by predicate, one hop. Use it to see what surrounds an entity before deciding where to look next (each further hop is another call); narrow with `predicate` (e.g. 'founder', 'employee') or `object_type` (e.g. 'Person'). Attribute values are not neighbors; entity_facts has them.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "entity": { "type": "string", "description": "Entity name, or an id from find_entities." },
+                        "predicate": { "type": "string", "description": "Optional: only relations whose name contains this." },
+                        "object_type": { "type": "string", "description": "Optional: only neighbors of this type (name contains)." },
+                        "at": { "type": "string", "description": "Optional WORLD-time moment: only links valid then." },
+                        "as_of": { "type": "string", "description": "Optional RECORD-time moment." },
+                        "limit": { "type": "integer", "description": "How many to return (default 40, max 300)." }
+                    },
+                    "required": ["entity"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "timeline",
+                "description": "One entity's dated facts in world-time order: THE tool for 'the timeline of X', 'the history of X', 'what happened to X between <year> and <year>'. Only facts with a stated date appear; narrow with `since` / `until` (world time) or `predicate`.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "entity": { "type": "string", "description": "Entity name, or an id from find_entities." },
+                        "since": { "type": "string", "description": "Optional start of the window (YYYY, YYYY-MM, YYYY-MM-DD)." },
+                        "until": { "type": "string", "description": "Optional end of the window." },
+                        "predicate": { "type": "string", "description": "Optional: only relations whose name contains this." },
+                        "as_of": { "type": "string", "description": "Optional RECORD-time moment: the timeline as the base held it then." },
+                        "limit": { "type": "integer", "description": "How many to return (default 60, max 300)." }
+                    },
+                    "required": ["entity"]
                 }
             }
         },
@@ -451,8 +514,9 @@ pub(super) fn base_tools() -> serde_json::Value {
 
 const SYSTEM_PROMPT: &str = "You are the assistant of Utopia, a temporal knowledge platform. \
     You have tools: search_chunks (document search) and get_document (the full text of one \
-    document found by search), find_entities, entity_facts and changes (a bi-temporal \
-    knowledge graph), and search_docs (Utopia's own manual, the Charter).\n\
+    document found by search), find_entities, entity_facts, neighbors, timeline, \
+    paths_between and changes (a bi-temporal knowledge graph), and search_docs (Utopia's \
+    own manual, the Charter).\n\
     search_chunks returns short excerpts of the best-matching sections only. When a hit is \
     clearly the right document but the excerpt does not carry the answer, read the whole \
     document with get_document before saying the knowledge base does not have it.\n\
@@ -475,16 +539,17 @@ const SYSTEM_PROMPT: &str = "You are the assistant of Utopia, a temporal knowled
     preamble about what you are or are not looking up. Everything below is for messages about \
     the user's data.\n\
     1. For factual questions — questions about the user's data, never one about this \
-       conversation — ALWAYS gather evidence with tools before answering. Prefer the \
-       graph tools for questions about people/organizations/projects and time (\"who was X \
-       when\", \"what changed\"), search_chunks for content and detail questions. Combine both \
-       when useful.\n\
+       conversation — ALWAYS gather evidence with tools before answering. For how two \
+       things are related, call paths_between (names are fine); for the history of one \
+       thing, timeline; to see what is linked to it, neighbors; for its facts, entity_facts, \
+       narrowed with predicate / object_type / since / until. search_chunks answers content \
+       and detail questions. Combine both when useful.\n\
     2. Facts carry validity ranges (from → to). For \"as of <date>\" questions pass `at` to \
        entity_facts and the server filters to that moment; for history questions omit `at` \
        to see the full timeline. For 'what did we know / have on record / believe as of <date>' or 'before <memo> arrived' pass `as_of` — that is the record axis and the ONLY way to answer such a question; do not narrate a plan, call the tool. The two combine: `at` for the date asked about, `as_of` for when. State dates in the answer. Dates in tool output carry their own precision: \
        `2023` means the year and `2023-06` the month — never turn them into a specific day; \
-       `attested <time>` marks a fact with no stated start, known only from that evidence on; \
-       `ended by <time>` marks one the text says is over, date not given.\n\
+       `undated` marks a fact with no stated start; \
+       `ended, date unknown` marks one the text says is over, date not given.\n\
     2a. For 'before a correction or memo arrived', call changes to find its exact record timestamp, \
        then call entity_facts with `before` set to that timestamp, copied exactly as printed — the \
        server reads the base as it stood strictly before that change. Never compute an earlier \
@@ -882,6 +947,7 @@ pub async fn chat(
                     actor: Some(user.id),
                     // 网页端对话不经令牌：说话的就是这个人本人
                     via_token: None,
+                    question: Some(&query),
                 };
                 let (result, step) = tools::dispatch(&ctx, &mut sink, &call.name, &args).await;
                 // **这一步发生在正文的哪个位置。**

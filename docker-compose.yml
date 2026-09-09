@@ -7,6 +7,12 @@ services:
       POSTGRES_PASSWORD: ${UTOPIA_DB_PASSWORD:-utopia}
       POSTGRES_DB: utopia
       # 应用运行时用的受限角色口令。设了才建角色，不设则应用仍以 owner 身份跑。
+      #
+      # **这一条故意保留 `${VAR:-}` 写法**，与下面 app 服务里那三条只写键名的
+      # 不同。区别不在风格，在于收它的人：那三条交给 Rust，空串会盖掉默认值；
+      # 这一条交给 `docker/init-app-role.sh`，它用 `[ -z ]` 判断，空串与未设
+      # 本来就是同一件事。改成只写键名不会坏，但也换不来什么，而写在这里
+      # 是为了让下一个想"顺手统一"的人先读到这段。
       UTOPIA_APP_DB_PASSWORD: ${UTOPIA_APP_DB_PASSWORD:-}
     ports:
       # 宿主机侧避开 5432：开发机上常有本地装的 PG 占着那个端口，撞上就是
@@ -44,12 +50,18 @@ services:
       # 在 .env 里同时给出这两条——见 .env.example。分开写而不做条件拼接，
       # 是因为那种嵌套替换没人读得懂，出错了也查不出来。
       UTOPIA_DATABASE_URL: ${UTOPIA_DATABASE_URL:-postgres://utopia:${UTOPIA_DB_PASSWORD:-utopia}@db:5432/utopia}
-      UTOPIA_MIGRATION_URL: ${UTOPIA_MIGRATION_URL:-}
+      # 下面三条**只写键名不写值**：这样变量没设时容器里就没有这个变量，而
+      # `${VAR:-}` 传进去的是空串。两者对应用不是一回事——空串会盖掉默认值，
+      # 而「盖掉默认值」正是 rc5 起不来的原因（#343）：迁移连接串拿到空串，
+      # sqlx 报 "relative URL without a base"，照 README 的快速开始第一步就退出。
+      # Rust 侧的 `blank_is_unset`（#344）已经补上，这里是同一件事的另一半：
+      # 空串根本不该发出去。设了值的情况照常——compose 会从宿主环境或 .env 取。
+      UTOPIA_MIGRATION_URL:
       UTOPIA_BIND_ADDR: 0.0.0.0:1516
-      # 留空：首次启动自动生成一条存进 deployment_settings。这里若给缺省值，
+      # 不设：首次启动自动生成一条存进 deployment_settings。这里若给缺省值，
       # 自动生成就永远走不到，所有部署又会共用同一个人人皆知的密钥。
-      UTOPIA_JWT_SECRET: ${UTOPIA_JWT_SECRET:-}
-      UTOPIA_SECRET_KEY: ${UTOPIA_SECRET_KEY:-}
+      UTOPIA_JWT_SECRET:
+      UTOPIA_SECRET_KEY:
       UTOPIA_WEB_DIST: /app/web-dist
       UTOPIA_DATA_DIR: /app/data
       # 连接池上限。缺省 32，与 worker 并发的缺省对齐；池子小于并发时症状是

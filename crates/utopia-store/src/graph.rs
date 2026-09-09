@@ -832,6 +832,30 @@ pub async fn neighborhood(
     Ok((nodes, edges))
 }
 
+/// 这批实体的上下文画像与一个向量的余弦距离；没有画像的不在结果里。
+/// 图谱工具拿用户的问题来比：同名的几个里，谁的画像离问题近，问的多半是谁
+pub async fn profile_distances(
+    pool: &PgPool,
+    kb_id: Uuid,
+    ids: &[Uuid],
+    embedding: &[f32],
+) -> AppResult<Vec<(Uuid, f64)>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid, f64)> = sqlx::query_as(
+        "SELECT e.id, (e.profile_embedding <=> $3)::float8
+           FROM entities e
+          WHERE e.kb_id = $1 AND e.id = ANY($2) AND e.profile_embedding IS NOT NULL",
+    )
+    .bind(kb_id)
+    .bind(ids)
+    .bind(pgvector::Vector::from(embedding.to_vec()))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// 按名字找实体。**一并回总数**——「宁分勿合」本来就会造出一堆同名，
 /// 固定十条的时候，想找的那个可能根本不在这十条里而界面上看不出来。
 pub async fn search_entities(
@@ -844,7 +868,8 @@ pub async fn search_entities(
     let pattern = format!("%{}%", q.trim());
     let nodes: Vec<GraphNode> = sqlx::query_as(&format!(
         "{} WHERE e.kb_id = $1 AND e.merged_into IS NULL
-         AND e.canonical_name ILIKE $2
+         AND (e.canonical_name ILIKE $2
+              OR EXISTS (SELECT 1 FROM unnest(e.aliases) AS a WHERE a ILIKE $2))
          ORDER BY degree DESC, e.canonical_name LIMIT $3 OFFSET $4",
         node_sql(None, None)
     ))
@@ -856,7 +881,9 @@ pub async fn search_entities(
     .await?;
     let (total,): (i64,) = sqlx::query_as(
         "SELECT count(*) FROM entities e
-          WHERE e.kb_id = $1 AND e.merged_into IS NULL AND e.canonical_name ILIKE $2",
+          WHERE e.kb_id = $1 AND e.merged_into IS NULL
+            AND (e.canonical_name ILIKE $2
+                 OR EXISTS (SELECT 1 FROM unnest(e.aliases) AS a WHERE a ILIKE $2))",
     )
     .bind(kb_id)
     .bind(&pattern)
@@ -891,7 +918,7 @@ pub async fn entity_detail(
                 COALESCE(r.label, fact_surface_predicate(f.id)) AS predicate_label,
                 r.id IS NULL AS inferred, r.temporal,
                 CASE WHEN {subject} = $2 THEN {object} ELSE {subject} END AS other_id,
-                o.canonical_name AS other_name, f.object_value,
+                o.canonical_name AS other_name, ot.label AS other_type, f.object_value,
                 f.valid_from, f.valid_from_precision, f.valid_to, f.valid_to_precision,
                 {holds_from} AS holds_from, {holds_to} AS holds_to, f.confidence,
                 (SELECT count(*) FROM fact_evidence fe WHERE fe.fact_id = f.id) AS evidence_count,
@@ -926,6 +953,7 @@ pub async fn entity_detail(
          LEFT JOIN relation_types r ON r.id = f.predicate_id
          LEFT JOIN entities o
            ON o.id = CASE WHEN {subject} = $2 THEN {object} ELSE {subject} END
+         LEFT JOIN entity_types ot ON ot.id = o.type_id
          WHERE f.kb_id = $1 AND {facts_held} AND {facts_hold}
            AND ({subject} = $2 OR {object} = $2)
          ORDER BY f.valid_from NULLS LAST, f.recorded_at",

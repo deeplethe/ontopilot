@@ -54,11 +54,12 @@ import {
   selectedNode,
   sigmaOptions,
 } from "./graphCanvas";
-import { Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
 import {
   CanvasLoading,
+  cn,
   Pill,
   Row,
   ToolButton,
@@ -987,7 +988,17 @@ export function OntologySchemaGraph({
   return (
     <div className="h-full relative">
       {/* 图例 + 取景 + 未限定关系入口。没有搜索框——找东西走左栏 */}
-      <div className="absolute left-3 right-3 top-3 z-10 flex items-start gap-2 pointer-events-none">
+      {/* 图例这一排与右侧停靠面板**顶对齐**（都从 top-3 起）：从前面板压在
+          top-14，右半边空出一条 56px 的带子，看着像没对齐。
+          面板开着时这一排的右缘让出面板那一列（见 .u-canvas-chrome-docked），
+          否则窄窗口下图例会钻到面板底下 */}
+      <div
+        className={cn(
+          "absolute left-3 right-3 top-3 z-10 flex items-start gap-2 pointer-events-none",
+          (selected?.kind === "class" || selected?.kind === "relation") &&
+            "u-canvas-chrome-docked",
+        )}
+      >
         <div className="pointer-events-auto flex flex-wrap gap-2">
           {/* 静态图例：几种边各自的说法，不是可切换的过滤器——本体的边远比
               实例图少，藏一种边省下的空间不值得多一层交互。
@@ -1048,16 +1059,28 @@ export function OntologySchemaGraph({
               {unscopedPop.open && (
                 <div
                   ref={unscopedPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-64 overflow-hidden rounded-overlay p-2 shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay shadow-2xl"
                 >
-                  <Pill className="mb-2 w-full" onClick={() => unscopedPop.close()}>
-                    {S.ontology.schemaUnscoped(schema.unscoped.length)}
-                    <X size={11} className="ml-auto text-ink-2" />
-                  </Pill>
-                  <p className="px-2 pb-2 text-fine leading-relaxed text-ink-2">
+                  {/* 与库切换器、告警面板、图谱页的类图例同一副解剖：第一行就是
+                      触发它的那个胶囊自己，三角翻上去，点它收回；**没有浮在角上的
+                      关闭叉**——「哪儿展开的就从哪儿收回去」。
+                      从前这里是一枚带 × 的胶囊，跟同一个产品里其余弹层都不像 */}
+                  <div
+                    onClick={() => unscopedPop.close()}
+                    className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
+                      {S.ontology.schemaUnscoped(schema.unscoped.length)}
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      className="shrink-0 rotate-180 text-ink-2"
+                    />
+                  </div>
+                  <p className="border-b border-line px-4 py-2 text-fine leading-relaxed text-ink-2">
                     {S.ontology.schemaUnscopedHint}
                   </p>
-                  <div className="flex max-h-64 flex-col overflow-y-auto">
+                  <div className="u-scroll flex max-h-64 flex-col overflow-y-auto p-2">
                     {schema.unscoped.map((r) => (
                       <Row
                         key={r.id}

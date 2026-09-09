@@ -1446,8 +1446,12 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 }
             }
 
-            // 主宾未在 entities 中声明时先建出来（模型偶尔漏报）。没有 entities 那条
-            // 记录就没有类型可依，留空即可——0009 之前这里只能塞 concept
+            // 主宾没在 entities 里声明时（模型偶尔漏报）：库里已经有这个名字的就用它，
+            // 库里也没有的**不建**（#559）。从前这里一律先建出来、类型留空，结果
+            // 一个库里 20% 的实体是 "lawsuit against OpenAI"、"$5 billion"、"March 2024"
+            // 这样的描述——几乎全部只当过宾语，从没当过主语。漏报的实体多半在
+            // 前面的分块或别的文档里已经声明过，按名字找得到；找不到的就是描述。
+            // 描述做主语的事实丢掉并记账，做宾语的事实照落，宾语落成字面值
             let subject_id = match f.subject_ref.as_deref().map(str::trim) {
                 Some(handle) => match referenced_entity(&ref_entities, handle) {
                     Some(bound) => bound.id,
@@ -1465,7 +1469,29 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                     }
                 },
                 None => {
-                    match no_ref_name_binding(&entity_ids, &handled_by_name, f.subject.trim()) {
+                    let binding =
+                        no_ref_name_binding(&entity_ids, &handled_by_name, f.subject.trim());
+                    if matches!(binding, NoRefNameBinding::Missing)
+                        && utopia_store::resolution::existing_by_name(
+                            &state.pool,
+                            doc.kb_id,
+                            f.subject.trim(),
+                        )
+                        .await?
+                        .is_none()
+                    {
+                        drop_signal(
+                            state,
+                            doc.kb_id,
+                            document_id,
+                            utopia_store::extraction_drops::reason::SUBJECT_NOT_DECLARED,
+                            &f.predicate,
+                            Some(f.subject.trim()),
+                        )
+                        .await;
+                        continue;
+                    }
+                    match binding {
                         NoRefNameBinding::Legacy(id) => id,
                         NoRefNameBinding::AmbiguousHandled | NoRefNameBinding::Missing => {
                             touched_names.insert(
@@ -1506,28 +1532,117 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                         continue;
                     }
                 },
-                None => match no_ref_name_binding(&entity_ids, &handled_by_name, object_name) {
-                    NoRefNameBinding::Legacy(id) => id,
-                    NoRefNameBinding::AmbiguousHandled | NoRefNameBinding::Missing => {
-                        touched_names.insert(
-                            utopia_store::resolution::normalize_name(object_name).to_lowercase(),
-                        );
-                        resolve_bare(
+                None => {
+                    let binding = no_ref_name_binding(&entity_ids, &handled_by_name, object_name);
+                    if matches!(binding, NoRefNameBinding::Missing)
+                        && utopia_store::resolution::existing_by_name(
                             &state.pool,
                             doc.kb_id,
-                            None,
                             object_name,
-                            ctx,
-                            Some(&chunk.text),
-                            &mut doc_cache,
-                            &handled_by_name,
-                            &mut ambiguous_bare_cache,
-                            &mut needs_adjudication,
-                            &mut human_reviews_found,
                         )
                         .await?
+                        .is_none()
+                    {
+                        // 没声明、库里也没有：宾语落成字面值。谓词照旧对本体；
+                        // 被动形（`_by`）本该主宾对调，而字面值当不了主语，那条就不给谓词，
+                        // 原词留在证据上
+                        let predicate_id = match pred_index.lookup(f.predicate.as_str()) {
+                            Some((id, false)) => Some(id),
+                            Some((_, true)) => None,
+                            None => {
+                                let _ = utopia_store::ontology::record_miss(
+                                    &state.pool,
+                                    doc.kb_id,
+                                    "relation_type",
+                                    &f.predicate,
+                                    Some(&format!("{} → {}", f.subject, object_name)),
+                                )
+                                .await;
+                                None
+                            }
+                        };
+                        drop_signal(
+                            state,
+                            doc.kb_id,
+                            document_id,
+                            utopia_store::extraction_drops::reason::OBJECT_UNDECLARED,
+                            &f.predicate,
+                            Some(object_name),
+                        )
+                        .await;
+                        let literal = serde_json::json!({ "value": object_name });
+                        if await_nod {
+                            if let utopia_store::pending::Outcome::Proposed(_) =
+                                utopia_store::pending::propose(
+                                    &state.pool,
+                                    utopia_store::pending::Proposal {
+                                        kb_id: doc.kb_id,
+                                        subject_id,
+                                        predicate_id,
+                                        object_id: None,
+                                        object_value: Some(&literal),
+                                        proposed_predicate: Some(f.predicate.as_str()),
+                                        validity,
+                                        confidence,
+                                        chunk_id: chunk.id,
+                                        proposed_by: proposer.user_id,
+                                        proposed_token: proposer.token_id,
+                                    },
+                                )
+                                .await?
+                            {
+                                pending_count += 1;
+                            }
+                            continue;
+                        }
+                        let (fact_id, created) = utopia_store::graph::insert_value_fact(
+                            &state.pool,
+                            doc.kb_id,
+                            subject_id,
+                            predicate_id,
+                            &literal,
+                            validity,
+                            confidence,
+                        )
+                        .await?;
+                        touched_facts.push(fact_id);
+                        utopia_store::graph::add_evidence(
+                            &state.pool,
+                            fact_id,
+                            chunk.id,
+                            f.quote.as_deref(),
+                            Some(f.predicate.as_str()),
+                        )
+                        .await?;
+                        if created {
+                            fact_count += 1;
+                        }
+                        continue;
                     }
-                },
+                    match binding {
+                        NoRefNameBinding::Legacy(id) => id,
+                        NoRefNameBinding::AmbiguousHandled | NoRefNameBinding::Missing => {
+                            touched_names.insert(
+                                utopia_store::resolution::normalize_name(object_name)
+                                    .to_lowercase(),
+                            );
+                            resolve_bare(
+                                &state.pool,
+                                doc.kb_id,
+                                None,
+                                object_name,
+                                ctx,
+                                Some(&chunk.text),
+                                &mut doc_cache,
+                                &handled_by_name,
+                                &mut ambiguous_bare_cache,
+                                &mut needs_adjudication,
+                                &mut human_reviews_found,
+                            )
+                            .await?
+                        }
+                    }
+                }
             };
             if subject_id == object_id {
                 continue;

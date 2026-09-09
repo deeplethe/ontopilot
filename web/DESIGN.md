@@ -8,8 +8,8 @@ Utopia's chrome is neutral dark glass: Geist for text, Marcellus for the wordmar
 |---|---|---|
 | `text-fine` | 11 / 16 | metadata, chip text, table headers, hints under a control |
 | `text-small` | 12 / 18 | secondary text, dense rows, captions |
-| `text-body` | 13 / 20 | everything else: prose, controls, menus |
-| `text-title` | 15 / 22 | section and dialog titles |
+| `text-body` | 14 / 22 | everything else: prose, controls, menus |
+| `text-title` | 16 / 24 | section and dialog titles; chat reads at this step |
 | `text-display` | 20 / 28 | the page title, and only that |
 
 No `text-xs`/`text-sm`, no `text-[11px]`. If a size between two steps seems necessary, the step is wrong for the element, not the scale for the size. Weight is `font-medium` for controls and titles, `font-semibold` only on the primary button; `font-bold` is not used in chrome. Numbers in chrome are Geist with `u-num` (tabular figures), never monospace; `font-mono` is for keys, ids, code and URLs.

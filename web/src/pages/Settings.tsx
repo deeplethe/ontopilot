@@ -382,15 +382,27 @@ type EngineSpec = {
   /** 引擎名是专有名词，不翻译 */
   label: string;
   fields: DsField[];
-  build: (v: Record<string, string>) => string;
+  /** 从填好的几格拼出连接串。
+   *
+   * **拿到的是一张残缺的表**：`values` 里只有人真填过的那几格，刚换到一档
+   * 引擎时它可能是空的。所以每个 build 都必须容忍缺键——
+   * 类型写成 `Partial` 而不是 `Record<string, string>`，是因为后者是句假话：
+   * 索引签名声称取哪个键都是 string，于是 `v.conn.trim()` 编译得过、
+   * 一选中「连接串」就抛，整页换成错误屏（#573）。
+   * 其余几档当时没炸，只因为模板串把 `undefined` 安静地拼成了 "undefined"。 */
+  build: (v: Partial<Record<string, string>>) => string;
 };
 
-const enc = encodeURIComponent;
+/** 这两个助手**都收得下缺席的值**，因为表单本来就是一格一格填起来的：
+ *  刚换到一档引擎时一格都没有。它们的函数体早就按这个写了（`enc` 缺值当空串、
+ *  `auth` 用真值判断），只是签名一直写成 `string`，没把这件事说出来。
+ *  #573 就是从这个缝里掉下去的。 */
+const enc = (v?: string) => encodeURIComponent(v ?? "");
 /** `user:pass@` 那一段：两处都可能为空（Trino 允许无密码） */
-const auth = (user: string, pass: string) =>
+const auth = (user?: string, pass?: string) =>
   pass ? `${enc(user)}:${enc(pass)}@` : user ? `${enc(user)}@` : "";
 
-function dsSpecs(): EngineSpec[] {
+export function dsSpecs(): EngineSpec[] {
   const D = S.settings.datasources;
   return [
     {
@@ -469,7 +481,7 @@ function dsSpecs(): EngineSpec[] {
       id: "raw",
       label: D.engineRaw,
       fields: [{ key: "conn", label: D.connString }],
-      build: (v) => v.conn.trim(),
+      build: (v) => (v.conn ?? "").trim(),
     },
   ];
 }

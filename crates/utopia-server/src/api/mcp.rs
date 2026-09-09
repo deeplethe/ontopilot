@@ -40,7 +40,7 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 /// 「凭什么算含气井」时，该读到那条规则和它的阈值，而不是自己猜一个。
 /// **写规则不放**：推理的判据由人写下，而一次工具调用分不出「人口述、agent
 /// 代打」与「模型自己编了一条」
-const EXPOSED: [&str; 8] = [
+const EXPOSED: [&str; 11] = [
     "search_chunks",
     "get_document",
     "search_docs",
@@ -49,6 +49,9 @@ const EXPOSED: [&str; 8] = [
     "rule_matches",
     "changes",
     "entity_facts",
+    "neighbors",
+    "timeline",
+    "paths_between",
 ];
 
 /// 会往账本里写的那些。
@@ -215,6 +218,8 @@ pub async fn handle(
                 actor: Some(user.id),
                 // 「谁说的」要答到 agent 这一层：一个人可以同时挂三个客户端
                 via_token: Some(auth.token_id),
+                // agent 的意图不在请求里；同名按事实数排
+                question: None,
             };
             let mut sink = ToolSink::default();
             let (text, _step) = tools::dispatch(&ctx, &mut sink, name, &args).await;

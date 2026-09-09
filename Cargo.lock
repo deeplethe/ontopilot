@@ -5277,6 +5277,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "cron",
+ "futures-util",
  "pgvector",
  "serde",
  "serde_json",
