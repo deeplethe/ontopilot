@@ -548,8 +548,8 @@ const SYSTEM_PROMPT: &str = "You are the assistant of Utopia, a temporal knowled
        entity_facts and the server filters to that moment; for history questions omit `at` \
        to see the full timeline. For 'what did we know / have on record / believe as of <date>' or 'before <memo> arrived' pass `as_of` — that is the record axis and the ONLY way to answer such a question; do not narrate a plan, call the tool. The two combine: `at` for the date asked about, `as_of` for when. State dates in the answer. Dates in tool output carry their own precision: \
        `2023` means the year and `2023-06` the month — never turn them into a specific day; \
-       `attested <time>` marks a fact with no stated start, known only from that evidence on; \
-       `ended, date unknown (known by <date>)` marks one the text says is over, date not given.\n\
+       `undated` marks a fact with no stated start; \
+       `ended, date unknown` marks one the text says is over, date not given.\n\
     2a. For 'before a correction or memo arrived', call changes to find its exact record timestamp, \
        then call entity_facts with `before` set to that timestamp, copied exactly as printed — the \
        server reads the base as it stood strictly before that change. Never compute an earlier \

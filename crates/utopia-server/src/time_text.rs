@@ -51,19 +51,18 @@ pub struct Span<'a> {
 pub fn span(s: Span<'_>) -> String {
     let from = match (s.valid_from, s.holds_from) {
         (Some(t), _) => Some(world(t, s.from_precision)),
-        // 锚点是一份文档的日期，写到天：微秒级的摄取时刻在这里只是噪音
-        (None, Some(a)) => Some(format!("attested {}", world(a, Some("day")))),
+        // 没有说出来的起点就说没有。从前写 `attested <文档日期>`，模型把那个日期当成
+        // 事情发生的日子念出来（"OpenAI 于 2026 年 9 月 6 日被确认为…"）；锚点是过滤用的，
+        // 不是给人读的
+        (None, Some(_)) => Some("undated".to_string()),
         (None, None) => None,
     };
     let ended_unknown =
         s.valid_to.is_none() && s.to_precision == Some(utopia_store::graph::ENDED_UNKNOWN);
     let to = match (s.valid_to, ended_unknown, s.holds_to) {
         (Some(t), _, _) => Some(world(t, s.to_precision)),
-        // 「结束了，不知哪天」照实说；说出它的那份文档的日期是知道的上限，不是结束日
-        (None, true, Some(a)) => Some(format!(
-            "ended, date unknown (known by {})",
-            world(a, Some("day"))
-        )),
+        // 「结束了，不知哪天」照实说；说出它的那份文档的日期同样不给
+        (None, true, Some(_)) => Some("ended, date unknown".to_string()),
         (None, true, None) => Some("ended, date unknown".to_string()),
         (None, false, _) => None,
     };
@@ -138,7 +137,7 @@ mod tests {
                 holds_from: day("2024-02-20T00:00:00Z"),
                 ..Span::default()
             }),
-            "attested 2024-02-20 → now"
+            "undated → now"
         );
         // 结束了不知哪天：到说出它的那份文档为止，绝不是 now
         assert_eq!(
@@ -150,7 +149,7 @@ mod tests {
                 holds_from: day("2023-06-01T00:00:00Z"),
                 holds_to: day("2025-10-15T00:00:00Z"),
             }),
-            "2023-06-01 → ended, date unknown (known by 2025-10-15)"
+            "2023-06-01 → ended, date unknown"
         );
         // 记录轴事件里没有锚点可用
         assert_eq!(
