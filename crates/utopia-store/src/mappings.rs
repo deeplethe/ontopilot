@@ -497,7 +497,7 @@ pub async fn confirmed_texts(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Mappin
 pub async fn by_ids(pool: &PgPool, kb_id: Uuid, ids: &[Uuid]) -> AppResult<Vec<ConceptMapping>> {
     let rows: Vec<ConceptMapping> = sqlx::query_as(
         "SELECT m.id, m.concept_id, e.canonical_name AS concept_name, m.source,
-                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status
+                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status, m.written_by
            FROM concept_mappings m JOIN entities e ON e.id = m.concept_id
           WHERE m.kb_id = $1 AND m.id = ANY($2)",
     )
