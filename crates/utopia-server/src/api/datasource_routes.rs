@@ -312,7 +312,11 @@ async fn sync_schema_doc(state: &AppState, kb_id: Uuid, ds_id: Uuid) -> anyhow::
         ));
     }
 
-    // per-KB "Data schemas" 容器来源（folder：纯容器语义）
+    // per-KB "Data schemas" 容器来源（folder：纯容器语义）。
+    //
+    // **这份文档只做检索语料，不进抽取**（0035 决定 7）。它跟别的文档一样进抽取的
+    // 时候，抽取器把每个列名都当成了实体——宽表语料上四十个概念实体里二十八个是
+    // 列名（#553）。「不抽取」记在来源的 config 上，流水线读它
     let folder = match sqlx::query_as::<_, (Uuid,)>(
         "SELECT id FROM sources WHERE kb_id = $1 AND kind = 'folder' AND name = 'Data schemas'",
     )
@@ -327,7 +331,7 @@ async fn sync_schema_doc(state: &AppState, kb_id: Uuid, ds_id: Uuid) -> anyhow::
                 kb_id,
                 "folder",
                 "Data schemas",
-                &serde_json::json!({}),
+                &serde_json::json!({ "extract": false }),
                 Some("database"),
                 None,
                 None,

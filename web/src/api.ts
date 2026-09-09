@@ -206,6 +206,8 @@ export interface SourceView {
     base_url?: string;
     /** jira_issues：项目 key，如 KAFKA */
     project?: string;
+    /** false = 这个来源下的文档只检索、不抽取（schema 文档，0035 决定 7）；缺省抽取 */
+    extract?: boolean;
   } | null;
   icon: string | null;
   sync_interval_minutes: number | null;

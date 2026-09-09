@@ -506,6 +506,7 @@ export const en = {
       extracting: "Extracting",
       done: "Done",
       failed: "Failed",
+      skipped: "Not extracted",
     },
     sources: "Sources",
     allDocs: "All documents",

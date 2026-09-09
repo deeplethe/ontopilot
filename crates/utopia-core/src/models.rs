@@ -142,6 +142,61 @@ pub struct Source {
     pub created_at: DateTime<Utc>,
 }
 
+impl Source {
+    /// 这个来源下的文档要不要进抽取。
+    ///
+    /// **缺省是要。** 只有 config 里 `{"extract": false}` 明说了才不抽——schema
+    /// 文档就是这样（0035 决定 7）：它是给问数检索表结构的语料，不是事实的来源，
+    /// 进抽取的结果是每个列名变成一个实体。开关记在来源上而不是文档上，因为
+    /// 「只检索、不学习」是这一整个来源的性质；也没有拿来源的名字当规则，那是
+    /// 命名约定冒充类型保证（0009）。
+    ///
+    /// 值不是布尔的按没写处理：一个手滑不该让一整个来源静默停抽。
+    /// `documents::queue_extraction` 里的 SQL 判的是同一件事，改一处要改两处。
+    pub fn extracts(&self) -> bool {
+        self.config
+            .get("extract")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true)
+    }
+}
+
+#[cfg(test)]
+mod source_extracts_tests {
+    use super::Source;
+
+    fn with(config: serde_json::Value) -> Source {
+        Source {
+            id: uuid::Uuid::nil(),
+            kb_id: uuid::Uuid::nil(),
+            kind: "folder".into(),
+            name: "x".into(),
+            config,
+            icon: None,
+            sync_interval_minutes: None,
+            sync_cron: None,
+            last_sync_at: None,
+            last_sync_status: "never".into(),
+            last_sync_error: None,
+            last_sync_added: 0,
+            ingest_token: None,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn only_an_explicit_false_turns_extraction_off() {
+        // 老来源的 config 是 `{}`，watch_folder 的是 `{"path": …}`：都照旧抽取
+        assert!(with(serde_json::json!({})).extracts());
+        assert!(with(serde_json::json!({ "path": "/x" })).extracts());
+        assert!(with(serde_json::json!({ "extract": true })).extracts());
+        // 不是布尔的按没写处理，而不是按 false
+        assert!(with(serde_json::json!({ "extract": "no" })).extracts());
+        assert!(with(serde_json::json!({ "extract": 0 })).extracts());
+        assert!(!with(serde_json::json!({ "extract": false })).extracts());
+    }
+}
+
 /// 来源配置里**用来鉴权**的那几个键。凭据只进不出：列表与创建 / 更新的响应都剔掉，
 /// 更新时客户端没传或传空串就保留库里的原值，审计里也不落。
 ///

@@ -457,6 +457,7 @@ export const zh: Strings = {
       extracting: "抽取中",
       done: "完成",
       failed: "失败",
+      skipped: "不抽取",
     },
     sources: "来源",
     allDocs: "全部文档",

@@ -476,6 +476,20 @@ pub async fn extract(
 ) -> ApiResult<Json<serde_json::Value>> {
     let doc = utopia_store::documents::get(&state.pool, document_id).await?;
     require_kb(&state, &user, doc.kb_id, Role::Editor).await?;
+    // 来源说了不抽取的（schema 文档，0035 决定 7）：说清楚为什么，而不是排一个
+    // 流水线到了那一步又跳过的任务
+    if let Some(source_id) = doc.source_id {
+        if !utopia_store::sources::get(&state.pool, source_id)
+            .await?
+            .extracts()
+        {
+            return Err(utopia_core::AppError::invalid(
+                "source_not_extracted",
+                "Documents under this source are searched, not extracted",
+            )
+            .into());
+        }
+    }
     // 手动触发 = 强制全量：清增量标记、解雇在跑的任务、置 queued、建任务，一个事务办完
     let job_id = utopia_store::documents::queue_extraction_one(&state.pool, document_id).await?;
     state.emit_document(doc.kb_id, document_id);

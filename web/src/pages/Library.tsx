@@ -1044,8 +1044,9 @@ function SourceBar({
               {S.library.viewToken}
             </Button>
           )}
-          {/* 全量重抽本来源：所有类型都给（有文档就能重抽） */}
-          {onReExtract && source.doc_count > 0 && (
+          {/* 全量重抽本来源：所有类型都给（有文档就能重抽）——除了说了不抽取的
+              那种（schema 文档）：后端会拒，按钮就不该出现 */}
+          {onReExtract && source.doc_count > 0 && source.config?.extract !== false && (
             <Button variant="secondary" size="sm" className="flex items-center gap-2"
               onClick={onReExtract}
             >
