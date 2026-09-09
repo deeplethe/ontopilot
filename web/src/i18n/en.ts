@@ -1583,6 +1583,10 @@ export const en = {
     noDefinition: "(empty)",
     approve: "Confirm",
     reject: "Reject",
+    selectPage: "Select this page",
+    selectMapping: (name: string, source: string) =>
+      `Select ${name} from ${source}`,
+    selected: (n: number) => (n === 1 ? "1 selected" : `${n} selected`),
     edit: "Edit",
     editTitle: "Revise definition",
     fieldTable: "Table",
