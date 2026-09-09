@@ -32,13 +32,15 @@ const LIST_MAX: usize = 300;
 ///
 /// 没类型的短语（"lawsuit against OpenAI"，#559）在有别的候选时不列：它们几乎全是
 /// 抽取漏进来的描述，列出来只会把问题变成一次消歧。全是 untyped 时照列——一个
-/// 类型都没判出来的库也得能用。
+/// 类型都没判出来的库也得能用。**叫这个名字的照列，有没有类型都一样**：问的就是
+/// "Acme"，而 Acme 本身还没判出类型时，只剩一个 "Acme lawsuit" 是把人引到错的实体上，
+/// 没类型的实体也得找得到（0009）。
 pub(super) fn rank(mut hits: Vec<GraphNode>, query: &str) -> Vec<GraphNode> {
-    if hits.iter().any(|n| n.type_label.is_some()) {
-        hits.retain(|n| n.type_label.is_some());
-    }
     let q = query.trim().to_lowercase();
     let exact = |n: &GraphNode| n.name.trim().to_lowercase() == q;
+    if hits.iter().any(|n| n.type_label.is_some()) {
+        hits.retain(|n| n.type_label.is_some() || exact(n));
+    }
     hits.sort_by(|a, b| {
         exact(b)
             .cmp(&exact(a))
@@ -664,10 +666,12 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
         ));
     } else {
         let groups = grouped(&shown);
+        // 数的是对端实体，不是事实：同一条边常是两条事实（一条带日期一条不带）
+        let entities: HashSet<Uuid> = linked.iter().filter_map(|f| f.other_id).collect();
         let mut head = format!(
             "{} ({type_label}): {} linked entities under {} predicates",
             node.name,
-            linked.len(),
+            entities.len(),
             groups.len()
         );
         if shown.len() < linked.len() {
@@ -764,8 +768,11 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
             head.push_str(&format!(
                 ", {} shown from {} to {} (pass since/until to see the rest)",
                 shown.len(),
-                crate::time_text::world(first, Some("day")),
-                crate::time_text::world(last, Some("day"))
+                crate::time_text::world(first, shown[0].valid_from_precision.as_deref()),
+                crate::time_text::world(
+                    last,
+                    shown[shown.len() - 1].valid_from_precision.as_deref()
+                )
             ));
         }
         if undated > 0 {
@@ -959,6 +966,26 @@ mod tests {
             dominant(&ranked, "OpenAI"),
             "精确命中且事实数是第二名的三倍"
         );
+    }
+
+    /// 精确命中的 untyped 实体不被同名的有类型实体挤掉
+    #[test]
+    fn an_exact_untyped_match_is_not_hidden_by_a_typed_namesake() {
+        let ranked = rank(
+            vec![
+                node("Acme lawsuit", Some("Event"), 1),
+                node("Acme", None, 200),
+                node("Acme corporate history", None, 4),
+            ],
+            "Acme",
+        );
+        let names: Vec<&str> = ranked.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["Acme", "Acme lawsuit"],
+            "叫这个名字的 untyped 照列且在前；别的 untyped 短语仍不列"
+        );
+        assert!(dominant(&ranked, "Acme"), "只有它精确命中");
     }
 
     #[test]
