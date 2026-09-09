@@ -60,7 +60,11 @@ function withDb(cmdline, db) {
 }
 function run(cmdline, sql) {
   const parts = cmdline.split(" ");
-  return execFileSync(parts[0], [...parts.slice(1), sql], { encoding: "utf8", maxBuffer: 64 << 20 }).trim();
+  // stderr 收进异常里，不直接漏到终端：跑不通的 SQL 是 `value()` 的正常返回值
+  // （broken 那一栏），不该在报告里刷一屏 ERROR
+  return execFileSync(parts[0], [...parts.slice(1), sql], {
+    encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 }
 export const psql = (sql) => run(withDb(PSQL, APP_DB), sql);
 export const onDb = (db, sql) => run(withDb(PSQL, db), sql);

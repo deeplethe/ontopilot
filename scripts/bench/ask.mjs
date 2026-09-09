@@ -218,9 +218,12 @@ const main = async () => {
   // **这个问题需要的口径，有没有一条确认过的映射？** 闭环就在这一句上：
   // 答错的题分两种，一种是口径没配（去补映射），一种是配了还错（去看提示词
   // 或工具）。两种该做的事完全不同，而从前它们在结果里长得一样
+  // 只看这份语料那个源上的口径：双源库里另一半引用的是另一个库的表，
+  // 拿到这个语料库上跑只会报「关系不存在」（#574 的双源那轮刷了一屏）
   const confirmed = JSON.parse(psql(`SELECT coalesce(json_agg(x), '[]') FROM (
-      SELECT m.id, m.table_name, m.expr, m.sql FROM concept_mappings m
-       WHERE m.kb_id = '${kb}' AND m.status = 'confirmed') x`));
+      SELECT m.id, m.source, m.table_name, m.expr, m.sql FROM concept_mappings m
+       WHERE m.kb_id = '${kb}' AND m.status = 'confirmed'
+         AND lower(m.source) = lower('${corpusName}')) x`));
   const mapped = new Set();
   // 每条真值口径由哪几行确认映射算出来（按数判，不看名字）——recall@k 的答案卷
   const rowsFor = new Map();
