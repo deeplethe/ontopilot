@@ -23,6 +23,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 
 import type { EntityTypeView, RelationTypeView } from "../api";
+
 import { S } from "../i18n";
 import {
   Chip,
@@ -157,12 +158,14 @@ function ClassesTable({
   types,
   attributes,
   filter,
+  selectedId,
   onOpen,
   onSeeInstances,
 }: {
   types: EntityTypeView[];
   attributes: RelationTypeView[];
   filter: string;
+  selectedId: string | null;
   onOpen: (t: EntityTypeView) => void;
   onSeeInstances: (t: EntityTypeView) => void;
 }) {
@@ -213,7 +216,12 @@ function ClassesTable({
       </THead>
       <TBody>
         {paged.map(({ t, depth }) => (
-          <Tr key={t.id} interactive onClick={() => onOpen(t)}>
+          <Tr
+            key={t.id}
+            interactive
+            active={t.id === selectedId}
+            onClick={() => onOpen(t)}
+          >
             <Td>
               <span
                 className="flex items-center gap-2"
@@ -314,11 +322,13 @@ function PropertiesTable({
   relations,
   types,
   filter,
+  selectedId,
   onOpen,
 }: {
   relations: RelationTypeView[];
   types: EntityTypeView[];
   filter: string;
+  selectedId: string | null;
   onOpen: (r: RelationTypeView) => void;
 }) {
   const [sort, setSort] = useState<Sort>(null);
@@ -365,7 +375,12 @@ function PropertiesTable({
       </THead>
       <TBody>
         {paged.map((r) => (
-          <Tr key={r.id} interactive onClick={() => onOpen(r)}>
+          <Tr
+            key={r.id}
+            interactive
+            active={r.id === selectedId}
+            onClick={() => onOpen(r)}
+          >
             <Td>
               <span className="flex items-center gap-2">
                 <span className="truncate">{r.label}</span>
@@ -499,6 +514,7 @@ export function OntologyTables({
   onOpenProperty,
   onOpenAttribute,
   onSeeInstances,
+  selected,
   loading = false,
 }: {
   entityTypes: EntityTypeView[];
@@ -507,6 +523,14 @@ export function OntologyTables({
   onOpenProperty: (r: RelationTypeView) => void;
   onOpenAttribute: (a: RelationTypeView) => void;
   onSeeInstances: (t: EntityTypeView) => void;
+  /** 当前选中的那个类或属性。表里要标出来——**点一行开的是右边的面板，
+   *  行本身不留痕的话，翻两页之后就不知道正在看的是哪一个了**。
+   *  只收这两档：页面那个 `Sel` 还含 import / rules / schema 几种，
+   *  它们跟表里的行没有对应关系，收窄了比整个传下来诚实 */
+  selected:
+    | { kind: "class"; id: string }
+    | { kind: "relation"; id: string }
+    | null;
   /** 本体还没到。控件照常渲染、表身出骨架，**计数与行数一律不报**——
    *  这时候它们只会是 0，而 0 是个结论，不是「还不知道」 */
   loading?: boolean;
@@ -573,6 +597,9 @@ export function OntologyTables({
             types={entityTypes}
             attributes={attributes}
             filter={filter}
+            selectedId={
+              selected?.kind === "class" ? selected.id : null
+            }
             onOpen={onOpenClass}
             onSeeInstances={onSeeInstances}
           />
@@ -582,6 +609,9 @@ export function OntologyTables({
             relations={relations}
             types={entityTypes}
             filter={filter}
+            selectedId={
+              selected?.kind === "relation" ? selected.id : null
+            }
             onOpen={onOpenProperty}
           />
         )}

@@ -538,6 +538,9 @@ export function Ontology() {
           {view === "table" ? (
             <OntologyTables
               loading={loading}
+              selected={
+                sel?.kind === "class" || sel?.kind === "relation" ? sel : null
+              }
               entityTypes={entity_types}
               relationTypes={relation_types}
               onOpenClass={(t) => setSel({ kind: "class", id: t.id })}
