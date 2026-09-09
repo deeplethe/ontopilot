@@ -302,6 +302,15 @@ pub fn build_messages(
             including A, B, C and D\" is four facts, not one; \"advisors A and B\" is two. \
             Do not collapse an enumeration into a summary or into its first member. \
             The same applies to the entities: each named party is its own entity.\n\
+         8d. A subject is the thing the sentence is about, not a name inside it. A group \
+            described by its relation to an entity — \"former X employees\", \"companies \
+            using X\", \"X's investors\", \"X personnel\" — is not X: never write X as the \
+            subject of what the group did. State it from the named participant with the \
+            description as a \"value\": {{\"subject\":\"Anthropic\",\"subject_ref\":\"e2\",\
+            \"predicate\":\"founded_by\",\"value\":\"former OpenAI personnel\",\
+            \"confidence\":0.9,\"quote\":\"...\"}}. When no participant is named, leave the \
+            sentence out: an edge between two named entities that the text never states is \
+            worse than a missing one.\n\
          9. The same holds for entity types: if none of the listed types fits, write the type \
             the text implies, in snake_case (e.g. \"model\", \"technology\"). Do not fall back \
             to a broad listed type such as \"thing\" or \"creative_work\" merely because \
@@ -1196,6 +1205,8 @@ mod tests {
         let system = &msgs[0].content;
         assert!(system.contains("\"local_id\":\"e1\""));
         assert!(system.contains("\"subject_ref\":\"e1\""));
+        // #578：跟 X 有关的一群人不是 X
+        assert!(system.contains("is not X: never write X as the"));
         assert!(system.contains("unique within this response"));
         assert!(system.contains("Reuse the same local_id"));
         assert!(system.contains("permanent identity is proven"));

@@ -133,6 +133,135 @@ fn reads_like_a_sentence(words: &[String], raw_last: Option<&str>) -> bool {
 /// 守卫的样本全部来自一份语料，换一份就漏——换规则之前先要一份**跨语料的标注集**。
 /// 命中只记 `clause_suspect`（例句进 `extraction_drops`），实体照常落库；攒够两份语料的
 /// 样本再决定哪条升成硬规则。返回的是信号名，作为记录的 detail
+/// 主语在自己的引文里**只**当修饰语出现时，回它所在的那个短语（#578）。
+///
+/// "Former OpenAI personnel have founded … Anthropic" 抽成 `OpenAI —founded→ Anthropic`，
+/// "Over one hundred companies using OpenAI contacted Anthropic" 抽成 `OpenAI —contacted→
+/// Anthropic`——两条都排在两家公司之间路径的第一位。句子的主语是「跟 OpenAI 有关的一群人」，
+/// 模型伸手拿了句子里唯一有名字的东西。
+///
+/// 三种形状，都要求主语的每一次出现都在其中；只要有一次它是正常的主语
+/// （"OpenAI announced … ; former OpenAI staff …"），就不算缩写：
+/// - 后面跟一个群体名词：`OpenAI personnel`、`OpenAI's investors`、`former OpenAI employees`
+/// - 前面是群体名词加介词：`companies using OpenAI`、`employees of OpenAI`
+///
+/// 群体名词是一张短表，只收复数的集体称呼（personnel、employees、investors…）和 board；
+/// 单数职位（"OpenAI CEO Sam Altman announced"）不收——那句以 OpenAI 为主语多半没错，
+/// 而这一关拦下的事实是丢掉的，宁可漏判
+fn shortened_subject(subject: &str, quote: &str) -> Option<String> {
+    const GROUP: [&str; 30] = [
+        "personnel",
+        "employees",
+        "employee",
+        "staff",
+        "staffers",
+        "researchers",
+        "scientists",
+        "engineers",
+        "executives",
+        "alumni",
+        "investors",
+        "customers",
+        "users",
+        "partners",
+        "members",
+        "founders",
+        "leadership",
+        "team",
+        "teams",
+        "people",
+        "workers",
+        "developers",
+        "veterans",
+        "insiders",
+        "backers",
+        "shareholders",
+        "clients",
+        "affiliates",
+        "companies",
+        "board",
+    ];
+    const LINK: [&str; 7] = ["using", "of", "from", "at", "inside", "within", "by"];
+    const BEFORE: [&str; 5] = ["former", "ex", "then", "current", "fellow"];
+    let subject = subject.trim();
+    if subject.is_empty() || quote.is_empty() {
+        return None;
+    }
+    let q = quote.to_lowercase();
+    let s = subject.to_lowercase();
+    let bytes = q.as_bytes();
+    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'-';
+    // 引文里从 `end` 往后的下一个词（跳过空白和 's）
+    let word_after = |mut end: usize| -> Option<(usize, usize)> {
+        if q[end..].starts_with("'s") || q[end..].starts_with("\u{2019}s") {
+            end += q[end..].chars().next().map(char::len_utf8).unwrap_or(1) + 1;
+        }
+        while end < bytes.len() && bytes[end] == b' ' {
+            end += 1;
+        }
+        let start = end;
+        while end < bytes.len() && is_word(bytes[end]) {
+            end += 1;
+        }
+        (end > start).then_some((start, end))
+    };
+    // 引文里到 `at` 为止的前一个词
+    let word_before = |mut at: usize| -> Option<(usize, usize)> {
+        while at > 0 && bytes[at - 1] == b' ' {
+            at -= 1;
+        }
+        let end = at;
+        while at > 0 && is_word(bytes[at - 1]) {
+            at -= 1;
+        }
+        (end > at).then_some((at, end))
+    };
+    let mut seen = false;
+    let mut phrase: Option<(usize, usize)> = None;
+    let mut from = 0;
+    while let Some(pos) = q[from..].find(&s) {
+        let at = from + pos;
+        let end = at + s.len();
+        from = end;
+        let boundary =
+            (at == 0 || !is_word(bytes[at - 1])) && (end >= bytes.len() || !is_word(bytes[end]));
+        if !boundary {
+            continue;
+        }
+        seen = true;
+        let after = word_after(end);
+        let before = word_before(at);
+        let span = if after.is_some_and(|(a, b)| GROUP.contains(&&q[a..b])) {
+            // `OpenAI personnel` / `OpenAI's investors`，前面若有 former 一并带上
+            let start = match before {
+                Some((a, b)) if BEFORE.contains(&&q[a..b]) => a,
+                _ => at,
+            };
+            Some((start, after.map(|(_, b)| b).unwrap_or(end)))
+        } else if let Some((la, lb)) = before.filter(|(a, b)| LINK.contains(&&q[*a..*b])) {
+            // `companies using OpenAI` / `employees of OpenAI`
+            match word_before(la).filter(|(a, b)| GROUP.contains(&&q[*a..*b])) {
+                Some((ga, _)) => Some((ga, end)),
+                None => {
+                    let _ = lb;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        // 有一次是正常主语，就不是缩写
+        let sp = span?;
+        if phrase.is_none() {
+            phrase = Some(sp);
+        }
+    }
+    if !seen {
+        return None;
+    }
+    phrase.map(|(a, b)| quote[a..b].to_string())
+}
+
 fn clause_suspect(name: &str) -> Option<&'static str> {
     let words: Vec<String> = name
         .split_whitespace()
@@ -1446,6 +1575,23 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 }
             }
 
+            // **主语是跟 X 有关的一群人，写成了 X**（#578）：不落，记账。改写成
+            // 「Anthropic —founded_by→ "former OpenAI personnel"」是提示词那条规则的活，
+            // 这里只量它还错多少——两条都在路径第一位，一条假边比一条漏边贵
+            if let Some(phrase) =
+                shortened_subject(f.subject.trim(), f.quote.as_deref().unwrap_or(""))
+            {
+                drop_signal(
+                    state,
+                    doc.kb_id,
+                    document_id,
+                    utopia_store::extraction_drops::reason::SUBJECT_SHORTENED,
+                    &f.predicate,
+                    Some(&phrase),
+                )
+                .await;
+                continue;
+            }
             // 主宾没在 entities 里声明时（模型偶尔漏报）：库里已经有这个名字的就用它，
             // 库里也没有的**不建**（#559）。从前这里一律先建出来、类型留空，结果
             // 一个库里 20% 的实体是 "lawsuit against OpenAI"、"$5 billion"、"March 2024"
@@ -2362,6 +2508,51 @@ mod name_tests {
 
 #[cfg(test)]
 mod tests {
+    use super::shortened_subject;
+
+    /// 主语在引文里只当修饰语出现：两句真实的错例，和几句不该拦的
+    #[test]
+    fn a_group_described_by_its_relation_to_x_is_not_x() {
+        assert_eq!(
+            shortened_subject(
+                "OpenAI",
+                "Former OpenAI personnel have founded competing AI companies Anthropic, SpaceXAI, Safe Superintelligence Inc., and Thinking Machines Lab"
+            )
+            .as_deref(),
+            Some("Former OpenAI personnel")
+        );
+        assert_eq!(
+            shortened_subject(
+                "OpenAI",
+                "Over one hundred companies using OpenAI contacted Anthropic, according to The Information"
+            )
+            .as_deref(),
+            Some("companies using OpenAI")
+        );
+        assert_eq!(
+            shortened_subject("OpenAI", "OpenAI's investors pushed for a new board").as_deref(),
+            Some("OpenAI's investors")
+        );
+        assert_eq!(
+            shortened_subject("OpenAI", "Employees of OpenAI signed the letter").as_deref(),
+            Some("Employees of OpenAI")
+        );
+        // 正常主语不拦
+        assert!(shortened_subject("OpenAI", "OpenAI announced GPT-4 in March 2023").is_none());
+        // 同一句里既是修饰语又是主语：不拦
+        assert!(shortened_subject(
+            "OpenAI",
+            "Former OpenAI staff left, but OpenAI itself kept hiring"
+        )
+        .is_none());
+        // 单数职位不收：以公司为主语多半没错
+        assert!(shortened_subject("OpenAI", "OpenAI CEO Sam Altman announced the plan").is_none());
+        // 词边界：AI 不是 OpenAI 的一部分
+        assert!(shortened_subject("AI", "OpenAI personnel founded Anthropic").is_none());
+        // 主语不在引文里：不是这一关的事
+        assert!(shortened_subject("Anthropic", "OpenAI personnel founded a company").is_none());
+    }
+
     use super::{
         incomplete_reason, looks_literal, no_ref_name_binding, referenced_entity, resolve_bare,
         resolve_handle, BoundEntity, NoRefNameBinding,

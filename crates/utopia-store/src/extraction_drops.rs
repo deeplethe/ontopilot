@@ -42,6 +42,10 @@ pub mod reason {
     /// 守卫放行了、结构却像从句（限定词起头的长串、句中的关系词）。**只记不挡**：
     /// 实体照常落库，例句留下来——#193 要的是一份跨语料的标注集，再决定哪条升成硬规则
     pub const CLAUSE_SUSPECT: &str = "clause_suspect";
+    /// 主语是「跟 X 有关的一群人」而写成了 X（#578）："former OpenAI personnel" 不是
+    /// OpenAI。事实不落，例句是那个短语；这一类该由提示词的规则改写到有名字的一侧，
+    /// 这里只量它还错多少
+    pub const SUBJECT_SHORTENED: &str = "subject_shortened";
     /// 宾语既没在 entities 里声明、库里也没有叫这个名字的东西：事实照落，
     /// 宾语落成字面值而不是节点（#559）。记下来是为了量：这一类里有多少
     /// 本该是实体（模型漏报），有多少本来就是描述
