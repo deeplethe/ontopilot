@@ -107,6 +107,59 @@ pub(crate) async fn notify_worker_tx(tx: &mut Transaction<'_, Postgres>) -> AppR
     Ok(())
 }
 
+/// 空闲轮询间隔。有通知时用不到它；它兜的是 `run_at` 在未来的重试、
+/// 重连期间丢掉的通知，以及几个 worker 被同一条通知叫醒后没抢到的那些（#517）。
+pub const IDLE_POLL: Duration = Duration::from_secs(2);
+
+/// 一次空闲等待是怎么结束的。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wake {
+    /// 有人入队，通知到了
+    Notified,
+    /// 等满一个轮询间隔，什么也没来
+    Polled,
+}
+
+/// 建立唤醒监听。`None` = 建不起来，worker 只靠轮询，行为与没有通知时一样。
+///
+/// 这条连接从池里取出后**一直握着**：LISTEN 是连接级状态，还回去就没了。
+/// 池上限（`db.rs`）从此少一条给别人用；jobs 只起一个 worker，所以只少这一条。
+pub async fn listen_for_jobs(pool: &PgPool) -> Option<PgListener> {
+    let mut listener = match PgListener::connect_with(pool).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            tracing::error!(error = %e, "jobs worker 建立通知监听失败，退回轮询");
+            return None;
+        }
+    };
+    if let Err(e) = listener.listen(JOB_CHANNEL).await {
+        tracing::error!(error = %e, "jobs worker 监听通知失败，退回轮询");
+        return None;
+    }
+    Some(listener)
+}
+
+/// 空闲等待：通知先到就先醒，否则等满 `poll`。
+///
+/// 监听出错不能立刻再认领：库能认领而监听连接重连不上（池满就是一种）的话，
+/// 循环会变成「认领一次、警告一行」的紧循环。出错就按轮询的节奏睡一觉，
+/// 下一轮 `recv` 自己会重连。
+pub async fn wait_for_work(listener: Option<&mut PgListener>, poll: Duration) -> Wake {
+    let Some(listener) = listener else {
+        tokio::time::sleep(poll).await;
+        return Wake::Polled;
+    };
+    match tokio::time::timeout(poll, listener.recv()).await {
+        Ok(Ok(_)) => Wake::Notified,
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "jobs worker 通知监听失败，继续轮询");
+            tokio::time::sleep(poll).await;
+            Wake::Polled
+        }
+        Err(_) => Wake::Polled,
+    }
+}
+
 /// 重排失败任务的范围（#216）。三个条件都可空，空 = 不限。
 ///
 /// **按库圈要解 payload**：任务表没有 kb 列，payload 只带 `document_id` /
@@ -251,7 +304,7 @@ async fn mark_failed(pool: &PgPool, job: &Job, err: &anyhow::Error) -> AppResult
 }
 
 /// worker 调度循环：运行中任务数低于目标并发就继续认领（有活立即续派），
-/// 空闲时 2s 轮询；每个任务在独立 tokio task 中执行，长抽取不再阻塞同步。
+/// 空闲时等入队通知、2s 轮询兜底（#517）；每个任务在独立 tokio task 中执行，长抽取不再阻塞同步。
 /// `concurrency` 每轮热读——系统设置里改并发数即时生效。
 /// 任务分发逻辑由调用方以 handler 注入（store 不依赖上层 crate）。
 pub async fn run_worker<F, Fut>(pool: PgPool, concurrency: Arc<AtomicUsize>, handler: F)
@@ -282,19 +335,7 @@ where
         concurrency = concurrency.load(Ordering::Relaxed),
         "jobs worker 已启动"
     );
-    let mut listener = match PgListener::connect_with(&pool).await {
-        Ok(mut listener) => match listener.listen(JOB_CHANNEL).await {
-            Ok(()) => Some(listener),
-            Err(e) => {
-                tracing::error!(error = %e, "jobs worker 监听通知失败，退回轮询");
-                None
-            }
-        },
-        Err(e) => {
-            tracing::error!(error = %e, "jobs worker 建立通知监听失败，退回轮询");
-            None
-        }
-    };
+    let mut listener = listen_for_jobs(&pool).await;
     loop {
         let cap = concurrency.load(Ordering::Relaxed).max(1);
         if running.load(Ordering::Relaxed) >= cap {
@@ -337,19 +378,9 @@ where
                     running.fetch_sub(1, Ordering::Relaxed);
                 });
             }
-            Ok(None) => match &mut listener {
-                Some(listener) => {
-                    tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(2)) => {}
-                        result = listener.recv() => {
-                            if let Err(e) = result {
-                                tracing::warn!(error = %e, "jobs worker 通知监听失败，继续轮询");
-                            }
-                        }
-                    }
-                }
-                None => tokio::time::sleep(Duration::from_secs(2)).await,
-            },
+            Ok(None) => {
+                wait_for_work(listener.as_mut(), IDLE_POLL).await;
+            }
             Err(e) => {
                 tracing::error!(error = %e, "任务认领失败，5s 后重试");
                 tokio::time::sleep(Duration::from_secs(5)).await;
