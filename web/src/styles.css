@@ -1272,6 +1272,17 @@ a:hover > .u-mark-arrow {
   }
 }
 
+/* 骨架行里装灰条的那一格：撑**一个行高**，而不是灰条自己的高度。
+   表格的单元格里本来是一行字（8 + 22 + 8 = 38），少了这一层就只有
+   8 + 16 + 8 = 32，一列排下来比真表矮一截、密一截。
+   高度取字号令牌自带的行高，字号改了它跟着改。
+   左栏那一档不用它：那儿的行本来就矮，套上反而显松（见 SkeletonRows）。 */
+.u-skel-line {
+  display: flex;
+  align-items: center;
+  height: var(--text-body--line-height);
+}
+
 
 /* ---- numbers in chrome: 默认字体（Geist）+ 等宽数字，不再用 mono ---- */
 .u-num {
