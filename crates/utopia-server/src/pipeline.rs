@@ -8,6 +8,16 @@ use utopia_core::models::{LlmSettings, Proposer};
 use utopia_llm::LlmClient;
 use uuid::Uuid;
 
+/// 这份文档的来源要不要抽取。没有来源的文档（直接上传、记忆片段）照旧抽。
+async fn source_extracts(state: &AppState, source_id: Option<Uuid>) -> anyhow::Result<bool> {
+    let Some(id) = source_id else {
+        return Ok(true);
+    };
+    Ok(utopia_store::sources::get(&state.pool, id)
+        .await?
+        .extracts())
+}
+
 /// 每次送多少条去嵌入。
 ///
 /// 与 ontology_index 的 64 不同，这里没量过，先不动：那边的注释说批大小要拿真实文本量，
@@ -79,6 +89,19 @@ async fn run(state: &AppState, document_id: Uuid) -> anyhow::Result<()> {
     }
 
     utopia_store::documents::set_ready(&state.pool, document_id, text_len, chunk_count).await?;
+
+    // 来源说了不抽取的，到这里为止：可搜、可问，不进图。
+    //
+    // schema 文档就是这一类（0035 决定 7）——它是给问数检索表结构的语料，进抽取的
+    // 结果是抽取器把每个列名当成一个实体（宽表语料上四十个概念实体里二十八个是
+    // 列名，#553）。状态记成 `skipped` 而不是留在 `none`：`none` 在 Library 里读作
+    // 「还没排到」，而它永远不会排到
+    if !source_extracts(state, doc.source_id).await? {
+        utopia_store::documents::set_graph_status(&state.pool, document_id, "skipped").await?;
+        state.emit_document(doc.kb_id, document_id);
+        tracing::info!(%document_id, chunks = chunk_count, "文档处理完成，来源不抽取");
+        return Ok(());
+    }
 
     // 两段式：索引就绪后，若配置了对话模型则排队图谱抽取（不阻塞可搜可问）
     if settings.as_ref().is_some_and(|s| s.chat_ready()) {
