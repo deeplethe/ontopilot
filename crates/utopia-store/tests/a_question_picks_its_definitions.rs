@@ -40,7 +40,7 @@ async fn definition(pool: &PgPool, kb: Uuid, name: &str, summary: &str) -> anyho
     .bind(name)
     .execute(pool)
     .await?;
-    let id = m::propose(
+    let (id, _) = m::propose(
         pool,
         kb,
         ent,
