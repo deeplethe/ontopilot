@@ -1136,6 +1136,8 @@ export const zh: Strings = {
     shapeColor: "形状与颜色",
     parent: "父类",
     noParent: "（顶层）",
+    subclasses: "子类",
+    noSubclasses: "无",
     disjoint: "不可能同时是",
     disjointHint:
       "任何东西不可能同时属于的类。人不是组织。一致性检查据此找出永远不可能有实例的类。",
@@ -1341,7 +1343,7 @@ export const zh: Strings = {
     schemaBundle: (n) => `${n} 条关系`,
     schemaOutgoing: "从这个类出发",
     schemaIncoming: "指向这个类",
-    schemaNoRelationships: "还没有关系。",
+    schemaNoRelationships: "这个类没有参与任何关系。继承信息显示在“定义”中。",
     schemaNoInstances: "还没有实例。",
     schemaConnectHint: "用一个已有的关系连接",
     schemaConnectPlaceholder: "搜索关系…",
