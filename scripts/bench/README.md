@@ -170,7 +170,13 @@ node scripts/bench/ask.mjs --kb <id> --seed           # 先把真值写成确认
 node scripts/bench/ask.mjs --kb <id> --confirm        # 先确认探索提的那些（产品路径）
 node scripts/bench/ask.mjs --kb <id> --replay         # 不重问，拿库里上一轮的回答重判
 node scripts/bench/ask.mjs --kb <id> --parallel 4     # 同时问四题：一题 2–6 个模型回合、串行半小时
+node scripts/bench/ask.mjs --kb <id> --conventions    # 先把真值里的 conventions 写进库（#570）
 ```
+
+`mappings.mjs --fresh --conventions` 同理，只是写在探索之前——探索的提示词也读它。wide 上
+量过的阶梯（chat right）：什么都没有 2/18；探索生成的描述 2/18；描述 + 六条约定 11/18；
+约定 + 十八条口径写成一页散文靠检索 14/18；二十七条确认口径进 prompt 17/18。探索覆盖：
+没有约定 0/18，有约定 3/18——错的那几条也都带上了 `is_test != 1`，差在选错列。
 
 **与 `mappings.mjs` 量的不是一回事，一个也推不出另一个。** 口径确认得再准，
 答案照样可能错——模型会挑错源、join 错、按错的日期列过滤，或者压根不看语义层，
