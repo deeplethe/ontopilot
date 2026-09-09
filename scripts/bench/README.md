@@ -171,7 +171,15 @@ node scripts/bench/ask.mjs --kb <id> --confirm        # 先确认探索提的那
 node scripts/bench/ask.mjs --kb <id> --replay         # 不重问，拿库里上一轮的回答重判
 node scripts/bench/ask.mjs --kb <id> --parallel 4     # 同时问四题：一题 2–6 个模型回合、串行半小时
 node scripts/bench/ask.mjs --kb <id> --conventions    # 先把真值里的 conventions 写进库（#570）
+node scripts/bench/ask.mjs --kb <id> --recall 8       # 只量检索：那条对的口径在不在前 8（#574），几秒
 ```
+
+**口径是按问题挑的，不是全塞**（#574）：`--recall K` 不问，只看检索前 K 条里有没有那条对的
+口径——答案卷就是 `mapped` 那一步按数对上的行。要撑爆老的 30 上限，用
+`mappings.mjs --fresh --corpus wide --also tpch` 把两个源挂进同一个库，再各 seed 一份真值
+（45 条）。量过：seed 的说明是占位符时 wide recall@8 13/18、问数 15/18；说明换成真的
+（真值里的 `summary`，用提问的语言）之后 recall 18/18、问数 18/18；tpch 两次都是 23/24 与
+24/24。**嵌进去的那句说明就是检索的全部**，reranker 目前没有它该修的漏。
 
 `mappings.mjs --fresh --conventions` 同理，只是写在探索之前——探索的提示词也读它。wide 上
 量过的阶梯（chat right）：什么都没有 2/18；探索生成的描述 2/18；描述 + 六条约定 11/18；
