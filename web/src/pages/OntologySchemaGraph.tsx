@@ -42,6 +42,7 @@ import {
 import {
   attachDrag,
   focusNode,
+  syncGraph,
   deferToHoverLayer,
   hoveredNode,
   mutedNode,
@@ -653,8 +654,24 @@ export function OntologySchemaGraph({
   const selectedRef = useRef<SchemaSelection>(null);
   const hoverRef = useRef<string | null>(null);
   const hoverEdgeRef = useRef<string | null>(null);
+  /** 选中了、但那个类还没画进图。**画面先按兵不动**，等它进来再切。
+   *
+   * 不这么做的话中间会多出一帧「什么都没选中」：reducer 里那道守卫是
+   * `sel.kind === "class" && g.hasNode(sel.id)`，类还没揭进来时 `hasNode` 为假，
+   * 于是「选中了但还没画」被降级成「没选中」，整张图**全亮一帧**再暗回去。
+   * 面板同时弹出会把画布挤窄、触发一次重绘，正好把这一帧顶到眼前，看着就是
+   * 闪一下。 */
+  const pendingSelectRef = useRef<SchemaSelection>(null);
+
   useEffect(() => {
-    selectedRef.current = selected;
+    const live = graphRef.current;
+    const notDrawnYet =
+      selected?.kind === "class" && !!live && !live.hasNode(selected.id);
+    if (notDrawnYet) pendingSelectRef.current = selected;
+    else {
+      pendingSelectRef.current = null;
+      selectedRef.current = selected;
+    }
     // 左栏选中什么，画布就把它带到眼前；选中一条关系则补上它的两端，
     // 相机看它的第一个 domain
     if (selected?.kind === "class") bringIntoView(selected.id);
@@ -685,9 +702,18 @@ export function OntologySchemaGraph({
   const positionsRef = useRef<Map<string, Point>>(new Map());
   /** 左栏点中了还没画出来的类：等它进了画布再对焦 */
   const pendingFocusRef = useRef<string | null>(null);
+  /* 渲染器只建一次（见下面第二个 effect），闭包也就只取一次值。这两样是会变的，
+     所以放进 ref 每次渲染刷新——不这么做就得让 effect 依赖它们，那又回到
+     "一变就重建"。 */
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const relationByIdRef = useRef(relationById);
+  relationByIdRef.current = relationById;
 
+  /* 本体或取景变了：把新算的图**搬进正在渲染的那一张**，不换渲染器。
+     从前这里是 `sigmaRef.current?.kill()` 加 `new Sigma`——左栏点一个还没画出来
+     的类就会走一遍：GPU 缓冲、相机、悬停与选中态全丢，再重来一次首帧。 */
   useEffect(() => {
-    if (!containerRef.current) return;
     const g = schema.graph;
     layoutSchemaGraph(
       g,
@@ -706,12 +732,42 @@ export function OntologySchemaGraph({
       positions.set(node, { x: attrs.x as number, y: attrs.y as number }),
     );
     positionsRef.current = positions;
-    graphRef.current = g;
+    /** 图**只有一个实例**：第一次记下来，之后每次都是把新的搬进它 */
+    const live = graphRef.current;
+    if (live) syncGraph(live, g);
+    else graphRef.current = g;
     // 选中的东西可能在新图里已经不存在了（比如删除了当前选中的类）——
     // 交给渲染时的存在性检查处理，这里不主动清空：多数情况下（编辑保存后
     // 刷新）选中的东西还在,清空只会让面板无缘无故地闪一下关掉再开
 
-    sigmaRef.current?.kill();
+    const existing = sigmaRef.current;
+    if (existing) {
+      // 左栏点中时还没画出来的那个类，现在在了：对焦。节点的框内坐标要等
+      // sigma 处理完一轮才有，所以挂在下一次渲染之后。
+      // **先挂钩子再 refresh**：反过来的话，这一帧可能已经渲染完了，
+      // 钩子挂上去就再也等不到它要等的那次渲染
+      const pending = pendingFocusRef.current;
+      if (pending && graphRef.current?.hasNode(pending)) {
+        pendingFocusRef.current = null;
+        existing.once("afterRender", () => focusNode(existing, pending));
+      }
+      /* 等的那个类进图了，这才把选中态交给画布：**同一帧完成切换**，
+         中间不经过「什么都没选中」 */
+      const held = pendingSelectRef.current;
+      if (held?.kind === "class" && graphRef.current?.hasNode(held.id)) {
+        pendingSelectRef.current = null;
+        selectedRef.current = held;
+      }
+      existing.refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schema]);
+
+  /* 渲染器**只建一次**。图是同一个实例，内容变化由上面那个 effect 搬进去，
+     所以这里没有任何会变的依赖——相机、悬停、选中、GPU 缓冲也就一直活着。 */
+  useEffect(() => {
+    const g = graphRef.current;
+    if (!containerRef.current || !g) return;
     const sigma = new Sigma(g, containerRef.current, {
       ...sigmaOptions({
         defaultEdgeType: EDGE_TYPE_ARROW,
@@ -747,7 +803,7 @@ export function OntologySchemaGraph({
           return mutedNode(res, base);
         }
         if (sel?.kind === "relation") {
-          const rel = relationById.get(sel.id);
+          const rel = relationByIdRef.current.get(sel.id);
           if (rel) {
             // 选中一条关系，亮的是它的两端——类之间没有「邻居」可言，
             // 这条关系的 domain 与 range 就是它连着的
@@ -821,20 +877,23 @@ export function OntologySchemaGraph({
       },
     });
 
-    sigma.on("clickNode", ({ node }) => onSelect({ kind: "class", id: node }));
+    sigma.on("clickNode", ({ node }) =>
+      onSelectRef.current({ kind: "class", id: node }),
+    );
     sigma.on("clickEdge", ({ edge }) => {
       const ruleId = g.getEdgeAttribute(edge, "ruleId") as string | undefined;
       if (ruleId) {
-        onSelect({ kind: "rule", id: ruleId });
+        onSelectRef.current({ kind: "rule", id: ruleId });
         return;
       }
       const ids = g.getEdgeAttribute(edge, "relationIds") as string[] | undefined;
       if (!ids?.length) return;
       // 单独一条：选中它；并起来的一捆：选中 domain 那个类，属性页里一条条看
-      if (ids.length === 1) onSelect({ kind: "relation", id: ids[0] });
-      else onSelect({ kind: "class", id: g.source(edge) });
+      if (ids.length === 1)
+        onSelectRef.current({ kind: "relation", id: ids[0] });
+      else onSelectRef.current({ kind: "class", id: g.source(edge) });
     });
-    sigma.on("clickStage", () => onSelect(null));
+    sigma.on("clickStage", () => onSelectRef.current(null));
     sigma.on("enterNode", ({ node }) => {
       hoverRef.current = node;
       sigma.refresh();
@@ -887,13 +946,6 @@ export function OntologySchemaGraph({
       (window as unknown as Record<string, unknown>).__sg = g;
       (window as unknown as Record<string, unknown>).__ssigma = sigma;
     }
-    // 左栏点中时还没画出来的那个类，现在在了：对焦。节点的框内坐标要
-    // 等 sigma 处理完一轮才有，挂在第一次渲染之后
-    const pending = pendingFocusRef.current;
-    if (pending && g.hasNode(pending)) {
-      pendingFocusRef.current = null;
-      sigma.once("afterRender", () => focusNode(sigma, pending));
-    }
     if (import.meta.env.DEV) {
       // 调试句柄（仅 dev），与 Graph.tsx 同一个约定
       (window as unknown as Record<string, unknown>).__schemaGraph = g;
@@ -904,7 +956,7 @@ export function OntologySchemaGraph({
       sigmaRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schema]);
+  }, []);
 
   const unscopedPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>("top left");
   const empty = entityTypes.length === 0;

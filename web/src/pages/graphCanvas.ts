@@ -11,6 +11,7 @@
 //
 // `graphVisuals.ts` 是上一轮抽出来的常量与绘制函数，这个文件建在它上面。
 
+import type Graphology from "graphology";
 import Sigma from "sigma";
 import type { Settings } from "sigma/settings";
 import { createNodeBorderProgram } from "@sigma/node-border";
@@ -276,6 +277,30 @@ export function focusNode(sigma: Sigma, id: string, maxRatio = 0.5): void {
   sigma
     .getCamera()
     .animate({ x: framed.x, y: framed.y, ratio }, { duration: 300 });
+}
+
+/** 把一张刚算好的图**搬进**正在渲染的那一张。
+ *
+ * sigma 绑死在构造时给它的那个 graphology 实例上，所以"图变了"很容易被写成
+ * "杀掉重建"。代价不小：GPU 缓冲、相机、悬停与选中态全部丢掉，还要再走一遍
+ * 首帧——本体页为了把一个类揭进画面就走一遍这套，画面会明显顿一下。
+ *
+ * graphology 每一次增删改都发事件，sigma 听得见，所以**就地改本来就是它支持的
+ * 路**。这里做的是最朴素的对账：多的删掉、少的补上、留下的属性覆盖一遍。
+ * 几十上百个类的规模，一次全量覆盖比算精确差异更省事，也不容易错。
+ *
+ * 删点会连带删掉它的边，所以先取一份快照再遍历（`nodes()` 返回的是数组）。 */
+export function syncGraph(live: Graphology, next: Graphology): void {
+  for (const node of live.nodes()) if (!next.hasNode(node)) live.dropNode(node);
+  next.forEachNode((node, attrs) => {
+    if (live.hasNode(node)) live.replaceNodeAttributes(node, { ...attrs });
+    else live.addNode(node, { ...attrs });
+  });
+  for (const edge of live.edges()) if (!next.hasEdge(edge)) live.dropEdge(edge);
+  next.forEachEdge((edge, attrs, source, target) => {
+    if (live.hasEdge(edge)) live.replaceEdgeAttributes(edge, { ...attrs });
+    else live.addEdgeWithKey(edge, source, target, { ...attrs });
+  });
 }
 
 /* ============ 拖拽 ============ */
