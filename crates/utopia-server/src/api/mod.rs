@@ -149,7 +149,12 @@ pub fn router(state: AppState, cfg: &AppConfig) -> Router {
             "/me/tokens/{token_id}",
             axum::routing::delete(token_routes::revoke),
         )
-        .route("/kbs/{id}/mappings", get(mapping_routes::list))
+        .route(
+            "/kbs/{id}/mappings",
+            get(mapping_routes::list).post(mapping_routes::create),
+        )
+        // 静态段排在 `{mapping_id}` 前面：先跑一遍看数，不落库
+        .route("/kbs/{id}/mappings/preview", post(mapping_routes::preview))
         .route(
             "/kbs/{id}/mappings/{mapping_id}",
             axum::routing::patch(mapping_routes::revise),

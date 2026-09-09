@@ -19,7 +19,7 @@ const MAX_SCHEMA_CHARS: usize = 12_000;
 /// 内置本体包里——0009 之后建库不再自带类。没有它们，下面的 `type_id` 查不到，
 /// 每条提议都被 `continue` 吞掉，页面只说"已排队"就再无下文（#223）。
 /// 所以探索前把两个类补上：builtin，描述给抽取提示词，本体页可以改
-async fn ensure_concept_types(pool: &sqlx::PgPool, kb_id: Uuid) -> anyhow::Result<()> {
+pub(crate) async fn ensure_concept_types(pool: &sqlx::PgPool, kb_id: Uuid) -> anyhow::Result<()> {
     for (key, label, description) in [
         (
             "metric",

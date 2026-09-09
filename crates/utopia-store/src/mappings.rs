@@ -76,6 +76,58 @@ pub async fn propose(
     Ok(id)
 }
 
+/// 人从零写一条口径（#562）。**落下来就是确认的**：写的人就是表态的人，
+/// 不需要再过一遍审。
+///
+/// 从前这张表只有探索一条来路。一个数据团队手上有自己的指标口径文档，却没有
+/// 地方把它填进去——而口径进了问数的提示词，宽表语料从 1/18 到 17/18（#520）。
+///
+/// 同一个 (概念, 源) 已经有一条时报冲突，而不是悄悄覆盖：那一条可能是探索提的、
+/// 人已经确认过的，覆盖等于抹掉一次表态。要改用 `revise`。
+/// 探索反过来也盖不掉这条：`propose` 只刷新 `proposed` 的行。
+#[allow(clippy::too_many_arguments)]
+pub async fn create(
+    pool: &PgPool,
+    kb_id: Uuid,
+    concept_id: Uuid,
+    source: &str,
+    table_name: Option<&str>,
+    expr: Option<&str>,
+    sql: Option<&str>,
+    unit: Option<&str>,
+    summary: Option<&str>,
+    derived: bool,
+    actor: Uuid,
+) -> AppResult<Uuid> {
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO concept_mappings
+             (id, kb_id, concept_id, source, table_name, expr, sql, unit, summary, derived,
+              status, decided_by, decided_at, written_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed', $11, now(), $11)",
+    )
+    .bind(id)
+    .bind(kb_id)
+    .bind(concept_id)
+    .bind(source)
+    .bind(table_name)
+    .bind(expr)
+    .bind(sql)
+    .bind(unit)
+    .bind(summary)
+    .bind(derived)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .map_err(|e| match &e {
+        sqlx::Error::Database(db) if db.is_unique_violation() => AppError::Conflict(
+            "A definition for this concept on this source already exists; revise it instead".into(),
+        ),
+        _ => AppError::Db(e),
+    })?;
+    Ok(id)
+}
+
 /// 还等着人表态的。Review 页读它。
 pub async fn proposed(
     pool: &PgPool,
@@ -85,7 +137,7 @@ pub async fn proposed(
 ) -> AppResult<Vec<ConceptMapping>> {
     Ok(sqlx::query_as(
         "SELECT m.id, m.concept_id, e.canonical_name AS concept_name, m.source,
-                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status
+                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status, m.written_by
          FROM concept_mappings m
          JOIN entities e ON e.id = m.concept_id
          WHERE m.kb_id = $1 AND m.status = 'proposed'
@@ -104,7 +156,7 @@ pub async fn proposed(
 pub async fn confirmed(pool: &PgPool, kb_id: Uuid, limit: i64) -> AppResult<Vec<ConceptMapping>> {
     Ok(sqlx::query_as(
         "SELECT m.id, m.concept_id, e.canonical_name AS concept_name, m.source,
-                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status
+                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status, m.written_by
          FROM concept_mappings m
          JOIN entities e ON e.id = m.concept_id
          WHERE m.kb_id = $1 AND m.status = 'confirmed'
@@ -229,7 +281,7 @@ pub async fn page(
                 OR m.table_name ILIKE '%' || $3 || '%')";
     let rows: Vec<ConceptMapping> = sqlx::query_as(&format!(
         "SELECT m.id, m.concept_id, e.canonical_name AS concept_name, m.source,
-                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status
+                m.table_name, m.expr, m.sql, m.unit, m.summary, m.derived, m.status, m.written_by
          FROM concept_mappings m
          JOIN entities e ON e.id = m.concept_id
          {WHERE}

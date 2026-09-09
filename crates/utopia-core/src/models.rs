@@ -1087,6 +1087,9 @@ pub struct ConceptMapping {
     /// **状态而不是置信度。** 从前借事实的 confidence 表达「提议 0.6 / 确认 1.0」，
     /// 那是把二值状态编码成浮点数，还顺带让它落进「低置信事实」那一档
     pub status: String,
+    /// 人从零写的口径记写的人；探索提的为空（#562）。`decided_by` 分不出这件事——
+    /// 探索提的经人确认之后同样有 decided_by
+    pub written_by: Option<Uuid>,
 }
 
 /// 一处公理违规，配好展示所需的三元组文本（见 `axiom_violations`）。
