@@ -264,6 +264,23 @@ pub(super) fn grouped(facts: &[EntityFact]) -> Vec<(String, Vec<&EntityFact>)> {
     out
 }
 
+/// 过滤没命中时告诉模型这个实体身上有哪些谓词：它猜的词（"board member"）和
+/// 库里的词（`comprised`、`has_member`）常常对不上（#560），空手而回它只会再猜一次
+pub(super) fn predicates_of(facts: &[EntityFact]) -> String {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for f in facts {
+        *counts.entry(group_key(f)).or_default() += 1;
+    }
+    let mut named: Vec<(String, usize)> = counts.into_iter().collect();
+    named.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    named
+        .iter()
+        .take(20)
+        .map(|(k, n)| format!("{k} ({n})"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 struct FactFilter<'a> {
     predicate: Option<&'a str>,
     object_type: Option<&'a str>,
@@ -384,6 +401,12 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
         let mut head = format!("{} ({type_label}) · {} facts", node.name, facts.len());
         if filter.narrows() {
             head.push_str(&format!(", {} match the filter", kept.len()));
+            if kept.is_empty() {
+                head.push_str(&format!(
+                    ". Predicates on this entity: {}",
+                    predicates_of(&facts)
+                ));
+            }
         }
         if shown.len() < kept.len() {
             head.push_str(&format!(
@@ -450,8 +473,18 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
     }
     let type_label = node.type_label.as_deref().unwrap_or("untyped");
     if shown.is_empty() {
+        let all_linked: Vec<EntityFact> = facts
+            .iter()
+            .filter(|f| f.other_id.is_some())
+            .cloned()
+            .collect();
+        let hint = if filter.narrows() && !all_linked.is_empty() {
+            format!(" Predicates on this entity: {}", predicates_of(&all_linked))
+        } else {
+            String::new()
+        };
         lines.push(format!(
-            "{} ({type_label}): no linked entities{}.",
+            "{} ({type_label}): no linked entities{}.{hint}",
             node.name,
             if filter.narrows() {
                 " match the filter"
@@ -812,6 +845,17 @@ mod tests {
             last_evidence_time: None,
             contested: None,
         }
+    }
+
+    /// 空手而回时把实体身上的谓词报出来，多的在前
+    #[test]
+    fn an_empty_filter_names_the_predicates_that_exist() {
+        let facts = vec![
+            fact("out", "comprised", "Ilya Sutskever", Some("Person")),
+            fact("out", "comprised", "Helen Toner", Some("Person")),
+            fact("in", "removed", "Sam Altman", Some("Person")),
+        ];
+        assert_eq!(predicates_of(&facts), "comprised → (2), ← removed (1)");
     }
 
     /// 分组：多的组在前，出边 `pred →`，入边 `← pred`

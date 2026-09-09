@@ -844,7 +844,8 @@ pub async fn search_entities(
     let pattern = format!("%{}%", q.trim());
     let nodes: Vec<GraphNode> = sqlx::query_as(&format!(
         "{} WHERE e.kb_id = $1 AND e.merged_into IS NULL
-         AND e.canonical_name ILIKE $2
+         AND (e.canonical_name ILIKE $2
+              OR EXISTS (SELECT 1 FROM unnest(e.aliases) AS a WHERE a ILIKE $2))
          ORDER BY degree DESC, e.canonical_name LIMIT $3 OFFSET $4",
         node_sql(None, None)
     ))
@@ -856,7 +857,9 @@ pub async fn search_entities(
     .await?;
     let (total,): (i64,) = sqlx::query_as(
         "SELECT count(*) FROM entities e
-          WHERE e.kb_id = $1 AND e.merged_into IS NULL AND e.canonical_name ILIKE $2",
+          WHERE e.kb_id = $1 AND e.merged_into IS NULL
+            AND (e.canonical_name ILIKE $2
+                 OR EXISTS (SELECT 1 FROM unnest(e.aliases) AS a WHERE a ILIKE $2))",
     )
     .bind(kb_id)
     .bind(&pattern)
