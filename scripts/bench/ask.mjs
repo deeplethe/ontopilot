@@ -156,7 +156,7 @@ function seedTruth(kb) {
       SELECT id FROM found UNION ALL SELECT id FROM made`);
     psql(`
       INSERT INTO concept_mappings (id, kb_id, concept_id, source, table_name, sql, summary, status)
-      VALUES (gen_random_uuid(), '${kb}', '${ent}', 'tpch', NULL, '${gold}', '${summary}', 'confirmed')
+      VALUES (gen_random_uuid(), '${kb}', '${ent}', '${corpusName}', NULL, '${gold}', '${summary}', 'confirmed')
       ON CONFLICT (kb_id, concept_id, source)
       DO UPDATE SET sql = EXCLUDED.sql, summary = EXCLUDED.summary,
                     status = 'confirmed', updated_at = now()`);
