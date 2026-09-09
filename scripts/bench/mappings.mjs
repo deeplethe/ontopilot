@@ -52,8 +52,10 @@ function loadCorpus() {
     onDb("postgres", `CREATE DATABASE ${db}`);
     log(`建库 ${db}`);
   }
-  const ddl = fs.readFileSync(path.join(HERE, "schemas", `${corpusName}.sql`), "utf8");
-  corpusPsql(ddl);
+  corpusPsql(fs.readFileSync(path.join(HERE, "schemas", `${corpusName}.sql`), "utf8"));
+  // 行可以单独一个文件：`wide` 的建表与造数各自都不短，放一起读不动
+  const data = path.join(HERE, "schemas", `${corpusName}.data.sql`);
+  if (fs.existsSync(data)) corpusPsql(fs.readFileSync(data, "utf8"));
   log(`${corpusName} 表与行就位`);
   // 注释是自变量：不加载就是一份同构但没有注释的语料，两轮之差即注释值多少分
   if (!args["no-comments"]) {
@@ -134,6 +136,9 @@ function score(kb) {
   // 错的是真值不全。govern.mjs 的 `unlabeled` 是同一件事
   const plausible = (truth.plausible || []).map((m) => ({ ...m, value: value(CORPUS_DB, m.gold).n }));
   const dimCols = new Set(truth.dimensions.map((d) => d.column.toLowerCase()));
+  // 列名不带表限定的那一份：同一个维度可能从事实表读，也可能从维表读
+  // （`shop_nm` 两边都有），而两种都对
+  const dimNames = new Set([...dimCols].map((c) => c.split(".").pop()));
   // 陷阱分角色。**同一列在两个角色下不是同一件事**：`p_size` 当维度是对的
   // （Q16 就按它分组），当指标求和才没有意义；`l_comment` 反过来。
   // 第三轮上这条把一条正确的维度提议记成了踩陷阱
@@ -153,8 +158,15 @@ function score(kb) {
     // 维度没有数可比：判它指的那一列在不在真值的 group-by 集合里，
     // 以及有没有落到陷阱列上（把一个键或一段自由文本当成维度）
     if (m.kind === "dimension") {
-      const col = `${qualify(m.table_name)}.${(m.expr || "").replace(/[^\w.]/g, "")}`.toLowerCase();
-      if (dimCols.has(col)) c.dim_right++;
+      // **维度不一定是一个裸列名。** 模型给渠道的定义是
+      // `CASE chnl WHEN 1 THEN 'APP' … END`——把码翻译成人看的名字，这正是
+      // 一个维度该做的事。只认裸列名的话，三条正确的提议被判成错的（wide 第一轮）。
+      // 所以从表达式里把标识符抽出来，命中任一真值维度列即算数
+      const table = qualify(m.table_name).toLowerCase();
+      const ids = (m.expr || "").toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? [];
+      const col = ids.find((id) => dimCols.has(`${table}.${id}`) || dimNames.has(id))
+        ?? `${table}.${(m.expr || "").replace(/[^\w.]/g, "")}`.toLowerCase();
+      if (dimCols.has(col) || dimNames.has(col.split(".").pop())) c.dim_right++;
       else { c.dim_wrong++; wrong.push(`dim  "${m.concept}" → ${col}${dimTraps.has(col) ? ` **trap: ${dimTraps.get(col)}**` : ""}`); }
       if (dimTraps.has(col)) c.traps++;
       continue;

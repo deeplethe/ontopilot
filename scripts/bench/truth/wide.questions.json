@@ -1,0 +1,24 @@
+{
+  "corpus": "wide",
+  "notes": "中文提问，因为这份语料本身是中文业务场景（店铺名、省份、类目都是中文），顺带量一次中文问数。问法是业务的说法，不含表名列名——一个不看 schema 的人会这么问。每一题对应 wide.mappings.json 里同 id 的口径，所以答错时脚本说得出它需要的那条口径有没有确认映射。",
+  "questions": [
+    { "id": "gmv", "ask": "我们的 GMV 一共是多少？" },
+    { "id": "net_sales", "ask": "扣掉退款之后的净销售额是多少？" },
+    { "id": "gross_merch", "ask": "优惠和券之前的商品交易总额是多少？" },
+    { "id": "valid_orders", "ask": "一共有多少笔有效订单？" },
+    { "id": "valid_lines", "ask": "有效订单里一共有多少个商品行？" },
+    { "id": "buyers", "ask": "有多少个买家真正付款下过单？" },
+    { "id": "new_buyers", "ask": "有多少个首单买家？" },
+    { "id": "aov", "ask": "客单价是多少？" },
+    { "id": "units", "ask": "扣掉退货之后一共卖出去多少件商品？" },
+    { "id": "refund_amt", "ask": "退款总金额是多少？" },
+    { "id": "refund_rate", "ask": "退款率是多少？" },
+    { "id": "gross_profit", "ask": "毛利是多少？" },
+    { "id": "gross_margin", "ask": "毛利率是多少？" },
+    { "id": "freight", "ask": "运费一共收了多少钱？" },
+    { "id": "discount_total", "ask": "一共让出去多少优惠？" },
+    { "id": "app_gmv", "ask": "APP 渠道的 GMV 是多少？" },
+    { "id": "avg_unit_price", "ask": "平均每件商品卖多少钱？" },
+    { "id": "test_orders", "ask": "有多少笔是内部测试订单？" }
+  ]
+}

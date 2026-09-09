@@ -1,0 +1,282 @@
+{
+  "corpus": "wide",
+  "db_schema": "dw",
+  "notes": "Unlike tpch, these definitions are NOT derivable from the schema. Every one carries at least one business convention the columns do not state: amounts are in cents, test orders are excluded, a status whitelist decides what counts as an order, refunds come off the top. `naive` records what a reader who only has the schema would plausibly write, and the gap between `gold` and `naive` is the whole point of the corpus — both run, both look reasonable, and only one is the number the business means.",
+  "conventions": [
+    "Money columns (amt_*) are in CENTS. Every money definition divides by 100.",
+    "is_test = 1 marks internal test orders and is excluded from every business figure.",
+    "An order counts once it is paid: ord_st in (2,3,4). 1 = created but never paid, 5 = closed unpaid, 6 = fully refunded.",
+    "pay_st: 0 unpaid, 1 paid, 2 partially refunded, 3 fully refunded. Paid means pay_st in (1,2).",
+    "One row is one line of an order; an order is ord_id and usually has two lines.",
+    "Net figures subtract amt_rfnd. Gross figures do not."
+  ],
+  "metrics": [
+    {
+      "id": "gmv",
+      "label": "GMV",
+      "central": true,
+      "gold": "SELECT round(sum(amt_pay) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT sum(amt_pay) FROM dw.dwd_ord_dtl",
+      "note": "Cents, test orders, and unpaid rows — three conventions in one definition. The naive answer is off by a factor of a hundred and includes orders nobody paid for."
+    },
+    {
+      "id": "net_sales",
+      "label": "Net sales after refunds",
+      "gold": "SELECT round(sum(amt_pay - amt_rfnd) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT round(sum(amt_pay) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "near": "gmv"
+    },
+    {
+      "id": "gross_merch",
+      "label": "Gross merchandise value before discount",
+      "gold": "SELECT round(sum(amt_total) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT round(sum(amt_total) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "near": "gmv",
+      "note": "amt_total is before discount and coupon; amt_pay is what was actually charged. Both exist, both are money, one is the answer."
+    },
+    {
+      "id": "valid_orders",
+      "label": "Paid orders",
+      "gold": "SELECT count(DISTINCT ord_id) FILTER (WHERE ord_st IN (2,3,4) AND is_test = 0) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT count(*) FROM dw.dwd_ord_dtl",
+      "note": "A row is a line, not an order, and half the statuses never became a sale."
+    },
+    {
+      "id": "valid_lines",
+      "label": "Paid order lines",
+      "gold": "SELECT count(*) FILTER (WHERE ord_st IN (2,3,4) AND is_test = 0) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT count(*) FROM dw.dwd_ord_dtl",
+      "near": "valid_orders"
+    },
+    {
+      "id": "buyers",
+      "label": "Buyers who paid",
+      "gold": "SELECT count(DISTINCT buyer_id) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT count(buyer_id) FROM dw.dwd_ord_dtl",
+      "note": "Every buyer in this corpus paid at least once, so the filter changes nothing here — the trap is forgetting DISTINCT, which turns 5000 buyers into 60000 rows."
+    },
+    {
+      "id": "new_buyers",
+      "label": "First-time buyers",
+      "gold": "SELECT count(DISTINCT buyer_id) FILTER (WHERE is_1st = 1 AND pay_st IN (1,2) AND is_test = 0) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT count(DISTINCT buyer_id) FILTER (WHERE is_1st = 1) FROM dw.dwd_ord_dtl",
+      "near": "buyers"
+    },
+    {
+      "id": "aov",
+      "label": "Average order value",
+      "gold": "SELECT round((sum(amt_pay - amt_rfnd) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0) / count(DISTINCT ord_id) FILTER (WHERE ord_st IN (2,3,4) AND is_test = 0), 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT round(avg(amt_pay) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "note": "Per order, not per line — the naive average is per row and lands about half the truth."
+    },
+    {
+      "id": "units",
+      "label": "Units sold net of returns",
+      "gold": "SELECT sum(qty - qty_rfnd) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT sum(qty) FROM dw.dwd_ord_dtl"
+    },
+    {
+      "id": "refund_amt",
+      "label": "Refunded amount",
+      "gold": "SELECT round(sum(amt_rfnd) FILTER (WHERE is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT sum(amt_rfnd) FROM dw.dwd_ord_dtl"
+    },
+    {
+      "id": "refund_rate",
+      "label": "Refund rate over paid orders, percent",
+      "gold": "SELECT round(100.0 * count(DISTINCT ord_id) FILTER (WHERE pay_st IN (2,3) AND is_test = 0) / count(DISTINCT ord_id) FILTER (WHERE pay_st IN (1,2,3) AND is_test = 0), 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT round(100.0 * sum(flg_r) / count(*), 2) FROM dw.dwd_ord_dtl"
+    },
+    {
+      "id": "gross_profit",
+      "label": "Gross profit",
+      "gold": "SELECT round(sum(amt_pay - amt_rfnd - amt_cost) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT round(sum(amt_pay - amt_cost) / 100.0, 2) FROM dw.dwd_ord_dtl"
+    },
+    {
+      "id": "gross_margin",
+      "label": "Gross margin percent",
+      "gold": "SELECT round(100.0 * sum(amt_pay - amt_rfnd - amt_cost) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / sum(amt_pay - amt_rfnd) FILTER (WHERE pay_st IN (1,2) AND is_test = 0), 2) FROM dw.dwd_ord_dtl"
+    },
+    {
+      "id": "freight",
+      "label": "Freight collected",
+      "gold": "SELECT round(sum(amt_frght) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT sum(amt_frght) FROM dw.dwd_ord_dtl"
+    },
+    {
+      "id": "discount_total",
+      "label": "Total discount given",
+      "gold": "SELECT round(sum(amt_disc + amt_cpn) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT round(sum(amt_disc) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "note": "Two columns make up a discount: the promotion and the coupon. Summing one is a plausible, wrong answer."
+    },
+    {
+      "id": "app_gmv",
+      "label": "GMV from the app channel",
+      "gold": "SELECT round(sum(amt_pay) FILTER (WHERE chnl = 1 AND pay_st IN (1,2) AND is_test = 0) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "naive": "SELECT round(sum(amt_pay) FILTER (WHERE chnl = 1) / 100.0, 2) FROM dw.dwd_ord_dtl",
+      "near": "gmv"
+    },
+    {
+      "id": "avg_unit_price",
+      "label": "Average price per unit sold",
+      "gold": "SELECT round((sum(amt_pay - amt_rfnd) FILTER (WHERE pay_st IN (1,2) AND is_test = 0) / 100.0) / sum(qty - qty_rfnd) FILTER (WHERE pay_st IN (1,2) AND is_test = 0), 2) FROM dw.dwd_ord_dtl"
+    },
+    {
+      "id": "test_orders",
+      "label": "Internal test orders",
+      "gold": "SELECT count(DISTINCT ord_id) FILTER (WHERE is_test = 1) FROM dw.dwd_ord_dtl",
+      "note": "The one question where is_test is the subject rather than a filter. It exists so the corpus is not only about excluding it."
+    }
+  ],
+  "dimensions": [
+    {
+      "column": "dw.dwd_ord_dtl.shop_nm",
+      "from": "shop"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.cat_nm",
+      "from": "leaf category"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.cat_nm_l1",
+      "from": "top category"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.brand_nm",
+      "from": "brand"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.prov",
+      "from": "province"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.city",
+      "from": "city"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.chnl",
+      "from": "channel code"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.buyer_lvl",
+      "from": "buyer tier"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.src",
+      "from": "traffic source"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.dev",
+      "from": "device"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.stat_dt",
+      "from": "the time axis"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.ord_st",
+      "from": "order status"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.pay_st",
+      "from": "payment status"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.pay_mtd",
+      "from": "payment method"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.dt_crt",
+      "from": "order time — the other time axis besides stat_dt"
+    },
+    {
+      "column": "dw.dim_shop.shop_nm",
+      "from": "shop, read from the dimension table instead of the flattened column"
+    }
+  ],
+  "keys": [
+    {
+      "column": "dw.dwd_ord_dtl.shop_id",
+      "references": "dw.dim_shop.shop_id"
+    }
+  ],
+  "traps": [
+    {
+      "column": "dw.dwd_ord_dtl.buyer_id",
+      "as": "metric",
+      "why": "integer key; sums cleanly and means nothing"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.seller_id",
+      "as": "metric",
+      "why": "integer key"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.shop_id",
+      "as": "metric",
+      "why": "integer key"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.item_id",
+      "as": "metric",
+      "why": "integer key"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.sku_id",
+      "as": "metric",
+      "why": "integer key"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.cat_id",
+      "as": "metric",
+      "why": "integer key"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.addr_id",
+      "as": "metric",
+      "why": "integer key"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.pay_id",
+      "as": "metric",
+      "why": "integer key"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.ord_id",
+      "as": "metric",
+      "why": "integer key; count(distinct) is a metric, sum is not"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.ver",
+      "as": "both",
+      "why": "always 1; a metric on it counts rows by accident, a dimension on it has one group"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.price_old",
+      "as": "both",
+      "why": "abandoned column, all NULL since the migration — a metric on it is silently empty"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.amt_pt",
+      "as": "metric",
+      "why": "loyalty points, not money; summing it into a revenue figure mixes units"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.rmk",
+      "as": "dimension",
+      "why": "free text typed by support; one group per row"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.ext",
+      "as": "dimension",
+      "why": "a JSON blob as text"
+    },
+    {
+      "column": "dw.dwd_ord_dtl.etl_dt",
+      "as": "both",
+      "why": "when the ETL ran, not when anything happened — a time axis built on it is meaningless"
+    }
+  ]
+}
