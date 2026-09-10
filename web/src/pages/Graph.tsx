@@ -251,6 +251,8 @@ export function Graph() {
   const search = useSearch({ from: "/app/kb/$kbId/graph" });
   const navigate = useNavigate();
   const entityParam = search.entity;
+  // 主题一变，图要重构（颜色烤在属性里）：见构图 effect
+  const [themeTick, setThemeTick] = useState(0);
   const [focusEntity, setFocusEntity] = useState<string | null>(
     search.focus ?? entityParam ?? null,
   );
@@ -671,6 +673,9 @@ export function Graph() {
   }, [timeT, recomputeActive]);
 
   useEffect(() => {
+    // 节点壳色、边色是**烤进图属性**的，不是渲染时才取；所以构图前先把调色板
+    // 读成当前主题的值，切主题时靠 themeTick 让这里重跑一遍（0038）
+    refreshPalette();
     if (!containerRef.current || !data.data) return;
     const g = new Graphology({ multi: true });
     for (const n of data.data.nodes) {
@@ -1133,6 +1138,7 @@ export function Graph() {
     });
     const offTheme = onThemeChange(() => {
       refreshPalette();
+      setThemeTick((t) => t + 1);
       sigma.refresh();
     });
     sigma.on("clickStage", () => deselect());
@@ -1226,7 +1232,7 @@ export function Graph() {
       sigmaRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.data]);
+  }, [data.data, themeTick]);
 
   if (!kb)
     return <div className="p-8 text-body text-ink-2">{S.nav.loading}</div>;

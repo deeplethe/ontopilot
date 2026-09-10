@@ -268,6 +268,8 @@ export function buildSchemaGraph(
    *  条件写在规则里。得出属性值的那种没有目标节点，不画（它在规则表里） */
   rules: BusinessRule[] = [],
 ): SchemaGraphResult {
+  // 壳色、边色烤进图属性，构图前先把调色板读成当前主题的值（0038）
+  refreshPalette();
   const graph = new Graphology({ multi: true });
   const byId = new Map(entityTypes.map((t) => [t.id, t]));
   const depths = classDepths(entityTypes);
@@ -601,6 +603,8 @@ export function OntologySchemaGraph({
   );
 
   // 取景：大本体只画用得最多的那几个类，左栏点到的类补进来（见 schemaScope）
+  // 主题一变，模式图要重构（壳色烤在属性里）
+  const [themeTick, setThemeTick] = useState(0);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -626,8 +630,7 @@ export function OntologySchemaGraph({
   // 取景，选中/悬停都是别的状态，不会触发这里
   const schema = useMemo(
     () => buildSchemaGraph(entityTypes, objectRelations, scope.drawn, rules),
-    [entityTypes, objectRelations, scope.drawn, rules],
-  );
+    [entityTypes, objectRelations, scope.drawn, rules, themeTick]);
 
   /** 把一个类带到眼前：还在取景之外就先揭开、重建之后再对焦；画着但在视口
    *  外就把相机推过去；已经在视口里就只高亮，画面不动 */
@@ -970,6 +973,7 @@ export function OntologySchemaGraph({
     }
     const offTheme = onThemeChange(() => {
       refreshPalette();
+      setThemeTick((t) => t + 1);
       sigma.refresh();
     });
     return () => {

@@ -182,6 +182,20 @@
   --u-on-danger: #ffffff;
   /* 浮岛的投影：暗底下要重，浅底下要轻 */
   --u-shadow: rgba(0, 0, 0, 0.5);
+  /* 语义色的另外两个三元组：底色淡染（chip / mark）按透明度调 */
+  --u-ok-rgb: 76, 195, 138;
+  --u-warn-rgb: 242, 182, 109;
+  /* 危险实底按钮悬停时更亮的那一档 */
+  --u-danger-solid-hover: #d9464b;
+  /* 对话里代码高亮的八个色：数据色的近亲，浅底上要换深版才读得出 */
+  --u-code-quote: #7d8590;
+  --u-code-meta: #9fa8ff;
+  --u-code-addition: #63e2b7;
+  --u-code-symbol: #ffd479;
+  --u-code-section: #7fd0ff;
+  --u-code-class: #5fd4d0;
+  --u-code-template: #c4a5ff;
+  --u-code-deletion: #ff8a9e;
 }
 
 /* ---------- 浅色（0038）：只改令牌，一条规则都不重写 ----------
@@ -236,6 +250,16 @@
   --u-edge-schema-dim: rgba(200, 200, 200, 0.5);
   --u-pill-bg: rgba(255, 255, 255, 0.92);
   --u-shadow: rgba(0, 0, 0, 0.18);
+  --u-ok-rgb: 26, 127, 75;
+  --u-warn-rgb: 154, 106, 18;
+  --u-code-quote: #6b7280;
+  --u-code-meta: #4f5bd5;
+  --u-code-addition: #1a7f4b;
+  --u-code-symbol: #9a6a12;
+  --u-code-section: #1d6fb8;
+  --u-code-class: #0f8a86;
+  --u-code-template: #6d4fd6;
+  --u-code-deletion: #c0284f;
 }
 
 body {
@@ -584,7 +608,7 @@ textarea.u-input-sm {
   padding-bottom: 0.375rem;
 }
 select.input-dark option {
-  background: #111111;
+  background: var(--u-ground);
   color: var(--u-text);
 }
 
@@ -703,8 +727,8 @@ select.input-dark option {
   font-weight: 600;
 }
 .u-btn-danger:hover:not(:disabled) {
-  background: #d9464b;
-  border-color: #d9464b;
+  background: var(--u-danger-solid-hover);
+  border-color: var(--u-danger-solid-hover);
 }
 
 /* 行里的小柄（树的折叠箭头）：不是按钮——按钮里不能再嵌按钮——但要有 hover */
@@ -982,7 +1006,7 @@ select.input-dark option {
 .u-mark {
   border-radius: 3px;
   padding: 0 0.25rem;
-  background: rgba(242, 182, 109, 0.16);
+  background: rgba(var(--u-warn-rgb), 0.16);
   color: var(--u-warn);
 }
 
@@ -1046,24 +1070,24 @@ select.input-dark option {
   color: var(--u-text);
 }
 .u-chip-success {
-  background: rgba(76, 195, 138, 0.12);
+  background: rgba(var(--u-ok-rgb), 0.12);
   color: var(--u-ok);
 }
 .u-chip-warn {
-  background: rgba(242, 182, 109, 0.12);
+  background: rgba(var(--u-warn-rgb), 0.12);
   color: var(--u-warn);
 }
 /* 争议（0017 §3）：与图上的争议边同一个色相 */
 .u-chip-contest {
-  background: rgba(255, 106, 61, 0.14);
+  background: rgba(var(--u-contest-rgb), 0.14);
   color: var(--u-contest);
 }
 .u-chip-danger {
-  background: rgba(255, 157, 175, 0.12);
+  background: rgba(var(--u-danger-rgb), 0.12);
   color: var(--u-danger);
 }
 .u-chip-violet {
-  background: rgba(196, 165, 255, 0.12);
+  background: rgba(var(--u-violet-rgb), 0.12);
   color: var(--u-violet);
 }
 /* 可点的 chip：指针停上提亮一点 */
@@ -1082,7 +1106,7 @@ select.input-dark option {
    主角是实体名，置信度和右侧的时间区间同属元信息——不该是整屏
    唯一有填充色的东西。 */
 .u-meta-warn {
-  color: rgba(242, 182, 109, 0.55);
+  color: rgba(var(--u-warn-rgb), 0.55);
 }
 
 /* ---- graph canvas: 图纸式大小网格（细密小格 + 每 4 格一条更亮的主线） ---- */
@@ -1238,7 +1262,7 @@ select.input-dark option {
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px #141414 inset;
+  -webkit-box-shadow: 0 0 0 1000px var(--u-ground) inset;
   -webkit-text-fill-color: var(--u-text);
   caret-color: var(--u-text);
 }
@@ -1480,42 +1504,42 @@ a:hover > .u-mark-arrow {
    与实体色板同族——颜色属于内容，chrome 保持无色 ---- */
 .u-chat-prose .hljs-comment,
 .u-chat-prose .hljs-quote {
-  color: #7d8590;
+  color: var(--u-code-quote);
   font-style: italic;
 }
 .u-chat-prose .hljs-keyword,
 .u-chat-prose .hljs-selector-tag,
 .u-chat-prose .hljs-meta {
-  color: #9fa8ff;
+  color: var(--u-code-meta);
 }
 .u-chat-prose .hljs-string,
 .u-chat-prose .hljs-regexp,
 .u-chat-prose .hljs-addition {
-  color: #63e2b7;
+  color: var(--u-code-addition);
 }
 .u-chat-prose .hljs-number,
 .u-chat-prose .hljs-literal,
 .u-chat-prose .hljs-symbol {
-  color: #ffd479;
+  color: var(--u-code-symbol);
 }
 .u-chat-prose .hljs-title,
 .u-chat-prose .hljs-title.function_,
 .u-chat-prose .hljs-section {
-  color: #7fd0ff;
+  color: var(--u-code-section);
 }
 .u-chat-prose .hljs-type,
 .u-chat-prose .hljs-built_in,
 .u-chat-prose .hljs-class .hljs-title {
-  color: #5fd4d0;
+  color: var(--u-code-class);
 }
 .u-chat-prose .hljs-attr,
 .u-chat-prose .hljs-attribute,
 .u-chat-prose .hljs-variable,
 .u-chat-prose .hljs-template-variable {
-  color: #c4a5ff;
+  color: var(--u-code-template);
 }
 .u-chat-prose .hljs-deletion {
-  color: #ff8a9e;
+  color: var(--u-code-deletion);
 }
 
 /* 对话气泡内的 markdown：紧凑排版，色彩服从气泡 */
