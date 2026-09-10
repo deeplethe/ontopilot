@@ -91,6 +91,12 @@ export interface CanvasOptions {
  * 边的悬停事件默认是关的，这里一律开：两页都靠 `enterEdge` 让边说话。 */
 export function sigmaOptions(o: CanvasOptions) {
   return {
+    /* **按层级画**。两个 reducer 一直在设 `res.zIndex`（压暗 0、邻居 2、
+       选中 3、指到 4、高亮的边 5），可 sigma 默认不看它——绘制顺序就是缓冲区
+       顺序，于是一条高亮的白边会被后画的暗边一段段切断，看着像被虚线打断。
+       打开它，那些层级值才真正生效。代价是每帧多一次排序，几百条边这个量级
+       可以忽略 */
+    zIndex: true,
     allowInvalidContainer: true,
     defaultNodeType: NODE_TYPE_SHELL,
     nodeProgramClasses: NODE_PROGRAMS,
