@@ -67,6 +67,13 @@ pub struct ExtractedFact {
     pub confidence: Option<f32>,
     #[serde(default)]
     pub quote: Option<String>,
+    /// 引文里逐字点名主语的那几个字（#582）。模型抄，不判断；落库时机器核对它
+    /// 是不是 `subject` 那个名字——"Former OpenAI personnel" 不是 OpenAI
+    #[serde(default)]
+    pub subject_span: Option<String>,
+    /// 同上，宾语那一侧
+    #[serde(default)]
+    pub object_span: Option<String>,
 }
 
 /// 提示词里的一条关系。
@@ -243,7 +250,7 @@ pub fn build_messages(
          \n\
          Output format:\n\
          {{\"entities\":[{{\"local_id\":\"e1\",\"name\":\"entity name\",\"type\":\"type key\",\"specific_type\":\"what you would call it\"}}],\n\
-          \"facts\":[{{\"subject\":\"subject entity name\",\"subject_ref\":\"e1\",\"predicate\":\"relation key\",\"object\":\"object entity name\",\"object_ref\":\"e2\",\n\
+          \"facts\":[{{\"subject\":\"subject entity name\",\"subject_ref\":\"e1\",\"subject_span\":\"the words in quote that name the subject\",\"predicate\":\"relation key\",\"object\":\"object entity name\",\"object_ref\":\"e2\",\"object_span\":\"the words in quote that name the object\",\n\
                      \"valid_from\":\"2023-01\",\"valid_to\":null,\"confidence\":0.9,\"quote\":\"verbatim supporting quote\"}}]}}\n\
          \n\
          Rules:\n\
@@ -302,15 +309,10 @@ pub fn build_messages(
             including A, B, C and D\" is four facts, not one; \"advisors A and B\" is two. \
             Do not collapse an enumeration into a summary or into its first member. \
             The same applies to the entities: each named party is its own entity.\n\
-         8d. A subject is the thing the sentence is about, not a name inside it. A group \
-            described by its relation to an entity — \"former X employees\", \"companies \
-            using X\", \"X's investors\", \"X personnel\" — is not X: never write X as the \
-            subject of what the group did. State it from the named participant with the \
-            description as a \"value\": {{\"subject\":\"Anthropic\",\"subject_ref\":\"e2\",\
-            \"predicate\":\"founded_by\",\"value\":\"former OpenAI personnel\",\
-            \"confidence\":0.9,\"quote\":\"...\"}}. When no participant is named, leave the \
-            sentence out: an edge between two named entities that the text never states is \
-            worse than a missing one.\n\
+         8d. subject_span and object_span are the exact words in quote that name each side. \
+            Copy them; never paraphrase. When the words that do the thing are a description \
+            rather than a name — \"former X employees\", \"companies using X\" — the span \
+            is that description, whatever you wrote in subject.\n\
          9. The same holds for entity types: if none of the listed types fits, write the type \
             the text implies, in snake_case (e.g. \"model\", \"technology\"). Do not fall back \
             to a broad listed type such as \"thing\" or \"creative_work\" merely because \
@@ -1262,6 +1264,26 @@ mod tests {
         assert!(parse_response(r#"{"facts": [{"subject": "a"#).is_err());
     }
 
+    /// 片段字段可有可无：老模型输出没有它们，照常解析
+    #[test]
+    fn spans_parse_and_default_to_none() {
+        let with = parse_response(
+            r#"{"entities":[],"facts":[{"subject":"OpenAI","predicate":"founded","object":"Anthropic","subject_span":"Former OpenAI personnel","object_span":"Anthropic"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            with.facts[0].subject_span.as_deref(),
+            Some("Former OpenAI personnel")
+        );
+        assert_eq!(with.facts[0].object_span.as_deref(), Some("Anthropic"));
+        let without = parse_response(
+            r#"{"entities":[],"facts":[{"subject":"OpenAI","predicate":"founded","object":"Anthropic"}]}"#,
+        )
+        .unwrap();
+        assert!(without.facts[0].subject_span.is_none());
+        assert!(without.facts[0].object_span.is_none());
+    }
+
     #[test]
     fn parse_response_with_fence() {
         let raw = "好的，结果如下：\n```json\n{\"entities\":[{\"name\":\"张三\",\"type\":\"person\"}],\"facts\":[]}\n```";
@@ -1330,7 +1352,7 @@ mod tests {
         assert!(system.contains("\"local_id\":\"e1\""));
         assert!(system.contains("\"subject_ref\":\"e1\""));
         // #578：跟 X 有关的一群人不是 X
-        assert!(system.contains("is not X: never write X as the"));
+        assert!(system.contains("subject_span and object_span are the exact words"));
         assert!(system.contains("unique within this response"));
         assert!(system.contains("Reuse the same local_id"));
         assert!(system.contains("permanent identity is proven"));
