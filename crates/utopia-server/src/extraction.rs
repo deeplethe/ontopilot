@@ -1874,19 +1874,18 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                             }
                         };
                         let literal_text: &str = object_described.as_deref().unwrap_or(object_name);
-                        drop_signal(
-                            state,
-                            doc.kb_id,
-                            document_id,
-                            if object_described.is_some() {
-                                utopia_store::extraction_drops::reason::OBJECT_DESCRIBED
-                            } else {
-                                utopia_store::extraction_drops::reason::OBJECT_UNDECLARED
-                            },
-                            &f.predicate,
-                            Some(literal_text),
-                        )
-                        .await;
+                        // 描述那一路在上面核对时已经记过账；这里只记「没声明」的
+                        if object_described.is_none() {
+                            drop_signal(
+                                state,
+                                doc.kb_id,
+                                document_id,
+                                utopia_store::extraction_drops::reason::OBJECT_UNDECLARED,
+                                &f.predicate,
+                                Some(object_name),
+                            )
+                            .await;
+                        }
                         let literal = serde_json::json!({ "value": literal_text });
                         if await_nod {
                             if let utopia_store::pending::Outcome::Proposed(_) =
