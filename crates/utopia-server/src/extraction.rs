@@ -315,7 +315,22 @@ fn verify_span(
     if let Some((k, _)) = supersets.first() {
         return SpanVerdict::Rebind((*k).clone());
     }
-    // 片段以另一个声明过的名字结尾：短语的头是它。是另一侧的名字就是抄错了位置
+    // 所绑的名字在片段里的位置；名字后面紧跟逗号是同位语（"TBPN, a media company in
+    // California"），还是它——先于下面所有判断
+    let found = find_words(&s, &n);
+    if let Some(i) = found {
+        let end = i + n.len();
+        if end < s.len() && s[end - 1].raw.trim_end().ends_with(',') {
+            return SpanVerdict::Ok;
+        }
+    }
+
+    // 片段以另一个声明过的名字结尾。是另一侧的名字就是抄错了位置；否则只在所绑的名字
+    // 本身是声明过的实体、在片段里出现在那个名字前面、中间没有逗号时，末尾的名字才是头
+    // （"Microsoft chief executive Satya Nadella"）。写的名字没声明（"companies using
+    // OpenAI"）、没出现在前面（"his vested equity in OpenAI"）、中间有逗号（一个名单）都
+    // 不算：那时末尾的名字是介词的补语或名单的最后一项，不是头。v4 那轮没有这些约束，
+    // 把 "Over one hundred companies using OpenAI" 改绑到了 OpenAI，假边回来了
     let ends_with = |k: &str| {
         let kw = span_words(k);
         !kw.is_empty() && kw.len() < s.len() && find_words(&s[s.len() - kw.len()..], &kw) == Some(0)
@@ -323,23 +338,32 @@ fn verify_span(
     if !other.is_empty() && !slot_matches(name, other) && ends_with(other) {
         return SpanVerdict::Misplaced(span.to_string());
     }
-    if let Some(k) = others.iter().find(|k| ends_with(k)) {
-        return SpanVerdict::Rebind((*k).clone());
+    if declared.contains_key(name) {
+        if let Some(i) = found {
+            let end = i + n.len();
+            let head_of = |k: &str| {
+                let kw = span_words(k);
+                ends_with(k)
+                    && end <= s.len() - kw.len()
+                    && !s[end..s.len() - kw.len()]
+                        .iter()
+                        .any(|w| w.raw.trim_end().ends_with(','))
+                    && !s[end - 1].raw.trim_end().ends_with(',')
+            };
+            if let Some(k) = others.iter().find(|k| head_of(k)) {
+                return SpanVerdict::Rebind((*k).clone());
+            }
+        }
     }
 
     // 3 / 4. 所绑的名字在片段里
-    if let Some(i) = find_words(&s, &n) {
+    if let Some(i) = found {
         let end = i + n.len();
         let last = s[end - 1].raw;
         let possessive = last.ends_with("'s") || last.ends_with("\u{2019}s");
         let after = &s[end..];
-        // 名字后面紧跟逗号：同位语，还是它
-        let apposition = !after.is_empty() && last.trim_end().ends_with(',');
-        if possessive || (!apposition && after.iter().any(|w| !looks_proper(w.raw))) {
+        if possessive || after.iter().any(|w| !looks_proper(w.raw)) {
             return SpanVerdict::Described(span.to_string());
-        }
-        if apposition {
-            return SpanVerdict::Ok;
         }
         if after.is_empty() && i > 0 {
             return SpanVerdict::Prefixed(span.to_string());
@@ -2912,6 +2936,58 @@ mod tests {
                 &d2
             ),
             SpanVerdict::Misplaced("CEO of Applications: Fidji Simo".into())
+        );
+        // 末尾的名字是介词的补语或名单的最后一项，不是头：不改绑（v4 的四个错例）
+        let d3 = declared(&[
+            "OpenAI",
+            "companies using OpenAI",
+            "TBPN",
+            "California",
+            "Pioneer Building",
+            "San Francisco",
+            "Anthropic",
+        ]);
+        assert_eq!(
+            verify_span(
+                Some("Over one hundred companies using OpenAI"),
+                "companies using OpenAI",
+                "Anthropic",
+                "Over one hundred companies using OpenAI contacted Anthropic",
+                &d3
+            ),
+            SpanVerdict::Prefixed("Over one hundred companies using OpenAI".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("his vested equity in OpenAI"),
+                "vested equity",
+                "Sam Altman",
+                "forfeited his vested equity in OpenAI",
+                &d3
+            ),
+            SpanVerdict::Described("his vested equity in OpenAI".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("TBPN, a media company in California"),
+                "TBPN",
+                "OpenAI",
+                "acquired TBPN, a media company in California",
+                &d3
+            ),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            verify_span(
+                Some("the Pioneer Building in the Mission District, San Francisco"),
+                "Pioneer Building",
+                "OpenAI",
+                "located in the Pioneer Building in the Mission District, San Francisco",
+                &d3
+            ),
+            SpanVerdict::Described(
+                "the Pioneer Building in the Mission District, San Francisco".into()
+            )
         );
         // 名字后面紧跟逗号：同位语，还是它
         assert_eq!(
