@@ -149,7 +149,9 @@ fn reads_like_a_sentence(words: &[String], raw_last: Option<&str>) -> bool {
 /// 单数职位（"OpenAI CEO Sam Altman announced"）不收——那句以 OpenAI 为主语多半没错，
 /// 而这一关拦下的事实是丢掉的，宁可漏判
 fn shortened_subject(subject: &str, quote: &str) -> Option<String> {
-    const GROUP: [&str; 30] = [
+    // "partners" 与 "teams" 不收：多半是动词（"OpenAI partners with Microsoft"、"teams up with"），
+    // 实测一跑就拦掉了 6 条真的合作关系
+    const GROUP: [&str; 28] = [
         "personnel",
         "employees",
         "employee",
@@ -163,12 +165,10 @@ fn shortened_subject(subject: &str, quote: &str) -> Option<String> {
         "investors",
         "customers",
         "users",
-        "partners",
         "members",
         "founders",
         "leadership",
         "team",
-        "teams",
         "people",
         "workers",
         "developers",
@@ -2545,6 +2545,9 @@ mod tests {
             "Former OpenAI staff left, but OpenAI itself kept hiring"
         )
         .is_none());
+        // 动词不是群体：合作关系以公司为主语是对的
+        assert!(shortened_subject("OpenAI", "OpenAI partners with Microsoft on Azure").is_none());
+        assert!(shortened_subject("OpenAI", "OpenAI teams up with Apple").is_none());
         // 单数职位不收：以公司为主语多半没错
         assert!(shortened_subject("OpenAI", "OpenAI CEO Sam Altman announced the plan").is_none());
         // 词边界：AI 不是 OpenAI 的一部分
