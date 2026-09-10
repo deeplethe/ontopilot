@@ -241,13 +241,20 @@
   --u-node-core: #8a8a8a;
   --u-node-border: #6f6f6f;
   --u-node-muted: #ececec;
-  --u-edge: rgba(90, 90, 90, 0.25);
-  --u-edge-inferred: rgba(90, 90, 90, 0.12);
+  /* 画布上的边在浅色下会被 graphVisuals 按底色摊平成不透明色（WebGL 那边透明度
+     压不暗线，只会加亮）；这里的 α 因此是「摊平后多深」，不是屏幕上的透明度 */
+  --u-edge: rgba(23, 23, 23, 0.36);
+  --u-edge-inferred: rgba(23, 23, 23, 0.18);
   --u-edge-dim: #e4e4e4;
+  --u-edge-focus: rgba(23, 23, 23, 0.85);
+  --u-edge-derived: rgba(176, 120, 20, 0.6);
+  --u-edge-derived-dim: rgba(176, 120, 20, 0.22);
   --u-edge-derived-focus: rgba(150, 100, 10, 0.95);
-  --u-edge-subclass: rgba(40, 40, 40, 0.55);
-  --u-edge-relation: rgba(128, 128, 128, 0.35);
-  --u-edge-schema-dim: rgba(200, 200, 200, 0.5);
+  --u-edge-subclass: rgba(23, 23, 23, 0.6);
+  --u-edge-subclass-focus: rgba(23, 23, 23, 0.9);
+  --u-edge-relation: rgba(23, 23, 23, 0.4);
+  --u-edge-relation-focus: rgba(23, 23, 23, 0.85);
+  --u-edge-schema-dim: rgba(23, 23, 23, 0.12);
   --u-pill-bg: rgba(255, 255, 255, 0.92);
   --u-shadow: rgba(0, 0, 0, 0.18);
   --u-ok-rgb: 26, 127, 75;

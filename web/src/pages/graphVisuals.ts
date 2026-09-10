@@ -288,6 +288,25 @@ export function inkAt(alpha: number): string {
   return rgbOf(INK_RGB, alpha);
 }
 
+/** 浅色下把一个 rgba 边色按底色摊平成不透明的 rgb。
+ *
+ * sigma 的边着色器用预乘混合（ONE, ONE_MINUS_SRC_ALPHA）却不预乘 RGB，
+ * 于是透明度压不暗一条边，只会把它**加**到底上：黑底上加一点灰正好是一条淡线，
+ * 纸底上同一个 rgba(90,90,90,0.25) 加上去就溢出成白——「没选中时所有线都是白的」
+ * 就是这么来的。暗度必须编码进 RGB（Graph.tsx 里 EDGE_DIM 那条注释说的同一件事）。
+ * 暗色那一套是加法下调出来的，不动；浅色把 α 在这里就混掉。 */
+function flattenOnLight(color: string): string {
+  if (typeof document === "undefined" || document.documentElement.dataset.theme !== "light") {
+    return color;
+  }
+  const m = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/.exec(color);
+  if (!m) return color;
+  const a = Number(m[4]);
+  const ground = token("--u-ground-rgb", "250,250,250").split(",").map((v) => Number(v.trim()));
+  const ch = (i: number) => Math.round(Number(m[i]) * a + ground[i - 1] * (1 - a));
+  return `rgb(${ch(1)},${ch(2)},${ch(3)})`;
+}
+
 /** 启动时和切主题后调一次，然后 `sigma.refresh()`。 */
 export function refreshPalette() {
   NODE_SHELL_BASE = token("--u-node-shell", NODE_SHELL_BASE);
@@ -328,6 +347,24 @@ export function refreshPalette() {
   EDGE_DISJOINT_FOCUS = rgbOf(danger, 0.9);
   EDGE_RULE = rgbOf(violet, 0.5);
   EDGE_RULE_FOCUS = rgbOf(violet, 0.95);
+  // 画布上的边：浅色下按底色摊平（见 flattenOnLight）
+  EDGE = flattenOnLight(EDGE);
+  EDGE_INFERRED = flattenOnLight(EDGE_INFERRED);
+  EDGE_FOCUS = flattenOnLight(EDGE_FOCUS);
+  EDGE_DERIVED = flattenOnLight(EDGE_DERIVED);
+  EDGE_DERIVED_DIM = flattenOnLight(EDGE_DERIVED_DIM);
+  EDGE_FOCUS_DERIVED = flattenOnLight(EDGE_FOCUS_DERIVED);
+  EDGE_CONTEST = flattenOnLight(EDGE_CONTEST);
+  EDGE_FOCUS_CONTEST = flattenOnLight(EDGE_FOCUS_CONTEST);
+  EDGE_SUBCLASS = flattenOnLight(EDGE_SUBCLASS);
+  EDGE_SUBCLASS_FOCUS = flattenOnLight(EDGE_SUBCLASS_FOCUS);
+  EDGE_RELATION = flattenOnLight(EDGE_RELATION);
+  EDGE_RELATION_FOCUS = flattenOnLight(EDGE_RELATION_FOCUS);
+  EDGE_DISJOINT = flattenOnLight(EDGE_DISJOINT);
+  EDGE_DISJOINT_FOCUS = flattenOnLight(EDGE_DISJOINT_FOCUS);
+  EDGE_RULE = flattenOnLight(EDGE_RULE);
+  EDGE_RULE_FOCUS = flattenOnLight(EDGE_RULE_FOCUS);
+  EDGE_SCHEMA_DIM = flattenOnLight(EDGE_SCHEMA_DIM);
   LEGEND_SUBCLASS = token("--u-text", LEGEND_SUBCLASS);
   LEGEND_RELATION = token("--u-text-2", LEGEND_RELATION);
   LEGEND_DISJOINT = token("--u-danger", LEGEND_DISJOINT);
