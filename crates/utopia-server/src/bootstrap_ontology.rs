@@ -203,9 +203,21 @@ pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result
         .filter(|f| f.doc_count >= MIN_DOCS)
         .collect();
     let types = utopia_store::resolution::proposed_types(&state.pool, kb_id).await?;
-    if forms.len() + types.len() < MIN_SIGNALS {
+    /* **字面值那一档也要算进来。**
+    `proposed_predicates` 只数宾语是实体的事实（它数的是"采纳要改写的东西"），
+    于是一个满是数额的语料在这里算出 predicates=0，整个自动扩本体被跳过，
+    下面那段建属性的代码一次都跑不到。实测：12 条带着 `valuation`、
+    `investment_amount` 等说法的值事实在库里等着，日志里只有一行
+    「够格的信号太少」。它们同样是"够不够一次 LLM 调用的量"的信号 */
+    let value_forms: Vec<_> = utopia_store::graph::proposed_attributes(&state.pool, kb_id)
+        .await?
+        .into_iter()
+        .filter(|f| f.doc_count >= MIN_DOCS)
+        .collect();
+    if forms.len() + types.len() + value_forms.len() < MIN_SIGNALS {
         tracing::debug!(
             %kb_id, predicates = forms.len(), types = types.len(),
+            values = value_forms.len(),
             "够格的信号太少，跳过自动扩本体"
         );
         return Ok(());

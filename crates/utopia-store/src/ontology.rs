@@ -1251,6 +1251,45 @@ pub async fn relation_type_id_by_key(
     Ok(row.map(|(id,)| id))
 }
 
+/// 一个**从没当关系用过**的关系，改判成属性。改成了返回 true。
+///
+/// 冷启动认出某个说法该是属性、去建的时候，键可能已经被一个同名关系占着
+/// （实测：`Relation key 'valuation' already exists`，然后整批放弃，那些数
+/// 永远拿不到谓词）。可占着这个键的关系常常是空的——本体包带进来的、或者
+/// 早先按票数建的，一条事实都没挂上。空的关系改判不破坏任何东西：
+/// 没有边会因此断，撤销也只是再改回去。
+///
+/// **有事实的一律不动**。`invested`、`raised` 这类既连实体又带数额的，
+/// 改判会把已有的边连根拔起；那是本体与语料的真分歧，该留给人看，
+/// 不该由冷启动替人决定。
+pub async fn attribute_from_unused_relation(
+    pool: &PgPool,
+    kb_id: Uuid,
+    key: &str,
+    domains: &[Uuid],
+    datatype: &str,
+    unit: Option<&str>,
+) -> AppResult<Option<Uuid>> {
+    validate_attribute_fields("attribute", domains, Some(datatype))?;
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "UPDATE relation_types SET kind = 'attribute', datatype = $3, unit = $4,
+                inverse_of = NULL, sub_property_of = NULL
+         WHERE kb_id = $1 AND key = $2 AND kind = 'relation'
+           AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.predicate_id = relation_types.id)
+         RETURNING id",
+    )
+    .bind(kb_id)
+    .bind(key)
+    .bind(datatype)
+    .bind(unit)
+    .fetch_optional(pool)
+    .await?;
+    let Some((id,)) = row else { return Ok(None) };
+    // domain / range 在各自的表里，不是列。属性没有 range——值域落在 datatype 上
+    set_domains_ranges(pool, id, domains, &[]).await?;
+    Ok(Some(id))
+}
+
 /// 一个属性声明的 datatype。改写字面值事实时要按它换算。
 ///
 /// 以**库里这一条**为准而不是以请求为准：指向已有属性时请求里根本没有

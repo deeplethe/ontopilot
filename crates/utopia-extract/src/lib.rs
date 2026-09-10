@@ -807,6 +807,57 @@ pub fn parse_quantity(s: &str) -> Option<(f64, Option<String>)> {
     Some((n, unit))
 }
 
+/// 开头是一个量、后面还挂着词的 → 那个量。`"1,250 people"` → (1250, "people")。
+///
+/// **这是给已经知道要什么的地方用的**，与 `parse_quantity` 的严不是一回事。
+/// `parse_quantity` 要判「这串字是不是一个东西」，判错就把一个真实体吃掉，
+/// 所以尾巴上有实词一律不认。而这里的调用方手上已经有一条声明了
+/// `datatype = number` 的属性——问的不再是「是不是数」，是「那个数是多少」，
+/// 判错的代价只是一个值不对，量级差着好几档。
+///
+/// 实测卡住的正是这一格：本体里有 `employeeCount (number)`、事实写着
+/// `employee_count → "1,250 people"`，词对得上、属性也在，只因为模型把单位
+/// 写进了值里就一直换不动，那条事实永远拿不到谓词。
+pub fn parse_leading_quantity(s: &str) -> Option<(f64, Option<String>)> {
+    let s = s.trim();
+    // 整体就是一个量的先按严的那套解——`$5 billion` 的单位是 `$` 不是 `billion`
+    if let Some(hit) = parse_quantity(s) {
+        return Some(hit);
+    }
+    let mut parts = s.split_whitespace();
+    let head = parts.next()?;
+    // 数字与紧跟着的百分号／单位可能不分家：`42%`、`8GW`
+    let split = head
+        .char_indices()
+        .find(|(_, c)| !matches!(c, '0'..='9' | '.' | ',' | '_' | '-' | '+'))
+        .map(|(i, _)| i)
+        .unwrap_or(head.len());
+    let (num, glued) = head.split_at(split);
+    let cleaned: String = num.chars().filter(|c| !matches!(c, ',' | '_')).collect();
+    let n: f64 = cleaned.parse().ok()?;
+    if !n.is_finite() {
+        return None;
+    }
+    // 紧贴着的记号优先当单位（`42%` → `%`），否则取后面第一个词
+    let mut rest = parts;
+    let (scale, unit) = if glued.is_empty() {
+        match rest.next() {
+            None => (1.0, None),
+            Some(w) => match w.to_ascii_lowercase().as_str() {
+                "thousand" => (1e3, rest.next().map(str::to_string)),
+                "million" => (1e6, rest.next().map(str::to_string)),
+                "billion" => (1e9, rest.next().map(str::to_string)),
+                "trillion" => (1e12, rest.next().map(str::to_string)),
+                _ => (1.0, Some(w.to_string())),
+            },
+        }
+    } else {
+        (1.0, Some(glued.to_string()))
+    };
+    let n = n * scale;
+    n.is_finite().then_some((n, unit))
+}
+
 /// 属性值按 datatype 归一。失败返回 None——宁缺勿脏，调用方跳过并记日志。
 /// number 容忍千分位/空格；date 要求 YYYY[-MM[-DD]] 且保留原精度；bool 宽容 yes/no。
 pub fn normalize_attr_value(datatype: &str, raw: &serde_json::Value) -> Option<serde_json::Value> {
@@ -824,7 +875,11 @@ pub fn normalize_attr_value(datatype: &str, raw: &serde_json::Value) -> Option<s
                     // 清洗解不动的再当量解：`$5 billion`、`52%` 这些整体就是数，
                     // 只是带着符号与量级词。单位不在这里落笔——它随事实走
                     // （见 `parse_quantity`），这一档只负责把值变成可比的数
-                    .or_else(|| parse_quantity(s).map(|(n, _)| n))
+                    // 清洗解不动的再当量解。**这一档已经声明了 datatype = number**，
+                    // 问的不是「是不是数」而是「那个数是多少」，所以用宽的那套：
+                    // `$5 billion` → 5e9，`1,250 people` → 1250，
+                    // `42% from customers in Europe` → 42
+                    .or_else(|| parse_leading_quantity(s).map(|(n, _)| n))
                     .filter(|f| f.is_finite())
                     .and_then(serde_json::Number::from_f64)
                     .map(serde_json::Value::Number)
@@ -1121,6 +1176,40 @@ mod tests {
         assert_eq!(parse_quantity("$5%"), None);
         assert_eq!(parse_quantity(""), None);
         assert_eq!(parse_quantity("杭州"), None);
+    }
+
+    #[test]
+    fn a_declared_number_reads_past_the_unit() {
+        // 属性已经声明了 datatype = number，问的是「那个数是多少」。
+        // 卡住过的两条都在这里
+        assert_eq!(
+            parse_leading_quantity("1,250 people"),
+            Some((1250.0, Some("people".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("42% from customers in Europe"),
+            Some((42.0, Some("%".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("3,400 people worldwide"),
+            Some((3400.0, Some("people".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("900 million weekly active users"),
+            Some((9e8, Some("weekly".into())))
+        );
+        // 整体就是量的仍走严的那套：单位是 `$`，不是 `billion`
+        assert_eq!(
+            parse_leading_quantity("$5 billion"),
+            Some((5e9, Some("$".into())))
+        );
+        // 开头不是数就还是不认
+        assert_eq!(parse_leading_quantity("about ten"), None);
+        assert_eq!(parse_leading_quantity(""), None);
+
+        // **严的那套一点没松**：它要判「是不是一个东西」，判错会吃掉真实体
+        assert_eq!(parse_quantity("1,250 people"), None);
+        assert_eq!(parse_quantity("2025 Atlantic hurricane season"), None);
     }
 
     #[test]
