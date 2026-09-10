@@ -1064,7 +1064,7 @@ export const en = {
       packsLabel: "Bundled ontologies",
       packsHint: "Optional, and more can be imported later.",
       packsPick: "Search packs…",
-      packsNone: "None — start from the ten seed relations",
+      packsNone: "None — the ontology grows out of the documents",
       packsCount: (c: number, p: number) => `${c} classes · ${p} properties`,
       name: "Name",
       description: "Description",

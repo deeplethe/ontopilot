@@ -949,7 +949,7 @@ export const zh: Strings = {
       packsLabel: "预置本体",
       packsHint: "可不选，之后还能再导入。",
       packsPick: "搜索本体包…",
-      packsNone: "不选 —— 从十个种子关系起步",
+      packsNone: "不选 —— 本体从文档里长出来",
       packsCount: (c: number, p: number) => `${c} 个类 · ${p} 个属性`,
       name: "名称",
       description: "描述",

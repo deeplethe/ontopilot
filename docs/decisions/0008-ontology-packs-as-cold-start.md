@@ -1,9 +1,10 @@
 # 0008 · Ontology packs as the cold start
 
 - **Status**: Built · five packs embedded in the binary (gzip, 1.7 MB → 316 KB),
-  multi-select at KB creation with schema.org checked by default, 22-row static alignment
-  table · a new KB seeds no relations: the packs are the whole ontology · the three open
-  questions stay open; the Chinese-label one got worse (2026-09-02 check)
+  multi-select at KB creation, 22-row static alignment table · a new KB seeds no
+  relations: the packs are the whole ontology · **no pack is checked by default and the
+  base made at registration installs none** (2026-09-10, #580) · the three open questions
+  stay open; the Chinese-label one got worse (2026-09-02 check)
 - **Written**: 2026-08-30 · condensed into English 2026-09-03
 - **Related**: [0001](0001-ontology-import-and-governance.md) criteria and IRI/key split;
   [0006](0006-ontology-scale-and-the-prompt.md) prompt budget;
@@ -99,6 +100,21 @@ order status).
   of packs is not prompt length but **choice**: many names are generic with narrow meanings
   (`affectedBy` is a medical test, `competitor` a sports event), and picking by name or
   vector will hit them.
+- 2026-09-10 (#580): **the default is no pack.** schema.org was pre-selected in the creation
+  dialog and installed into the base made at registration (#322), on the argument that a
+  base without domain and range has no direction for its facts. Measured on the ai-timeline
+  corpus (15 documents, DeepSeek-V3.2, `auto_extend_ontology` on, bootstrap allowed to
+  finish): the pack gives types, not predicates. With schema.org, 98% of entities were typed
+  at 90% accuracy against the Wikidata sheet, but 81% of facts still had no predicate before
+  bootstrap and 65% after, and 342 facts were dropped for `domain_mismatch`; the empty base
+  ended with 13 classes and 175 relations in the corpus's own words, 80% of entities typed
+  at 77%, and *more* entity-to-entity edges with a predicate (56% against 49%). Each
+  extraction call carried ~2k tokens instead of ~18k (the retrieved slice of a 915-class
+  pack; the full list would be ~105k and never goes in). The pack costs ten points of type
+  accuracy to leave out and buys an ontology the base grows itself; that is the trade this
+  record now makes by default, and a base that wants schema.org's vocabulary picks it in
+  the dialog. Still unmeasured: how many edges in the empty base run backwards, which the
+  direction check cannot catch without signatures.
 
 ## Open questions
 

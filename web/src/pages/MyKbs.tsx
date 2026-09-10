@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Lock, Plus, Search } from "lucide-react";
-import { api, DEFAULT_ONTOLOGY_PACKS, type MyKb } from "../api";
+import { api, type MyKb } from "../api";
 import { S } from "../i18n";
 import { useKb } from "../kb";
 import {
@@ -192,10 +192,10 @@ function NewKbModal({
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [restricted, setRestricted] = useState(true);
-  // schema.org 默认勾选，可反选（0009）。删掉内置类之后不选任何包的库是真的空，
-  // 而空库仍然能用——但绝大多数人要的是一个已经能认出人、组织、产品的起点。
-  // 一秒装完（0008 的批量插入），所以默认装得起
-  const [packs, setPacks] = useState<string[]>([...DEFAULT_ONTOLOGY_PACKS]);
+  // 默认一个包都不勾（#580）。从前预勾 schema.org，理由是"要一个已经能认出人、
+  // 组织、产品的起点"；量过之后本体从文档里长出来的是库自己的十几个类，而 915 个
+  // 类的包让每块抽取提示词从 2k 涨到 18k tokens。要包的人在这里勾
+  const [packs, setPacks] = useState<string[]>([]);
 
   const available = useQuery({
     queryKey: ["ontologyPacks"],
