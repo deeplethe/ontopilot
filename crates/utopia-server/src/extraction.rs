@@ -136,14 +136,21 @@ fn reads_like_a_sentence(words: &[String], raw_last: Option<&str>) -> bool {
 /// 槽位片段核对的结论（#582）
 #[derive(Debug, PartialEq)]
 enum SpanVerdict {
-    /// 没给片段，或片段就是绑的那个名字
+    /// 没给片段，或片段就是所绑的那个名字（同名、同词干、名字的一部分、名字后面接着
+    /// 大写的续词——"Anthropic PBC"）
     Ok,
     /// 片段不在引文里：模型没照抄。当没给处理，记一笔
     NotInQuote,
     /// 片段点的是另一个声明过的实体：改绑到它
     Rebind(String),
-    /// 片段不是任何实体的名字，是个描述
+    /// 片段是围着某个名字的短语，那个名字在里面只是修饰语（后面还有词、或带所有格）：
+    /// 描述，不是实体
     Described(String),
+    /// 片段是所绑名字前面带了别的词：头衔（"entrepreneur Tasha McCauley"）还是另一件
+    /// 东西（"companies using OpenAI"），机器分不开。绑定照旧，只记
+    Prefixed(String),
+    /// 片段里没有任何声明过的名字：模型消解了指代（"him"、"the company"）。绑定照旧，只记
+    Coreference(String),
 }
 
 /// 片段在不在引文里：大小写、空白都不论
@@ -158,26 +165,76 @@ fn span_in_quote(span: &str, quote: &str) -> bool {
     !s.is_empty() && q.contains(&s)
 }
 
-/// 片段说的是不是这个名字：同名、同词干（Acme / Acme Corporation）、泛用后缀互推——
-/// 与消解召回同一套判据（`recall_keys`），这里不另起一套「像不像」
+/// 一个词：去掉两头标点和所有格后的小写形态，连同原样（看大小写用）
+#[derive(Debug, Clone)]
+struct Word<'a> {
+    clean: String,
+    raw: &'a str,
+}
+
+/// 片段拆成词：去两头标点、去所有格（"OpenAI's" → openai）、去开头的冠词
+fn span_words(s: &str) -> Vec<Word<'_>> {
+    let mut words: Vec<Word<'_>> = s
+        .split_whitespace()
+        .filter_map(|raw| {
+            let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
+            let w = w
+                .strip_suffix("'s")
+                .or_else(|| w.strip_suffix("\u{2019}s"))
+                .unwrap_or(w);
+            (!w.is_empty()).then(|| Word {
+                clean: w.to_lowercase(),
+                raw,
+            })
+        })
+        .collect();
+    while words
+        .first()
+        .is_some_and(|w| matches!(w.clean.as_str(), "the" | "a" | "an"))
+    {
+        words.remove(0);
+    }
+    words
+}
+
+/// 一个词是不是专名的样子：首字符大写或数字（"PBC"、"LLC"、"LX"、"Global"）
+fn looks_proper(raw: &str) -> bool {
+    raw.chars()
+        .find(|c| c.is_alphanumeric())
+        .is_some_and(|c| c.is_uppercase() || c.is_numeric())
+}
+
+/// 词序列 needle 在 hay 里连续出现的位置
+fn find_words(hay: &[Word<'_>], needle: &[Word<'_>]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > hay.len() {
+        return None;
+    }
+    (0..=hay.len() - needle.len()).find(|&i| {
+        needle
+            .iter()
+            .zip(&hay[i..])
+            .all(|(n, h)| n.clean == h.clean)
+    })
+}
+
+/// 片段说的是不是这个名字：同名、同词干（Acme / Acme Corp.）、泛用后缀互推——
+/// 与消解召回同一套判据（`recall_keys`）；或者片段的词全在名字里（"Altman" 之于
+/// "Sam Altman"，"Anthropic" 之于 "Anthropic, PBC"）
 fn slot_matches(span: &str, name: &str) -> bool {
     let keys = |s: &str| {
-        // 去掉词尾标点和所有格（"OpenAI, Inc." / "OpenAI's"），再取召回键
-        let clean = s
-            .split_whitespace()
-            .map(|w| {
-                let w = w.trim_matches(|c: char| !c.is_alphanumeric());
-                w.strip_suffix("'s")
-                    .or_else(|| w.strip_suffix("\u{2019}s"))
-                    .unwrap_or(w)
-            })
-            .filter(|w| !w.is_empty())
+        let clean = span_words(s)
+            .into_iter()
+            .map(|w| w.clean)
             .collect::<Vec<_>>()
             .join(" ");
         utopia_store::resolution::recall_keys(&utopia_store::resolution::normalize_name(&clean))
     };
     let (a, b) = (keys(span), keys(name));
-    !a.is_empty() && a.iter().any(|k| b.contains(k))
+    if !a.is_empty() && a.iter().any(|k| b.contains(k)) {
+        return true;
+    }
+    let (s, n) = (span_words(span), span_words(name));
+    !s.is_empty() && s.iter().all(|w| n.iter().any(|x| x.clean == w.clean))
 }
 
 /// **模型抄，机器判**（#582）。
@@ -187,9 +244,17 @@ fn slot_matches(span: &str, name: &str) -> bool {
 /// 形状写一条规则、配一张词表，量出来规则的服从率一半上下，词表只认见过的形状。
 /// 这里换一个问法：不问模型「这算不算实体」，让它把引文里点名每一侧的那几个字
 /// 抄出来（`subject_span` / `object_span`）。抄是模型稳定会做的事；判断交给机器：
-/// 片段不是它绑的那个名字，就看它是不是另一个声明过的实体（改绑），都不是就是描述。
-/// 多词的片段是某个声明过的名字的开头（"OpenAI's board" / "OpenAI's board of directors"）
-/// 也算改绑；单词的不算——"OpenAI" 会误落到 "OpenAI Global, LLC" 上
+///
+/// 1. 片段是所绑的名字（同名、同词干、名字的一部分）→ 放行；
+/// 2. 片段是另一个声明过的实体的名字（或那名字的一部分）→ 改绑；
+/// 3. 片段里含所绑的名字、名字**后面**还有词（"former OpenAI personnel"、"The Verge
+///    reporter"）或名字带所有格（"Anthropic's safeguards"）→ 名字在里面只是修饰语，
+///    这是描述。后面的词全是专名的样子（"Anthropic PBC"、"OpenAI Global LLC"）不算；
+/// 4. 名字只在片段**末尾**、前面带了词 → 头衔还是另一件东西分不开，绑定照旧、只记；
+/// 5. 片段里是别的声明过的名字带着修饰 → 描述；一个名字都没有 → 指代，绑定照旧、只记。
+///
+/// 只有 3 和 5 前半改动事实（主语丢、宾语落字面值）；其余都是信号，让每一层的比率
+/// 按库、按模型读得出来
 fn verify_span(
     span: Option<&str>,
     name: &str,
@@ -205,21 +270,64 @@ fn verify_span(
     if slot_matches(span, name) {
         return SpanVerdict::Ok;
     }
-    let mut names: Vec<&String> = declared.keys().collect();
-    names.sort();
-    if let Some(other) = names.iter().find(|k| slot_matches(span, k)) {
-        return SpanVerdict::Rebind((*other).clone());
+    let s = span_words(span);
+    let n = span_words(name);
+    if s.is_empty() {
+        return SpanVerdict::Coreference(span.to_string());
     }
-    let lower = utopia_store::resolution::normalize_name(span).to_lowercase();
-    if lower.split_whitespace().count() >= 2 {
-        if let Some(other) = names.iter().find(|k| {
-            let kl = utopia_store::resolution::normalize_name(k).to_lowercase();
-            kl.starts_with(&lower) || lower.starts_with(&kl) && kl.split_whitespace().count() >= 2
-        }) {
-            return SpanVerdict::Rebind((*other).clone());
+
+    // 2. 另一个声明过的实体：精确/词干命中优先，其次名字包住片段的（取最短的那个）
+    let mut others: Vec<&String> = declared.keys().filter(|k| k.as_str() != name).collect();
+    others.sort();
+    if let Some(k) = others.iter().find(|k| {
+        let keys = |x: &str| {
+            let clean = span_words(x)
+                .into_iter()
+                .map(|w| w.clean)
+                .collect::<Vec<_>>()
+                .join(" ");
+            utopia_store::resolution::recall_keys(&utopia_store::resolution::normalize_name(&clean))
+        };
+        let (a, b) = (keys(span), keys(k));
+        a.iter().any(|x| b.contains(x))
+    }) {
+        return SpanVerdict::Rebind((*k).clone());
+    }
+    let mut supersets: Vec<(&String, usize)> = others
+        .iter()
+        .filter_map(|k| {
+            let kw = span_words(k);
+            (s.iter().all(|w| kw.iter().any(|x| x.clean == w.clean))).then_some((*k, kw.len()))
+        })
+        .collect();
+    supersets.sort_by_key(|(_, len)| *len);
+    if let Some((k, _)) = supersets.first() {
+        return SpanVerdict::Rebind((*k).clone());
+    }
+
+    // 3 / 4. 所绑的名字在片段里
+    if let Some(i) = find_words(&s, &n) {
+        let end = i + n.len();
+        let last = s[end - 1].raw;
+        let possessive = last.ends_with("'s") || last.ends_with("\u{2019}s");
+        let after = &s[end..];
+        if possessive || after.iter().any(|w| !looks_proper(w.raw)) {
+            return SpanVerdict::Described(span.to_string());
         }
+        if after.is_empty() && i > 0 {
+            return SpanVerdict::Prefixed(span.to_string());
+        }
+        return SpanVerdict::Ok;
     }
-    SpanVerdict::Described(span.to_string())
+
+    // 5. 别的名字带着修饰，或一个名字都没有
+    if others.iter().any(|k| {
+        let kw = span_words(k);
+        find_words(&s, &kw).is_some()
+    }) {
+        return SpanVerdict::Described(span.to_string());
+    }
+    SpanVerdict::Coreference(span.to_string())
 }
 
 fn clause_suspect(name: &str) -> Option<&'static str> {
@@ -1550,102 +1658,98 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             }
 
             // **槽位片段核对**（#582，取代 #578 的词表）：模型交出引文里点名每一侧的那几个
-            // 字，机器核对。不是它绑的那个名字 → 是另一个声明过的实体就改绑；都不是就是
-            // 描述——描述做主语不落，做宾语落成字面值。片段不在引文里只记不拦
+            // 字，机器核对（`verify_span`）。描述做主语不落、做宾语落成字面值；点了别的
+            // 实体就改绑；其余都只记不拦
             let quote_text = f.quote.as_deref().unwrap_or("");
-            let rebound_subject: Option<String> = match verify_span(
+            let subject_verdict = verify_span(
                 f.subject_span.as_deref(),
                 f.subject.trim(),
                 quote_text,
                 &entity_ids,
-            ) {
-                SpanVerdict::Ok => None,
-                SpanVerdict::NotInQuote => {
-                    drop_signal(
-                        state,
-                        doc.kb_id,
-                        document_id,
+            );
+            let object_verdict = verify_span(
+                f.object_span.as_deref(),
+                object_name,
+                quote_text,
+                &entity_ids,
+            );
+            let mut rebound_subject: Option<String> = None;
+            let mut rebound_object: Option<String> = None;
+            let mut object_described: Option<String> = None;
+            let mut subject_described = false;
+            for (side, verdict, span, bound) in [
+                (
+                    "subject",
+                    &subject_verdict,
+                    f.subject_span.as_deref(),
+                    f.subject.trim(),
+                ),
+                (
+                    "object",
+                    &object_verdict,
+                    f.object_span.as_deref(),
+                    object_name,
+                ),
+            ] {
+                let (reason, example) = match verdict {
+                    SpanVerdict::Ok => continue,
+                    SpanVerdict::NotInQuote => (
                         utopia_store::extraction_drops::reason::SPAN_NOT_IN_QUOTE,
-                        &f.predicate,
-                        f.subject_span.as_deref(),
-                    )
-                    .await;
-                    None
-                }
-                SpanVerdict::Rebind(name) => {
-                    drop_signal(
-                        state,
-                        doc.kb_id,
-                        document_id,
-                        utopia_store::extraction_drops::reason::SPAN_REBOUND,
-                        &f.predicate,
-                        Some(&format!(
-                            "{} → {name} (was {})",
-                            f.subject_span.as_deref().unwrap_or(""),
-                            f.subject.trim()
-                        )),
-                    )
-                    .await;
-                    Some(name)
-                }
-                SpanVerdict::Described(span) => {
-                    drop_signal(
-                        state,
-                        doc.kb_id,
-                        document_id,
-                        utopia_store::extraction_drops::reason::SUBJECT_DESCRIBED,
-                        &f.predicate,
-                        Some(&span),
-                    )
-                    .await;
-                    continue;
-                }
-            };
+                        format!("{} ({bound})", span.unwrap_or("")),
+                    ),
+                    SpanVerdict::Rebind(name) => {
+                        if side == "subject" {
+                            rebound_subject = Some(name.clone());
+                        } else {
+                            rebound_object = Some(name.clone());
+                        }
+                        (
+                            utopia_store::extraction_drops::reason::SPAN_REBOUND,
+                            format!("{} → {name} (was {bound})", span.unwrap_or("")),
+                        )
+                    }
+                    SpanVerdict::Described(text) => {
+                        if side == "subject" {
+                            subject_described = true;
+                            (
+                                utopia_store::extraction_drops::reason::SUBJECT_DESCRIBED,
+                                format!("{text} ({bound})"),
+                            )
+                        } else {
+                            object_described = Some(text.clone());
+                            (
+                                utopia_store::extraction_drops::reason::OBJECT_DESCRIBED,
+                                format!("{text} ({bound})"),
+                            )
+                        }
+                    }
+                    SpanVerdict::Prefixed(text) => (
+                        utopia_store::extraction_drops::reason::SPAN_PREFIXED,
+                        format!("{text} ({bound})"),
+                    ),
+                    SpanVerdict::Coreference(text) => (
+                        utopia_store::extraction_drops::reason::SPAN_COREFERENCE,
+                        format!("{text} ({bound})"),
+                    ),
+                };
+                drop_signal(
+                    state,
+                    doc.kb_id,
+                    document_id,
+                    reason,
+                    &f.predicate,
+                    Some(&example),
+                )
+                .await;
+            }
+            if subject_described {
+                continue;
+            }
             let subject_name: &str = rebound_subject.as_deref().unwrap_or(f.subject.trim());
             let subject_ref_eff: Option<&str> = if rebound_subject.is_some() {
                 None
             } else {
                 f.subject_ref.as_deref().map(str::trim)
-            };
-            let mut object_described: Option<String> = None;
-            let rebound_object: Option<String> = match verify_span(
-                f.object_span.as_deref(),
-                object_name,
-                quote_text,
-                &entity_ids,
-            ) {
-                SpanVerdict::Ok => None,
-                SpanVerdict::NotInQuote => {
-                    drop_signal(
-                        state,
-                        doc.kb_id,
-                        document_id,
-                        utopia_store::extraction_drops::reason::SPAN_NOT_IN_QUOTE,
-                        &f.predicate,
-                        f.object_span.as_deref(),
-                    )
-                    .await;
-                    None
-                }
-                SpanVerdict::Rebind(name) => {
-                    drop_signal(
-                        state,
-                        doc.kb_id,
-                        document_id,
-                        utopia_store::extraction_drops::reason::SPAN_REBOUND,
-                        &f.predicate,
-                        Some(&format!(
-                            "{} → {name} (was {object_name})",
-                            f.object_span.as_deref().unwrap_or("")
-                        )),
-                    )
-                    .await;
-                    Some(name)
-                }
-                SpanVerdict::Described(span) => {
-                    object_described = Some(span);
-                    None
-                }
             };
             let object_name: &str = rebound_object.as_deref().unwrap_or(object_name);
             let object_ref_eff: Option<&str> =
@@ -2593,7 +2697,7 @@ mod tests {
             .collect()
     }
 
-    /// 片段核对：两句真实的错例落成描述；点了别的实体就改绑；正常的放行
+    /// 片段核对：#578 的两句真实错例；改绑；头衔与指代只记；正常的放行
     #[test]
     fn a_span_that_names_a_description_is_not_the_entity() {
         let d = declared(&[
@@ -2601,8 +2705,11 @@ mod tests {
             "Anthropic",
             "Sam Altman",
             "OpenAI's board of directors",
+            "The Verge",
+            "Tasha McCauley",
         ]);
         let quote = "Former OpenAI personnel have founded competing AI companies Anthropic, SpaceXAI, Safe Superintelligence Inc., and Thinking Machines Lab";
+        // 名字后面还有词：名字只是修饰语
         assert_eq!(
             verify_span(Some("Former OpenAI personnel"), "OpenAI", quote, &d),
             SpanVerdict::Described("Former OpenAI personnel".into())
@@ -2611,10 +2718,36 @@ mod tests {
             verify_span(Some("Anthropic"), "Anthropic", quote, &d),
             SpanVerdict::Ok
         );
-        let quote2 = "Over one hundred companies using OpenAI contacted Anthropic";
+        // 所有格：名字只是修饰语
+        let q3 = "Claude bypassed Anthropic's safeguards";
         assert_eq!(
-            verify_span(Some("companies using OpenAI"), "OpenAI", quote2, &d),
-            SpanVerdict::Described("companies using OpenAI".into())
+            verify_span(Some("Anthropic's safeguards"), "Anthropic", q3, &d),
+            SpanVerdict::Described("Anthropic's safeguards".into())
+        );
+        // 另一个名字带着修饰，绑到了第三方
+        assert_eq!(
+            verify_span(
+                Some("The Verge reporter"),
+                "Sam Altman",
+                "a The Verge reporter wrote",
+                &d
+            ),
+            SpanVerdict::Described("The Verge reporter".into())
+        );
+        // 名字前面带了词：头衔还是另一件东西分不开，只记
+        let q2 = "Over one hundred companies using OpenAI contacted Anthropic";
+        assert_eq!(
+            verify_span(Some("companies using OpenAI"), "OpenAI", q2, &d),
+            SpanVerdict::Prefixed("companies using OpenAI".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("entrepreneur Tasha McCauley"),
+                "Tasha McCauley",
+                "with entrepreneur Tasha McCauley on the board",
+                &d
+            ),
+            SpanVerdict::Prefixed("entrepreneur Tasha McCauley".into())
         );
         // 片段点了另一个声明过的实体：改绑，不丢
         assert_eq!(
@@ -2626,7 +2759,10 @@ mod tests {
             ),
             SpanVerdict::Rebind("Sam Altman".into())
         );
-        // 多词片段是某个名字的开头：改绑到那个名字
+        assert_eq!(
+            verify_span(Some("Altman"), "OpenAI", "Altman announced the deal", &d),
+            SpanVerdict::Rebind("Sam Altman".into())
+        );
         assert_eq!(
             verify_span(
                 Some("OpenAI's board"),
@@ -2636,12 +2772,50 @@ mod tests {
             ),
             SpanVerdict::Rebind("OpenAI's board of directors".into())
         );
+        // 指代：没有任何名字，绑定照旧、只记
+        assert_eq!(
+            verify_span(Some("him"), "Sam Altman", "the board reinstated him", &d),
+            SpanVerdict::Coreference("him".into())
+        );
         // 没给片段：老行为
         assert_eq!(verify_span(None, "OpenAI", quote, &d), SpanVerdict::Ok);
         // 片段不在引文里：只记不拦
         assert_eq!(
-            verify_span(Some("OpenAI staff"), "OpenAI", quote2, &d),
+            verify_span(Some("OpenAI staff"), "OpenAI", q2, &d),
             SpanVerdict::NotInQuote
+        );
+    }
+
+    /// 名字后面接着专名样子的续词是同一个东西；接着小写的词就不是
+    #[test]
+    fn a_name_continued_in_capitals_is_the_same_thing() {
+        let d = declared(&["Anthropic", "OpenAI"]);
+        assert_eq!(
+            verify_span(
+                Some("Anthropic PBC"),
+                "Anthropic",
+                "Anthropic PBC filed",
+                &d
+            ),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            verify_span(
+                Some("OpenAI Global, LLC"),
+                "OpenAI",
+                "OpenAI Global, LLC is the for-profit arm",
+                &d
+            ),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            verify_span(
+                Some("OpenAI employees"),
+                "OpenAI",
+                "OpenAI employees left",
+                &d
+            ),
+            SpanVerdict::Described("OpenAI employees".into())
         );
     }
 
@@ -2651,6 +2825,12 @@ mod tests {
         assert!(slot_matches("Acme", "Acme Corp."));
         assert!(slot_matches("openai", "OpenAI"));
         assert!(slot_matches("OpenAI's", "OpenAI"));
+        assert!(slot_matches("Altman", "Sam Altman"));
+        assert!(slot_matches("Anthropic", "Anthropic, PBC"));
+        assert!(slot_matches(
+            "the Center for Security and Emerging Technology",
+            "Center for Security and Emerging Technology"
+        ));
         assert!(!slot_matches("Former OpenAI personnel", "OpenAI"));
         assert!(!slot_matches("Anthropic", "OpenAI"));
     }

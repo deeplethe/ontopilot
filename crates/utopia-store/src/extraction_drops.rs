@@ -54,6 +54,12 @@ pub mod reason {
     pub const OBJECT_DESCRIBED: &str = "object_described";
     /// 片段点的是另一个声明过的实体：改绑到它（#582）
     pub const SPAN_REBOUND: &str = "span_rebound";
+    /// 片段是所绑名字前面带了别的词（"entrepreneur Tasha McCauley" / "companies using
+    /// OpenAI"）：头衔还是另一件东西，机器分不开，绑定照旧，只记（#582）
+    pub const SPAN_PREFIXED: &str = "span_prefixed";
+    /// 片段里没有任何声明过的名字（"him" / "the company"）：模型消解了指代，无从核对，
+    /// 绑定照旧，只记（#582）
+    pub const SPAN_COREFERENCE: &str = "span_coreference";
     /// 宾语既没在 entities 里声明、库里也没有叫这个名字的东西：事实照落，
     /// 宾语落成字面值而不是节点（#559）。记下来是为了量：这一类里有多少
     /// 本该是实体（模型漏报），有多少本来就是描述
