@@ -547,6 +547,48 @@ pub async fn set_relation_qualifiers(
     Ok(())
 }
 
+/// 给一条关系**追加**一个边上的属性声明（0037）。
+///
+/// 与 `set_relation_qualifiers` 的覆盖式不同：抽取时几篇文档并行，各自从语料里
+/// 补声明，覆盖式写入会把别人刚补的冲掉（实测 `round` 补过又没了）。
+/// 这里只加不删，撞上已有的什么都不做。校验与覆盖式同一套。
+pub async fn add_relation_qualifier(
+    pool: &PgPool,
+    kb_id: Uuid,
+    relation_type_id: Uuid,
+    qualifier_type_id: Uuid,
+) -> AppResult<()> {
+    if relation_type_id == qualifier_type_id {
+        return Err(AppError::invalid(
+            "qualifier_is_self",
+            "A relation cannot be its own qualifier",
+        ));
+    }
+    let (ok,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM relation_types
+         WHERE kb_id = $1 AND kind = 'attribute' AND id = $2",
+    )
+    .bind(kb_id)
+    .bind(qualifier_type_id)
+    .fetch_one(pool)
+    .await?;
+    if ok != 1 {
+        return Err(AppError::invalid(
+            "qualifier_not_attribute",
+            "Every qualifier must be an attribute of this base",
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO relation_type_qualifiers (relation_type_id, qualifier_type_id)
+         VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(relation_type_id)
+    .bind(qualifier_type_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn update_relation_type(
     pool: &PgPool,

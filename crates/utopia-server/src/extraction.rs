@@ -904,7 +904,12 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
     写入时按这里的 key 对模型给的 qualifiers，对不上的进丢弃表让人看见 */
     let rtype_by_id: HashMap<Uuid, &utopia_core::models::RelationType> =
         rtypes.iter().map(|r| (r.id, r)).collect();
-    let qualifier_defs: HashMap<Uuid, Vec<&utopia_core::models::RelationType>> = rtypes
+    let attr_by_key: HashMap<String, &utopia_core::models::RelationType> = rtypes
+        .iter()
+        .filter(|r| r.kind == "attribute")
+        .map(|r| (r.key.to_lowercase(), r))
+        .collect();
+    let mut qualifier_defs: HashMap<Uuid, Vec<&utopia_core::models::RelationType>> = rtypes
         .iter()
         .filter(|r| r.kind != "attribute" && !r.qualifiers.is_empty())
         .map(|r| {
@@ -2300,11 +2305,78 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 值照 datatype 换算，单位另记一格（与 object_value 同形）；
                 key 不在声明里、换不动、与已记的不一致——三种都进丢弃表，不静默 */
                 if let (Some(pid), Some(quals)) = (predicate_id, f.qualifiers.as_ref()) {
-                    let defs = qualifier_defs.get(&pid);
+                    // 克隆出这一组引用：下面撞上已有属性时要往 qualifier_defs 里追加声明
+                    let defs: Vec<&utopia_core::models::RelationType> =
+                        qualifier_defs.get(&pid).cloned().unwrap_or_default();
+                    /* 模型常把币种单独写成一个键（`"amount": "1500000000", "currency": "CNY"`），
+                    而不是写进数额里。那不是一个属性，是数额的单位——先把它拿出来，
+                    数值属性解不出单位时用它，别让它作为未知 key 进丢弃表 */
+                    let sibling_currency: Option<&'static str> = quals
+                        .iter()
+                        .find(|(k, _)| {
+                            matches!(
+                                k.trim().to_lowercase().as_str(),
+                                "currency" | "币种" | "货币" | "unit" | "单位"
+                            )
+                        })
+                        .and_then(|(_, v)| v.as_str())
+                        .and_then(utopia_extract::currency_unit);
                     for (key, raw) in quals {
-                        let Some(def) = defs.and_then(|d| {
-                            d.iter().find(|q| q.key.eq_ignore_ascii_case(key.trim()))
-                        }) else {
+                        // 模型对没提到的属性会写 null：那是「原文没说」，不是坏值，不记
+                        if raw.is_null() {
+                            continue;
+                        }
+                        if matches!(
+                            key.trim().to_lowercase().as_str(),
+                            "currency" | "币种" | "货币" | "unit" | "单位"
+                        ) {
+                            continue;
+                        }
+                        let declared = defs
+                            .iter()
+                            .find(|q| q.key.eq_ignore_ascii_case(key.trim()))
+                            .copied();
+                        /* **未知 key 撞上本库已有的属性定义 → 补一条声明，不丢值。**
+                        实测不声明时模型照样写 `amount`、`stake`、`round`，八条全进
+                        丢弃表——而这三个属性定义明明都在库里，缺的只是关系上的一条
+                        声明。补声明不新建任何东西、可撤（本体页取消勾选即可），
+                        所以跟自动扩本体走同一个开关 */
+                        let adopted = match declared {
+                            Some(d) => Some(d),
+                            None if kb.auto_extend_ontology => {
+                                match attr_by_key.get(&key.trim().to_lowercase()).copied() {
+                                    Some(attr) => {
+                                        match utopia_store::ontology::add_relation_qualifier(
+                                            &state.pool,
+                                            doc.kb_id,
+                                            pid,
+                                            attr.id,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => {
+                                                tracing::info!(kb_id = %doc.kb_id, relation = %f.predicate, qualifier = %attr.key, "边上的属性按语料补了声明");
+                                                qualifier_defs.entry(pid).or_default().push(attr);
+                                                Some(attr)
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(kb_id = %doc.kb_id, error = %e, "补声明失败");
+                                                None
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        tracing::debug!(kb_id = %doc.kb_id, relation = %f.predicate, key = %key, attrs = attr_by_key.len(), "边上的属性：key 撞不上本库任何属性定义");
+                                        None
+                                    }
+                                }
+                            }
+                            None => {
+                                tracing::debug!(kb_id = %doc.kb_id, relation = %f.predicate, key = %key, auto_extend = kb.auto_extend_ontology, "边上的属性：未声明且不自动扩本体");
+                                None
+                            }
+                        };
+                        let Some(def) = adopted else {
                             drop_signal(
                                 state,
                                 doc.kb_id,
@@ -2330,11 +2402,27 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                             continue;
                         };
                         let mut value = serde_json::json!({ "value": normalized });
-                        let unit = raw
+                        /* 单位：原文里认得出的用原文的（€、¥、%），原文里**没有任何单位记号**
+                        才落回属性声明的缺省。原文带着一个认不出的单位（"francs"）时
+                        **不能**拿缺省顶上——实测 `EUR 30 million` 被存成了 `$`，
+                        `15亿元人民币` 也是；币种写错比不写更糟 */
+                        let parsed = raw
                             .as_str()
-                            .and_then(utopia_extract::parse_leading_quantity)
-                            .and_then(|(_, u)| u)
-                            .or_else(|| def.unit.clone().filter(|u| !u.is_empty()));
+                            .and_then(utopia_extract::parse_leading_quantity);
+                        let raw_has_unit_token = raw.as_str().is_some_and(|t| {
+                            t.chars().any(|c| {
+                                c.is_alphabetic()
+                                    || matches!(c, '$' | '€' | '£' | '¥' | '₩' | '₹' | '%')
+                            })
+                        });
+                        let unit = match parsed.and_then(|(_, u)| u) {
+                            Some(u) => Some(u),
+                            None => match sibling_currency {
+                                Some(c) if dt == "number" => Some(c.to_string()),
+                                _ if raw_has_unit_token => None,
+                                _ => def.unit.clone().filter(|u| !u.is_empty()),
+                            },
+                        };
                         if let Some(u) = unit {
                             value["unit"] = serde_json::Value::String(u);
                         }

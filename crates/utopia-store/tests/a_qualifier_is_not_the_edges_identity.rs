@@ -107,6 +107,23 @@ async fn a_qualifier_is_added_to_the_same_edge_and_never_overwritten() -> anyhow
         "只有属性能当限定项"
     );
 
+    // 追加式声明：只加不删、撞上已有的不报错、同样的校验
+    utopia_store::ontology::add_relation_qualifier(&pool, kb, invested, amount).await?;
+    utopia_store::ontology::add_relation_qualifier(&pool, kb, invested, amount).await?;
+    let again = utopia_store::graph::relation_types(&pool, kb)
+        .await?
+        .into_iter()
+        .find(|r| r.id == invested)
+        .map(|r| r.qualifiers)
+        .unwrap_or_default();
+    assert_eq!(again, vec![amount], "追加同一个不重复、不覆盖");
+    assert!(
+        utopia_store::ontology::add_relation_qualifier(&pool, kb, invested, other_rel)
+            .await
+            .is_err(),
+        "追加式同样只认属性"
+    );
+
     // 一条边
     let (a, b, fact) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
     for (id, name) in [(a, "Vega"), (b, "Northwind")] {

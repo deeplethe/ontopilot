@@ -1,6 +1,6 @@
 # 0037 · A relation carries its own attributes
 
-- **Status**: written · cut 1 in progress: `relation_type_qualifiers` and `fact_qualifiers`
+- **Status**: cut 1 merged (#598) · cut 1b (units, auto-declaration, sibling currency; #TBD) · `relation_type_qualifiers` and `fact_qualifiers`
   (migration 0049), a relation declares its qualifiers, extraction writes them, the panel and
   the export read them · not in this cut: an entity-valued qualifier (the column is reserved,
   nothing writes it), a second row plus a conflict when two mentions of one edge disagree
@@ -96,6 +96,33 @@ instead of a class.
 5. **Export needs no new vocabulary.** The statement node already exists; each qualifier is
    one more triple on it, predicate = the attribute's IRI, object = the literal typed by the
    attribute's datatype. RDF 1.2's reifier is the same shape.
+
+## What the test waves found (2026-09-11)
+
+Four waves on an isolated base, each document pressing one rule (repeatability ×3, the
+rules corpus declared and undeclared, a Chinese corpus declared and undeclared):
+
+- **Repeatable.** Three runs of the original corpus, both investment edges carry their
+  amount every time; the model's `stake: "minority"` is refused by the number datatype and
+  lands in the drop report, not in the graph.
+- **A qualifier the relation never declared, but the base already defines** (`amount`,
+  `stake`, `round` exist as attributes) is now declared from the corpus and written, under
+  the same `auto_extend_ontology` switch as the rest of the growth loop. The declaration is
+  additive (`add_relation_qualifier`): documents extract in parallel and a replace-all write
+  clobbered one document's declaration with another's.
+- **Currency.** The model normalises `€30 million` and `15亿元人民币` to a bare number or
+  writes the currency as a sibling key (`"currency": "CNY"`). The prompt now asks for the
+  figure as written, the scanner reads ISO codes, currency words and CJK magnitudes (万, 亿),
+  a sibling `currency` key becomes the unit, and the attribute's default unit is used only
+  when the text carries no unit token at all — a wrong currency is worse than none.
+- **Two mentions of one edge in parallel can both insert.** The dedup in `insert_fact_inner`
+  is a read-then-write with no unique index behind it; two documents describing the same
+  `(subject, predicate, object, moment)` extracted at the same time produced two rows with
+  different amounts and no conflict. The next cut (two rows plus `fact_conflicts` for a
+  disagreement) has to close this first — a per-base advisory lock around the insert, or a
+  partial unique index on live rows.
+- The model dates "earlier this year" to a concrete day and so mints a moment the text never
+  gave; identity follows the model's date. Visible on the timeline, not a qualifier defect.
 
 ## Open questions
 
