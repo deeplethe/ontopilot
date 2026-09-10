@@ -323,6 +323,21 @@ fn is_entity_name(name: &str) -> bool {
     {
         return false;
     }
+    /* **整体就是一个量的，不是一个东西**：`$5 billion`、`52%`、`3.5 million`。
+    上面那条部分格只接住 `745 of …`，接不住这些。
+
+    这道闸装在**这里**才管用。抽取那边也有一道（`looks_literal`），但它前面
+    挂着 `!known_predicate`：谓词一旦是本体里列出来的关系，整段判断直接跳过。
+    实测就是这么漏的——`hasAmount` 来自 FIBO 包、抽取前就在本体里，于是
+    `Microsoft hasAmount $1 billion` 里那个数额照样被造成了节点，
+    而同一个库里 `invested`（语料自己长的、当时还未知）走到了那道闸、被拦下。
+    `is_entity_name` 不问谓词，主语宾语一视同仁，两条路都过它。
+
+    判据仍旧从严（见 `parse_quantity`）：尾巴上有实词就不算，
+    `3M`、`7-Eleven`、`23andMe`、`2025 Atlantic hurricane season` 一个都不误伤。 */
+    if utopia_extract::parse_quantity(name).is_some() {
+        return false;
+    }
     true
 }
 
@@ -1402,6 +1417,23 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 // 值在手上就收下，原词进 proposed_predicate，等本体采纳时再换谓词，
                 // 形状已经是对的（0010）
                 (Some(v), None | Some("")) => Some(v.clone()),
+                /* **宾语整体是一个量：一律当值收下**，不问谓词认不认识、
+                也不问模型有没有把它声明成实体。
+
+                下面那一档卡着 `!known_predicate`，理由是本体说得上话的时候
+                别去二猜模型。可量值这里没有可猜的余地：一个数额不会因为
+                谓词恰好在本体里就变成一个东西。实测漏的正是这一格——
+                `hasAmount` 来自 FIBO 包、抽取前就在本体里，
+                `Microsoft hasAmount $1 billion` 于是绕过下面那一档，
+                把数额造成了节点；同一个库里 `invested` 当时还未知，
+                走到下面那一档、被拦住了。同一个数额，两种下场。
+
+                收下而不是丢掉：`is_entity_name` 那道闸现在也拦纯量值，
+                不在这里接住的话，这条事实会连同那个数一起进丢弃表。
+                原词照旧进 `proposed_predicate`，采纳时再换谓词 */
+                (_, Some(o)) if utopia_extract::parse_quantity(o).is_some() => {
+                    Some(serde_json::Value::String(o.to_string()))
+                }
                 (_, Some(o))
                     if !o.is_empty()
                         && !known_predicate(f.predicate.as_str())
@@ -2450,6 +2482,32 @@ mod name_tests {
             "745 of OpenAI's 770 employees",
         ] {
             assert!(!is_entity_name(s), "这是一句话，不该当成实体名：{s}");
+        }
+    }
+
+    /// 一个数额不是一个东西。
+    ///
+    /// 样本取自实跑出来的库：`$5 billion`、`$1 billion`、`$30 billion` 各自成过节点，
+    /// 而且同名的会并成一个点——SSI Inc. 与 Nvidia 因为都出现过「$5 billion」
+    /// 在图上相连，那条路径没有任何含义。判据的窄处在**尾巴**：
+    /// 后面还有实词的一律放行，因为那时它说的就不再只是那个数。
+    #[test]
+    fn a_quantity_is_not_a_thing() {
+        for s in ["$5 billion", "€1.5 million", "52%", "3.5 million", "35,000"] {
+            assert!(!is_entity_name(s), "这是一个量，不该当成实体名：{s}");
+        }
+        // **以数字开头的真实体一个都不能误伤。** 量级词只认全写，所以 `3M` 解不动；
+        // 后面挂着实词的，尾巴那一条接住
+        for s in [
+            "3M",
+            "7-Eleven",
+            "23andMe",
+            "2025 Atlantic hurricane season",
+            "900 million weekly active users",
+            "1000 Islands",
+            "$10 billion investment",
+        ] {
+            assert!(is_entity_name(s), "这是真实体，不该被挡：{s}");
         }
     }
 
