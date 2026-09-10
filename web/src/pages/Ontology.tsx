@@ -983,7 +983,9 @@ function RelationshipsCard({
           onClick={() => setOpen((v) => !v)}
         >
           <span className="flex items-center gap-2 text-small font-medium">
-            {dir === "out" ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
+            {/* 与下面每条关系行的箭头**同一尺寸**（12）：同一个记号排成一列，
+                标题这个小 2px 就只会读成没对齐 */}
+            {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
             <span className="truncate">
               {dir === "out" ? S.ontology.schemaOutgoing : S.ontology.schemaIncoming}
             </span>

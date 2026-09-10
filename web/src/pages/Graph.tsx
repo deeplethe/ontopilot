@@ -3063,7 +3063,9 @@ function FactSection({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex items-center gap-2 text-small font-medium">
-          {dir === "out" ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
+          {/* 与下面每条事实行的方向箭头**同一尺寸**（12）。它们是同一个记号、
+              还特意排成一列，标题这个小 2px 就只会读成没对齐 */}
+          {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
           <span className="truncate">{title}</span>
           <span className="u-num">{count}</span>
         </span>
