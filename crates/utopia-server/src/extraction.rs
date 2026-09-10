@@ -151,6 +151,8 @@ enum SpanVerdict {
     Prefixed(String),
     /// 片段里没有任何声明过的名字：模型消解了指代（"him"、"the company"）。绑定照旧，只记
     Coreference(String),
+    /// 片段抄的是事实另一侧的名字（宾语片段写成了主语）：抄错了位置。绑定照旧，只记
+    Misplaced(String),
 }
 
 /// 片段在不在引文里：大小写、空白都不论
@@ -253,11 +255,17 @@ fn slot_matches(span: &str, name: &str) -> bool {
 /// 4. 名字只在片段**末尾**、前面带了词 → 头衔还是另一件东西分不开，绑定照旧、只记；
 /// 5. 片段里是别的声明过的名字带着修饰 → 描述；一个名字都没有 → 指代，绑定照旧、只记。
 ///
+/// 两条按语法位置来的补充：名字后面紧跟逗号是同位语（"Helen Toner, strategy director
+/// for …"），还是它；片段**以**另一个声明过的名字**结尾**（"Microsoft chief executive
+/// Satya Nadella"、"former Apple designer Jony Ive"）时，短语的头是末尾那个名字，改绑
+/// 到它——除非那是这条事实的另一侧（宾语片段抄成了主语），那是抄错位置，只记。
+///
 /// 只有 3 和 5 前半改动事实（主语丢、宾语落字面值）；其余都是信号，让每一层的比率
 /// 按库、按模型读得出来
 fn verify_span(
     span: Option<&str>,
     name: &str,
+    other: &str,
     quote: &str,
     declared: &HashMap<String, Uuid>,
 ) -> SpanVerdict {
@@ -293,15 +301,29 @@ fn verify_span(
     }) {
         return SpanVerdict::Rebind((*k).clone());
     }
+    // 单个普通词（"company"）包在别的名字里不算：那是指代，不是点名
+    let names_something = s.len() >= 2 || looks_proper(s[0].raw);
     let mut supersets: Vec<(&String, usize)> = others
         .iter()
         .filter_map(|k| {
             let kw = span_words(k);
-            (s.iter().all(|w| kw.iter().any(|x| x.clean == w.clean))).then_some((*k, kw.len()))
+            (names_something && s.iter().all(|w| kw.iter().any(|x| x.clean == w.clean)))
+                .then_some((*k, kw.len()))
         })
         .collect();
     supersets.sort_by_key(|(_, len)| *len);
     if let Some((k, _)) = supersets.first() {
+        return SpanVerdict::Rebind((*k).clone());
+    }
+    // 片段以另一个声明过的名字结尾：短语的头是它。是另一侧的名字就是抄错了位置
+    let ends_with = |k: &str| {
+        let kw = span_words(k);
+        !kw.is_empty() && kw.len() < s.len() && find_words(&s[s.len() - kw.len()..], &kw) == Some(0)
+    };
+    if !other.is_empty() && !slot_matches(name, other) && ends_with(other) {
+        return SpanVerdict::Misplaced(span.to_string());
+    }
+    if let Some(k) = others.iter().find(|k| ends_with(k)) {
         return SpanVerdict::Rebind((*k).clone());
     }
 
@@ -311,8 +333,13 @@ fn verify_span(
         let last = s[end - 1].raw;
         let possessive = last.ends_with("'s") || last.ends_with("\u{2019}s");
         let after = &s[end..];
-        if possessive || after.iter().any(|w| !looks_proper(w.raw)) {
+        // 名字后面紧跟逗号：同位语，还是它
+        let apposition = !after.is_empty() && last.trim_end().ends_with(',');
+        if possessive || (!apposition && after.iter().any(|w| !looks_proper(w.raw))) {
             return SpanVerdict::Described(span.to_string());
+        }
+        if apposition {
+            return SpanVerdict::Ok;
         }
         if after.is_empty() && i > 0 {
             return SpanVerdict::Prefixed(span.to_string());
@@ -1699,12 +1726,14 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             let subject_verdict = verify_span(
                 f.subject_span.as_deref(),
                 bound_subject,
+                bound_object,
                 quote_text,
                 &span_declared,
             );
             let object_verdict = verify_span(
                 f.object_span.as_deref(),
                 bound_object,
+                bound_subject,
                 quote_text,
                 &span_declared,
             );
@@ -1764,6 +1793,10 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                     ),
                     SpanVerdict::Coreference(text) => (
                         utopia_store::extraction_drops::reason::SPAN_COREFERENCE,
+                        format!("{text} ({bound})"),
+                    ),
+                    SpanVerdict::Misplaced(text) => (
+                        utopia_store::extraction_drops::reason::SPAN_MISPLACED,
                         format!("{text} ({bound})"),
                     ),
                 };
@@ -2745,17 +2778,17 @@ mod tests {
         let quote = "Former OpenAI personnel have founded competing AI companies Anthropic, SpaceXAI, Safe Superintelligence Inc., and Thinking Machines Lab";
         // 名字后面还有词：名字只是修饰语
         assert_eq!(
-            verify_span(Some("Former OpenAI personnel"), "OpenAI", quote, &d),
+            verify_span(Some("Former OpenAI personnel"), "OpenAI", "", quote, &d),
             SpanVerdict::Described("Former OpenAI personnel".into())
         );
         assert_eq!(
-            verify_span(Some("Anthropic"), "Anthropic", quote, &d),
+            verify_span(Some("Anthropic"), "Anthropic", "", quote, &d),
             SpanVerdict::Ok
         );
         // 所有格：名字只是修饰语
         let q3 = "Claude bypassed Anthropic's safeguards";
         assert_eq!(
-            verify_span(Some("Anthropic's safeguards"), "Anthropic", q3, &d),
+            verify_span(Some("Anthropic's safeguards"), "Anthropic", "", q3, &d),
             SpanVerdict::Described("Anthropic's safeguards".into())
         );
         // 另一个名字带着修饰，绑到了第三方
@@ -2763,6 +2796,7 @@ mod tests {
             verify_span(
                 Some("The Verge reporter"),
                 "Sam Altman",
+                "",
                 "a The Verge reporter wrote",
                 &d
             ),
@@ -2771,13 +2805,14 @@ mod tests {
         // 名字前面带了词：头衔还是另一件东西分不开，只记
         let q2 = "Over one hundred companies using OpenAI contacted Anthropic";
         assert_eq!(
-            verify_span(Some("companies using OpenAI"), "OpenAI", q2, &d),
+            verify_span(Some("companies using OpenAI"), "OpenAI", "", q2, &d),
             SpanVerdict::Prefixed("companies using OpenAI".into())
         );
         assert_eq!(
             verify_span(
                 Some("entrepreneur Tasha McCauley"),
                 "Tasha McCauley",
+                "",
                 "with entrepreneur Tasha McCauley on the board",
                 &d
             ),
@@ -2788,19 +2823,27 @@ mod tests {
             verify_span(
                 Some("Sam Altman"),
                 "OpenAI",
+                "",
                 "Sam Altman announced the deal",
                 &d
             ),
             SpanVerdict::Rebind("Sam Altman".into())
         );
         assert_eq!(
-            verify_span(Some("Altman"), "OpenAI", "Altman announced the deal", &d),
+            verify_span(
+                Some("Altman"),
+                "OpenAI",
+                "",
+                "Altman announced the deal",
+                &d
+            ),
             SpanVerdict::Rebind("Sam Altman".into())
         );
         assert_eq!(
             verify_span(
                 Some("OpenAI's board"),
                 "OpenAI",
+                "",
                 "OpenAI's board removed Sam Altman as CEO",
                 &d
             ),
@@ -2808,14 +2851,84 @@ mod tests {
         );
         // 指代：没有任何名字，绑定照旧、只记
         assert_eq!(
-            verify_span(Some("him"), "Sam Altman", "the board reinstated him", &d),
+            verify_span(
+                Some("him"),
+                "Sam Altman",
+                "",
+                "the board reinstated him",
+                &d
+            ),
             SpanVerdict::Coreference("him".into())
         );
+        // 单个普通词包在别的名字里也是指代，不改绑（"the company" ≠ "for-profit company"）
+        let d2 = declared(&[
+            "OpenAI",
+            "for-profit company",
+            "Satya Nadella",
+            "Jony Ive",
+            "Apple",
+            "Microsoft",
+            "Helen Toner",
+            "Fidji Simo",
+        ]);
+        assert_eq!(
+            verify_span(
+                Some("the company"),
+                "OpenAI",
+                "",
+                "the company took over",
+                &d2
+            ),
+            SpanVerdict::Coreference("the company".into())
+        );
+        // 片段以另一个名字结尾：头是它，改绑
+        assert_eq!(
+            verify_span(
+                Some("Microsoft chief executive Satya Nadella"),
+                "Microsoft",
+                "OpenAI",
+                "convinced Microsoft chief executive Satya Nadella",
+                &d2
+            ),
+            SpanVerdict::Rebind("Satya Nadella".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("former Apple designer Jony Ive"),
+                "Apple",
+                "OpenAI",
+                "founded by former Apple designer Jony Ive",
+                &d2
+            ),
+            SpanVerdict::Rebind("Jony Ive".into())
+        );
+        // 以另一侧的名字结尾：抄错了位置，绑定照旧、只记
+        assert_eq!(
+            verify_span(
+                Some("CEO of Applications: Fidji Simo"),
+                "OpenAI",
+                "Fidji Simo",
+                "CEO of Applications: Fidji Simo",
+                &d2
+            ),
+            SpanVerdict::Misplaced("CEO of Applications: Fidji Simo".into())
+        );
+        // 名字后面紧跟逗号：同位语，还是它
+        assert_eq!(
+            verify_span(
+                Some("Helen Toner, strategy director for the Center for Security and Emerging Technology"),
+                "Helen Toner",
+                "OpenAI",
+                "and Helen Toner, strategy director for the Center for Security and Emerging Technology",
+                &d2
+            ),
+            SpanVerdict::Ok
+        );
         // 没给片段：老行为
-        assert_eq!(verify_span(None, "OpenAI", quote, &d), SpanVerdict::Ok);
+        assert_eq!(verify_span(None, "OpenAI", "", quote, &d), SpanVerdict::Ok);
         // 片段不在引文里：只记不拦
         assert_eq!(
-            verify_span(Some("OpenAI staff"), "OpenAI", q2, &d),
+            verify_span(Some("OpenAI staff"), "OpenAI", "", q2, &d),
             SpanVerdict::NotInQuote
         );
     }
@@ -2828,6 +2941,7 @@ mod tests {
             verify_span(
                 Some("Anthropic PBC"),
                 "Anthropic",
+                "",
                 "Anthropic PBC filed",
                 &d
             ),
@@ -2837,6 +2951,7 @@ mod tests {
             verify_span(
                 Some("OpenAI Global, LLC"),
                 "OpenAI",
+                "",
                 "OpenAI Global, LLC is the for-profit arm",
                 &d
             ),
@@ -2846,6 +2961,7 @@ mod tests {
             verify_span(
                 Some("OpenAI employees"),
                 "OpenAI",
+                "",
                 "OpenAI employees left",
                 &d
             ),
