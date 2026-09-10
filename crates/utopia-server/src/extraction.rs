@@ -989,6 +989,8 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 continue;
             }
         };
+        // 模型的原话只在 debug 级别看得到：查它对哪几个字段怎么填（#582 的片段）时开
+        tracing::debug!(%document_id, seq = chunk.seq, reply = %reply, "抽取原始回复");
         let extraction = match utopia_extract::parse_response(&reply) {
             Ok(x) => x,
             Err(e) => {
