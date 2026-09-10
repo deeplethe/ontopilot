@@ -211,6 +211,36 @@ pub async fn find_entities(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
 // ---- entity_facts ----------------------------------------------------------------
 
 /// 事实的另一端：对端实体，或属性值
+/// 边上的属性（0037）跟在对端后面：`Vega Capital [amount: 5000000000 $]`。
+/// 模型读事实行时最常问的就是"投了多少"，数不在行里它就答"没有金额信息"
+fn qualifiers_text(f: &EntityFact) -> String {
+    if f.qualifiers.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<String> = f
+        .qualifiers
+        .iter()
+        .map(|q| {
+            let v = q
+                .value
+                .as_ref()
+                .and_then(|v| v.get("value"))
+                .map(|v| v.to_string().trim_matches('"').to_string())
+                .or_else(|| q.entity_name.clone())
+                .unwrap_or_else(|| "?".to_string());
+            let u = q
+                .value
+                .as_ref()
+                .and_then(|v| v.get("unit"))
+                .and_then(|u| u.as_str())
+                .map(|u| format!(" {u}"))
+                .unwrap_or_default();
+            format!("{}: {v}{u}", q.key)
+        })
+        .collect();
+    format!(" [{}]", parts.join(", "))
+}
+
 fn other_text(f: &EntityFact) -> String {
     let literal = f
         .object_value
@@ -586,8 +616,9 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
             lines.push(format!("## {key} ({})", group.len()));
             for f in group {
                 lines.push(format!(
-                    "{}{} {}",
+                    "{}{}{} {}",
                     other_text(f),
+                    qualifiers_text(f),
                     range_text(f),
                     confidence_text(f)
                 ));
@@ -1035,6 +1066,7 @@ mod tests {
             other_id: Some(Uuid::now_v7()),
             other_name: Some(other.into()),
             other_type: other_type.map(String::from),
+            qualifiers: Vec::new(),
             object_value: None,
             valid_from: Some("2021-01-01T00:00:00Z".parse().unwrap()),
             valid_to: None,

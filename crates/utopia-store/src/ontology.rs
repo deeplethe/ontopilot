@@ -496,6 +496,57 @@ async fn set_domains_ranges(
     Ok(())
 }
 
+/// 一条关系声明自己的边能带哪些属性（0037）。覆盖式写入，与 domain / range 同一套。
+///
+/// 两条校验都在这里，CHECK 引不到别的行：同库，且每一个都是 `kind = 'attribute'`
+/// ——边上的属性是字面值，复用的正是属性定义的 datatype / unit / 换算。
+/// 一个关系不能把自己声明成自己的属性（DB 有 CHECK，这里给人话）。
+pub async fn set_relation_qualifiers(
+    pool: &PgPool,
+    kb_id: Uuid,
+    relation_type_id: Uuid,
+    qualifier_type_ids: &[Uuid],
+) -> AppResult<()> {
+    if qualifier_type_ids.contains(&relation_type_id) {
+        return Err(AppError::invalid(
+            "qualifier_is_self",
+            "A relation cannot be its own qualifier",
+        ));
+    }
+    if !qualifier_type_ids.is_empty() {
+        let (ok,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM relation_types
+             WHERE kb_id = $1 AND kind = 'attribute' AND id = ANY($2)",
+        )
+        .bind(kb_id)
+        .bind(qualifier_type_ids)
+        .fetch_one(pool)
+        .await?;
+        if ok as usize != qualifier_type_ids.len() {
+            return Err(AppError::invalid(
+                "qualifier_not_attribute",
+                "Every qualifier must be an attribute of this base",
+            ));
+        }
+    }
+    sqlx::query("DELETE FROM relation_type_qualifiers WHERE relation_type_id = $1")
+        .bind(relation_type_id)
+        .execute(pool)
+        .await?;
+    if !qualifier_type_ids.is_empty() {
+        sqlx::query(
+            "INSERT INTO relation_type_qualifiers (relation_type_id, qualifier_type_id)
+             SELECT $1, x FROM unnest($2::uuid[]) AS x
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(relation_type_id)
+        .bind(qualifier_type_ids)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn update_relation_type(
     pool: &PgPool,

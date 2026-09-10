@@ -337,6 +337,8 @@ export function PropertyDialog({
     existing?.domains ?? (initialDomain ? [initialDomain] : []),
   );
   const [ranges, setRanges] = useState<string[]>(existing?.ranges ?? []);
+  // 边上的属性（0037）：这条关系的边能带哪些属性，选的是本库里 kind=attribute 的定义
+  const [qualifiers, setQualifiers] = useState<string[]>(existing?.qualifiers ?? []);
   // 显示标签，不显示 key。**进提示词的 key 由服务端从库里取**，与界面显示什么无关
   const typeOpts = useMemo(() => parentOptions(allTypes, undefined), [allTypes]);
   // 两个下拉的选项：本库的其它关系。**自己不进列表**，两条都是：子属性指向自己
@@ -374,6 +376,7 @@ export function PropertyDialog({
         description,
         domains,
         ranges,
+        qualifiers,
       };
       return existing
         ? api.updateRelationType(kbId, existing.id, body)
@@ -466,6 +469,20 @@ export function PropertyDialog({
               onToggle={(id) => toggleIn(setRanges, id)}
               placeholder={S.ontology.searchTypes}
               emptyHint={S.ontology.anyType}
+            />
+          </div>
+          <div className="min-w-0">
+            {/* 边上的属性（0037）：选项是本库的属性定义，不是类。
+                关系不能把自己声明成自己的属性，列表里也不列自己 */}
+            <div className="mb-1 text-small text-ink-2">{S.ontology.qualifiers}</div>
+            <MultiSearchSelect
+              values={qualifiers}
+              options={allRelations
+                .filter((r) => r.kind === "attribute" && r.id !== existing?.id)
+                .map((r) => ({ value: r.id, label: r.label, indent: 0 }))}
+              onToggle={(id) => toggleIn(setQualifiers, id)}
+              placeholder={S.ontology.searchTypes}
+              emptyHint={S.ontology.noQualifiers}
             />
           </div>
         </div>

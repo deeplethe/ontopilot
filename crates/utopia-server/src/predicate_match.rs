@@ -301,6 +301,7 @@ mod tests {
             ranges: Vec::new(),
             datatype: None,
             unit: None,
+            qualifiers: vec![],
         }
     }
 

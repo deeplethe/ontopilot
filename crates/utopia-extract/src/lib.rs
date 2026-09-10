@@ -59,6 +59,10 @@ pub struct ExtractedFact {
     /// 属性事实的字面值（谓词是 attribute 时）
     #[serde(default)]
     pub value: Option<serde_json::Value>,
+    /// **边上的属性**（0037）：`{"amount": "$5 billion", "stake": "20%"}`。
+    /// 只对关系事实有意义，key 必须是清单里这条关系声明过的；值照原文写，换算在服务端
+    #[serde(default)]
+    pub qualifiers: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(default)]
     pub valid_from: Option<String>,
     #[serde(default)]
@@ -93,6 +97,8 @@ pub struct PromptRelation {
     /// 时间语义（`relation_types.temporal`）：`state` / `event` / `eternal`（0031）。
     /// 只有 event 与 eternal 会在清单里带标记——状态是默认，写出来只多花 token
     pub temporal: String,
+    /// 这条关系的边能带的属性，已排好版：`amount: number $`（0037）。空 = 不带
+    pub qualifiers: Vec<String>,
 }
 
 /// Response-scoped reference to a persistent entity; database UUIDs must never enter prompts.
@@ -154,6 +160,12 @@ pub fn build_messages(
             let mark = temporal_mark(&r.temporal)
                 .map(|m| format!(" [{m}]"))
                 .unwrap_or_default();
+            // 边上能带的属性跟在标记后面：`{amount: number $, stake: number %}`
+            let mark = if r.qualifiers.is_empty() {
+                mark
+            } else {
+                format!("{mark} {{{}}}", r.qualifiers.join(", "))
+            };
             match (paren.is_empty(), d.is_empty()) {
                 (false, false) => format!("- {} ({paren}){mark}: {d}", r.key),
                 (false, true) => format!("- {} ({paren}){mark}", r.key),
@@ -298,6 +310,7 @@ pub fn build_messages(
             units and all. **A stated figure left out is the loss that costs most**: the reader \
             came for those numbers, and no later step can recover one that was never written \
             down.\n\
+         8c. A listed relation followed by {{…}} can carry those **qualifiers on the edge**:             when the same sentence gives both the other entity and a figure for it — an             amount, a stake, a price, a share count — write the relation with its \"object\"             and put the figure in \"qualifiers\" keyed exactly as listed:             {{\"subject\":\"Vega Capital\",\"predicate\":\"invested_in\",\"object\":\"Northwind\",            \"qualifiers\":{{\"amount\":\"$5 billion\"}},…}}. Never invent a key that is not             listed for that relation, and never drop the figure to keep the edge — a             relation without its amount is half the sentence.
          8b. A **listed** relation also takes \"value\" when what the text gives is a \
             string rather than another entity — a job title, a designation, a ticker, a \
             model number. Never invent an entity for a string. And when the text introduces \
@@ -985,6 +998,7 @@ mod prompt_shape_tests {
             description: description.into(),
             signature: signature.into(),
             temporal: "state".into(),
+            qualifiers: vec![],
         }
     }
 
@@ -1152,6 +1166,70 @@ mod prompt_shape_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 边上的属性（0037）：清单里跟在关系后面，回复里挂在事实上。
+    #[test]
+    fn a_relation_lists_its_qualifiers_and_a_fact_carries_them() {
+        use serde_json::json;
+        let mut r = PromptRelation {
+            key: "invested_in".into(),
+            label: "invested in".into(),
+            description: "money into a company".into(),
+            signature: "organization → organization".into(),
+            temporal: "event".into(),
+            qualifiers: vec!["amount: number $".into(), "stake: number %".into()],
+        };
+        let msgs = build_messages(
+            &[],
+            std::slice::from_ref(&r),
+            &[],
+            None,
+            "a.txt",
+            &[],
+            "text",
+        );
+        let prompt = format!("{:?}", msgs);
+        // 签名、标记、属性清单三段顺序固定：`(签名) [event] {属性}`
+        assert!(prompt.contains(
+            "- invested_in (organization → organization) [event] {amount: number $, stake: number %}: money into a company"
+        ), "{prompt}");
+        // 不带属性的关系不多一个花括号
+        r.qualifiers.clear();
+        let prompt = format!(
+            "{:?}",
+            build_messages(
+                &[],
+                std::slice::from_ref(&r),
+                &[],
+                None,
+                "a.txt",
+                &[],
+                "text"
+            )
+        );
+        assert!(
+            prompt.contains("- invested_in (organization → organization) [event]: money"),
+            "{prompt}"
+        );
+        assert!(!prompt.contains("[event] {"));
+
+        // 回复：qualifiers 挂在关系事实上；没写的是 None，旧回复不受影响
+        let reply = r#"{"entities":[],"facts":[
+            {"subject":"Vega","predicate":"invested_in","object":"Northwind",
+             "qualifiers":{"amount":"$5 billion"},"confidence":0.9},
+            {"subject":"Vega","predicate":"invested_in","object":"Kestrel","confidence":0.9}
+        ]}"#;
+        let parsed = parse_response(reply).unwrap();
+        assert_eq!(parsed.facts.len(), 2);
+        assert_eq!(
+            parsed.facts[0]
+                .qualifiers
+                .as_ref()
+                .and_then(|q| q.get("amount")),
+            Some(&json!("$5 billion"))
+        );
+        assert!(parsed.facts[1].qualifiers.is_none());
+    }
 
     #[test]
     fn a_quantity_is_the_whole_string_or_nothing() {

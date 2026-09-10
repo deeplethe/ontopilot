@@ -826,6 +826,16 @@ export interface MergeLog {
   reverted_at: string | null;
 }
 
+/** 边上的属性（0037）：`{ key: "amount", value: { value: 4e9, unit: "$" } }` */
+export interface FactQualifier {
+  qualifier_type_id: string;
+  key: string;
+  label: string;
+  value: { value?: unknown; unit?: string } | null;
+  entity_id: string | null;
+  entity_name: string | null;
+}
+
 export interface GraphEdge {
   id: string;
   source: string;
@@ -858,6 +868,8 @@ export interface GraphEdge {
   /** 幽灵边（0017 §3）：没落地的派生。`id` 是那条 `derived_contradiction` 违规的 id；
    *  `derived` 同时为 true，跟着派生开关走。点它打开主语的面板 */
   blocked: boolean;
+  /** 边上的属性（0037） */
+  qualifiers: FactQualifier[];
 }
 
 export interface EntityFact {
@@ -874,6 +886,8 @@ export interface EntityFact {
   other_name: string | null;
   /** 字面值宾语（属性事实/问数映射）：{"value":…} 或 {"summary":…} */
   object_value: Record<string, unknown> | null;
+  /** 边上的属性（0037） */
+  qualifiers: FactQualifier[];
   valid_from: string | null;
   valid_to: string | null;
   /** 读出来的区间（0022），与 GraphEdge 同义：「此刻成立」按它判 */
@@ -1004,6 +1018,8 @@ export interface RelationTypeView {
   domains: string[];
   /** 可以当宾语的类。只对 relation 有意义——attribute 的值域是 datatype */
   ranges: string[];
+  /** 这条关系的边能带哪些属性（0037）：属性定义的 id */
+  qualifiers: string[];
   datatype: "text" | "number" | "date" | "bool" | null;
   unit: string | null;
   usage: number;

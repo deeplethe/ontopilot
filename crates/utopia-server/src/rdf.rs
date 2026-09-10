@@ -496,6 +496,18 @@ pub fn emit_fact(
     for quote in &f.quotes {
         sink.l(&stmt, &utopia("quote"), &text(quote.clone()))?;
     }
+    // 边上的属性（0037）：陈述节点上各多一行，谓词是属性的 IRI，字面量按它的 datatype
+    for q in &f.qualifiers {
+        let Some(p) = vocab.relation(q.qualifier_type_id) else {
+            continue;
+        };
+        if let Some(v) = &q.value {
+            let (datatype, _) = vocab.literal_shape(q.qualifier_type_id);
+            sink.l(&stmt, p, &literal_value(v, datatype))?;
+        } else if let Some(e) = q.entity_id {
+            sink.r(&stmt, p, &names.entity(e))?;
+        }
+    }
 
     // 现行三元组：**仍被持有，且现在仍成立**。区间已闭合或已撤回的不写这一条,
     // 否则一个忽略具体化的消费者会读到「张三现在还管着那个项目」。
@@ -684,6 +696,7 @@ mod tests {
 
     fn fact(n: u8) -> ExportFact {
         ExportFact {
+            qualifiers: Vec::new(),
             id: id(n),
             subject_id: id(10),
             predicate_id: Some(id(2)),

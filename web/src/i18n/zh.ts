@@ -1137,6 +1137,9 @@ export const zh: Strings = {
     parent: "父类",
     noParent: "（顶层）",
     subclasses: "子类",
+    qualifiers: "边上的属性",
+    noQualifiers: "无",
+    qualifiersHint: "这条关系的边能带的属性，例如 invested_in 上的金额",
     noSubclasses: "无",
     disjoint: "不可能同时是",
     disjointHint:

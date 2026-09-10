@@ -1,10 +1,11 @@
 //! 图谱仓储：本体、实体消解（P2 第一刀：同 KB 同类型同名合一）、事实账本、图查询。
 
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use utopia_core::models::{
-    ChunkFactView, EntityFact, EntityHistoryEvent, EntityType, EvidenceView, FactReviewItem,
-    GraphChange, GraphEdge, GraphNode, ProposedPredicate, RelationType,
+    ChunkFactView, EntityFact, EntityHistoryEvent, EntityType, EvidenceView, FactQualifier,
+    FactReviewItem, GraphChange, GraphEdge, GraphNode, ProposedPredicate, RelationType,
 };
 use utopia_core::{AppError, AppResult};
 use uuid::Uuid;
@@ -65,7 +66,9 @@ pub async fn relation_types(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Relatio
                 ARRAY(SELECT d.entity_type_id FROM relation_type_domains d
                       WHERE d.relation_type_id = r.id) AS domains,
                 ARRAY(SELECT g.entity_type_id FROM relation_type_ranges g
-                      WHERE g.relation_type_id = r.id) AS ranges
+                      WHERE g.relation_type_id = r.id) AS ranges,
+                ARRAY(SELECT q.qualifier_type_id FROM relation_type_qualifiers q
+                      WHERE q.relation_type_id = r.id) AS qualifiers
          FROM relation_types r WHERE r.kb_id = $1 ORDER BY r.created_at",
     )
     .bind(kb_id)
@@ -88,6 +91,97 @@ pub async fn relation_types(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Relatio
 pub enum FactObject<'a> {
     Entity(Uuid),
     Value(&'a serde_json::Value),
+}
+
+/// 往一条边上写一个属性值的结果（0037）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QualifierWrite {
+    /// 这条边之前没有这个属性，写上了
+    Set,
+    /// 已经有了、值一样：再一次观察，什么都不用改
+    Same,
+    /// 已经有了、值**不一样**。不覆盖——先写者留着，调用方记一笔让人看见。
+    /// 账本里两次观察不一致从来是两行 + 一条冲突，这里还没走到另立一行那一步
+    Conflict,
+}
+
+/// 往一条边上写一个字面值属性。**属性不进事实的去重键**：同一条边再听到一次带了
+/// 金额的，是同一条边补上金额，不是第二条边。
+pub async fn upsert_fact_qualifier(
+    pool: &PgPool,
+    fact_id: Uuid,
+    qualifier_type_id: Uuid,
+    value: &serde_json::Value,
+) -> AppResult<QualifierWrite> {
+    let existing: Option<(serde_json::Value,)> = sqlx::query_as(
+        "SELECT value FROM fact_qualifiers WHERE fact_id = $1 AND qualifier_type_id = $2",
+    )
+    .bind(fact_id)
+    .bind(qualifier_type_id)
+    .fetch_optional(pool)
+    .await?;
+    match existing {
+        Some((v,)) if &v == value => Ok(QualifierWrite::Same),
+        Some(_) => Ok(QualifierWrite::Conflict),
+        None => {
+            sqlx::query(
+                "INSERT INTO fact_qualifiers (fact_id, qualifier_type_id, value)
+                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            )
+            .bind(fact_id)
+            .bind(qualifier_type_id)
+            .bind(value)
+            .execute(pool)
+            .await?;
+            Ok(QualifierWrite::Set)
+        }
+    }
+}
+
+/// `fact_qualifiers` 连上定义与实体名之后的一行
+#[derive(sqlx::FromRow)]
+struct QualifierRow {
+    fact_id: Uuid,
+    qualifier_type_id: Uuid,
+    key: String,
+    label: String,
+    value: Option<serde_json::Value>,
+    entity_id: Option<Uuid>,
+    entity_name: Option<String>,
+}
+
+/// 一批事实各自带的属性，按事实 id 取回。读边的两条路（面板、画布）加载完行后都过这里
+pub async fn fact_qualifiers_for(
+    pool: &PgPool,
+    fact_ids: &[Uuid],
+) -> AppResult<HashMap<Uuid, Vec<FactQualifier>>> {
+    let mut out: HashMap<Uuid, Vec<FactQualifier>> = HashMap::new();
+    if fact_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows: Vec<QualifierRow> = sqlx::query_as(
+        "SELECT q.fact_id, q.qualifier_type_id, r.key, r.label, q.value, q.entity_id,
+                    e.canonical_name AS entity_name
+             FROM fact_qualifiers q
+             JOIN relation_types r ON r.id = q.qualifier_type_id
+             LEFT JOIN entities e ON e.id = q.entity_id
+             WHERE q.fact_id = ANY($1)
+             ORDER BY q.fact_id, r.key",
+    )
+    .bind(fact_ids)
+    .fetch_all(pool)
+    .await?;
+    for r in rows {
+        out.entry(r.fact_id).or_default().push(FactQualifier {
+            qualifier_type_id: r.qualifier_type_id,
+            key: r.key,
+            label: r.label,
+            value: r.value,
+            entity_id: r.entity_id,
+            entity_name: r.entity_name,
+        });
+    }
+    Ok(out)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -688,7 +782,7 @@ async fn edges_among(
     //
     // 断言那一段多算一位 `contested`：有 open 的违规或时态冲突指着它。派生撞断言
     // 时被撞的是 left；right 只是最后一条前提，它本身没有争议
-    let edges: Vec<GraphEdge> = sqlx::query_as(&format!(
+    let mut edges: Vec<GraphEdge> = sqlx::query_as(&format!(
         "SELECT f.id, {subject} AS source, {object} AS target,
                 COALESCE(r.key, fact_surface_predicate(f.id)) AS predicate,
                 COALESCE(r.label, fact_surface_predicate(f.id)) AS label,
@@ -767,6 +861,16 @@ async fn edges_among(
     .bind(as_of)
     .fetch_all(pool)
     .await?;
+    // 边上的属性另一张表（0037），按 id 一次取回补上
+    {
+        let ids: Vec<Uuid> = edges.iter().map(|x| x.id).collect();
+        let mut by_fact = fact_qualifiers_for(pool, &ids).await?;
+        for x in edges.iter_mut() {
+            if let Some(q) = by_fact.remove(&x.id) {
+                x.qualifiers = q;
+            }
+        }
+    }
     Ok(edges)
 }
 
@@ -911,7 +1015,7 @@ pub async fn entity_detail(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let facts: Vec<EntityFact> = sqlx::query_as(&format!(
+    let mut facts: Vec<EntityFact> = sqlx::query_as(&format!(
         "SELECT f.id,
                 CASE WHEN {subject} = $2 THEN 'out' ELSE 'in' END AS direction,
                 COALESCE(r.key, fact_surface_predicate(f.id)) AS predicate_key,
@@ -973,6 +1077,16 @@ pub async fn entity_detail(
     .bind(at)
     .fetch_all(pool)
     .await?;
+    // 边上的属性另一张表（0037），按 id 一次取回补上
+    {
+        let ids: Vec<Uuid> = facts.iter().map(|x| x.id).collect();
+        let mut by_fact = fact_qualifiers_for(pool, &ids).await?;
+        for x in facts.iter_mut() {
+            if let Some(q) = by_fact.remove(&x.id) {
+                x.qualifiers = q;
+            }
+        }
+    }
 
     Ok((node, facts))
 }

@@ -3193,6 +3193,16 @@ function FactRow({
             <span className={ROW_VALUE}>
               {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
             </span>
+            {/* 边上的属性（0037）：`amount $4B`——跟在宾语后面，不另起一行。
+                投了谁和投了多少是同一句话，拆开就读不成一句了 */}
+            {fact.qualifiers?.map((q) => (
+              <span key={q.qualifier_type_id} className="shrink-0 text-small text-ink-2">
+                {q.label || q.key}{" "}
+                <span className="text-ink">
+                  {q.entity_name ?? fmtObjectValue(q.value) ?? "?"}
+                </span>
+              </span>
+            ))}
           </span>
           {/* 第二行：何时成立、要不要留神、以及看证据与改期的入口。
               **没有日期也要说一句**——空着的时候，「原文没写日期」和

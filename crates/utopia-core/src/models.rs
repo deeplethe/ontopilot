@@ -508,6 +508,19 @@ pub struct RelationTypeView {
     pub usage: i64,
 }
 
+/// 一条边上挂的一个属性值（0037）。`value` 与 `entity` 二选一：
+/// 金额、比例、日期是字面值；「经 C 撮合」里的 C 是实体（这一格这一刀还不写，位置留着）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FactQualifier {
+    pub qualifier_type_id: Uuid,
+    pub key: String,
+    pub label: String,
+    /// 形状与 `facts.object_value` 一致：{"value": …, "unit": …}
+    pub value: Option<serde_json::Value>,
+    pub entity_id: Option<Uuid>,
+    pub entity_name: Option<String>,
+}
+
 /// 抽取未匹配统计（本体扩展建议的信号源）。
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct OntologyMiss {
@@ -605,6 +618,10 @@ pub struct RelationType {
     /// attribute 专用：text | number | date | bool
     pub datatype: Option<String>,
     pub unit: Option<String>,
+    /// **这条关系的边能带哪些属性**（0037）：指向 kind='attribute' 的行。
+    /// `A invested B` 上的「金额」是边自己的属性，不是第二个宾语；金额的
+    /// datatype / unit / 换算全复用属性定义，只是它的 domain 是一条关系而不是一个类
+    pub qualifiers: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -655,6 +672,9 @@ pub struct GraphEdge {
     /// **与 `inferred` 不是一回事**，尽管两个词很近：那一位说的是「名字来自原文
     /// 而不是本体」，这一位说的是「这条边根本不是谁说的，是引擎推的」
     pub derived: bool,
+    /// 边上的属性（0037）：画布把金额写到边的标签上要靠它
+    #[sqlx(skip)]
+    pub qualifiers: Vec<FactQualifier>,
     /// 推它出来的那条规则（`transitive` / `symmetric` / `inverse` / `sub_property`）；
     /// 断言的边为 None。
     ///
@@ -704,6 +724,9 @@ pub struct EntityFact {
     pub other_type: Option<String>,
     /// 字面值宾语（属性事实/问数映射）：{"value":…,"unit":…} 或 {"summary":…}
     pub object_value: Option<serde_json::Value>,
+    /// 边上的属性（0037）。不在行里——`fact_qualifiers` 另一张表，加载后按事实 id 补
+    #[sqlx(skip)]
+    pub qualifiers: Vec<FactQualifier>,
     pub valid_from: Option<DateTime<Utc>>,
     pub valid_to: Option<DateTime<Utc>>,
     /// 精度描述的是这条事实**有的那些日期**的粒度。两端都没有日期时为 None——

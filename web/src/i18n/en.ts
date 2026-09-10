@@ -1280,6 +1280,9 @@ export const en = {
     parent: "Parent class",
     noParent: "(top level)",
     subclasses: "Subclasses",
+    qualifiers: "Edge attributes",
+    noQualifiers: "None",
+    qualifiersHint: "Attributes an edge of this relation may carry, e.g. amount on invested_in",
     noSubclasses: "None",
     disjoint: "Cannot also be",
     disjointHint:

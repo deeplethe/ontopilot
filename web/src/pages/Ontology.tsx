@@ -1361,6 +1361,12 @@ function PropertyDefinition({
       <Def label={S.ontology.rangeLabel}>
         {rel.ranges.length > 0 ? rel.ranges.map(typeName).join(", ") : S.ontology.anyType}
       </Def>
+      {/* 边上的属性（0037）：这条关系的边能带哪些属性，按属性的 label 列 */}
+      <Def label={S.ontology.qualifiers}>
+        {rel.qualifiers.length > 0
+          ? rel.qualifiers.map(typeName).join(", ")
+          : S.ontology.noQualifiers}
+      </Def>
       <Def label={S.ontology.temporal}>{temporal}</Def>
       <Def label={S.ontology.axioms}>
         {axioms.length > 0 ? (
@@ -1679,6 +1685,7 @@ function UniquenessPanel({
           description: rel.description,
           domains: rel.domains,
           ranges: rel.ranges,
+          qualifiers: rel.qualifiers,
         });
       }
       const r = await api.reconcileRelationType(kbId, c.predicate_id);

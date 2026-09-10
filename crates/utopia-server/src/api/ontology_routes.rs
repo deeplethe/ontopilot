@@ -243,6 +243,9 @@ pub struct RelationTypeReq {
     /// 调用方（属性表单）不该因为一次改名就把 domain 清空
     #[serde(default)]
     pub domains: Option<Vec<Uuid>>,
+    /// 这条关系的边能带哪些属性（0037）：属性定义的 id。None = 不动
+    #[serde(default)]
+    pub qualifiers: Option<Vec<Uuid>>,
     /// 可以当宾语的类。只对 relation 有意义
     #[serde(default)]
     pub ranges: Option<Vec<Uuid>>,
@@ -303,6 +306,9 @@ pub async fn create_relation_type(
         req.unit.as_deref().map(str::trim).filter(|s| !s.is_empty()),
     )
     .await?;
+    if let Some(q) = req.qualifiers.as_deref() {
+        utopia_store::ontology::set_relation_qualifiers(&state.pool, kb_id, id, q).await?;
+    }
     let _ = utopia_store::audit::record(
         &state.pool,
         Some(kb_id),
@@ -338,6 +344,9 @@ pub async fn update_relation_type(
         req.ranges.as_deref(),
     )
     .await?;
+    if let Some(q) = req.qualifiers.as_deref() {
+        utopia_store::ontology::set_relation_qualifiers(&state.pool, kb_id, id, q).await?;
+    }
     let _ = utopia_store::audit::record(
         &state.pool,
         Some(kb_id),

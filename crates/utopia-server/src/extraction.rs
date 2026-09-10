@@ -899,6 +899,24 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
         .filter(|r| r.kind == "attribute")
         .map(|r| (r.key.as_str(), r))
         .collect();
+    /* **边上的属性**（0037）：一条关系声明过的属性定义，按关系 id 取。
+    属性定义就是 kind='attribute' 的行，datatype / unit / 换算全复用；
+    写入时按这里的 key 对模型给的 qualifiers，对不上的进丢弃表让人看见 */
+    let rtype_by_id: HashMap<Uuid, &utopia_core::models::RelationType> =
+        rtypes.iter().map(|r| (r.id, r)).collect();
+    let qualifier_defs: HashMap<Uuid, Vec<&utopia_core::models::RelationType>> = rtypes
+        .iter()
+        .filter(|r| r.kind != "attribute" && !r.qualifiers.is_empty())
+        .map(|r| {
+            let defs = r
+                .qualifiers
+                .iter()
+                .filter_map(|q| rtype_by_id.get(q).copied())
+                .filter(|q| q.kind == "attribute")
+                .collect();
+            (r.id, defs)
+        })
+        .collect();
     let type_ids: HashMap<&str, Uuid> = etypes.iter().map(|t| (t.key.as_str(), t.id)).collect();
     let rel_ids: HashMap<&str, Uuid> = rtypes.iter().map(|r| (r.key.as_str(), r.id)).collect();
     // 模型说出的谓词往本体已有关系上落：写法、时态、被动都对齐（见 predicate_match）。
@@ -2277,6 +2295,69 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 )
                 .await?;
                 touched_facts.push(fact_id);
+                /* **边上的属性落笔**（0037）。属性不进去重键：`insert_fact` 复用了旧行也照写——
+                同一条边再听到一次带了金额的，是同一条边补上金额。
+                值照 datatype 换算，单位另记一格（与 object_value 同形）；
+                key 不在声明里、换不动、与已记的不一致——三种都进丢弃表，不静默 */
+                if let (Some(pid), Some(quals)) = (predicate_id, f.qualifiers.as_ref()) {
+                    let defs = qualifier_defs.get(&pid);
+                    for (key, raw) in quals {
+                        let Some(def) = defs.and_then(|d| {
+                            d.iter().find(|q| q.key.eq_ignore_ascii_case(key.trim()))
+                        }) else {
+                            drop_signal(
+                                state,
+                                doc.kb_id,
+                                document_id,
+                                utopia_store::extraction_drops::reason::QUALIFIER_UNKNOWN,
+                                &format!("{}.{}", f.predicate, key),
+                                Some(&raw.to_string()),
+                            )
+                            .await;
+                            continue;
+                        };
+                        let dt = def.datatype.as_deref().unwrap_or("text");
+                        let Some(normalized) = utopia_extract::normalize_attr_value(dt, raw) else {
+                            drop_signal(
+                                state,
+                                doc.kb_id,
+                                document_id,
+                                utopia_store::extraction_drops::reason::QUALIFIER_DATATYPE,
+                                &format!("{}.{} ({dt})", f.predicate, def.key),
+                                Some(&raw.to_string()),
+                            )
+                            .await;
+                            continue;
+                        };
+                        let mut value = serde_json::json!({ "value": normalized });
+                        let unit = raw
+                            .as_str()
+                            .and_then(utopia_extract::parse_leading_quantity)
+                            .and_then(|(_, u)| u)
+                            .or_else(|| def.unit.clone().filter(|u| !u.is_empty()));
+                        if let Some(u) = unit {
+                            value["unit"] = serde_json::Value::String(u);
+                        }
+                        let write = utopia_store::graph::upsert_fact_qualifier(
+                            &state.pool,
+                            fact_id,
+                            def.id,
+                            &value,
+                        )
+                        .await?;
+                        if write == utopia_store::graph::QualifierWrite::Conflict {
+                            drop_signal(
+                                state,
+                                doc.kb_id,
+                                document_id,
+                                utopia_store::extraction_drops::reason::QUALIFIER_CONFLICT,
+                                &format!("{}.{}", f.predicate, def.key),
+                                Some(&raw.to_string()),
+                            )
+                            .await;
+                        }
+                    }
+                }
                 // 重复观察也要挂证据：多来源相互印证，任一来源删除后事实不孤儿化。
                 // 表层谓词随每次观察落笔——甲块说 "runs on"、乙块说 "optimized for"
                 // 会并进同一条事实，放事实上就是先写者胜，放证据上两个都留着
@@ -2526,6 +2607,23 @@ fn build_lists(
     rels: Option<&HashSet<Uuid>>,
 ) -> PromptLists {
     let picked_class = |id: &Uuid| classes.is_none_or(|s| s.contains(id));
+    // 边上能带的属性：关系.qualifiers → 属性行（0037）。这里只排版，写入侧另有一份同样的查法
+    let rtype_by_id: HashMap<Uuid, &utopia_core::models::RelationType> =
+        rtypes.iter().map(|r| (r.id, r)).collect();
+    let qualifier_line = |r: &utopia_core::models::RelationType| -> Vec<String> {
+        r.qualifiers
+            .iter()
+            .filter_map(|q| rtype_by_id.get(q).copied())
+            .filter(|q| q.kind == "attribute")
+            .map(|q| {
+                let dt = q.datatype.as_deref().unwrap_or("text");
+                match q.unit.as_deref().filter(|u| !u.is_empty()) {
+                    Some(u) => format!("{}: {dt} {u}", q.key),
+                    None => format!("{}: {dt}", q.key),
+                }
+            })
+            .collect()
+    };
     let picked_rel = |id: &Uuid| rels.is_none_or(|s| s.contains(id));
     let key_of: HashMap<Uuid, &str> = etypes
         .iter()
@@ -2567,6 +2665,8 @@ fn build_lists(
                 description: r.description.clone(),
                 signature,
                 temporal: r.temporal.clone(),
+                // `amount: number $`——模型要按这个 key 写，单位提醒它别换算
+                qualifiers: qualifier_line(r),
             }
         })
         .collect();

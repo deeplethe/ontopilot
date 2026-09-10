@@ -650,6 +650,26 @@ pub(super) fn fact_line(f: &EntityFact) -> String {
         .as_deref()
         .or(literal.as_deref())
         .unwrap_or("?");
+    // 边上的属性（0037）跟在对端后面：`invested_in → Kestrel [amount: 4000000000 $]`。
+    // 模型读事实行时最常问的就是"投了多少"，数不在行里它就答"没有金额信息"
+    let quals: Vec<String> = f
+        .qualifiers
+        .iter()
+        .map(|q| {
+            let v = q
+                .value
+                .as_ref()
+                .and_then(literal_text)
+                .or_else(|| q.entity_name.clone())
+                .unwrap_or_else(|| "?".to_string());
+            format!("{}: {v}", q.key)
+        })
+        .collect();
+    let other = if quals.is_empty() {
+        other.to_string()
+    } else {
+        format!("{other} [{}]", quals.join(", "))
+    };
     // 本体没认下、原文说法也没留下时用 "?"——与 other 同一个约定。
     // 不编一个"相关"出来：那正是删掉 related_to 要消灭的东西
     let pred = f.predicate_label.as_deref().unwrap_or("?");
@@ -1046,6 +1066,7 @@ mod tests {
             other_id: None,
             other_name: None,
             other_type: None,
+            qualifiers: Vec::new(),
             object_value: Some(value),
             valid_from: Some(t("2023-06-01T00:00:00Z")),
             valid_to: Some(t("2024-02-20T00:00:00Z")),

@@ -22,6 +22,12 @@ pub mod reason {
     pub const ATTR_NO_VALUE: &str = "attr_no_value";
     /// 值不合 datatype，归一化失败
     pub const ATTR_DATATYPE: &str = "attr_datatype";
+    /// 模型在边上写了一个这条关系没声明过的属性 key（0037）
+    pub const QUALIFIER_UNKNOWN: &str = "qualifier_unknown";
+    /// 边上属性的值换不成它声明的 datatype
+    pub const QUALIFIER_DATATYPE: &str = "qualifier_datatype";
+    /// 同一条边再听到一次，属性值与已记的不一致——先记下，不覆盖
+    pub const QUALIFIER_CONFLICT: &str = "qualifier_conflict";
     /// 模型自报置信度低于阈值
     pub const LOW_CONFIDENCE: &str = "low_confidence";
     /// 关系事实缺宾语
