@@ -255,10 +255,14 @@ fn slot_matches(span: &str, name: &str) -> bool {
 /// 4. 名字只在片段**末尾**、前面带了词 → 头衔还是另一件东西分不开，绑定照旧、只记；
 /// 5. 片段里是别的声明过的名字带着修饰 → 描述；一个名字都没有 → 指代，绑定照旧、只记。
 ///
-/// 两条按语法位置来的补充：名字后面紧跟逗号是同位语（"Helen Toner, strategy director
-/// for …"），还是它；片段**以**另一个声明过的名字**结尾**（"Microsoft chief executive
-/// Satya Nadella"、"former Apple designer Jony Ive"）时，短语的头是末尾那个名字，改绑
-/// 到它——除非那是这条事实的另一侧（宾语片段抄成了主语），那是抄错位置，只记。
+/// 按语法位置来的补充：名字后面紧跟逗号是同位语（"Helen Toner, strategy director
+/// for …"），还是它；片段以这条事实**另一侧**的名字结尾（宾语片段抄成了主语），是抄错
+/// 位置，只记。
+///
+/// 同一套判据还用在模型**写的名字**和它 **ref 指的实体**之间（`written_verdict`）：写
+/// "OpenAI employees" 却 ref 到 OpenAI，是它自己的两个答案打架，v5 那轮的最后一条假边
+/// （"Eleven employees left OpenAI … to establish Anthropic" → Anthropic founded_by OpenAI）
+/// 就是这么来的——片段 "eleven employees" 里没有名字，只看片段拦不住。
 ///
 /// 只有 3 和 5 前半改动事实（主语丢、宾语落字面值）；其余都是信号，让每一层的比率
 /// 按库、按模型读得出来
@@ -325,35 +329,15 @@ fn verify_span(
         }
     }
 
-    // 片段以另一个声明过的名字结尾。是另一侧的名字就是抄错了位置；否则只在所绑的名字
-    // 本身是声明过的实体、在片段里出现在那个名字前面、中间没有逗号时，末尾的名字才是头
-    // （"Microsoft chief executive Satya Nadella"）。写的名字没声明（"companies using
-    // OpenAI"）、没出现在前面（"his vested equity in OpenAI"）、中间有逗号（一个名单）都
-    // 不算：那时末尾的名字是介词的补语或名单的最后一项，不是头。v4 那轮没有这些约束，
-    // 把 "Over one hundred companies using OpenAI" 改绑到了 OpenAI，假边回来了
+    // 片段以事实另一侧的名字结尾：抄错了位置（宾语片段写成了主语），不是绑错了实体。
+    // 「片段以别的声明名结尾就改绑到它」试过两轮（v4/v5）：介词的补语、名单的最后一项、
+    // 并列的后一个（"Swisher and … Alex Heath"）都会被当成头，错的多过对的，不做
     let ends_with = |k: &str| {
         let kw = span_words(k);
         !kw.is_empty() && kw.len() < s.len() && find_words(&s[s.len() - kw.len()..], &kw) == Some(0)
     };
     if !other.is_empty() && !slot_matches(name, other) && ends_with(other) {
         return SpanVerdict::Misplaced(span.to_string());
-    }
-    if declared.contains_key(name) {
-        if let Some(i) = found {
-            let end = i + n.len();
-            let head_of = |k: &str| {
-                let kw = span_words(k);
-                ends_with(k)
-                    && end <= s.len() - kw.len()
-                    && !s[end..s.len() - kw.len()]
-                        .iter()
-                        .any(|w| w.raw.trim_end().ends_with(','))
-                    && !s[end - 1].raw.trim_end().ends_with(',')
-            };
-            if let Some(k) = others.iter().find(|k| head_of(k)) {
-                return SpanVerdict::Rebind((*k).clone());
-            }
-        }
     }
 
     // 3 / 4. 所绑的名字在片段里
@@ -660,6 +644,25 @@ async fn create_namesake_reviews(
 struct BoundEntity {
     id: Uuid,
     type_id: Option<Uuid>,
+}
+
+/// 模型写的名字和它 ref 指的实体对不对得上（#582）。没有 ref、或写的就是那个名字时
+/// 无事；否则把写的名字当片段核对，写的名字自己当引文（免掉在不在引文那一关）。
+/// 只有描述和改绑两种结论会用到，其余当无事
+fn written_verdict(
+    written: &str,
+    bound: &str,
+    other: &str,
+    referenced: bool,
+    declared: &HashMap<String, Uuid>,
+) -> SpanVerdict {
+    if !referenced || slot_matches(written, bound) {
+        return SpanVerdict::Ok;
+    }
+    match verify_span(Some(written), bound, other, written, declared) {
+        v @ (SpanVerdict::Described(_) | SpanVerdict::Rebind(_)) => v,
+        _ => SpanVerdict::Ok,
+    }
 }
 
 /// 一侧绑上的名字：有 ref 就是 ref 指的那个实体声明的名字，没有就是模型写的（#582）
@@ -1747,20 +1750,52 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             // 对着绑上的名字看：有 ref 就是 ref 指的那个实体的名字，没有就是模型写的名字
             let bound_subject = bound_name(&ref_names, f.subject_ref.as_deref(), f.subject.trim());
             let bound_object = bound_name(&ref_names, f.object_ref.as_deref(), object_name);
-            let subject_verdict = verify_span(
+            // 片段说了算；片段没说清（放行、不在引文、前缀、指代）时，再看模型写的名字
+            // 跟它 ref 指的实体对不对得上
+            let decisive = |v: &SpanVerdict| {
+                matches!(
+                    v,
+                    SpanVerdict::Described(_) | SpanVerdict::Rebind(_) | SpanVerdict::Misplaced(_)
+                )
+            };
+            let mut subject_verdict = verify_span(
                 f.subject_span.as_deref(),
                 bound_subject,
                 bound_object,
                 quote_text,
                 &span_declared,
             );
-            let object_verdict = verify_span(
+            if !decisive(&subject_verdict) {
+                let w = written_verdict(
+                    f.subject.trim(),
+                    bound_subject,
+                    bound_object,
+                    f.subject_ref.is_some(),
+                    &span_declared,
+                );
+                if decisive(&w) {
+                    subject_verdict = w;
+                }
+            }
+            let mut object_verdict = verify_span(
                 f.object_span.as_deref(),
                 bound_object,
                 bound_subject,
                 quote_text,
                 &span_declared,
             );
+            if !decisive(&object_verdict) {
+                let w = written_verdict(
+                    object_name,
+                    bound_object,
+                    bound_subject,
+                    f.object_ref.is_some(),
+                    &span_declared,
+                );
+                if decisive(&w) {
+                    object_verdict = w;
+                }
+            }
             let mut rebound_subject: Option<String> = None;
             let mut rebound_object: Option<String> = None;
             let mut object_described: Option<String> = None;
@@ -2905,7 +2940,7 @@ mod tests {
             ),
             SpanVerdict::Coreference("the company".into())
         );
-        // 片段以另一个名字结尾：头是它，改绑
+        // 片段以另一个名字结尾：不猜它是头（v4/v5 里猜错的多过猜对的），照描述处理
         assert_eq!(
             verify_span(
                 Some("Microsoft chief executive Satya Nadella"),
@@ -2914,17 +2949,17 @@ mod tests {
                 "convinced Microsoft chief executive Satya Nadella",
                 &d2
             ),
-            SpanVerdict::Rebind("Satya Nadella".into())
+            SpanVerdict::Described("Microsoft chief executive Satya Nadella".into())
         );
         assert_eq!(
             verify_span(
-                Some("former Apple designer Jony Ive"),
-                "Apple",
-                "OpenAI",
-                "founded by former Apple designer Jony Ive",
-                &d2
+                Some("Swisher and The Verge reporter Alex Heath"),
+                "Kara Swisher",
+                "",
+                "Swisher and The Verge reporter Alex Heath stated",
+                &declared(&["Kara Swisher", "Alex Heath", "The Verge"])
             ),
-            SpanVerdict::Rebind("Jony Ive".into())
+            SpanVerdict::Described("Swisher and The Verge reporter Alex Heath".into())
         );
         // 以另一侧的名字结尾：抄错了位置，绑定照旧、只记
         assert_eq!(
@@ -3006,6 +3041,55 @@ mod tests {
         assert_eq!(
             verify_span(Some("OpenAI staff"), "OpenAI", "", q2, &d),
             SpanVerdict::NotInQuote
+        );
+    }
+
+    /// 模型写的名字和它 ref 指的实体打架：写 "OpenAI employees" 却指向 OpenAI
+    #[test]
+    fn a_written_name_that_describes_its_reference_is_a_description() {
+        use super::written_verdict;
+        let d = declared(&[
+            "OpenAI",
+            "Anthropic",
+            "Sam Altman",
+            "OpenAI's board of directors",
+        ]);
+        // v5 的最后一条假边：片段 "eleven employees" 没有名字拦不住，写的名字拦得住
+        assert_eq!(
+            written_verdict("OpenAI employees", "OpenAI", "Anthropic", true, &d),
+            SpanVerdict::Described("OpenAI employees".into())
+        );
+        assert_eq!(
+            written_verdict("Former OpenAI personnel", "OpenAI", "Anthropic", true, &d),
+            SpanVerdict::Described("Former OpenAI personnel".into())
+        );
+        // 写的是另一个声明过的实体：改绑
+        assert_eq!(
+            written_verdict(
+                "OpenAI's board of directors",
+                "OpenAI",
+                "Sam Altman",
+                true,
+                &d
+            ),
+            SpanVerdict::Rebind("OpenAI's board of directors".into())
+        );
+        // 写的就是那个名字（含后缀、部分）、没有 ref、或是指代：无事
+        assert_eq!(
+            written_verdict("OpenAI, Inc.", "OpenAI", "", true, &d),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            written_verdict("Altman", "Sam Altman", "", true, &d),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            written_verdict("OpenAI employees", "OpenAI", "", false, &d),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            written_verdict("the company", "OpenAI", "", true, &d),
+            SpanVerdict::Ok
         );
     }
 
