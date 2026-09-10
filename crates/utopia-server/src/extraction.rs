@@ -611,6 +611,19 @@ struct BoundEntity {
     type_id: Option<Uuid>,
 }
 
+/// 一侧绑上的名字：有 ref 就是 ref 指的那个实体声明的名字，没有就是模型写的（#582）
+fn bound_name<'a>(
+    ref_names: &'a HashMap<String, String>,
+    reference: Option<&str>,
+    written: &'a str,
+) -> &'a str {
+    reference
+        .map(str::trim)
+        .and_then(|h| ref_names.get(h))
+        .map(String::as_str)
+        .unwrap_or(written)
+}
+
 fn referenced_entity(
     ref_entities: &HashMap<String, BoundEntity>,
     reference: &str,
@@ -1052,6 +1065,14 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 )
             })
             .collect();
+        // 句柄 → 声明的名字：片段核对要对着**绑上的**那个名字看（#582）。模型写
+        // "OpenAI personnel" 却 ref 到 e1=OpenAI 时，错在 ref 上，片段对着 "OpenAI"
+        // 才看得出来
+        let mut ref_names: HashMap<String, String> = doc_entities
+            .iter()
+            .enumerate()
+            .map(|(index, (_, _, name))| (format!("k{}", index + 1), name.clone()))
+            .collect();
         let mut response_claims: HashMap<String, Vec<Uuid>> = HashMap::new();
 
         // Resolve handled definitions first. This matters for a mixed response: a later
@@ -1146,6 +1167,7 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 )
                 .await?;
                 ref_entities.insert(handle.to_string(), BoundEntity { id, type_id });
+                ref_names.insert(handle.to_string(), name.to_string());
                 id
             } else {
                 resolve_bare(
@@ -1198,6 +1220,14 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             entity_type_of.insert(name.to_string(), type_id);
         }
 
+        // 改绑的候选：这次回复声明的实体，加上提示词里给过的库内实体（#582）
+        let span_declared: HashMap<String, Uuid> = {
+            let mut m = entity_ids.clone();
+            for (id, _, name) in &doc_entities {
+                m.entry(name.clone()).or_insert(*id);
+            }
+            m
+        };
         for f in &extraction.facts {
             let confidence = f.confidence.unwrap_or(0.7).clamp(0.0, 1.0);
             if confidence < MIN_CONFIDENCE {
@@ -1663,17 +1693,20 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             // 字，机器核对（`verify_span`）。描述做主语不落、做宾语落成字面值；点了别的
             // 实体就改绑；其余都只记不拦
             let quote_text = f.quote.as_deref().unwrap_or("");
+            // 对着绑上的名字看：有 ref 就是 ref 指的那个实体的名字，没有就是模型写的名字
+            let bound_subject = bound_name(&ref_names, f.subject_ref.as_deref(), f.subject.trim());
+            let bound_object = bound_name(&ref_names, f.object_ref.as_deref(), object_name);
             let subject_verdict = verify_span(
                 f.subject_span.as_deref(),
-                f.subject.trim(),
+                bound_subject,
                 quote_text,
-                &entity_ids,
+                &span_declared,
             );
             let object_verdict = verify_span(
                 f.object_span.as_deref(),
-                object_name,
+                bound_object,
                 quote_text,
-                &entity_ids,
+                &span_declared,
             );
             let mut rebound_subject: Option<String> = None;
             let mut rebound_object: Option<String> = None;
@@ -1684,13 +1717,13 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                     "subject",
                     &subject_verdict,
                     f.subject_span.as_deref(),
-                    f.subject.trim(),
+                    bound_subject,
                 ),
                 (
                     "object",
                     &object_verdict,
                     f.object_span.as_deref(),
-                    object_name,
+                    bound_object,
                 ),
             ] {
                 let (reason, example) = match verdict {
