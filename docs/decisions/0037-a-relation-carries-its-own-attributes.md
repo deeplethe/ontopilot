@@ -1,6 +1,6 @@
 # 0037 · A relation carries its own attributes
 
-- **Status**: cut 1 merged (#598) · cut 1b (units, auto-declaration, sibling currency; #TBD) · `relation_type_qualifiers` and `fact_qualifiers`
+- **Status**: cut 1 merged (#598) · cut 1b (units, auto-declaration, sibling currency; #600) · `relation_type_qualifiers` and `fact_qualifiers`
   (migration 0049), a relation declares its qualifiers, extraction writes them, the panel and
   the export read them · not in this cut: an entity-valued qualifier (the column is reserved,
   nothing writes it), a second row plus a conflict when two mentions of one edge disagree
