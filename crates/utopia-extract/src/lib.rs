@@ -735,6 +735,78 @@ pub fn parse_adjudication(raw: &str) -> anyhow::Result<Vec<AdjudicationVerdict>>
     Ok(reply.verdicts)
 }
 
+/// 一个**整体就是一个量**的字符串 → (数值, 单位)。
+///
+/// 判据从严：可选货币符号 + 数字 + 可选量级词 + 可选百分号，此外**一个词都不许有**。
+/// 尾巴上还挂着实词的，含义就不再只是那个数：
+///
+/// ```text
+/// "$5 billion"                        → (5e9, Some("$"))
+/// "52%"                               → (52.0, Some("%"))
+/// "3.5 million"                       → (3.5e6, None)
+/// "35,000"                            → (35000.0, None)
+/// "900 million weekly active users"   → None   后面还有实词
+/// "2025 Atlantic hurricane season"    → None   那是一场赛事，不是 2025
+/// "8GW data center"                   → None
+/// "3M"                                → None   那是一家公司
+/// ```
+///
+/// **量级词只认全写**。单字母后缀（`3M`、`5k`、`2B`）看着省事，代价是把 3M、
+/// K2、B1 这些名字读成数字——一个真实体被读成量值，事实的形状就错了，
+/// 而错的那一头是不可逆的：节点没建，名字也没留下。
+///
+/// **单位照抄符号，不猜币种。** `$` 可能是美元、加元、澳元，`¥` 可能是日元或
+/// 人民币。猜出来的 "USD" 是一条没人负责的断言，而原文写的 `$` 是事实。
+pub fn parse_quantity(s: &str) -> Option<(f64, Option<String>)> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let (body, percent) = match s.strip_suffix('%') {
+        Some(b) => (b.trim_end(), true),
+        None => (s, false),
+    };
+    let mut chars = body.chars();
+    let (body, currency) = match chars.next() {
+        Some(c) if matches!(c, '$' | '€' | '£' | '¥' | '₩' | '₹') => {
+            (chars.as_str().trim_start(), Some(c.to_string()))
+        }
+        _ => (body, None),
+    };
+    // `$5%` 不是一个量，是两个记号撞在一起
+    if percent && currency.is_some() {
+        return None;
+    }
+    let mut parts = body.split_whitespace();
+    let num = parts.next()?;
+    let scale = match parts.next() {
+        None => 1.0,
+        Some(w) => match w.to_ascii_lowercase().as_str() {
+            "thousand" => 1e3,
+            "million" => 1e6,
+            "billion" => 1e9,
+            "trillion" => 1e12,
+            _ => return None,
+        },
+    };
+    // 量级词后面还有词：那就不是纯量了
+    if parts.next().is_some() {
+        return None;
+    }
+    let cleaned: String = num.chars().filter(|c| !matches!(c, ',' | '_')).collect();
+    let n: f64 = cleaned.parse().ok()?;
+    let n = n * scale;
+    if !n.is_finite() {
+        return None;
+    }
+    let unit = if percent {
+        Some("%".to_string())
+    } else {
+        currency
+    };
+    Some((n, unit))
+}
+
 /// 属性值按 datatype 归一。失败返回 None——宁缺勿脏，调用方跳过并记日志。
 /// number 容忍千分位/空格；date 要求 YYYY[-MM[-DD]] 且保留原精度；bool 宽容 yes/no。
 pub fn normalize_attr_value(datatype: &str, raw: &serde_json::Value) -> Option<serde_json::Value> {
@@ -749,6 +821,10 @@ pub fn normalize_attr_value(datatype: &str, raw: &serde_json::Value) -> Option<s
                 cleaned
                     .parse::<f64>()
                     .ok()
+                    // 清洗解不动的再当量解：`$5 billion`、`52%` 这些整体就是数，
+                    // 只是带着符号与量级词。单位不在这里落笔——它随事实走
+                    // （见 `parse_quantity`），这一档只负责把值变成可比的数
+                    .or_else(|| parse_quantity(s).map(|(n, _)| n))
                     .filter(|f| f.is_finite())
                     .and_then(serde_json::Number::from_f64)
                     .map(serde_json::Value::Number)
@@ -1019,6 +1095,54 @@ mod prompt_shape_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_quantity_is_the_whole_string_or_nothing() {
+        // 整体就是一个量：符号、量级词、千分位都读得动
+        assert_eq!(parse_quantity("$5 billion"), Some((5e9, Some("$".into()))));
+        assert_eq!(
+            parse_quantity("€1.5 million"),
+            Some((1.5e6, Some("€".into())))
+        );
+        assert_eq!(parse_quantity("52%"), Some((52.0, Some("%".into()))));
+        assert_eq!(parse_quantity("3.5 million"), Some((3.5e6, None)));
+        assert_eq!(parse_quantity("35,000"), Some((35000.0, None)));
+        assert_eq!(parse_quantity("  42 "), Some((42.0, None)));
+
+        // 尾巴上还有实词：含义不再只是那个数，宁可当实体也不当量
+        assert_eq!(parse_quantity("900 million weekly active users"), None);
+        assert_eq!(parse_quantity("2025 Atlantic hurricane season"), None);
+        assert_eq!(parse_quantity("$10 billion investment"), None);
+        assert_eq!(parse_quantity("8GW data center"), None);
+        // 单字母后缀不认：3M 是一家公司，读成三百万就把一个真实体吃掉了
+        assert_eq!(parse_quantity("3M"), None);
+        assert_eq!(parse_quantity("5k"), None);
+        // 两个记号撞一起，不是量
+        assert_eq!(parse_quantity("$5%"), None);
+        assert_eq!(parse_quantity(""), None);
+        assert_eq!(parse_quantity("杭州"), None);
+    }
+
+    #[test]
+    fn a_number_attribute_takes_a_written_quantity() {
+        use serde_json::json;
+        // 采纳属性时按 datatype 换算，量也要换得动——否则 `$5 billion`
+        // 会一路「换不动」，事实永远拿不到谓词
+        assert_eq!(
+            normalize_attr_value("number", &json!("$5 billion")),
+            Some(json!(5e9))
+        );
+        assert_eq!(
+            normalize_attr_value("number", &json!("52%")),
+            Some(json!(52.0))
+        );
+        // 原来就认的两种写法不受影响
+        assert_eq!(
+            normalize_attr_value("number", &json!("35,000")),
+            Some(json!(35000.0))
+        );
+        assert_eq!(normalize_attr_value("number", &json!("about ten")), None);
+    }
 
     #[test]
     fn parse_time_precisions() {

@@ -1386,7 +1386,9 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             // 原词进 proposed_predicate，消解那一遍只需换谓词，形状已经是对的。
             //
             // object 里的东西算不算字面值，判据从严：**模型没把它声明成实体**，
-            // 且**它本身解得出数字或日期**。"杭州"两条都不满足，"2015"都满足。
+            // 且**它整体就是一个量或一个日期**。"杭州"两条都不满足，"2015"、
+            // "$5 billion"、"52%" 都满足；"900 million weekly active users"
+            // 不满足——尾巴上还有实词，它说的就不再只是那个数了。
             // 文本值的属性（schema.org 里 323 个）在这一档仍会变成实体——
             // 那里没有可靠判据，猜错会吃掉真实体，不猜
             let literal = match (&f.value, f.object.as_deref().map(str::trim)) {
@@ -1470,7 +1472,19 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                     Some(&format!("{subject_name} → {value}")),
                 )
                 .await;
-                let literal = serde_json::json!({ "value": value });
+                /* 值照原文落笔（提示词 8a 要的就是「units and all」），**单位另记一格**。
+                采纳成属性时按 datatype 把 `$5 billion` 换算成 5e9，那一步只看得懂
+                数；符号丢在原文里就再也取不出来了，而「5000000000」少了那个 `$`
+                就不知道是钱还是别的什么 */
+                let unit = value
+                    .as_str()
+                    .and_then(utopia_extract::parse_quantity)
+                    .and_then(|(_, u)| u);
+                let mut literal = serde_json::json!({ "value": value });
+                if let Some(unit) = unit {
+                    literal["unit"] = serde_json::Value::String(unit);
+                }
+                let literal = literal;
                 if await_nod {
                     if let utopia_store::pending::Outcome::Proposed(_) =
                         utopia_store::pending::propose(
@@ -2134,9 +2148,19 @@ fn looks_literal(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    // 纯数字（含小数与正负号）。用 f64 解而不是自己扫字符：
-    // "3M"、"V3"、"２０１５"（全角）都会失败，正是想要的
-    if s.parse::<f64>().is_ok() {
+    /* **整体是一个量**：可选货币符号 + 数字 + 可选量级词 + 可选百分号，
+    此外一个词都不许有（判据与例子见 `parse_quantity`）。
+
+    从前这里只认裸数字（`s.parse::<f64>()`），于是 `$5 billion` 两头不着：
+    它不是裸数字、也解不成日期，掉进关系那条路，凭空长出一个叫「$5 billion」
+    的节点。同名的又会并成一个点，于是 SSI Inc. 与 Nvidia 因为都出现过这个
+    数额而在图上相连——一条没有含义的路径。实测一个 1415 实体的库里，8 个
+    这样的点、15 条事实指着它们，而**没有任何一条拿它们当主语**：
+    一个从不当主语、只当宾语、名字整体是个量的东西，是值，不是实体。
+
+    `parse_quantity` 已经把裸数字那一档包含在内（`"42"` → 42），
+    所以这里不必再单留一条。全角「２０１５」仍旧解不动，仍旧是想要的 */
+    if utopia_extract::parse_quantity(s).is_some() {
         return true;
     }
     // 日期：复用抽取侧那个解析器，它认 2015 / 2015-03 / 2015-03-01 等
@@ -2564,9 +2588,22 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn only_numbers_and_dates_count_as_literals() {
+    fn quantities_and_dates_count_as_literals() {
         // 认：这些出现在宾语位上时是值，不是实体
-        for yes in ["2015", "2023-03", "2024-01-15", "1200", "62.5", "-3"] {
+        for yes in [
+            "2015",
+            "2023-03",
+            "2024-01-15",
+            "1200",
+            "62.5",
+            "-3",
+            // 带符号与量级词的量。从前这一档不认，于是图上长出一个叫
+            // 「$5 billion」的节点，同名的还并成一个，把毫不相干的两家公司连起来
+            "$5 billion",
+            "€1.5 million",
+            "52%",
+            "35,000",
+        ] {
             assert!(looks_literal(yes), "{yes} 该认成字面值");
         }
         // 不认：判错的代价是把一个真实体降成一段文本，所以宁可漏
@@ -2579,6 +2616,11 @@ mod tests {
             "",
             "   ",
             "２０１５", // 全角数字：不是我们要处理的形态，交给实体路径
+            // 尾巴上还有实词：它说的不再只是那个数
+            "900 million weekly active users",
+            "2025 Atlantic hurricane season",
+            "$10 billion investment",
+            "8GW data center",
         ] {
             assert!(!looks_literal(no), "{no} 不该认成字面值");
         }
