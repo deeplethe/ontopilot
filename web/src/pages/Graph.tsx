@@ -827,6 +827,48 @@ export function Graph() {
       },
     };
 
+    /* **此刻还连着吗**。
+     *
+     * `areNeighbors` 只问图上有没有这条边，不问时间轴停的这一刻它还成不成立；
+     * 边那边是问的（见 `liveNow`）。两边不一致，画出来就是「节点亮着、线却
+     * 没有」：悬停 Google DeepMind，Arthur Mensch 亮着，可它那条
+     * former_employee_of 早就结束了，线被压回背景色——看着像凭空亮了一个。
+     * 派生边关掉时同理：那条边整条不画，另一头就不该还当邻居亮着。
+     *
+     * **按焦点节点缓存一份**：这个判断每帧要对每个节点问一次，而枢纽点动辄
+     * 几百条边，逐节点扫一遍度数太亏。时间轴每动一次 `activeEdges` 都是新的
+     * Set（见 `recomputeActive`），拿它的身份当键就够，再带上边数兜住图本身
+     * 被换掉的情况 */
+    const liveNbr = {
+      focus: "",
+      edges: null as Set<string> | null,
+      derived: true,
+      size: -1,
+      set: new Set<string>(),
+    };
+    const isLiveNeighbor = (focus: string, node: string) => {
+      const { activeEdges, showDerived } = filterRef.current;
+      if (
+        liveNbr.focus !== focus ||
+        liveNbr.edges !== activeEdges ||
+        liveNbr.derived !== showDerived ||
+        liveNbr.size !== g.size
+      ) {
+        const set = new Set<string>();
+        g.forEachEdge(focus, (e, attrs, src, tgt) => {
+          if (activeEdges && !activeEdges.has(e)) return;
+          if (!showDerived && attrs.derived === true) return;
+          set.add(src === focus ? tgt : src);
+        });
+        liveNbr.focus = focus;
+        liveNbr.edges = activeEdges;
+        liveNbr.derived = showDerived;
+        liveNbr.size = g.size;
+        liveNbr.set = set;
+      }
+      return liveNbr.set.has(node);
+    };
+
     sigmaRef.current?.kill();
     const sigma = new Sigma(g, containerRef.current, {
       ...sigmaOptions({
@@ -875,9 +917,15 @@ export function Graph() {
         if (hov === node) return hoveredNode(res, attrs, base);
         if (sel) {
           // 邻居收到 0.76：上千个节点，得给选中的那一条路让地方
-          if (g.areNeighbors(sel, node)) neighborNode(res, base, 0.76);
+          if (isLiveNeighbor(sel, node)) neighborNode(res, base, 0.76);
+          /* **指到谁，就把谁的邻居也留出来**。边那边悬停是压过选中的
+             （`boost()` 在最前面），节点这边不跟上，选中之后再指别处就成了
+             一圈亮着的边通向一圈黑着的点——指过去正是想读"它连着谁"，
+             而那一问什么也答不出来 */
+          else if (hov && isLiveNeighbor(hov, node))
+            neighborNode(res, base, 0.76);
           else return mutedNode(res, base);
-        } else if (hov && hov !== node && !g.areNeighbors(hov, node)) {
+        } else if (hov && hov !== node && !isLiveNeighbor(hov, node)) {
           // **悬停也压暗其余**，只是比选中轻一档（见 HOVER_MUTE）。
           // 邻居留着：悬停要回答的正是"它连着谁"。
           // **此刻还不存在的节点直接压到底**：这个分支会提前 return，
