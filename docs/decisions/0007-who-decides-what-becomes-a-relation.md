@@ -3,7 +3,12 @@
 - **Status**: Built · adoption by counting (`MIN_DOCS = 2`; an LLM run needs `MIN_SIGNALS
   = 3`); six defects fixed; proposals persist in `ontology_proposals` (#112); open:
   narrative verbs in the ontology, `merge_key` not folding `_by`; the starting point (10
-  seeds, the `related_to` share) no longer exists.
+  seeds, the `related_to` share) no longer exists · 2026-09-10: the counting path now
+  takes `temporal` from the proposal it already reads for classes and attributes, instead
+  of writing `state` for every relation it adopts — the comment that justified `state`
+  ("temporal has no consequence unless functional is set") stopped being true at
+  [0031](0031-an-event-holds-at-the-moment-it-names.md), which normalises every write by
+  it; counting still decides *whether*, the model only answers *which kind*.
 - **Written**: 2026-08-30 · condensed into English 2026-09-03
 - **Related**: [0006](0006-ontology-scale-and-the-prompt.md) for the bench and its
   caveats; [0010](0010-no-relation-is-no-relation.md) and
