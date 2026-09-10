@@ -114,7 +114,9 @@ rules corpus declared and undeclared, a Chinese corpus declared and undeclared):
   writes the currency as a sibling key (`"currency": "CNY"`). The prompt now asks for the
   figure as written, the scanner reads ISO codes, currency words and CJK magnitudes (万, 亿),
   a sibling `currency` key becomes the unit, and the attribute's default unit is used only
-  when the text carries no unit token at all — a wrong currency is worse than none.
+  when the text carries no unit token at all — a wrong currency is worse than none. The same
+  rule (`unit_for`) now governs an attribute written on an entity, which used to stamp the
+  declared unit unconditionally: `500 兆瓦` filed under 金额 came out as ¥500.
 - **Two mentions of one edge in parallel can both insert.** The dedup in `insert_fact_inner`
   is a read-then-write with no unique index behind it; two documents describing the same
   `(subject, predicate, object, moment)` extracted at the same time produced two rows with

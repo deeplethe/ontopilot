@@ -1492,8 +1492,10 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                     continue;
                 };
                 let mut object_value = serde_json::json!({ "value": normalized });
-                if let Some(u) = attr.unit.as_deref().filter(|u| !u.is_empty()) {
-                    // 单位随事实落笔：类型上的单位以后改了，旧值仍按记录时的单位读
+                // 单位随事实落笔：类型上的单位以后改了，旧值仍按记录时的单位读。
+                // 记哪个单位照 `unit_for`——从前这里无条件盖上声明的单位，实测
+                //「提供 500 兆瓦的风电」被模型记成金额，再盖上 ¥ 就成了 500 块钱
+                if let Some(u) = unit_for(&raw, datatype, None, attr.unit.as_deref()) {
                     object_value["unit"] = serde_json::json!(u);
                 }
                 if await_nod {
@@ -2450,28 +2452,7 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                             continue;
                         };
                         let mut value = serde_json::json!({ "value": normalized });
-                        /* 单位：原文里认得出的用原文的（€、¥、%），原文里**没有任何单位记号**
-                        才落回属性声明的缺省。原文带着一个认不出的单位（"francs"）时
-                        **不能**拿缺省顶上——实测 `EUR 30 million` 被存成了 `$`，
-                        `15亿元人民币` 也是；币种写错比不写更糟 */
-                        let parsed = raw
-                            .as_str()
-                            .and_then(utopia_extract::parse_leading_quantity);
-                        let raw_has_unit_token = raw.as_str().is_some_and(|t| {
-                            t.chars().any(|c| {
-                                c.is_alphabetic()
-                                    || matches!(c, '$' | '€' | '£' | '¥' | '₩' | '₹' | '%')
-                            })
-                        });
-                        let unit = match parsed.and_then(|(_, u)| u) {
-                            Some(u) => Some(u),
-                            None => match sibling_currency {
-                                Some(c) if dt == "number" => Some(c.to_string()),
-                                _ if raw_has_unit_token => None,
-                                _ => def.unit.clone().filter(|u| !u.is_empty()),
-                            },
-                        };
-                        if let Some(u) = unit {
+                        if let Some(u) = unit_for(raw, dt, sibling_currency, def.unit.as_deref()) {
                             value["unit"] = serde_json::Value::String(u);
                         }
                         let write = utopia_store::graph::upsert_fact_qualifier(
@@ -2984,6 +2965,129 @@ async fn chunk_lists(
         Some(&classes),
         Some(&rels),
     )))
+}
+
+/// 一条值该记什么单位（#600「单位是读出来的，不是猜的」，实体上的属性与边上的属性同一条规矩）。
+///
+/// 原文里认得出的用原文的（€、¥、%、"EUR 30 million" 的 €）；模型把币种单独写成
+/// 一个键时用那个；原文里写着声明的那个单位（"4300 人" 对 "人"）也算读出来的。
+/// 原文带着一个认不出的单位记号（"500 兆瓦"、"francs"）时**不能**拿声明的缺省顶上——
+/// 实测 `EUR 30 million` 被存成了 `$`，`500 兆瓦` 被存成了 500 块钱；单位写错比不写更糟。
+/// 只有原文完全没有单位记号（一个光秃秃的数）才落回声明的缺省。
+fn unit_for(
+    raw: &serde_json::Value,
+    datatype: &str,
+    sibling_currency: Option<&str>,
+    declared: Option<&str>,
+) -> Option<String> {
+    let declared = declared.map(str::trim).filter(|u| !u.is_empty());
+    let text = raw.as_str();
+    if let Some(u) = text
+        .and_then(utopia_extract::parse_leading_quantity)
+        .and_then(|(_, u)| u)
+    {
+        return Some(u);
+    }
+    if let (Some(c), "number") = (sibling_currency, datatype) {
+        return Some(c.to_string());
+    }
+    if let (Some(t), Some(d)) = (text, declared) {
+        if t.contains(d) {
+            return Some(d.to_string());
+        }
+    }
+    let has_unit_token = text.is_some_and(|t| {
+        t.chars()
+            .any(|c| c.is_alphabetic() || matches!(c, '$' | '€' | '£' | '¥' | '₩' | '₹' | '%'))
+    });
+    if has_unit_token {
+        None
+    } else {
+        declared.map(str::to_string)
+    }
+}
+
+#[cfg(test)]
+mod unit_for_tests {
+    use super::unit_for;
+    use serde_json::{json, Value};
+
+    fn s(t: &str) -> Value {
+        Value::String(t.to_string())
+    }
+
+    #[test]
+    fn a_unit_is_read_from_the_text_before_anything_else() {
+        assert_eq!(
+            unit_for(&s("EUR 30 million"), "number", None, Some("$")).as_deref(),
+            Some("€")
+        );
+        assert_eq!(
+            unit_for(&s("8.6亿元"), "number", None, Some("$")).as_deref(),
+            Some("¥")
+        );
+        assert_eq!(
+            unit_for(&s("12%"), "number", None, Some("¥")).as_deref(),
+            Some("%")
+        );
+        assert_eq!(
+            unit_for(&s("$5 billion"), "number", None, None).as_deref(),
+            Some("$")
+        );
+    }
+
+    #[test]
+    fn a_sibling_currency_is_the_unit_of_a_bare_number() {
+        assert_eq!(
+            unit_for(&s("1500000000"), "number", Some("CNY"), Some("$")).as_deref(),
+            Some("CNY")
+        );
+        // 文本型属性没有币种可言
+        assert_eq!(unit_for(&s("B 轮"), "text", Some("CNY"), None), None);
+    }
+
+    #[test]
+    fn the_declared_unit_written_in_the_text_counts_as_read() {
+        assert_eq!(
+            unit_for(&s("4300 人"), "number", None, Some("人")).as_deref(),
+            Some("人")
+        );
+        assert_eq!(
+            unit_for(&s("三年"), "text", None, Some("年")).as_deref(),
+            Some("年")
+        );
+    }
+
+    #[test]
+    fn an_unknown_unit_token_is_never_overwritten_by_the_default() {
+        // 宽松扫描把尾巴上的记号当单位读出来：记的是原文的单位，不是声明的 ¥
+        assert_eq!(
+            unit_for(&s("500 兆瓦"), "number", None, Some("¥")).as_deref(),
+            Some("兆瓦")
+        );
+        assert_eq!(
+            unit_for(&s("30 million francs"), "number", None, Some("$")).as_deref(),
+            Some("francs")
+        );
+        // 扫描读不出、原文却明明带着字：也不拿缺省顶上
+        assert_eq!(
+            unit_for(&s("about five hundred"), "number", None, Some("$")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_bare_figure_takes_the_declared_default() {
+        assert_eq!(
+            unit_for(&s("4300"), "number", None, Some("人")).as_deref(),
+            Some("人")
+        );
+        assert_eq!(
+            unit_for(&json!(4300), "number", None, Some("人")).as_deref(),
+            Some("人")
+        );
+        assert_eq!(unit_for(&s("4300"), "number", None, Some("")), None);
+    }
 }
 
 #[cfg(test)]
