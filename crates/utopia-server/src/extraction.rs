@@ -305,8 +305,10 @@ fn verify_span(
     }) {
         return SpanVerdict::Rebind((*k).clone());
     }
-    // 单个普通词（"company"）包在别的名字里不算：那是指代，不是点名
-    let names_something = s.len() >= 2 || looks_proper(s[0].raw);
+    // 单个词包在别的名字里不算改绑："company" 是指代，句首的 "Stockholders" 大写也
+    // 不是专名的证据（召回测量台第二轮：主语从 NVIDIA 改绑到了「年度股东大会」）。
+    // 单个词只认精确/词干命中（上面 `slot_matches` 那一关）
+    let names_something = s.len() >= 2;
     let mut supersets: Vec<(&String, usize)> = others
         .iter()
         .filter_map(|k| {
@@ -346,6 +348,12 @@ fn verify_span(
         let last = s[end - 1].raw;
         let possessive = last.ends_with("'s") || last.ends_with("\u{2019}s");
         let after = &s[end..];
+        // 名字后面接着 and / & 再接专名，是并列（"SB Energy and SoftBank"）：名字是名单里
+        // 的一项，不是修饰语。连词跟冠词一样是语法词，不是词表
+        let after = match after.first() {
+            Some(w) if matches!(w.clean.as_str(), "and" | "&") => &after[1..],
+            _ => after,
+        };
         if possessive || after.iter().any(|w| !looks_proper(w.raw)) {
             return SpanVerdict::Described(span.to_string());
         }
@@ -3286,6 +3294,8 @@ mod tests {
             ),
             SpanVerdict::Rebind("Sam Altman".into())
         );
+        // 单个词包在别的名字里不改绑（#595）：句首大写不是专名的证据。"Altman" 绑错到
+        // OpenAI 时只记指代——改绑要么精确/词干命中，要么两个词以上
         assert_eq!(
             verify_span(
                 Some("Altman"),
@@ -3294,7 +3304,20 @@ mod tests {
                 "Altman announced the deal",
                 &d
             ),
-            SpanVerdict::Rebind("Sam Altman".into())
+            SpanVerdict::Coreference("Altman".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("Stockholders"),
+                "NVIDIA",
+                "",
+                "Stockholders approved the election of each of our ten (10) director nominees",
+                &declared(&[
+                    "NVIDIA",
+                    "2026 Annual Meeting of Stockholders of NVIDIA Corporation"
+                ])
+            ),
+            SpanVerdict::Coreference("Stockholders".into())
         );
         assert_eq!(
             verify_span(
@@ -3488,6 +3511,43 @@ mod tests {
         assert_eq!(
             written_verdict("the company", "OpenAI", "", true, &d),
             SpanVerdict::Ok
+        );
+    }
+
+    /// 名字后面接着 and 再接专名，是并列的一项，不是描述（#595）；接着 and 再接小写
+    /// 的描述还是描述
+    #[test]
+    fn a_name_in_a_coordination_is_one_of_the_list() {
+        let d = declared(&["SB Energy", "SoftBank", "OpenAI"]);
+        let q = "SB Energy and SoftBank will build at least 10 GW of new energy generation";
+        assert_eq!(
+            verify_span(Some("SB Energy and SoftBank"), "SB Energy", "", q, &d),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            verify_span(
+                Some("SB Energy & SoftBank"),
+                "SB Energy",
+                "",
+                "SB Energy & SoftBank will build",
+                &d
+            ),
+            SpanVerdict::Ok
+        );
+        // 绑在后一项上：名字前面带词，只记
+        assert_eq!(
+            verify_span(Some("SB Energy and SoftBank"), "SoftBank", "", q, &d),
+            SpanVerdict::Prefixed("SB Energy and SoftBank".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("OpenAI and its investors"),
+                "OpenAI",
+                "",
+                "OpenAI and its investors agreed",
+                &d
+            ),
+            SpanVerdict::Described("OpenAI and its investors".into())
         );
     }
 
