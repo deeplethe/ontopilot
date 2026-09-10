@@ -104,6 +104,19 @@ const RULES = [
     ui: false,
   },
   {
+    id: "raw-colour",
+    // 页面和组件里不出现色值本身：令牌在 styles.css 里定义一次，浅色/暗色各一套，
+    // 写死一个 #ffffff 就是写死了「暗底」。两个例外文件是**令牌的读者**：
+    // graphVisuals.ts 从 CSS 变量里把画布要的颜色读出来（canvas 不认 var()），
+    // palette.ts 是实体类型的数据色（规矩 4：彩色只属于数据），暗浅两套都在那里。
+    // `rgba(0,0,0,0)` 是透明，不是颜色，放行
+    re: /#[0-9a-fA-F]{6}(?![0-9a-fA-F])|(?<![a-zA-Z_])rgba?\(/g,
+    why: "颜色只用令牌（规矩 4）；画布从 graphVisuals 的调色板读，数据色在 palette.ts",
+    ui: true,
+    skip: (rel) => /src\/(pages\/graphVisuals\.ts|palette\.ts)$/.test(rel) || /\.test\.tsx?$/.test(rel),
+    allow: /rgba\(0,\s*0,\s*0,\s*0\)/g,
+  },
+  {
     id: "native-confirm",
     re: /\bwindow\.(confirm|alert)\(|(?<![.\w])(confirm|alert)\(/g,
     why: "确认走 DangerConfirm / Dialog，不用 window.confirm（规矩 5）",
@@ -115,7 +128,7 @@ function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, out);
-    else if (entry.name.endsWith(".tsx")) out.push(full);
+    else if (entry.name.endsWith(".tsx") || entry.name.endsWith(".ts")) out.push(full);
   }
   return out;
 }
@@ -137,11 +150,37 @@ for (const rel of files) {
     m.replace(/[^\n]/g, " "),
   );
   const lines = text.split("\n");
+  // 块注释里的行也不算：/* … */ 跨行时逐行看不出自己在注释里，这里记个状态
+  let inBlock = false;
+  const commentFree = lines.map((line) => {
+    let out = "";
+    let i = 0;
+    while (i < line.length) {
+      if (inBlock) {
+        const end = line.indexOf("*/", i);
+        if (end < 0) return out;
+        inBlock = false;
+        i = end + 2;
+      } else {
+        const start = line.indexOf("/*", i);
+        if (start < 0) {
+          out += line.slice(i);
+          break;
+        }
+        out += line.slice(i, start);
+        inBlock = true;
+        i = start + 2;
+      }
+    }
+    return out;
+  });
   for (const rule of RULES) {
     if (inUi && !rule.ui) continue;
-    lines.forEach((line, i) => {
+    if (rule.skip && rule.skip(rel)) continue;
+    commentFree.forEach((line, i) => {
       // 注释里提到旧写法不算（规矩要能在注释里被引用）
-      const code = line.replace(/\/\/.*$/, "").replace(/\{\/\*.*?\*\/\}/g, "");
+      let code = line.replace(/\/\/.*$/, "");
+      if (rule.allow) code = code.replace(rule.allow, "");
       const hits = code.match(rule.re);
       if (!hits) return;
       failures += 1;

@@ -469,7 +469,7 @@ export function KbSettings() {
               <Button variant="secondary" size="sm" className="shrink-0"
                 style={{
                   background: "var(--u-danger-solid)",
-                  color: "#ffffff",
+                  color: "var(--u-on-danger)",
                 }}
                 onClick={() => setConfirmingDelete(true)}
               >

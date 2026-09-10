@@ -5,6 +5,7 @@ import {
 } from "../ui";
 /* 用户菜单：顶栏右侧的头像胶囊 + 弹出面板（个人信息 / 系统管理 / 登出）。
    Shell（KB 工作区）与 AccountShell（账户层）共用。 */
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -15,6 +16,7 @@ import {
   LogOut,
   ShieldCheck,
   UserRound,
+  SunMoon,
 } from "lucide-react";
 import { api, type User } from "../api";
 import { usePopoverFlip } from "../ui/popoverFlip";
@@ -38,7 +40,13 @@ export function Avatar({ name, size = 24 }: { name: string; size?: number }) {
   );
 }
 
+import { getTheme, setTheme, type Theme } from "../theme";
+
+// 三档的顺序就是菜单里的顺序：本色在前，跟系统在最后
+const THEMES: Theme[] = ["dark", "light", "system"];
+
 export function UserMenu({ user }: { user: User }) {
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
   // 原地变形（FLIP）：胶囊"长成"面板。实现共用，见 ui/popoverFlip——
   // 告警铃铛就在旁边，两处各写一遍迟早会差出一点点
   const { open, setOpen, close, rootRef, anchorRef, panelRef } =
@@ -155,6 +163,33 @@ export function UserMenu({ user }: { user: User }) {
                 onClick={() => setLang(l)}
               >
                 {LANG_NAMES[l]}
+              </Row>
+            ))}
+          </div>
+
+          {/* 主题（0038）：暗是本色，浅色给白天对着它八小时的人；跟系统是第三档。
+              与语言同一个道理——看的人自己定，不经过后端 */}
+          <div className="border-t border-line">
+            <div className="flex items-center gap-3 px-4 pt-3 pb-1 text-fine text-ink-2">
+              <SunMoon size={13} className="text-ink-2" />
+              {S.account.theme}
+            </div>
+            {THEMES.map((t) => (
+              <Row
+                density="menu"
+                className="gap-3 px-4 py-2 text-body"
+                key={t}
+                icon={
+                  <span className="block w-[13px]">
+                    {t === theme && <Check size={13} className="text-ink-2" />}
+                  </span>
+                }
+                onClick={() => {
+                  setTheme(t);
+                  setThemeState(t);
+                }}
+              >
+                {S.account.themeNames[t]}
               </Row>
             ))}
           </div>

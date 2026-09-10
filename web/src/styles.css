@@ -134,6 +134,108 @@
   --u-surface-strong-hover: rgba(10, 10, 10, 0.94);
   --u-menu-surface: rgba(14, 14, 14, 0.85);
   --u-menu-surface-hover: rgba(14, 14, 14, 0.97);
+
+  /* ---------- 以下令牌是浅色版（0038）加的：从前这些数写死在各处 ---------- */
+  /* 「墨」与「底」的 RGB 三元组：所有 rgba(255,255,255,α) / rgba(10,10,10,α)
+     都归到这两个上，透明度留在用的地方。浅色版只换三元组，透明度一处不动 */
+  --u-ink-rgb: 255, 255, 255;
+  --u-ground-rgb: 10, 10, 10;
+  /* 实底主按钮上的字：与 --u-accent 相反的那一头 */
+  --u-on-accent: #0a0a0a;
+  /* 遮罩 / 弹层 / 对话框 / 不透明卡片的面 */
+  --u-scrim: rgba(0, 0, 0, 0.8);
+  --u-pop-surface: rgba(16, 16, 16, 0.98);
+  --u-modal-surface: rgba(12, 12, 12, 0.97);
+  --u-card-surface: rgba(12, 12, 12, 0.92);
+  /* 画布网格两级 */
+  --u-grid: rgba(var(--u-ink-rgb), 0.055);
+  --u-grid-2: rgba(var(--u-ink-rgb), 0.02);
+  /* 语义色的三元组：画布上的争议边、危险边、规则边要按透明度调 */
+  --u-contest-rgb: 255, 106, 61;
+  --u-danger-rgb: 255, 157, 175;
+  --u-violet-rgb: 196, 165, 255;
+  --u-derived-rgb: 231, 197, 124;
+  /* 画布：节点四层与几档边。canvas 读不到 var()，graphVisuals 从算出来的值里读 */
+  --u-node-shell: #121212;
+  --u-node-core: #767676;
+  --u-node-border: #909090;
+  --u-node-muted: #151515;
+  --u-edge: rgba(163, 163, 163, 0.2);
+  --u-edge-inferred: rgba(163, 163, 163, 0.1);
+  --u-edge-dim: #141414;
+  --u-edge-focus: rgba(var(--u-ink-rgb), 0.55);
+  --u-edge-derived: rgba(var(--u-derived-rgb), 0.42);
+  --u-edge-derived-dim: rgba(var(--u-derived-rgb), 0.14);
+  --u-edge-derived-focus: rgba(255, 214, 140, 0.95);
+  --u-edge-subclass: rgba(235, 235, 235, 0.55);
+  --u-edge-subclass-focus: rgba(var(--u-ink-rgb), 0.95);
+  --u-edge-relation: rgba(128, 128, 128, 0.3);
+  --u-edge-relation-focus: rgba(var(--u-ink-rgb), 0.6);
+  --u-edge-schema-dim: rgba(48, 48, 48, 0.4);
+  --u-pill-bg: rgba(12, 12, 12, 0.9);
+  --u-halo: rgba(var(--u-ground-rgb), 0.92);
+  /* 时间轴刻度：走过的、播放头、没到的 */
+  --u-scrub-past: rgba(var(--u-ink-rgb), 0.32);
+  --u-scrub-play: rgba(var(--u-ink-rgb), 0.62);
+  --u-scrub-future: rgba(var(--u-ink-rgb), 0.04);
+  /* 危险实底按钮上的字：深红上永远是白，与主题无关 */
+  --u-on-danger: #ffffff;
+  /* 浮岛的投影：暗底下要重，浅底下要轻 */
+  --u-shadow: rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- 浅色（0038）：只改令牌，一条规则都不重写 ----------
+   底是纸白不是纯白，字是近黑不是纯黑，线与面从「白的透明度」换成「黑的透明度」，
+   透明度数值一律沿用暗色那套——它们描述的是层级差，不是颜色。
+   语义色换成同一色相的深版：浅底上淡玫瑰/淡金读不出来。 */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --u-ground: #fafafa;
+  --u-text: #171717;
+  --u-text-2: #5f5f5f;
+  --u-accent: #262626;
+  --u-accent-deep: 23, 23, 23;
+  --u-ink-rgb: 23, 23, 23;
+  --u-ground-rgb: 250, 250, 250;
+  --u-on-accent: #fafafa;
+  --u-ok: #1a7f4b;
+  --u-warn: #9a6a12;
+  --u-danger: #c0284f;
+  --u-danger-solid: #c9353a;
+  --u-contest: #c8471c;
+  --u-violet: #6d4fd6;
+  --u-line: rgba(0, 0, 0, 0.08);
+  --u-line-strong: rgba(0, 0, 0, 0.14);
+  --u-surface: rgba(0, 0, 0, 0.03);
+  --u-surface-2: rgba(0, 0, 0, 0.05);
+  --u-surface-3: rgba(0, 0, 0, 0.08);
+  --u-ring: rgba(0, 0, 0, 0.5);
+  --u-well: rgba(0, 0, 0, 0.05);
+  --u-surface-strong: rgba(250, 250, 250, 0.86);
+  --u-surface-strong-hover: rgba(250, 250, 250, 0.94);
+  --u-menu-surface: rgba(252, 252, 252, 0.9);
+  --u-menu-surface-hover: rgba(252, 252, 252, 0.98);
+  --u-scrim: rgba(0, 0, 0, 0.35);
+  --u-pop-surface: rgba(255, 255, 255, 0.98);
+  --u-modal-surface: rgba(255, 255, 255, 0.97);
+  --u-card-surface: rgba(255, 255, 255, 0.92);
+  --u-contest-rgb: 200, 71, 28;
+  --u-danger-rgb: 192, 40, 79;
+  --u-violet-rgb: 109, 79, 214;
+  --u-derived-rgb: 176, 120, 20;
+  --u-node-shell: #ffffff;
+  --u-node-core: #8a8a8a;
+  --u-node-border: #6f6f6f;
+  --u-node-muted: #ececec;
+  --u-edge: rgba(90, 90, 90, 0.25);
+  --u-edge-inferred: rgba(90, 90, 90, 0.12);
+  --u-edge-dim: #e4e4e4;
+  --u-edge-derived-focus: rgba(150, 100, 10, 0.95);
+  --u-edge-subclass: rgba(40, 40, 40, 0.55);
+  --u-edge-relation: rgba(128, 128, 128, 0.35);
+  --u-edge-schema-dim: rgba(200, 200, 200, 0.5);
+  --u-pill-bg: rgba(255, 255, 255, 0.92);
+  --u-shadow: rgba(0, 0, 0, 0.18);
 }
 
 body {
@@ -145,7 +247,7 @@ body {
 /* 选中态：中性白纱替掉浏览器默认蓝（零色偏原则同样管到这里）。
    只设底色不改字色——半透明白纱下内容自身的颜色（代码令牌、实体色）仍透出 */
 ::selection {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(var(--u-ink-rgb), 0.22);
 }
 
 /* 空间感：极克制的中性顶光 + 暗角，零色偏 */
@@ -155,7 +257,7 @@ body::before {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(1000px 600px at 50% -20%, rgba(255, 255, 255, 0.045), transparent 60%),
+    radial-gradient(1000px 600px at 50% -20%, rgba(var(--u-ink-rgb), 0.045), transparent 60%),
     var(--u-ground);
 }
 
@@ -223,7 +325,7 @@ body::before {
   /* **中性，不掺色相**：原本是 rgba(12,12,14)，蓝比红绿高 2——
      在大面积深底上肉眼看得出偏冷。这产品的既定原则是
      「chrome 零色偏、彩色只属于数据」，这里也照办 */
-  background: rgba(12, 12, 12, 0.97);
+  background: var(--u-modal-surface);
   /* saturate(1) 是恒等，加它只为**让滤镜列表与其他玻璃面同形**：
      两个列表函数不一致时，backdrop-filter 只能离散跳变，插值动不了 */
   backdrop-filter: blur(24px) saturate(1);
@@ -264,7 +366,7 @@ body::before {
   }
 }
 .u-modal-scrim {
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--u-scrim);
   backdrop-filter: blur(4px) saturate(1);
   -webkit-backdrop-filter: blur(4px) saturate(1);
   animation: u-modal-scrim-kf 0.14s ease-out both;
@@ -281,7 +383,7 @@ body::before {
 
 /* 弹出层（下拉/取色器等 popover）：近实底——下层内容透出只会干扰 */
 .u-pop {
-  background: rgba(16, 16, 16, 0.98);
+  background: var(--u-pop-surface);
   backdrop-filter: blur(8px) saturate(1);
   -webkit-backdrop-filter: blur(8px) saturate(1);
   border: 1px solid var(--u-line-strong);
@@ -332,7 +434,7 @@ body::before {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.18),
+    rgba(var(--u-ink-rgb), 0.18),
     transparent
   );
   animation: u-sweep-kf 720ms cubic-bezier(0.4, 0, 0.2, 1) both;
@@ -411,7 +513,7 @@ body::before {
   transition: background-color var(--u-base) ease;
   backdrop-filter: blur(24px) saturate(0.3);
   -webkit-backdrop-filter: blur(24px) saturate(0.3);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--u-line-strong);
 }
 .u-menu-glass:hover {
   background: var(--u-menu-surface-hover);
@@ -456,7 +558,7 @@ body::before {
 .input-dark:focus {
   outline: none;
   border-color: var(--u-line-strong);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 3px rgba(var(--u-ink-rgb), 0.22);
 }
 .input-dark:disabled {
   opacity: 0.4;
@@ -561,13 +663,13 @@ select.input-dark option {
 .btn-primary {
   background: var(--u-text);
   border: 1px solid var(--u-text);
-  color: #0a0a0a;
+  color: var(--u-on-accent);
   font-weight: 600;
 }
 .u-btn-primary:hover:not(:disabled),
 .btn-primary:hover:not(:disabled) {
-  background: #ffffff;
-  border-color: #ffffff;
+  background: var(--u-text);
+  border-color: var(--u-text);
 }
 .u-btn-secondary,
 .u-btn-ghost,
@@ -581,7 +683,7 @@ select.input-dark option {
 .btn-ghost:hover:not(:disabled) {
   background: var(--u-surface-2);
   color: var(--u-text);
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(var(--u-ink-rgb), 0.22);
 }
 /* 无边框：行内动作、图标按钮、工具条 */
 .u-btn-quiet {
@@ -597,7 +699,7 @@ select.input-dark option {
 .u-btn-danger {
   background: var(--u-danger-solid);
   border: 1px solid var(--u-danger-solid);
-  color: #ffffff;
+  color: var(--u-text);
   font-weight: 600;
 }
 .u-btn-danger:hover:not(:disabled) {
@@ -632,7 +734,7 @@ select.input-dark option {
   background: var(--u-surface-2);
 }
 .u-tool.is-on {
-  color: #ffffff;
+  color: var(--u-text);
   background: var(--u-surface-3);
 }
 .u-tool:focus-visible {
@@ -706,7 +808,7 @@ select.input-dark option {
   color: var(--u-text);
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: rgba(var(--u-ink-rgb), 0.3);
 }
 /* 只提亮不划线：整块引文那种链接 */
 .u-hover-ink {
@@ -775,9 +877,9 @@ select.input-dark option {
   background: var(--u-surface-2);
 }
 .u-choice.is-on {
-  border-color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(var(--u-ink-rgb), 0.6);
   background: var(--u-surface-3);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 1px rgba(var(--u-ink-rgb), 0.3);
 }
 .u-choice:focus-within {
   outline: 2px solid var(--u-ring);
@@ -841,7 +943,7 @@ select.input-dark option {
 }
 .u-tab.is-active {
   color: var(--u-text);
-  border-bottom-color: #ffffff;
+  border-bottom-color: var(--u-text);
 }
 /* 选中的那一页从下划线往上透一点光：白 6% 在底，到一半高处就没了——说的是
    「光从线上来」，不是给标签涂一块底。压在文字后面，不接指针 */
@@ -852,8 +954,8 @@ select.input-dark option {
   z-index: -1;
   background: linear-gradient(
     to top,
-    rgba(255, 255, 255, 0.06),
-    rgba(255, 255, 255, 0) 50%
+    rgba(var(--u-ink-rgb), 0.06),
+    rgba(var(--u-ink-rgb), 0) 50%
   );
   pointer-events: none;
 }
@@ -887,7 +989,7 @@ select.input-dark option {
 /* 对话输入框的外壳 */
 .u-composer {
   border-radius: var(--radius-panel);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--u-ink-rgb), 0.12);
   background: var(--u-surface);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -936,12 +1038,12 @@ select.input-dark option {
   white-space: nowrap;
 }
 .u-chip-neutral {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--u-ink-rgb), 0.08);
   color: var(--u-text-2);
 }
 .u-chip-info {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ededed;
+  background: rgba(var(--u-ink-rgb), 0.12);
+  color: var(--u-text);
 }
 .u-chip-success {
   background: rgba(76, 195, 138, 0.12);
@@ -986,10 +1088,10 @@ select.input-dark option {
 /* ---- graph canvas: 图纸式大小网格（细密小格 + 每 4 格一条更亮的主线） ---- */
 .u-grid-bg {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    linear-gradient(var(--u-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--u-grid) 1px, transparent 1px),
+    linear-gradient(var(--u-grid-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--u-grid-2) 1px, transparent 1px);
   background-size:
     104px 104px,
     104px 104px,
@@ -1002,16 +1104,16 @@ select.input-dark option {
    （输入框、控件、卡片），一条已经说完的话不是其中之一，给它描边就是在暗示
    还能点。角色靠这块 8% 的底区分就够了 */
 .u-bubble-user {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--u-ink-rgb), 0.08);
 }
 .u-highlight {
-  border-color: rgba(255, 255, 255, 0.45) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+  border-color: rgba(var(--u-ink-rgb), 0.45) !important;
+  background: rgba(var(--u-ink-rgb), 0.06) !important;
+  box-shadow: 0 0 0 2px rgba(var(--u-ink-rgb), 0.12);
 }
 .u-nav-active {
-  background: rgba(255, 255, 255, 0.09);
-  color: #ffffff;
+  background: rgba(var(--u-ink-rgb), 0.09);
+  color: var(--u-text);
 }
 
 /* 引用定位闪现：进场强光收敛到持有亮度（运动比静态边框更抓眼）。
@@ -1019,18 +1121,18 @@ select.input-dark option {
    transition 淡回普通卡片 */
 @keyframes u-flash-kf {
   0% {
-    border-color: rgba(255, 255, 255, 0.9);
-    background-color: rgba(255, 255, 255, 0.14);
+    border-color: rgba(var(--u-ink-rgb), 0.9);
+    background-color: rgba(var(--u-ink-rgb), 0.14);
     box-shadow:
-      0 0 0 3px rgba(255, 255, 255, 0.3),
-      0 0 36px rgba(255, 255, 255, 0.16);
+      0 0 0 3px rgba(var(--u-ink-rgb), 0.3),
+      0 0 36px rgba(var(--u-ink-rgb), 0.16);
   }
   100% {
-    border-color: rgba(255, 255, 255, 0.55);
-    background-color: rgba(255, 255, 255, 0.07);
+    border-color: rgba(var(--u-ink-rgb), 0.55);
+    background-color: rgba(var(--u-ink-rgb), 0.07);
     box-shadow:
-      0 0 0 2px rgba(255, 255, 255, 0.16),
-      0 0 18px rgba(255, 255, 255, 0.06);
+      0 0 0 2px rgba(var(--u-ink-rgb), 0.16),
+      0 0 18px rgba(var(--u-ink-rgb), 0.06);
   }
 }
 .u-flash {
@@ -1039,9 +1141,9 @@ select.input-dark option {
 @media (prefers-reduced-motion: reduce) {
   .u-flash {
     animation: none;
-    border-color: rgba(255, 255, 255, 0.55);
-    background-color: rgba(255, 255, 255, 0.07);
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.16);
+    border-color: rgba(var(--u-ink-rgb), 0.55);
+    background-color: rgba(var(--u-ink-rgb), 0.07);
+    box-shadow: 0 0 0 2px rgba(var(--u-ink-rgb), 0.16);
   }
 }
 
@@ -1054,26 +1156,26 @@ select.input-dark option {
   color: var(--u-text);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: rgba(var(--u-ink-rgb), 0.3);
 }
 .u-link:hover {
-  text-decoration-color: rgba(255, 255, 255, 0.8);
+  text-decoration-color: rgba(var(--u-ink-rgb), 0.8);
 }
 .u-title {
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: #ffffff;
+  color: var(--u-text);
 }
 .brand-gradient {
-  color: #ffffff;
+  color: var(--u-text);
   letter-spacing: -0.02em;
 }
 }
 
 /* 登录卡：近实底，不用 backdrop-filter（对动画背景每帧重算模糊，代价高） */
 .u-card-opaque {
-  background: rgba(12, 12, 12, 0.92);
+  background: var(--u-card-surface);
   border: 1px solid var(--u-line);
 }
 
@@ -1264,7 +1366,7 @@ a:hover > .u-mark-arrow {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.05),
+    rgba(var(--u-ink-rgb), 0.05),
     transparent
   );
   animation: u-skel-kf 1.4s ease-in-out infinite;
@@ -1310,7 +1412,7 @@ a:hover > .u-mark-arrow {
 @supports not selector(::-webkit-scrollbar) {
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+    scrollbar-color: var(--u-line-strong) transparent;
   }
 }
 *::-webkit-scrollbar {
@@ -1321,11 +1423,11 @@ a:hover > .u-mark-arrow {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--u-line-strong);
   border-radius: 4px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.26);
+  background: rgba(var(--u-ink-rgb), 0.26);
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
@@ -1354,8 +1456,8 @@ a:hover > .u-mark-arrow {
   width: 2px;
   height: 28px;
   border-radius: 1px;
-  background: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  background: var(--u-text);
+  box-shadow: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
   cursor: ew-resize;
 }
 .scrubber-range::-moz-range-thumb {
@@ -1363,8 +1465,8 @@ a:hover > .u-mark-arrow {
   height: 28px;
   border: none;
   border-radius: 1px;
-  background: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  background: var(--u-text);
+  box-shadow: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
   cursor: ew-resize;
 }
 .scrubber-range::-webkit-slider-runnable-track {
@@ -1441,14 +1543,14 @@ a:hover > .u-mark-arrow {
   margin: 0.15em 0;
 }
 .u-chat-prose strong {
-  color: #ffffff;
+  color: var(--u-text);
   font-weight: 600;
 }
 .u-chat-prose h1,
 .u-chat-prose h2,
 .u-chat-prose h3 {
   font-weight: 600;
-  color: #ffffff;
+  color: var(--u-text);
   margin: 0.7em 0 0.3em;
   font-size: 1em;
 }
@@ -1460,12 +1562,12 @@ a:hover > .u-mark-arrow {
 }
 .u-chat-prose code {
   font-size: 0.85em;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--u-ink-rgb), 0.08);
   border-radius: var(--radius-cell);
   padding: 0.1em 0.35em;
 }
 .u-chat-prose pre {
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--u-well);
   border: 1px solid var(--u-line);
   border-radius: var(--radius-panel);
   padding: 0.6em 0.8em;
@@ -1554,4 +1656,9 @@ a:hover > .u-mark-arrow {
 .u-wordmark-hero {
   font-size: 3rem;
   line-height: 1;
+}
+
+/* 时间岛：投影从页面里收进来（0038） */
+.u-scrub-island {
+  box-shadow: 0 12px 40px var(--u-shadow);
 }

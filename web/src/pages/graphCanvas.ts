@@ -33,6 +33,7 @@ import {
   RING_HOVER_MIX,
   RING_SELECT_MIX,
   TRANSPARENT,
+  INK,
 } from "./graphVisuals";
 
 /* ============ 节点程序 ============ */
@@ -186,7 +187,7 @@ export function hoveredNode(
   base: number,
 ): NodeAttrs {
   res.size = Math.max(base * 1.08, 10.4);
-  res.ringColor = mix(ownColorOf(attrs), "#ffffff", RING_HOVER_MIX);
+  res.ringColor = mix(ownColorOf(attrs), INK, RING_HOVER_MIX);
   res.forceLabel = true;
   res.labelSlab = true;
   res.zIndex = 4;
@@ -219,7 +220,7 @@ export function selectedNode(
   base: number,
 ): NodeAttrs {
   res.size = Math.max(base * 1.02, 9.2);
-  res.ringColor = mix(ownColorOf(attrs), "#ffffff", RING_SELECT_MIX);
+  res.ringColor = mix(ownColorOf(attrs), INK, RING_SELECT_MIX);
   res.forceLabel = true;
   res.labelSlab = true;
   // **反色**：浅底深字。指到的那一个是深底浅字，同一副形状调个个儿——

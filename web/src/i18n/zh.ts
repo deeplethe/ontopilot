@@ -100,6 +100,8 @@ export const zh: Strings = {
     passwordChanged: "密码已更新",
     avatarHint: "头像目前由你的名字生成。",
     language: "语言",
+    theme: "主题",
+    themeNames: { dark: "深色", light: "浅色", system: "跟随系统" } as Record<"dark" | "light" | "system", string>,
     kbsNav: "知识库",
     kbsTitle: "知识库",
     kbsFilter: "按名字筛选…",

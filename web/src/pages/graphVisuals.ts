@@ -11,9 +11,9 @@ import type Sigma from "sigma";
 /* 画布调色板 —— 结构取自 Semantica GraphWorkspace 源码；基色已中性化：
    Semantica 原版是钢蓝系（#0B1320/#5A7A9E/#7A92AE），按"chrome 零色偏、
    彩色只属于数据"的既定原则换成同明度纯灰，类型色混入比例不变 */
-export const NODE_SHELL_BASE = "#121212"; // 节点外壳深底（原 #0B1320 的中性化）
-export const NODE_CORE_BASE = "#767676"; // 节点核心灰（原 #5A7A9E 的中性化）
-export const NODE_BORDER_BASE = "#909090"; // 节点描边（原 #7A92AE 的中性化）
+export let NODE_SHELL_BASE = "#121212"; // 节点外壳深底（原 #0B1320 的中性化）
+export let NODE_CORE_BASE = "#767676"; // 节点核心灰（原 #5A7A9E 的中性化）
+export let NODE_BORDER_BASE = "#909090"; // 节点描边（原 #7A92AE 的中性化）
 export const NODE_TINT_MIX = 0.14; // 类型色只按 14% 混入外壳（高级感的关键）
 export const NODE_CORE_MIX = 0.5; // 核心向类型色的混入比例
 /* 状态环取**节点自己的类型色**，不是写死的色相。往白里混而不是直接用原色：
@@ -24,18 +24,18 @@ export const NODE_CORE_MIX = 0.5; // 核心向类型色的混入比例
 export const RING_HOVER_MIX = 0.7; // 悬停：偏白，为的是跳出来
 export const RING_SELECT_MIX = 0.35; // 选中：偏本色，为的是认得出
 export const TRANSPARENT = "rgba(0,0,0,0)";
-export const MUTED_SHELL = "#151515";
+export let MUTED_SHELL = "#151515";
 /* 悬停时其余的压暗程度。**比选中轻**（选中是压到底）：悬停是随鼠标走的、
    每划过一个节点就换一次，压到底会让整张画布不停明灭 */
 export const HOVER_MUTE = 0.78;
-export const PILL_BG = "rgba(12,12,12,0.9)";
-export const PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
-export const PILL_TEXT = "#ededed"; // --u-text
+export let PILL_BG = "rgba(12,12,12,0.9)";
+export let PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
+export let PILL_TEXT = "#ededed"; // --u-text
 /* 裸字的光晕：与画布同色（--u-ground）的一圈描边，只为把从字底下穿过的
    连线压住。不是阴影——阴影会在一片细线里糊成一团脏 */
-export const LABEL_HALO = "rgba(10,10,10,0.92)";
+export let LABEL_HALO = "rgba(10,10,10,0.92)";
 /** 浮层的面，抄 `.u-pop`（tooltip / toast 用的那一档近实底） */
-export const POP_BG = "rgba(16,16,16,0.98)";
+export let POP_BG = "rgba(16,16,16,0.98)";
 
 /* 画布上的字与界面同一套刻度。**canvas 读不到 CSS 变量**，所以这里镜像一份
    `styles.css` 的值——它是源头，改那边记得回来改这里。
@@ -43,8 +43,8 @@ export const POP_BG = "rgba(16,16,16,0.98)";
    #a1a1a1）：字号整体上移一档之后，画布成了全站唯一还在用旧刻度的地方，
    而 9px 比界面里最小的字还小一半 */
 export const CANVAS_FONT = '"Geist", "Inter", "Noto Sans SC", sans-serif';
-export const CANVAS_TEXT = "#ededed"; // --u-text
-export const CANVAS_TEXT_2 = "#a8a8a8"; // --u-text-2
+export let CANVAS_TEXT = "#ededed"; // --u-text
+export let CANVAS_TEXT_2 = "#a8a8a8"; // --u-text-2
 /* 画在节点与连线之间的字比界面的底再小一档（11）。**画布不是界面**：
    这些字压在一片线和点上，与它们比邻的是 5–13px 的节点，不是页面上的正文；
    12 在这里显得比它标注的东西还重。浮在画布之上的悬浮卡不算——那是 tooltip，
@@ -236,4 +236,99 @@ export function drawWorldGrid(canvas: HTMLCanvasElement, sigma: Sigma): void {
     }
     ctx.stroke();
   }
+}
+
+/* ---------- 令牌的读者（0038 浅色版） ----------
+ * canvas 读不到 var()，所以画布用的每一个颜色都从 <html> 上算好的令牌里读一遍。
+ * 上面那些 `let` 的初值是暗色，只在第一帧前、以及没有 DOM 的测试里生效；
+ * `refreshPalette()` 在启动和每次切主题时把它们全部换成当前主题的值。
+ * ES 模块的导出是活绑定：这里赋值，import 的那一侧读到的就是新值。 */
+export let EDGE = "rgba(163,163,163,0.2)";
+export let EDGE_INFERRED = "rgba(163,163,163,0.1)";
+export let EDGE_DIM = "#141414";
+export let EDGE_FOCUS = "rgba(255,255,255,0.55)";
+export let EDGE_DERIVED = "rgba(231,197,124,0.42)";
+export let EDGE_DERIVED_DIM = "rgba(231,197,124,0.14)";
+export let EDGE_FOCUS_DERIVED = "rgba(255,214,140,0.95)";
+export let EDGE_CONTEST = "rgba(255,106,61,0.55)";
+export let EDGE_FOCUS_CONTEST = "rgba(255,106,61,1)";
+export let EDGE_SUBCLASS = "rgba(235,235,235,0.55)";
+export let EDGE_SUBCLASS_FOCUS = "rgba(255,255,255,0.95)";
+export let EDGE_RELATION = "rgba(128,128,128,0.3)";
+export let EDGE_RELATION_FOCUS = "rgba(255,255,255,0.6)";
+export let EDGE_DISJOINT = "rgba(255,157,175,0.45)";
+export let EDGE_DISJOINT_FOCUS = "rgba(255,157,175,0.9)";
+export let EDGE_RULE = "rgba(196,165,255,0.5)";
+export let EDGE_RULE_FOCUS = "rgba(196,165,255,0.95)";
+export let EDGE_SCHEMA_DIM = "rgba(48,48,48,0.4)";
+export let LEGEND_SUBCLASS = "#ebebeb";
+export let LEGEND_RELATION = "#8c8c8c";
+export let LEGEND_DISJOINT = "#ff9daf";
+export let LEGEND_RULE = "#c4a5ff";
+export let SCRUB_PAST = "rgba(255,255,255,0.32)";
+export let SCRUB_PLAY = "rgba(255,255,255,0.62)";
+export let SCRUB_FUTURE = "rgba(255,255,255,0.04)";
+/** 墨色最亮的那一档（暗底白、浅底近黑）：环往它混、登录场景的粒子用它 */
+export let INK = "#ffffff";
+/** 墨的三元组，给需要自己调透明度的地方 */
+export let INK_RGB = "255,255,255";
+
+function token(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+function rgbOf(triplet: string, alpha: number): string {
+  return `rgba(${triplet.replace(/\s+/g, "")},${alpha})`;
+}
+
+/** 墨色按透明度：登录场景的粒子、边、脉冲都用它，页面里不再自己拼 rgba */
+export function inkAt(alpha: number): string {
+  return rgbOf(INK_RGB, alpha);
+}
+
+/** 启动时和切主题后调一次，然后 `sigma.refresh()`。 */
+export function refreshPalette() {
+  NODE_SHELL_BASE = token("--u-node-shell", NODE_SHELL_BASE);
+  NODE_CORE_BASE = token("--u-node-core", NODE_CORE_BASE);
+  NODE_BORDER_BASE = token("--u-node-border", NODE_BORDER_BASE);
+  MUTED_SHELL = token("--u-node-muted", MUTED_SHELL);
+  PILL_BG = token("--u-pill-bg", PILL_BG);
+  PILL_BORDER = token("--u-line-strong", PILL_BORDER);
+  PILL_TEXT = token("--u-text", PILL_TEXT);
+  LABEL_HALO = token("--u-halo", LABEL_HALO);
+  POP_BG = token("--u-pop-surface", POP_BG);
+  CANVAS_TEXT = token("--u-text", CANVAS_TEXT);
+  CANVAS_TEXT_2 = token("--u-text-2", CANVAS_TEXT_2);
+  EDGE = token("--u-edge", EDGE);
+  EDGE_INFERRED = token("--u-edge-inferred", EDGE_INFERRED);
+  EDGE_DIM = token("--u-edge-dim", EDGE_DIM);
+  EDGE_FOCUS = token("--u-edge-focus", EDGE_FOCUS);
+  EDGE_DERIVED = token("--u-edge-derived", EDGE_DERIVED);
+  EDGE_DERIVED_DIM = token("--u-edge-derived-dim", EDGE_DERIVED_DIM);
+  EDGE_FOCUS_DERIVED = token("--u-edge-derived-focus", EDGE_FOCUS_DERIVED);
+  EDGE_SUBCLASS = token("--u-edge-subclass", EDGE_SUBCLASS);
+  EDGE_SUBCLASS_FOCUS = token("--u-edge-subclass-focus", EDGE_SUBCLASS_FOCUS);
+  EDGE_RELATION = token("--u-edge-relation", EDGE_RELATION);
+  EDGE_RELATION_FOCUS = token("--u-edge-relation-focus", EDGE_RELATION_FOCUS);
+  EDGE_SCHEMA_DIM = token("--u-edge-schema-dim", EDGE_SCHEMA_DIM);
+  SCRUB_PAST = token("--u-scrub-past", SCRUB_PAST);
+  SCRUB_PLAY = token("--u-scrub-play", SCRUB_PLAY);
+  SCRUB_FUTURE = token("--u-scrub-future", SCRUB_FUTURE);
+  INK_RGB = token("--u-ink-rgb", INK_RGB);
+  INK = rgbOf(INK_RGB, 1);
+  // 语义色按三元组调透明度：争议边、不相交边、规则边
+  const contest = token("--u-contest-rgb", "255,106,61");
+  const danger = token("--u-danger-rgb", "255,157,175");
+  const violet = token("--u-violet-rgb", "196,165,255");
+  EDGE_CONTEST = rgbOf(contest, 0.55);
+  EDGE_FOCUS_CONTEST = rgbOf(contest, 1);
+  EDGE_DISJOINT = rgbOf(danger, 0.45);
+  EDGE_DISJOINT_FOCUS = rgbOf(danger, 0.9);
+  EDGE_RULE = rgbOf(violet, 0.5);
+  EDGE_RULE_FOCUS = rgbOf(violet, 0.95);
+  LEGEND_SUBCLASS = token("--u-text", LEGEND_SUBCLASS);
+  LEGEND_RELATION = token("--u-text-2", LEGEND_RELATION);
+  LEGEND_DISJOINT = token("--u-danger", LEGEND_DISJOINT);
+  LEGEND_RULE = token("--u-violet", LEGEND_RULE);
 }

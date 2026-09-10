@@ -10,6 +10,17 @@
       href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Marcellus&display=swap"
     />
     <title>Utopia</title>
+    <!-- 首帧前定主题：与 src/theme.ts 同一套解法。放在 head 里、样式之前，
+         刷新时才不会先闪一下暗底再变浅 -->
+    <script>
+      (function () {
+        var t = "dark";
+        try { t = localStorage.getItem("utopia.theme") || "dark"; } catch (e) {}
+        if (t === "system")
+          t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

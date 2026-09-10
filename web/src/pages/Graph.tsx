@@ -16,18 +16,32 @@ import FA2Layout from "graphology-layout-forceatlas2/worker";
 import Sigma from "sigma";
 import EdgeCurveProgram from "@sigma/edge-curve";
 import { EdgeRectangleProgram } from "sigma/rendering";
+import { onThemeChange } from "../theme";
 import {
-  drawWorldGrid,
+  EDGE,
+  EDGE_CONTEST,
+  EDGE_DERIVED,
+  EDGE_DERIVED_DIM,
+  EDGE_DIM,
+  EDGE_FOCUS,
+  EDGE_FOCUS_CONTEST,
+  EDGE_FOCUS_DERIVED,
+  EDGE_INFERRED,
   HOVER_MUTE,
-  lerpColor,
-  mix,
   MUTED_SHELL,
   NODE_BORDER_BASE,
   NODE_CORE_BASE,
   NODE_CORE_MIX,
   NODE_SHELL_BASE,
   NODE_TINT_MIX,
+  SCRUB_FUTURE,
+  SCRUB_PAST,
+  SCRUB_PLAY,
   TRANSPARENT,
+  drawWorldGrid,
+  lerpColor,
+  mix,
+  refreshPalette,
 } from "./graphVisuals";
 // 画布那台机器是两页共用的（#496）：构造选项、状态表、相机、拖拽都在那边，
 // 这个文件只管把实例与事实投影成一张图、说清楚每个节点是什么颜色
@@ -103,20 +117,6 @@ import { usePopoverFlip } from "../ui/popoverFlip";
 import { useKb, useKbId } from "../kb";
 import { toast } from "../toast";
 
-const EDGE_COLOR = "rgba(163,163,163,0.2)"; // 纯灰（应用户要求，不用钢蓝）
-// 本体没认下的关系：同色更淡。名字来自原文，不该跟词表里的关系看着一样重
-const EDGE_COLOR_INFERRED = "rgba(163,163,163,0.1)";
-// 推出来的边（R1）。**跟上面两者说的不是一件事**：那两个说「这条边的名字从哪来」，
-// 这个说「这条边根本不是谁说的，是引擎推的」。所以给它自己的色相而不是再淡一档灰——
-// 用户要在余光里就分得出「文档里写的」和「推出来的」
-const EDGE_COLOR_DERIVED = "rgba(231,197,124,0.42)";
-const EDGE_COLOR_DERIVED_DIM = "rgba(231,197,124,0.14)";
-/* 争议（0017 §3）：珊瑚橙 `--u-contest`。金是派生、琥珀是警告、粉是危险，
-   它得跟三个都拉开。**整条边换色**——环在节点上、边还是灰的，余光分不出来 */
-const EDGE_COLOR_CONTEST = "rgba(255,106,61,0.55)";
-const EDGE_FOCUS_CONTEST = "rgba(255,106,61,1)";
-
-/** 相邻两条弧之间的曲率差。太小仍然糊，太大在长边上会甩得离节点很远 */
 const EDGE_CURVATURE_STEP = 0.18;
 
 /** 一条边画在哪条弧上；`curvature === 0` = 直线。 */
@@ -230,19 +230,11 @@ const LEGEND_MAX = 6;
    ——它只影响看得清还是拖得动，用户要的是「多点/少点」，不是 237 这个数。
    最大值与后端 GRAPH_NODE_CAP_MAX 对齐；再高先垮的是拖动，不是清晰度 */
 const NODE_BUDGETS: number[] = [150, 300, 600, 1000];
-// 注意：sigma 边着色器在预乘混合(ONE, ONE_MINUS_SRC_ALPHA)下不预乘 RGB，
-// alpha 无法压暗边——暗度必须编码进 RGB（不透明近背景色）
-const EDGE_DIM = "#141414";
-/* 幽灵边：没落地的派生。同一个色相往 EDGE_DIM 混（预乘混合下 alpha 压不暗边），
-   更细。sigma 默认的边程序画不了虚线，也不为此另写一个 */
-const EDGE_GHOST = lerpColor("rgba(255,106,61,1)", EDGE_DIM, 0.55);
-const EDGE_GHOST_FOCUS = lerpColor("rgba(255,106,61,1)", EDGE_DIM, 0.2);
-const EDGE_FOCUS = "rgba(255,255,255,0.55)";
-// 选中/悬停时的派生边。**不能跟着走白**：选中恰恰是看得最仔细的时候，
-// 而这时候「这条边是推出来的、没人写过」比任何时候都该说清楚。
-// 从前一律 EDGE_FOCUS，一选中金线就变白，等于把来历抹掉了。
-// 比常态的金更亮更实——它同样要表达「被选中了」
-const EDGE_FOCUS_DERIVED = "rgba(255,214,140,0.95)";
+/* 边色全部来自调色板（graphVisuals，读的是当前主题的令牌，0038）。
+   幽灵边（没落地的派生）同一个色相往 EDGE_DIM 混——sigma 的边着色器在预乘混合
+   下 alpha 压不暗边，暗度必须编码进 RGB——所以是函数，切主题后重算 */
+const edgeGhost = () => lerpColor(EDGE_FOCUS_CONTEST, EDGE_DIM, 0.55);
+const edgeGhostFocus = () => lerpColor(EDGE_FOCUS_CONTEST, EDGE_DIM, 0.2);
 const DAY_MS = 24 * 3600 * 1000;
 
 /* 播放淡入：解析 hex / rgb / rgba（含 alpha）并线性插值 */
@@ -709,14 +701,14 @@ export function Graph() {
         label: (e.contested ? "⚠ " : "") + (e.label ?? ""),
         size: e.blocked ? 0.7 : 1,
         color: e.blocked
-          ? EDGE_GHOST
+          ? edgeGhost()
           : e.contested
-            ? EDGE_COLOR_CONTEST
+            ? EDGE_CONTEST
             : e.derived
-              ? EDGE_COLOR_DERIVED
+              ? EDGE_DERIVED
               : e.inferred
-                ? EDGE_COLOR_INFERRED
-                : EDGE_COLOR,
+                ? EDGE_INFERRED
+                : EDGE,
         contested: e.contested,
         blocked: e.blocked,
         // 独一条就走直线：曲线是为了把重叠分开，没有重叠就不必弯
@@ -870,6 +862,8 @@ export function Graph() {
     };
 
     sigmaRef.current?.kill();
+    // 画布颜色从令牌读（0038）：建实例前读一次，切主题后再读一次并重画
+    refreshPalette();
     const sigma = new Sigma(g, containerRef.current, {
       ...sigmaOptions({
         defaultEdgeType: "line",
@@ -1031,11 +1025,11 @@ export function Graph() {
             const ghost = attrs.blocked === true;
             const from = !focused
               ? ghost
-                ? EDGE_GHOST
-                : EDGE_COLOR_DERIVED
+                ? edgeGhost()
+                : EDGE_DERIVED
               : s === focused || t === focused
                 ? ghost
-                  ? EDGE_GHOST_FOCUS
+                  ? edgeGhostFocus()
                   : EDGE_FOCUS_DERIVED
                 : EDGE_DIM;
             res.color = lerpColor(from, EDGE_DIM, k);
@@ -1044,10 +1038,10 @@ export function Graph() {
           }
           // 幽灵边不呼吸：它不是知识，是一条没走通的路
           const pulse = attrs.blocked === true
-            ? EDGE_GHOST
+            ? edgeGhost()
             : lerpColor(
-            EDGE_COLOR_DERIVED_DIM,
-            EDGE_COLOR_DERIVED,
+            EDGE_DERIVED_DIM,
+            EDGE_DERIVED,
             // 三角波而不是正弦：两端各停一瞬，看起来是「呼吸」不是「闪」
             Math.abs(
               ((performance.now() % DERIVED_PULSE_MS) / DERIVED_PULSE_MS) * 2 -
@@ -1067,7 +1061,7 @@ export function Graph() {
         const boost = () => {
           res.color =
             attrs.blocked === true
-              ? EDGE_GHOST_FOCUS
+              ? edgeGhostFocus()
               : attrs.contested === true
                 ? EDGE_FOCUS_CONTEST
                 : isDerived
@@ -1136,6 +1130,10 @@ export function Graph() {
       event.preventSigmaDefault();
       setFocusEntity(node);
       setSelected(node);
+    });
+    const offTheme = onThemeChange(() => {
+      refreshPalette();
+      sigma.refresh();
     });
     sigma.on("clickStage", () => deselect());
     sigma.on("enterNode", ({ node }) => {
@@ -1218,6 +1216,8 @@ export function Graph() {
     }
     recomputeActive(timeT);
     return () => {
+      offTheme();
+
       if (stabilizeTimer) clearTimeout(stabilizeTimer);
       if (settleTimer) clearTimeout(settleTimer);
       fa2?.kill();
@@ -1614,7 +1614,7 @@ export function Graph() {
                 title={`${S.graph.derivedEdges(derivedCount)} · ${S.graph.derivedHint}`}
                 icon={<Waypoints size={15} />}
                 style={
-                  showDerived ? { color: "rgba(231,197,124,0.95)" } : undefined
+                  showDerived ? { color: EDGE_FOCUS_DERIVED } : undefined
                 }
                 onClick={() => setShowDerived((v) => !v)}
               />
@@ -1958,7 +1958,7 @@ function TimeScrubber({
        仍夹在视口内（calc 那一项），窄屏不会顶出去。
        实测宽度：年 320 / 月 648 / 日 760。 */
     <div
-      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-overlay px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
+      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-overlay px-3 py-2 flex items-center gap-3 u-scrub-island${playing ? " u-solid" : ""}`}
       style={{ width: `min(${trackW}px, calc(100vw - 4rem))` }}
     >
       <IconButton
@@ -2062,10 +2062,10 @@ function TimeScrubber({
                     // 归零等于假装那段没有数据，而它只是还没到
                     background:
                       value !== null && past && (playing || trackHover)
-                        ? "rgba(255,255,255,0.62)"
+                        ? SCRUB_PLAY
                         : value === null || past
-                          ? "rgba(255,255,255,0.32)"
-                          : "rgba(255,255,255,0.04)",
+                          ? SCRUB_PAST
+                          : SCRUB_FUTURE,
                   }}
                 />
               </div>

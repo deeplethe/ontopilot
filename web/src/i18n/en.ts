@@ -111,6 +111,8 @@ export const en = {
     passwordChanged: "Password updated",
     avatarHint: "Avatars are generated from your name for now.",
     language: "Language",
+    theme: "Theme",
+    themeNames: { dark: "Dark", light: "Light", system: "Follow system" } as Record<"dark" | "light" | "system", string>,
     kbsNav: "Knowledge bases",
     kbsTitle: "Knowledge bases",
     kbsFilter: "Filter by name…",
