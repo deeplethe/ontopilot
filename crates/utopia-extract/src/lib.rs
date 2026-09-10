@@ -890,6 +890,10 @@ fn scan_quantity(s: &str, strict: bool) -> Option<(f64, Option<String>)> {
     if !n.is_finite() {
         return None;
     }
+    // 9.2 × 1e8 在二进制浮点里是 919999999.9999999；乘过量级词的数本来就是整数，收回去
+    if ate_magnitude && (n - n.round()).abs() < 1e-6 * n.abs().max(1.0) {
+        n = n.round();
+    }
     let unit = if percent {
         Some("%".to_string())
     } else {
@@ -1321,6 +1325,15 @@ mod tests {
         );
         assert_eq!(parse_quantity("3000万元"), Some((3e7, Some("¥".into()))));
         assert_eq!(parse_quantity("1.5亿"), Some((1.5e8, None)));
+        // 乘过量级的数收成整数：9.2 亿不是 919999999.9999999
+        assert_eq!(
+            parse_quantity("9.2亿元"),
+            Some((920000000.0, Some("¥".into())))
+        );
+        assert_eq!(
+            parse_quantity("$2.5 billion"),
+            Some((2500000000.0, Some("$".into())))
+        );
 
         // 尾巴上还有实词：含义不再只是那个数，宁可当实体也不当量
         assert_eq!(parse_quantity("900 million weekly active users"), None);
