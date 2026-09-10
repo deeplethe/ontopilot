@@ -126,10 +126,13 @@ rules corpus declared and undeclared, a Chinese corpus declared and undeclared):
 
 ## Open questions
 
-- Where does the amount go when the relation is not adopted yet (`predicate_id` is null,
-  wording on the evidence)? This cut drops it with a reason. Keeping it keyed by wording
-  until adoption would preserve the figure; the bootstrap would then have to propose the
-  qualifier along with the relation.
+- ~~Where does the amount go when the relation is not adopted yet?~~ Answered: a qualifier
+  on a fact whose predicate is unknown binds to an attribute the base already defines (no
+  ontology change, so no switch), and adoption (`adopt`) carries the qualifiers onto the new
+  row and declares them on the relation. A qualifier that binds to nothing — the base has no
+  such attribute, or the ontology is frozen — is written as a literal fact on the subject,
+  worded `relation.key` on its evidence and recorded in `ontology_misses`, the shape rule 8a
+  gives an unlisted figure. Nothing about an edge is dropped for want of a definition.
 - The canvas. An edge label with the amount is a rendering change and belongs with the
   parallel-edge work; the timeline reading an event as a point is
   [0031](0031-an-event-holds-at-the-moment-it-names.md)'s UI cut.

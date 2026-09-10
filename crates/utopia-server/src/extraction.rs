@@ -2304,10 +2304,16 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 同一条边再听到一次带了金额的，是同一条边补上金额。
                 值照 datatype 换算，单位另记一格（与 object_value 同形）；
                 key 不在声明里、换不动、与已记的不一致——三种都进丢弃表，不静默 */
-                if let (Some(pid), Some(quals)) = (predicate_id, f.qualifiers.as_ref()) {
+                /* 谓词未知（0010，说法在证据上）时属性照写：值落在事实上，声明等
+                关系被采纳时在 `adopt` 里补。不写的话，`invested_in` 在 schema.org
+                库里是未知说法，一句话里的 $1.5 billion 就没有地方放——召回台上
+                `oh-invest` 那一条正是这么丢的 */
+                if let Some(quals) = f.qualifiers.as_ref() {
+                    let pid = predicate_id;
                     // 克隆出这一组引用：下面撞上已有属性时要往 qualifier_defs 里追加声明
-                    let defs: Vec<&utopia_core::models::RelationType> =
-                        qualifier_defs.get(&pid).cloned().unwrap_or_default();
+                    let defs: Vec<&utopia_core::models::RelationType> = pid
+                        .and_then(|p| qualifier_defs.get(&p).cloned())
+                        .unwrap_or_default();
                     /* 模型常把币种单独写成一个键（`"amount": "1500000000", "currency": "CNY"`），
                     而不是写进数额里。那不是一个属性，是数额的单位——先把它拿出来，
                     数值属性解不出单位时用它，别让它作为未知 key 进丢弃表 */
@@ -2343,9 +2349,16 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                         所以跟自动扩本体走同一个开关 */
                         let adopted = match declared {
                             Some(d) => Some(d),
+                            /* 谓词还未知（0010，说法在证据上）：没有关系可声明，值绑到库里
+                            已有的属性定义、先落在事实上，采纳时 `adopt` 再补声明。这一步
+                            不动本体，所以不看自动扩本体的开关 */
+                            None if pid.is_none() => {
+                                attr_by_key.get(&key.trim().to_lowercase()).copied()
+                            }
                             None if kb.auto_extend_ontology => {
                                 match attr_by_key.get(&key.trim().to_lowercase()).copied() {
                                     Some(attr) => {
+                                        let pid = pid.expect("checked above");
                                         match utopia_store::ontology::add_relation_qualifier(
                                             &state.pool,
                                             doc.kb_id,
@@ -2377,15 +2390,50 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                             }
                         };
                         let Some(def) = adopted else {
-                            drop_signal(
-                                state,
+                            /* **绑不上属性定义的数也不丢。** 库里没有这个属性（schema.org 里
+                            `amount` 是关系不是属性）、或本体冻着不让扩——从前这里进丢弃表，
+                            数就只剩丢弃表里的一个样例。现在照 8a 的样子落成主语上的一条
+                            字面值事实：值按原文、单位另记一格、原词 `关系.键` 进证据的
+                            proposed_predicate，缺的定义记进 ontology_misses（0010 的样子），
+                            采纳时人来决定它归哪儿。图里有它、有证据、能查到 */
+                            let wording = format!("{}.{}", f.predicate.trim(), key.trim());
+                            let unit = raw
+                                .as_str()
+                                .and_then(utopia_extract::parse_leading_quantity)
+                                .and_then(|(_, u)| u)
+                                .or_else(|| sibling_currency.map(str::to_string));
+                            let mut literal = serde_json::json!({ "value": raw });
+                            if let Some(u) = unit {
+                                literal["unit"] = serde_json::Value::String(u);
+                            }
+                            let _ = utopia_store::ontology::record_miss(
+                                &state.pool,
                                 doc.kb_id,
-                                document_id,
-                                utopia_store::extraction_drops::reason::QUALIFIER_UNKNOWN,
-                                &format!("{}.{}", f.predicate, key),
-                                Some(&raw.to_string()),
+                                "attribute_type",
+                                &wording,
+                                Some(&format!("{} → {raw}", f.subject.trim())),
                             )
                             .await;
+                            let (literal_id, _) = utopia_store::graph::insert_value_fact(
+                                &state.pool,
+                                doc.kb_id,
+                                subject_id,
+                                None,
+                                &literal,
+                                validity,
+                                confidence,
+                            )
+                            .await?;
+                            touched_facts.push(literal_id);
+                            utopia_store::graph::add_evidence(
+                                &state.pool,
+                                literal_id,
+                                chunk.id,
+                                f.quote.as_deref(),
+                                Some(wording.as_str()),
+                            )
+                            .await?;
+                            tracing::debug!(kb_id = %doc.kb_id, wording = %wording, "边上的属性绑不上定义，落成主语上的字面值");
                             continue;
                         };
                         let dt = def.datatype.as_deref().unwrap_or("text");
