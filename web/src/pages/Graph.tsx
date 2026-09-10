@@ -1172,7 +1172,9 @@ export function Graph() {
        打上就绕开那条启发式 */
     const updateEdgeLabels = () => {
       const ratio = sigma.getCamera().ratio;
-      sigma.setSetting("renderEdgeLabels", ratio < 0.7);
+      // 边少的图（≤ 40 条）始终写谓词：标签藏起来是为了大图不挤，
+      // 一个十几条边的库进来 ratio = 1，藏了只会让人以为谓词没了
+      sigma.setSetting("renderEdgeLabels", ratio < 0.7 || g.size <= 40);
       const deep = ratio < 0.35;
       if (deep !== deepZoomRef.current) {
         deepZoomRef.current = deep;
