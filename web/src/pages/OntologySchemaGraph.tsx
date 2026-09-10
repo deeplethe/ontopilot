@@ -52,6 +52,8 @@ import {
   LEGEND_RULE,
   INK,
   refreshPalette,
+  CANVAS_TEXT,
+  CANVAS_TEXT_2,
 } from "./graphVisuals";
 // 画布那台机器是两页共用的（#496）：构造选项、状态表、相机、拖拽都在那边，
 // 这个文件只管把本体投影成一张图、说清楚每个节点是什么颜色
@@ -973,8 +975,13 @@ export function OntologySchemaGraph({
     }
     const offTheme = onThemeChange(() => {
       refreshPalette();
+      // 标签色是建实例时按当时的调色板定死的（sigmaOptions），实例不重建就得改设置
+      sigma.setSetting("labelColor", { color: CANVAS_TEXT });
+      sigma.setSetting("edgeLabelColor", { color: CANVAS_TEXT_2 });
       setThemeTick((t) => t + 1);
       sigma.refresh();
+      // 世界网格只在相机动时重画：这里补一笔，不然它停在上一套墨色
+      if (gridRef.current) drawWorldGrid(gridRef.current, sigma);
     });
     return () => {
       offTheme();

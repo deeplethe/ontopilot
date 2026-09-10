@@ -138,7 +138,7 @@ export function drawNodeLabel(
        位置，只有明暗调个个儿——"指着"与"选中"是同一件事的两个程度，从前一个是
        浮起来的两行卡片、一个是这块底牌，看着像两种不同的东西 */
     const h = size + padY * 2;
-    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowColor = token("--u-shadow", "rgba(0,0,0,0.6)");
     ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
@@ -219,7 +219,8 @@ export function drawWorldGrid(canvas: HTMLCanvasElement, sigma: Sigma): void {
       (ss - GRID_FADE_IN_PX) / (GRID_FULL_PX - GRID_FADE_IN_PX),
     );
     if (t <= 0) continue;
-    ctx.strokeStyle = `rgba(255,255,255,${(GRID_MAX_ALPHA * t).toFixed(4)})`;
+    // 网格是墨色不是白色：暗底上是白，纸底上是近黑（0038）。透明度不变
+    ctx.strokeStyle = `rgba(${INK_RGB},${(GRID_MAX_ALPHA * t).toFixed(4)})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     const startX = ((p0.x % ss) + ss) % ss;

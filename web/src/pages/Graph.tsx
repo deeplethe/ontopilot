@@ -1140,6 +1140,7 @@ export function Graph() {
       refreshPalette();
       setThemeTick((t) => t + 1);
       sigma.refresh();
+      if (gridRef.current) drawWorldGrid(gridRef.current, sigma);
     });
     sigma.on("clickStage", () => deselect());
     sigma.on("enterNode", ({ node }) => {
