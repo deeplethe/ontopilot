@@ -1407,7 +1407,10 @@ pub(crate) async fn adopt_attribute_core(
     } else {
         // **domain 从数据里取。** 属性必须声明能挂在哪些类下，猜错的代价是硬的：
         // 主语类型对不上就整条丢弃。这些事实的主语现在是什么类是事实，不是判断
-        let mut domains: Vec<Uuid> = facts.iter().map(|(_, type_id, _)| *type_id).collect();
+        let mut domains: Vec<Uuid> = facts
+            .iter()
+            .filter_map(|(_, type_id, _)| *type_id)
+            .collect();
         domains.sort_unstable();
         domains.dedup();
         if domains.is_empty() {

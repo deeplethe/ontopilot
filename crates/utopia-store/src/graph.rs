@@ -2024,10 +2024,17 @@ pub async fn value_facts_for_forms(
     pool: &PgPool,
     kb_id: Uuid,
     forms: &[String],
-) -> AppResult<Vec<(Uuid, Uuid, serde_json::Value)>> {
+) -> AppResult<Vec<(Uuid, Option<Uuid>, serde_json::Value)>> {
     if forms.is_empty() {
         return Ok(Vec::new());
     }
+    // **主语类型是 Option**。列本来就可空——「抽取器抽到了东西，但本体里没有
+    // 对应的类」是一个正常状态（0009），不是异常。解成裸 `Uuid` 的时候，批里
+    // 只要有一条主语没类型，整次采纳就在解码那一步报错退出：
+    // `decoding column 1: unexpected null`，一条也改写不了。实测一个库里攒着
+    // 2454 条等谓词的值事实，其中 58 条主语无类型，够把好几个说法卡死。
+    // 没类型的那些不参与 domain（属性得声明挂在哪些类下），但照样跟着改写——
+    // 把它们一起丢掉等于让一条有名有姓的事实继续没有谓词
     Ok(sqlx::query_as(
         "SELECT DISTINCT f.id, s.type_id, f.object_value
          FROM facts f
