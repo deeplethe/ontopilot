@@ -65,9 +65,14 @@ export function hexToRgb(hex: string): [number, number, number] {
 }
 
 /** c1 向 c2 按 t 比例混色 */
+/** 两色按比例混。**两端都走 `parseRgba`，不是 `hexToRgb`**：令牌读回来的值
+ *  是 `rgb(23,23,23)` 这种写法，用只认 `#rrggbb` 的解析器会静静地退回中灰
+ *  （`hexToRgb` 认不出就返回 128,128,128），于是 `mix(类型色, INK, t)` 混的
+ *  不是墨色而是一团灰——选中与悬停的那圈环因此在两个主题里都发闷。
+ *  从前 `INK` 是字面量 "#ffffff" 才没露馅，0038 把它改成从令牌读之后才显出来。 */
 export function mix(c1: string, c2: string, t: number): string {
-  const [r1, g1, b1] = hexToRgb(c1);
-  const [r2, g2, b2] = hexToRgb(c2);
+  const [r1, g1, b1] = parseRgba(c1);
+  const [r2, g2, b2] = parseRgba(c2);
   const f = (a: number, b: number) => Math.round(a + (b - a) * t);
   return `rgb(${f(r1, r2)},${f(g1, g2)},${f(b1, b2)})`;
 }

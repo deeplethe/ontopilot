@@ -56,7 +56,7 @@ export function ToastHost() {
         return (
           <div
             key={t.id}
-            className="u-pop u-toast-in pointer-events-auto flex items-center gap-2.5 rounded-overlay py-2.5 pl-3.5 pr-2.5 text-body text-ink shadow-xl"
+            className="u-pop u-toast-in pointer-events-auto flex items-center gap-2.5 rounded-overlay py-2.5 pl-3.5 pr-2.5 text-body text-ink u-lift-strong"
           >
             <Icon size={15} className={`shrink-0 ${ICON_COLOR[t.kind]}`} />
             <span className="max-w-xs">{t.text}</span>

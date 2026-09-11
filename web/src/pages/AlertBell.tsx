@@ -212,7 +212,7 @@ function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: 
     // top-0 而不是 top-9：面板要从铃铛**原位**长出来，右上角对齐
     <div
       ref={panelRef}
-      className="u-menu-glass absolute right-0 top-0 w-[420px] rounded-overlay shadow-2xl z-50 overflow-hidden"
+      className="u-menu-glass absolute right-0 top-0 w-[420px] rounded-overlay u-lift-strong z-50 overflow-hidden"
     >
       {/* 第一行就是关掉这张面板——同库切换器：面板从铃铛原位长出来，
           右端那个朝上的三角正落在铃铛上，"再点一下缩回去"。

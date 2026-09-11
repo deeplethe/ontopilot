@@ -414,7 +414,7 @@ export function Chat() {
               />
             </Button>
             {scopeOpen && (
-              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-overlay shadow-2xl overflow-hidden">
+              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-overlay u-lift-strong overflow-hidden">
                 <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
                   {S.ask.scopeLabel}
                 </div>
@@ -424,13 +424,19 @@ export function Chat() {
                       key={k.id}
                       density="menu"
                       active={k.id === kb?.id}
+                      /* 对勾走 `trailing` 槽。**塞进 children 的 svg 会掉到第二行**：
+                         Row 把 children 整个包进一个 `flex-1 truncate` 的 span，
+                         那个 span 不是 flex 容器，preflight 又把 svg 设成块级，
+                         于是勾自己占一行、整行跟着变高（顶栏的库切换器早就这么写的） */
+                      trailing={
+                        k.id === kb?.id ? <Check size={12} className="text-ink-2" /> : undefined
+                      }
                       onClick={() => {
                         setScopeOpen(false);
                         if (k.id !== kb?.id) setKb(k.id);
                       }}
                     >
-                      <span className="flex-1 min-w-0 truncate">{k.name}</span>
-                      {k.id === kb?.id && <Check size={12} className="shrink-0 text-ink-2" />}
+                      <span className="truncate">{k.name}</span>
                     </Row>
                   ))}
                 </div>
@@ -569,7 +575,7 @@ export function Chat() {
                     className="fixed inset-0 z-10"
                     onClick={() => setMenuFor(null)}
                   />
-                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 shadow-xl">
+                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 u-lift-strong">
                     <Row
                       density="menu"
                       onClick={() => {

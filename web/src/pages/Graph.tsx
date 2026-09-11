@@ -1257,7 +1257,7 @@ export function Graph() {
           {/* 与本体页左栏的过滤框同一副身材、同一个角落（见 Ontology.tsx） */}
           <Input
             icon={<Search size={12} />}
-            className="w-58 shadow-lg"
+            className="w-58 u-lift"
             placeholder={
               inSubgraph ? S.graph.searchInSubgraph : S.graph.searchEntity
             }
@@ -1268,7 +1268,7 @@ export function Graph() {
             }}
           />
           {searchQ && searchHits.length > 0 && (
-            <div className="glass-strong absolute mt-1 w-full rounded-overlay shadow-xl overflow-hidden">
+            <div className="glass-strong absolute mt-1 w-full rounded-overlay u-lift-strong overflow-hidden">
               {searchHits.map((c) => (
                 <Row
                   key={c.id}
@@ -1281,14 +1281,18 @@ export function Graph() {
                     setSearchQ("");
                   }}
                 >
-                  <span className="flex items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ background: c.color }}
                     />
+                    {/* **名字最后才让**：两段都是 truncate 的话，flex 按各自
+                        的宽度一起收，一个长一点的消歧词能把名字挤成「Ac…」。
+                        消歧词收得快四倍、且最多占四成——它是补充，名字才是
+                        这一行要读的东西 */}
                     <span className="truncate">{c.name}</span>
-                    {c.disambiguator && (
-                      <span className="truncate text-small text-ink-2">
+                    {c.disambiguator && c.disambiguator !== c.type_label && (
+                      <span className="min-w-0 max-w-[40%] shrink-[4] truncate text-small text-ink-2">
                         · {c.disambiguator}
                       </span>
                     )}
@@ -1317,7 +1321,7 @@ export function Graph() {
         {focusEntity && (
           <Button
             variant="secondary"
-            className="glass-strong pointer-events-auto shadow-lg"
+            className="glass-strong pointer-events-auto u-lift"
             onClick={() => setFocusEntity(null)}
           >
             {S.graph.backToOverview}
@@ -1374,7 +1378,7 @@ export function Graph() {
               {legendPop.open && (
                 <div
                   ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay u-lift-strong"
                 >
                   {/* 与库切换器、告警面板、用户菜单同一副解剖：第一行是触发它的
                       那个胶囊自己，三角翻上去，点它缩回；没有浮在角上的关闭叉
@@ -2216,7 +2220,7 @@ function DerivedPanel({
   return (
     <div
       ref={panelRef}
-      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-overlay px-3 pb-3 pt-3 shadow-2xl"
+      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-overlay px-3 pb-3 pt-3 u-lift-strong"
     >
       {/* items-center 而不是 baseline：标题旁边站着一个按钮和一个关闭键，
           按基线对齐会让那两个看着往上飘 */}
@@ -2740,7 +2744,7 @@ function EntityPanel({
 
   return (
     <div
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-overlay shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-overlay u-lift-strong flex flex-col`}
     >
       <div className="flex items-start justify-between px-4 py-4 border-b border-line">
         <div>
