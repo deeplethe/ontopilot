@@ -129,8 +129,7 @@ export const en = {
     /* 个人令牌页（0014 / 0016 A2）：给 agent 的钥匙，以这个人的身份行事 */
     tokensNav: "Agents & tokens",
     tokensTitle: "Personal access tokens",
-    tokensHint:
-      "A token lets an agent reach Utopia over MCP as you, never with more than you can do yourself. Read-only by default, limited to the bases you pick, revocable here at any time.",
+    tokensHint: "A token lets an agent reach Utopia over MCP as you, with no more access than you have. Read-only by default, limited to the bases you pick, revocable here.",
     newToken: "New token",
     tokenName: "Name",
     tokenNamePlaceholder: "My laptop",
@@ -1131,10 +1130,7 @@ export const en = {
     rulesTitle: "Business rules",
     /* 说清三件事：谁写的、结论是什么身份、什么时候重算。第三件最容易被误解成
        「保存就生效」，而它其实等下一轮物化 */
-    rulesHint:
-      "A rule reads one entity's own attributes and concludes a class or a value. " +
-      "You write the criteria — the model never proposes one. " +
-      "What a rule concludes is derived: it never replaces an asserted fact, it carries the readings that made it true, and it retires by itself when they change.",
+    rulesHint: "Rules that read an entity's own attributes and conclude a class or a value. You write them; the model never proposes one. A conclusion is derived: it carries the readings behind it and retires when they change.",
     rulesEmpty: "No rules yet.",
     rulesNoMatch: "No rule matches that.",
     /** 搜的是整条规则，不只是名字——判据里的谓词和值也在里面 */
@@ -1227,8 +1223,7 @@ export const en = {
     ruleCappedHint:
       "Some entities carry too many readings of the same attribute to expand every combination, so this rule's conclusions for them are incomplete.",
     refineTitle: "Refine types",
-    refineHint:
-      "Entities whose class is roughly right but not the most specific one available. Look first, then apply — retyping does not appear on any timeline, so this is the only place you get to see it before it happens.",
+    refineHint: "Entities typed more broadly than they need to be. Pick a more specific class, check the change, then apply it.",
     refinePreview: "Look first",
     refineLooking: "Looking…",
     refineRun: "Run and apply",
@@ -1344,8 +1339,7 @@ export const en = {
     /* ---- OWL / RDFS 导入 ---- */
     importShort: "Import",
     importTitle: "Import an ontology",
-    importHint:
-      "Load an OWL or RDFS file (.owl, .rdf, .ttl). Classes and properties are matched by IRI, so re-importing a newer version of the same vocabulary updates what it already created instead of duplicating it.",
+    importHint: "Import an OWL or RDFS file (.owl, .rdf, .ttl). Classes and properties are matched by IRI, so importing a newer version of the same vocabulary updates what is already here.",
     importPick: "Choose file",
     importChange: "Choose another",
     importReading: "Reading…",
@@ -1432,14 +1426,12 @@ export const en = {
     importSize: (bytes: number) =>
       bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(0)} KB`,
     misses: "Unmatched from extraction",
-    missesHint:
-      "The extractor produced these outside your ontology (they fell back to concept / related to). They are signals for extending the ontology.",
+    missesHint: "Types and predicates the extractor produced outside the ontology. Use them to decide what the ontology still needs.",
     /* ---- 一端挂着两个以上开放值的谓词（#341） ----
        文案克制：状态一句话，后果一句话，动作在按钮上。这一档的读者要判断的是
        「这条关系一次只能有一个值吗」，不是读一篇关于双时态的说明 */
     uniqueness: "Overlapping values",
-    uniquenessHint:
-      "One holder, two values, neither closed. Until the relation says it holds one value at a time, a successor does not close a predecessor — and a question about any past date answers with both.",
+    uniquenessHint: "Relations where one subject holds several values at once, none of them closed. Mark a relation single-valued and a new value closes the previous one.",
     uniquenessEmpty: "No overlaps. Every holder has at most one open value.",
     /* 主语侧 / 宾语侧：说人话，不写 functional / inverse functional */
     uniquenessSubject: (n: number) =>
@@ -1564,7 +1556,7 @@ export const en = {
   },
   mapping: {
     title: "Data mapping",
-    hint: "What business concepts point at in the database, and how they are computed. Ask only answers using confirmed definitions.",
+    hint: "Which tables and columns each business concept points at, and how it is computed. Ask answers only from confirmed definitions.",
     tabDefinitions: "Definitions",
     tabSources: "Data sources",
     filterAll: "All",
