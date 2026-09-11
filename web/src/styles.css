@@ -705,57 +705,6 @@ body::before {
 
 @layer components {
 /* ---- form controls ---- */
-/* 输入框：无填充、细线。玻璃左栏、玻璃工具条上的输入框不该再是面上叠面——
-   一条 line 粗细的线把它圈出来就够了；悬停与聚焦线都只亮一档，聚焦的信号
-   在外面那圈光晕上——它要亮到隔着半个屏幕也看得出光标在哪，线本身不必变白。
-   与顶栏无背景的切换器同一个逻辑 */
-.input-dark {
-  background: transparent;
-  border: 1px solid var(--u-line);
-  color: var(--u-text);
-  border-radius: var(--radius-control);
-  transition:
-    border-color var(--u-fast),
-    box-shadow var(--u-fast);
-}
-.input-dark::placeholder {
-  color: var(--u-text-2);
-}
-.input-dark:hover:not(:disabled):not(:focus) {
-  border-color: var(--u-line-strong);
-}
-.input-dark:focus {
-  outline: none;
-  border-color: var(--u-line-strong);
-  box-shadow: 0 0 0 3px rgba(var(--u-ink-rgb), 0.22);
-}
-.input-dark:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-/* 尺寸两档，与按钮同高：同一行里输入框与按钮顶齐是靠这个，不靠页面调 py */
-.u-input-md {
-  height: 2rem;
-  padding: 0 0.75rem;
-  font-size: var(--text-body);
-  line-height: var(--text-body--line-height);
-}
-.u-input-sm {
-  height: 1.625rem;
-  padding: 0 0.625rem;
-  font-size: var(--text-small);
-  line-height: var(--text-small--line-height);
-}
-textarea.u-input-md,
-textarea.u-input-sm {
-  height: auto;
-  padding-top: 0.375rem;
-  padding-bottom: 0.375rem;
-}
-select.input-dark option {
-  background: var(--u-ground);
-  color: var(--u-text);
-}
 
 /* mono 输入框的 placeholder 回默认字体（提示语不是代码） */
 .u-placeholder-sans::placeholder {
@@ -999,16 +948,6 @@ select.input-dark option {
 }
 
 /* 无皮输入：装在别的面里 */
-.u-input-bare {
-  background: transparent;
-  border: 0;
-  outline: none;
-  padding: 0;
-  color: var(--u-text);
-}
-.u-input-bare::placeholder {
-  color: var(--u-text-2);
-}
 
 /* 顶栏里的小链接（Docs、返回） */
 .u-navlink {

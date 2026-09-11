@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { S } from "../i18n";
 import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
+import { Input as ShadInput } from "@/components/ui/input";
+import { Textarea as ShadTextarea } from "@/components/ui/textarea";
 // 表格原件在 ./table 里，下面 re-export；`SkeletonTableRows` 自己也要用，
 // 所以这里另取一份别名，避免与 re-export 的同名标识撞车
 import {
@@ -160,8 +162,16 @@ export function buttonLike(
   });
 }
 
-/* ---------- Input / Textarea ---------- */
+/* ---------- Input / Textarea ----------
+   同 Button：壳在这里，皮在 shadcn。这一层留的是两件 shadcn 不管的事——
+   **图标槽**（左栏那道带放大镜的筛选框，图标要与下面每一行的图标落在同一条
+   竖线上）和 **bare**（装在别的面里的输入，自己不带皮：切换器顶上的查找、
+   对话的输入区）。尺寸仍按我们的两档说话，映到 shadcn 的高度上。 */
 type InputSize = { size?: "sm" | "md" };
+
+/** 没有自己的皮的那一档：去边框、去底、去焦点环，交给外面那块面 */
+const BARE =
+  "border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-0 px-0 dark:bg-transparent";
 
 export const Input = forwardRef<
   HTMLInputElement,
@@ -174,11 +184,10 @@ export const Input = forwardRef<
     }
 >(function Input({ className, size = "md", icon, bare, ...props }, ref) {
   const control = (
-    <input
+    <ShadInput
       ref={ref}
       className={cn(
-        bare ? "u-input-bare" : "input-dark",
-        bare ? null : size === "sm" ? "u-input-sm" : "u-input-md",
+        bare ? BARE : size === "sm" ? "h-7" : "h-8",
         // 图标槽：中号图标离左内缘 12px、文字从 34px 起；小号窄一档（8 / 28）
         icon ? (size === "sm" ? "pl-7" : "pl-[34px]") : null,
         icon ? "w-full" : className,
@@ -213,13 +222,9 @@ export const Textarea = forwardRef<
     }
 >(function Textarea({ className, size = "md", bare, ...props }, ref) {
   return (
-    <textarea
+    <ShadTextarea
       ref={ref}
-      className={cn(
-        "u-scroll",
-        bare ? "u-input-bare" : cn("input-dark", size === "sm" ? "u-input-sm" : "u-input-md"),
-        className,
-      )}
+      className={cn("u-scroll", bare ? BARE : size === "sm" ? "min-h-14" : null, className)}
       {...props}
     />
   );
