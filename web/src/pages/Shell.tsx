@@ -97,7 +97,7 @@ export function Shell() {
           字标与切换器之间 gap-6（切换器自己只有 px-2）：切换器的图标正好落在第二个
           标签的图标上（132；英文界面下的巧合，字标或标签一换尺寸就得重量）——
           两行同一套节奏 */}
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-12 shrink-0 flex items-center gap-6 pl-2 pr-8">
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-12 shrink-0 flex items-center gap-6 px-2">
         {/* 字标：逐字母淡入，hover 浮出 ↗，点击去官网 */}
         <Wordmark className="u-wordmark-top pl-3" />
         {/* 知识库切换器紧跟字标，中间不画斜杠——它不是面包屑的第二级，就是
