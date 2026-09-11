@@ -347,7 +347,15 @@ pub async fn resolve_mention(
                         });
                     }
                 }
-                let id = create_entity(pool, kb_id, type_id, &name, context).await?;
+                let (id, created) = create_entity(pool, kb_id, type_id, &name, context).await?;
+                if !created {
+                    // 并行的另一份文档刚建好它：用它的，审核对也是它排的
+                    return Ok(Resolution {
+                        entity_id: id,
+                        created: false,
+                        reviews: Vec::new(),
+                    });
+                }
                 refresh_disambiguators(pool, kb_id, &name).await?;
                 let reviews = [(best, sim), (runner, r_sim)]
                     .into_iter()
@@ -403,7 +411,15 @@ pub async fn resolve_mention(
             });
         }
     }
-    let id = create_entity(pool, kb_id, type_id, &name, context).await?;
+    let (id, created) = create_entity(pool, kb_id, type_id, &name, context).await?;
+    if !created {
+        // 并行的另一份文档刚建好它：用它的，审核对也是它排的
+        return Ok(Resolution {
+            entity_id: id,
+            created: false,
+            reviews: Vec::new(),
+        });
+    }
     refresh_disambiguators(pool, kb_id, &name).await?;
     let mut reviews = best_scored
         .filter(|(_, sim)| *sim >= SIM_NEW)
@@ -877,7 +893,15 @@ async fn resolve_type_drift(
         }
     }
 
-    let id = create_entity(pool, kb_id, type_id, name, context).await?;
+    let (id, created) = create_entity(pool, kb_id, type_id, name, context).await?;
+    if !created {
+        // 并行的另一份文档刚建好它：用它的，审核对也是它排的
+        return Ok(Resolution {
+            entity_id: id,
+            created: false,
+            reviews: Vec::new(),
+        });
+    }
     if !cross.is_empty() {
         // 跨类型同名并存：消歧后缀按名字分组（不分类型），需要刷新
         refresh_disambiguators(pool, kb_id, name).await?;
@@ -911,6 +935,13 @@ async fn resolve_type_drift(
     })
 }
 
+/// 新建一个实体。返回 `(id, 是否真的新建)`。
+///
+/// **同名同类的新建串行化。** 上面的查找不在事务里：两份文档并行抽取，同一个名字
+/// 各自查一遍都没有、各自建一个——实测「澜图数据」在同一秒里建了两个，之后每一次
+/// 提到它都撞上两个候选，再各建一个、各排一对审核，一篇语料跑完裂成四个。
+/// 这里按（库，名字）拿事务级咨询锁，锁里再查一次：别人刚建好的，就用它的。
+/// 不同类型的同名不在此列——那是消歧的事，不是竞态
 async fn create_entity(
     pool: &PgPool,
     kb_id: Uuid,
@@ -918,7 +949,28 @@ async fn create_entity(
     type_id: Option<Uuid>,
     name: &str,
     context: Option<&[f32]>,
-) -> AppResult<Uuid> {
+) -> AppResult<(Uuid, bool)> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))")
+        .bind(kb_id.to_string())
+        .bind(name)
+        .execute(&mut *tx)
+        .await?;
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM entities
+         WHERE kb_id = $1 AND canonical_name = $2 AND type_id IS NOT DISTINCT FROM $3
+           AND merged_into IS NULL
+         ORDER BY id LIMIT 1",
+    )
+    .bind(kb_id)
+    .bind(name)
+    .bind(type_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some((id,)) = existing {
+        tx.commit().await?;
+        return Ok((id, false));
+    }
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO entities (id, kb_id, type_id, canonical_name, profile_embedding, profile_n)
@@ -930,9 +982,10 @@ async fn create_entity(
     .bind(name)
     .bind(context.map(|c| Vector::from(c.to_vec())))
     .bind(i32::from(context.is_some()))
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(id)
+    tx.commit().await?;
+    Ok((id, true))
 }
 
 async fn touch_entity(pool: &PgPool, id: Uuid) -> AppResult<()> {
