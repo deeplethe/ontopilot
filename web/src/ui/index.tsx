@@ -54,7 +54,7 @@ export function Wordmark({ className }: { className?: string }) {
       rel="noreferrer"
       title="utopia.bi"
       className={cn("relative inline-flex text-ink", className)}
-      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
+      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.01em" }}
     >
       {[...S.app.name].map((ch, i) => (
         <span
@@ -1283,7 +1283,7 @@ export function SectionMark({ text, title }: { text: string; title: string }) {
       to="/"
       title={title}
       className="u-wordmark-top relative inline-flex text-ink"
-      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
+      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.01em" }}
     >
       {[...text].map((ch, i) => (
         <span

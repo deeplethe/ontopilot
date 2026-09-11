@@ -80,10 +80,11 @@
   font-family: var(--font-sans);
   color-scheme: dark;
 
-  /* 品牌字：碑铭式衬线的**小型大写**（Marcellus SC，仅 400，一字不粗）。
-     碑铭体本来就是刻在石头上的大写字，小型大写是它的本相；退回 Marcellus
-     是为了字体没加载时仍是同一副骨架，再退到 Georgia */
-  --font-brand: "Marcellus SC", "Marcellus", "Georgia", "Times New Roman", serif;
+  /* 品牌字：Manrope（几何无衬线，可变字重）。与界面同族但不同款——
+     字标要认得出是"名字"，不是又一行界面文字，所以给它 600 一档的重量和
+     收紧一点的字距；几何体的字面本来就宽，0.06em 那种碑铭式的拉距在这里
+     会散。退回 Geist 与系统无衬线 */
+  --font-brand: "Manrope", "Geist", system-ui, sans-serif;
 
   --u-ground: #0a0a0a;
   /* 字色两档，不是三档。第三档（原 #7c7c7c）取消了：它承担的是"次要里的
@@ -225,8 +226,6 @@
   /* 页面顶上那层晕。暗底上是一点墨色的空间感；纸底上不加——同样一层墨压在
      近白的底上，只会把正文区压得比左栏深一档，看着像两块颜色 */
   --u-page-glow: rgba(var(--u-ink-rgb), 0.045);
-  /* 选中的导航标签从下划线往上透的那一点光（见 .u-tab.is-active::before） */
-  --u-tab-glow: rgba(var(--u-ink-rgb), 0.06);
   --u-lift: 0 4px 16px var(--u-shadow);
   --u-lift-strong: 0 12px 40px var(--u-shadow);
   /* 播放头那一圈。暗底上是一圈光晕（它本来就该是"亮着的那一条"），
@@ -327,7 +326,6 @@
   --u-menu-surface-hover: rgba(255, 255, 255, 1);
   --u-bubble: #ffffff;
   --u-page-glow: transparent;
-  --u-tab-glow: transparent;
   --u-scrim: rgba(0, 0, 0, 0.35);
   --u-pop-surface: rgba(255, 255, 255, 0.98);
   --u-modal-surface: rgba(255, 255, 255, 0.97);
@@ -975,39 +973,36 @@ body::before {
 }
 
 /* 主导航的一页：图标 + 文字，激活态下划线 */
+/* 顶栏导航的一项。**一颗药丸，不是一张标签纸**：
+   从前是「下划线 + 从线往上透一点光」，那是给直角界面配的——整条导航只有横平
+   竖直的线，而这套设计语言里一切有角的东西都是圆的（--radius 一个旋钮管着），
+   于是那排下划线在圆角的按钮、输入框、卡片中间显得格外硬。
+   现在选中的那一项是一颗填了底的药丸（与左栏选中的行、分段控件同一个记号，
+   `--u-active`），指到的是浅一档的底。没有下划线，也就没有那道在纸底上会晕开
+   的光——纸底与暗底同一副样子，不再需要一个只在暗底成立的技巧。 */
 .u-tab {
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  /* 左 16 与字标同缩进；右 20 给标签之间多留一口气，整行就不显得往里缩 */
-  padding: 0.75rem 1.25rem 0.75rem 1rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: var(--radius-control);
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
   font-weight: 500;
   color: var(--u-text-2);
-  /* 1px 的线：光晕已经在说「这一页」，线只用点到为止 */
-  border-bottom: 1px solid transparent;
-  transition: color var(--u-fast);
+  transition:
+    color var(--u-fast),
+    background-color var(--u-fast);
 }
 .u-tab:hover {
   color: var(--u-text);
+  background: var(--u-surface-2);
 }
 .u-tab.is-active {
   color: var(--u-text);
-  border-bottom-color: var(--u-text);
-}
-/* 选中的那一页从下划线往上透一点光：暗底上是白 6% 在底、到一半高处就没了——
-   说的是「光从线上来」，不是给标签涂一块底。**纸底上不透**：同一道渐变换成墨色
-   就成了一块往上晕开的灰，那不是光，是脏。纸底上选中靠的是字色加下划线，
-   本来就够。压在文字后面，不接指针 */
-.u-tab.is-active::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(to top, var(--u-tab-glow), transparent 50%);
-  pointer-events: none;
+  background: var(--u-active);
 }
 
 /* 批量选中的卡片：边框亮一档说「这张在批里」——不涂底，底还是玻璃 */
@@ -1652,8 +1647,9 @@ a:hover > .u-mark-arrow {
    从前它写的是 text-display，字号整体上移一档之后跟着涨到 24，比同一顶栏里
    的分区字标（text-title）大了一半，压着旁边的导航。20 是它原本的大小 */
 .u-wordmark-top {
-  font-size: 20px;
-  line-height: 28px;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
 }
 
 /* 登录页与故障页正中的字标。它是品牌元素，不是界面文字，所以不在五档字号里——
@@ -1661,6 +1657,7 @@ a:hover > .u-mark-arrow {
 .u-wordmark-hero {
   font-size: 3rem;
   line-height: 1;
+  font-weight: 600;
 }
 
 /* 时间岛：投影从页面里收进来（0038） */

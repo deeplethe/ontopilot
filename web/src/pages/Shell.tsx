@@ -116,9 +116,9 @@ export function Shell() {
         />
       </header>
 
-      {/* Tab 导航条：图标 + 文字，激活态下划线（Vercel 式） */}
-      {/* px-4 + 标签自己的左 16：第一个标签的图标与字标同在 32 */}
-      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-stretch gap-1 px-4">
+      {/* Tab 导航条：图标 + 文字，选中的那一项是一颗填底的药丸 */}
+      {/* px-6 + 药丸自己的左 12：第一个标签的图标仍与字标同在 32 */}
+      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-center gap-1 px-6 py-2">
         {TABS.map(({ to, label, Icon }) => (
           <Link
             key={to}
