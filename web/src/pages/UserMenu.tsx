@@ -1,8 +1,13 @@
 import {
   Button,
-  cn,
+  Chip,
   Row,
 } from "../ui";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 /* 用户菜单：顶栏右侧的头像胶囊 + 弹出面板（个人信息 / 系统管理 / 登出）。
    Shell（KB 工作区）与 AccountShell（账户层）共用。 */
 import { useState } from "react";
@@ -19,7 +24,6 @@ import {
   SunMoon,
 } from "lucide-react";
 import { api, type User } from "../api";
-import { usePopoverFlip } from "../ui/popoverFlip";
 import { LANGS, LANG_NAMES, S, lang, setLang } from "../i18n";
 
 /** 首字母头像：中性灰底（chrome 零色偏），拉丁取词首两枚，CJK 取前两字。 */
@@ -47,10 +51,7 @@ const THEMES: Theme[] = ["dark", "light", "system"];
 
 export function UserMenu({ user }: { user: User }) {
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
-  // 原地变形（FLIP）：胶囊"长成"面板。实现共用，见 ui/popoverFlip——
-  // 告警铃铛就在旁边，两处各写一遍迟早会差出一点点
-  const { open, setOpen, close, rootRef, anchorRef, panelRef } =
-    usePopoverFlip<HTMLButtonElement, HTMLDivElement>();
+  const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -68,28 +69,20 @@ export function UserMenu({ user }: { user: User }) {
   // 行通到面板边缘（与 Dropdown 同语汇）：容器不留内衬，高度由行自身撑
 
   return (
-    <div ref={rootRef} className="relative">
-      <Button
-        variant="ghost"
-        ref={anchorRef}
-        className={cn("u-avatar-btn", open && "is-hidden")}
-        onClick={() => setOpen((v) => !v)}
-      >
+    /* 顶栏的用户面板。**弹层是 shadcn 的 Popover**——从前是「胶囊原地长成面板」
+       的手写过渡（usePopoverFlip），一处一套行为；现在外点关闭、Esc、焦点回到
+       触发器、定位翻转都归 Radix，全站三个顶栏面板同一副。 */
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" className="u-avatar-btn">
         {/* 24：胶囊是 32 高（顶栏所有控件同一个高度），头像两边各留 4 */}
         <Avatar name={user.display_name} size={24} />
         <span className="text-body text-ink-2">{user.display_name}</span>
-      </Button>
-
-      {open && (
-        <div
-          ref={panelRef}
-          className="u-menu-glass absolute right-0 top-0 w-64 rounded-overlay u-lift-strong z-50 overflow-hidden"
-        >
-          {/* 身份头：再点一下缩回胶囊 */}
-          <div
-            onClick={close}
-            className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
-          >
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 overflow-hidden p-0">
+          {/* 身份头 */}
+          <div className="flex items-center gap-3 border-b border-line px-4 py-3">
             <Avatar name={user.display_name} size={32} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -97,9 +90,9 @@ export function UserMenu({ user }: { user: User }) {
                   {user.display_name}
                 </span>
                 {user.is_admin && (
-                  <span className="u-chip u-chip-neutral !text-fine !px-2">
+                  <Chip tone="neutral" className="text-fine">
                     {S.account.adminChip}
-                  </span>
+                  </Chip>
                 )}
               </div>
               <div className="truncate text-fine text-ink-2">
@@ -205,8 +198,7 @@ export function UserMenu({ user }: { user: User }) {
               {S.nav.signOut}
             </Row>
           </div>
-        </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
