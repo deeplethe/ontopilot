@@ -1223,7 +1223,7 @@ export const en = {
     ruleCappedHint:
       "Some entities carry too many readings of the same attribute to expand every combination, so this rule's conclusions for them are incomplete.",
     refineTitle: "Refine types",
-    refineHint: "Entities typed more broadly than they need to be. Pick a more specific class, check the change, then apply it.",
+    refineHint: "Narrow entity types that came out broader than they should be. Pick a more specific class, check the change, then apply.",
     refinePreview: "Look first",
     refineLooking: "Looking…",
     refineRun: "Run and apply",

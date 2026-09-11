@@ -1082,7 +1082,7 @@ export const zh: Strings = {
     ruleCappedHint:
       "有些实体同一属性的读数太多，组合展不完，这条规则在它们身上的结论是不完整的。",
     refineTitle: "类型消解",
-    refineHint: "类型定得比需要的宽的实体。挑一个更具体的类，核对改动，再应用。",
+    refineHint: "人工收窄定得过宽的实体类型。挑一个更具体的类，核对改动后应用。",
     refinePreview: "先看一遍",
     refineLooking: "计算中…",
     refineRun: "跑一遍并落库",
