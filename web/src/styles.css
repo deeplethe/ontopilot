@@ -105,6 +105,15 @@
   /* 面板只比背景亮一丁点：边界主要由 --u-line 那条线交代，填充不负责撑出
      一个盒子。三档一起收窄，静止→悬停仍是 5 级灰，跳得不比从前明显。
      悬停与选中属于**行**，不属于面板——面板是槽，槽不响应指针（DESIGN.md 6） */
+  /* **浮起来的面**：面板、卡片、栏、对话框的输入框、用户气泡。
+     与下面那三档「面」不是一回事——`--u-surface` 那三档是压进去的（分段控件的
+     槽、kbd、井、指到的行、选中的行），浮起来的是撑出来的。
+     一句话两个主题都成立：**浮起来的东西更亮**。暗底上是往白里加一点，
+     纸底上「更亮」走到尽头就是白 —— 这也是纸底上的界面本来的样子，
+     灰的是页面，白的是纸片，而不是反过来。 */
+  --u-raise: rgba(255, 255, 255, 0.025);
+  /* 用户说的那句话比一块面板更该被看见，所以比 raise 再实一档 */
+  --u-bubble: rgba(255, 255, 255, 0.08);
   --u-surface: rgba(255, 255, 255, 0.025);
   --u-surface-2: rgba(255, 255, 255, 0.045);
   --u-surface-3: rgba(255, 255, 255, 0.08);
@@ -215,13 +224,16 @@
    语义色换成同一色相的深版：浅底上淡玫瑰/淡金读不出来。 */
 :root[data-theme="light"] {
   color-scheme: light;
-  --u-ground: #fafafa;
+  /* 底是浅灰，不是白。白留给浮在它上面的东西（见 --u-raise）——
+     从前底是 #fafafa、面板反而更深，那是把暗色的做法直接翻了个面：
+     暗底上"比底亮"是对的，纸底上照抄成"比底暗"，于是每一块面板都是灰的 */
+  --u-ground: #f5f5f5;
   --u-text: #171717;
   --u-text-2: #5f5f5f;
   --u-accent: #262626;
   --u-accent-deep: 23, 23, 23;
   --u-ink-rgb: 23, 23, 23;
-  --u-ground-rgb: 250, 250, 250;
+  --u-ground-rgb: 245, 245, 245;
   --u-on-accent: #fafafa;
   --u-ok: #1a7f4b;
   --u-warn: #9a6a12;
@@ -231,19 +243,20 @@
   --u-violet: #6d4fd6;
   --u-line: rgba(0, 0, 0, 0.08);
   --u-line-strong: rgba(0, 0, 0, 0.14);
-  /* **纸底上的面比暗底上的浅一档**，这是唯一一处不照搬透明度的地方（0038 的
-     revision）：同一个 α，黑压在白上比白压在黑上重得多——0.03 的黑在 #fafafa
-     上合成 #f3f3f3，一整块表格看着就是灰的，而 0.03 的白在近黑上几乎看不出来。
-     透明度描述的是层级差，层级差要按看得出来的程度对齐，不是按数字对齐 */
-  --u-surface: rgba(0, 0, 0, 0.015);
+  /* 压进去的那三档留在墨色这一边：白纸上的槽、井、指到与选中的行都是变暗。
+     0.015 是面板还在用它的时候压出来的——面板改用 --u-raise 之后，
+     这一档只剩下槽与 kbd，在白纸片上要看得见，回到 0.03 */
+  --u-raise: #ffffff;
+  --u-surface: rgba(0, 0, 0, 0.03);
   --u-surface-2: rgba(0, 0, 0, 0.03);
   --u-surface-3: rgba(0, 0, 0, 0.055);
   --u-ring: rgba(0, 0, 0, 0.5);
   --u-well: rgba(0, 0, 0, 0.03);
-  --u-surface-strong: rgba(250, 250, 250, 0.86);
-  --u-surface-strong-hover: rgba(250, 250, 250, 0.94);
-  --u-menu-surface: rgba(252, 252, 252, 0.9);
-  --u-menu-surface-hover: rgba(252, 252, 252, 0.98);
+  --u-surface-strong: rgba(255, 255, 255, 0.9);
+  --u-surface-strong-hover: rgba(255, 255, 255, 0.97);
+  --u-menu-surface: rgba(255, 255, 255, 0.95);
+  --u-menu-surface-hover: rgba(255, 255, 255, 1);
+  --u-bubble: #ffffff;
   --u-scrim: rgba(0, 0, 0, 0.35);
   --u-pop-surface: rgba(255, 255, 255, 0.98);
   --u-modal-surface: rgba(255, 255, 255, 0.97);
@@ -321,7 +334,7 @@ body::before {
      去掉饱和，再谈透明度。这也正是「chrome 零色偏、彩色只属于数据」
      那条原则该管到的地方——面板是 chrome，它不该跟着背后画的是什么变颜色 */
   .glass {
-    background: var(--u-surface);
+    background: var(--u-raise);
     backdrop-filter: blur(14px) saturate(0.3);
     -webkit-backdrop-filter: blur(14px) saturate(0.3);
     border: 1px solid var(--u-line);
@@ -1038,7 +1051,7 @@ select.input-dark option {
 .u-composer {
   border-radius: var(--radius-panel);
   border: 1px solid rgba(var(--u-ink-rgb), 0.12);
-  background: var(--u-surface);
+  background: var(--u-raise);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: border-color var(--u-fast);
@@ -1152,7 +1165,7 @@ select.input-dark option {
    （输入框、控件、卡片），一条已经说完的话不是其中之一，给它描边就是在暗示
    还能点。角色靠这块 8% 的底区分就够了 */
 .u-bubble-user {
-  background: rgba(var(--u-ink-rgb), 0.08);
+  background: var(--u-bubble);
 }
 .u-highlight {
   border-color: rgba(var(--u-ink-rgb), 0.45) !important;
