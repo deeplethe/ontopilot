@@ -43,7 +43,7 @@ export function Wordmark({ className }: { className?: string }) {
       target="_blank"
       rel="noreferrer"
       title="utopia.bi"
-      className={cn("relative inline-flex text-white", className)}
+      className={cn("relative inline-flex text-ink", className)}
       style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
     >
       {[...S.app.name].map((ch, i) => (
@@ -320,7 +320,7 @@ export function Dropdown({
                   "w-full flex items-center gap-2 text-left",
                   pad,
                   o.value === value
-                    ? "bg-surface-3 text-white"
+                    ? "bg-surface-3 text-ink"
                     : "text-ink-2 hover:bg-surface-2 hover:text-ink",
                 )}
               >
@@ -453,7 +453,7 @@ export function SearchSelect({
                 "w-full flex items-center gap-2 text-left",
                 rowPad,
                 i === active
-                  ? "bg-surface-3 text-white"
+                  ? "bg-surface-3 text-ink"
                   : "text-ink-2",
               )}
             >
@@ -621,7 +621,7 @@ export function MultiSearchSelect({
               className={cn(
                 "w-full flex items-center gap-2 text-left px-2.5 py-1 text-small",
                 i === active
-                  ? "bg-surface-3 text-white"
+                  ? "bg-surface-3 text-ink"
                   : "text-ink-2",
               )}
             >
@@ -1219,7 +1219,7 @@ export function SectionMark({ text, title }: { text: string; title: string }) {
     <RouterLink
       to="/"
       title={title}
-      className="u-wordmark-top relative inline-flex text-white"
+      className="u-wordmark-top relative inline-flex text-ink"
       style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
     >
       {[...text].map((ch, i) => (

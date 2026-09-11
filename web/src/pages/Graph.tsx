@@ -1281,14 +1281,18 @@ export function Graph() {
                     setSearchQ("");
                   }}
                 >
-                  <span className="flex items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ background: c.color }}
                     />
+                    {/* **名字最后才让**：两段都是 truncate 的话，flex 按各自
+                        的宽度一起收，一个长一点的消歧词能把名字挤成「Ac…」。
+                        消歧词收得快四倍、且最多占四成——它是补充，名字才是
+                        这一行要读的东西 */}
                     <span className="truncate">{c.name}</span>
-                    {c.disambiguator && (
-                      <span className="truncate text-small text-ink-2">
+                    {c.disambiguator && c.disambiguator !== c.type_label && (
+                      <span className="min-w-0 max-w-[40%] shrink-[4] truncate text-small text-ink-2">
                         · {c.disambiguator}
                       </span>
                     )}

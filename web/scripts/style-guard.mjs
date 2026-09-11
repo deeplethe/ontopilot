@@ -29,6 +29,8 @@ const TOKENS = [
 ];
 const TEXT_UTILITIES =
   "left|center|right|justify|start|end|ellipsis|clip|wrap|nowrap|balance|pretty|white|black|transparent|current|inherit";
+/* `white` / `black` 留在这张表里，为的是让 `unknown-text` 放过它们——
+   它们归下面 `raw-white` 一条管，两条都报会把同一个错说两遍 */
 const KNOWN_TEXT = [...TOKENS, ...TEXT_UTILITIES.split("|")]
   .sort((a, b) => b.length - a.length)
   .join("|");
@@ -63,9 +65,16 @@ const RULES = [
     ui: true,
   },
   {
-    id: "alpha-white",
-    re: /\b(bg|border|text|ring|outline|divide)-(white|black)\/\[?[0-9.]+\]?/g,
-    why: "白色透明度是 surface / surface-2 / surface-3 / line 的事，不在页面里调（规矩 4）",
+    id: "raw-white",
+    /* 白与黑都不是颜色令牌，**带不带透明度都一样**。从前这条只认 `text-white/10`
+       那种带斜杠的写法，`text-white` 光秃秃地写就过了——`white` 还被算进下面
+       `unknown-text` 的合法工具类里（它跟 text-left、text-nowrap 排在一起）。
+       两道门都开着，于是顶栏的字标写死了白色：暗底上看不出来，翻成纸底之后
+       它还是白的，等于隐形。名字要的是 `text-ink`，随主题走。
+       真要"在深色块上永远是浅字"（主按钮、危险按钮里的字）另有令牌：
+       `--u-on-accent` / `--u-on-danger`，它们在浅色那套里也是对的 */
+    re: /\b(bg|border|text|ring|outline|divide|fill|stroke|placeholder|decoration|from|via|to)-(white|black)\b(\/\[?[0-9.]+\]?)?/g,
+    why: "白与黑不是令牌：文字用 ink / ink-2，面用 surface / surface-2 / surface-3，线用 line；深色块上的字用 on-accent / on-danger（规矩 4）",
     ui: true,
   },
   {
