@@ -264,8 +264,12 @@
   --u-surface-3: rgba(0, 0, 0, 0.055);
   --u-ring: rgba(0, 0, 0, 0.5);
   --u-well: rgba(0, 0, 0, 0.03);
-  --u-surface-strong: rgba(255, 255, 255, 0.9);
-  --u-surface-strong-hover: rgba(255, 255, 255, 0.97);
+  /* **框跟页面同色**，不跟着「浮起来的面用白」那条走：左栏、顶栏、导航条
+     是页面的框，不是浮在页面上的东西。暗色那边这个令牌本来就是底色本身
+     （`rgba(10,10,10,0.86)` 压在 #0a0a0a 上），浅色照同一个道理取底色；
+     白留给真正浮起来的（--u-raise 的面板、菜单、对话框） */
+  --u-surface-strong: rgba(245, 245, 245, 0.9);
+  --u-surface-strong-hover: rgba(245, 245, 245, 0.97);
   --u-menu-surface: rgba(255, 255, 255, 0.95);
   --u-menu-surface-hover: rgba(255, 255, 255, 1);
   --u-bubble: #ffffff;
