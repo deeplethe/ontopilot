@@ -123,6 +123,12 @@ rules corpus declared and undeclared, a Chinese corpus declared and undeclared):
   different amounts and no conflict. The next cut (two rows plus `fact_conflicts` for a
   disagreement) has to close this first — a per-base advisory lock around the insert, or a
   partial unique index on live rows.
+- **A superseding row carried its evidence but not its qualifiers.** `close_superseded`,
+  `close_with_unknown_end`, `correct_interval` and the refinement path in `insert_fact_inner`
+  all predate this record; closing a 董事 span on the day of the resignation produced a live
+  row without its 职务. All four now copy `fact_qualifiers` the way `adopt` does (the
+  2026-09-11 litigation rehearsal, with [0022](0022-an-unknown-date-is-not-an-open-one.md)'s
+  fourth cut).
 - The model dates "earlier this year" to a concrete day and so mints a moment the text never
   gave; identity follows the model's date. Visible on the timeline, not a qualifier defect.
 
