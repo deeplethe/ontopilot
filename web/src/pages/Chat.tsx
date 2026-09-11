@@ -572,6 +572,7 @@ export function Chat() {
                       size="sm"
                       label={S.ask.moreActions}
                       className={cn(REVEAL, "absolute right-1 top-1/2 -translate-y-1/2")}
+                      onClick={(e) => e.stopPropagation()}
                     >
                       <MoreHorizontal size={14} />
                     </IconButton>

@@ -828,6 +828,9 @@ body::before {
 .group:hover .u-reveal,
 .u-reveal:focus-visible,
 .u-reveal:focus,
+/* 菜单开着的时候也留着：Radix 一开菜单就把焦点移进菜单里，触发器既不 hover
+   也不 focus，按原来的规则会当场隐身——菜单还浮着，它的那个按钮没了 */
+.u-reveal[data-state="open"],
 .u-reveal.is-on {
   opacity: 1;
 }
