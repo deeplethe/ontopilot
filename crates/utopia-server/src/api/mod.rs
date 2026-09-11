@@ -25,13 +25,16 @@ mod workspaces;
 
 use axum::extract::DefaultBodyLimit;
 use axum::http::{header, HeaderValue, Method};
-use axum::routing::{get, patch, post};
+use axum::routing::{any, get, patch, post};
 use axum::{Json, Router};
 use serde_json::json;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use utopia_core::config::AppConfig;
+use utopia_core::error::AppError;
+
+use crate::error::ApiErr;
 
 use crate::state::AppState;
 
@@ -484,7 +487,25 @@ pub fn router(state: AppState, cfg: &AppConfig) -> Router {
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
         .allow_credentials(true);
 
-    let mut app = Router::new().nest("/api/v1", api).layer(cors);
+    /* **`/api` 下面认不出来的路径是 404，不是首页。**
+       下面那个 history fallback 是给页面路由用的：刷新 /graph 要拿到 index.html。
+       可它挂在**整个应用**上，于是拼错或已经删掉的接口也落进同一张网，回的是
+       `200 text/html`。客户端那头 `res.json()` 抛 "Unexpected token '<'"，
+       报错的位置离原因十万八千里；对着 MCP 与 RDF 那两个对外契约的集成方更糟，
+       通用 HTTP 客户端看到 200 当成功，解析器看到的是一张网页。
+       给嵌套的 API 路由自己一个兜底，形状与其余错误一致（error.rs 里
+       `NotFound` 就映射成 404）。 */
+    let api = api.fallback(|| async { ApiErr(AppError::NotFound) });
+    let mut app = Router::new()
+        .nest("/api/v1", api)
+        /* 版本号写错、或者干脆忘了写的请求（`/api/kbs`、`/api/v2/...`）落不进上面
+           那个嵌套，还是会掉到首页去。**`/api` 底下没有页面**，所以整条前缀都收住；
+           静态段比通配更具体，`/api/v1/...` 仍然走上面那个路由。 */
+        .route(
+            "/api/{*rest}",
+            any(|| async { ApiErr(AppError::NotFound) }),
+        )
+        .layer(cors);
 
     // SPA 托管：产物存在则挂载，history fallback 到 index.html
     let index = std::path::Path::new(&cfg.web_dist).join("index.html");
