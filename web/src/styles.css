@@ -343,14 +343,18 @@
   --u-edge: rgba(23, 23, 23, 0.36);
   --u-edge-inferred: rgba(23, 23, 23, 0.18);
   --u-edge-dim: #e4e4e4;
-  --u-edge-focus: rgba(23, 23, 23, 0.85);
+  /* **选中的线是深灰，不是墨黑**。这几档摊平之后是实色（见 flattenOnLight），
+     0.85 的墨压在纸上合成 #393939，一条细线看着还好，可选中之后线会加粗、
+     一次亮起十几条，整片就发死。0.68 合成 #5b5b5b：仍然是全图最重的东西，
+     但让得出位置给名字那块牌子（--u-pill-invert #3f3f3f 比它深一档） */
+  --u-edge-focus: rgba(23, 23, 23, 0.68);
   --u-edge-derived: rgba(176, 120, 20, 0.6);
   --u-edge-derived-dim: rgba(176, 120, 20, 0.22);
-  --u-edge-derived-focus: rgba(150, 100, 10, 0.95);
+  --u-edge-derived-focus: rgba(150, 100, 10, 0.8);
   --u-edge-subclass: rgba(23, 23, 23, 0.6);
-  --u-edge-subclass-focus: rgba(23, 23, 23, 0.9);
+  --u-edge-subclass-focus: rgba(23, 23, 23, 0.72);
   --u-edge-relation: rgba(23, 23, 23, 0.4);
-  --u-edge-relation-focus: rgba(23, 23, 23, 0.85);
+  --u-edge-relation-focus: rgba(23, 23, 23, 0.66);
   --u-edge-schema-dim: rgba(23, 23, 23, 0.12);
   /* 指到 0.03 → 选中 0.055，与暗色那边 0.045 → 0.09 同一个倍数，绝对值减半 */
   --u-active: rgba(0, 0, 0, 0.055);

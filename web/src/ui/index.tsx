@@ -975,7 +975,11 @@ export function Chip({
      不是变体。所以底用 outline 的骨架，色按 tone 贴上去。 */
   const cls = cn(
     badgeVariants({ variant: "outline" }),
-    "border-transparent",
+    /* **方角，不是药丸**：shadcn 的 badge 底子是 `rounded-4xl`，一位数的计数
+       会缩成一个圆点。这套语汇里 chip 说的是状态（Ready、3 dropped、
+       contested），是一块牌子不是一颗豆子，走 cell 那一档（规矩 3）。
+       几何（高 20、内距 8、字号 xs）仍照 shadcn 的来 */
+    "rounded-cell border-transparent",
     CHIP_TONE[tone],
     onClick && "cursor-pointer",
     className,
@@ -999,7 +1003,7 @@ export function Chip({
 export function chipLike(tone: ChipTone = "neutral", className?: string): string {
   return cn(
     badgeVariants({ variant: "outline" }),
-    "border-transparent",
+    "rounded-cell border-transparent",
     CHIP_TONE[tone],
     className,
   );

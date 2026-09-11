@@ -21,7 +21,7 @@ import {
   Input,
   LinkButton,
   Pager,
-} from "../ui";
+  localDateTime,} from "../ui";
 import { usePopoverFlip } from "../ui/popoverFlip";
 
 const PAGE = 8;
@@ -121,7 +121,7 @@ function AlertRow({
           </Chip>
           {/* 取组里最新的那一次 */}
           <span className="u-num ml-auto shrink-0 text-fine text-ink-2">
-            {new Date(g.latest_at).toLocaleString()}
+            {localDateTime(g.latest_at)}
           </span>
         </div>
         {worded && (

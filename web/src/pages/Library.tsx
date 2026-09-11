@@ -36,7 +36,8 @@ import {
   StatusCell,
   Textarea,
   PageHeader,
-  buttonLike,} from "../ui";
+  buttonLike,
+  localDateTime,} from "../ui";
 import {
   KIND_ICON,
   SOURCE_ICONS,
@@ -2153,7 +2154,7 @@ function DeletedTable({
               <td className="px-4 py-3 text-ink-2">{d.filename}</td>
               <td className="px-4 py-3 text-ink-2">{src?.name ?? S.library.uploads}</td>
               <td className="px-4 py-3 u-num text-ink-2">
-                {d.deleted_at ? new Date(d.deleted_at).toLocaleString() : ""}
+                {d.deleted_at ? localDateTime(d.deleted_at) : ""}
               </td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <LinkButton onClick={() => onRestore(d.id)}>

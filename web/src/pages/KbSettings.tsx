@@ -375,7 +375,7 @@ export function KbSettings() {
                       {kb.data.last_inference_at && (
                         <span className="text-fine text-ink-2">
                           {S.kbset.lastInference(
-                            new Date(kb.data.last_inference_at).toLocaleString(),
+                            localDateTime(kb.data.last_inference_at),
                           )}
                         </span>
                       )}
