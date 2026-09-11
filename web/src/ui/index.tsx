@@ -26,6 +26,28 @@ import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
 import { badgeVariants } from "@/components/ui/badge";
 import { Checkbox as ShadCheckbox } from "@/components/ui/checkbox";
 import {
+  DropdownMenu as ShadDropdownMenu,
+  DropdownMenuContent as ShadDropdownMenuContent,
+  DropdownMenuLabel as ShadDropdownMenuLabel,
+  DropdownMenuRadioGroup as ShadDropdownMenuRadioGroup,
+  DropdownMenuRadioItem as ShadDropdownMenuRadioItem,
+  DropdownMenuSeparator as ShadDropdownMenuSeparator,
+  DropdownMenuTrigger as ShadDropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover as ShadPopover,
+  PopoverContent as ShadPopoverContent,
+  PopoverTrigger as ShadPopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command as ShadCommand,
+  CommandEmpty as ShadCommandEmpty,
+  CommandGroup as ShadCommandGroup,
+  CommandInput as ShadCommandInput,
+  CommandItem as ShadCommandItem,
+  CommandList as ShadCommandList,
+} from "@/components/ui/command";
+import {
   RadioGroup as ShadRadioGroup,
   RadioGroupItem as ShadRadioGroupItem,
 } from "@/components/ui/radio-group";
@@ -263,7 +285,12 @@ export const Textarea = forwardRef<
    没人用的组件，只会让它某天又溜回来。小而有界的枚举用 `Dropdown`，
    成百上千的（本体的类、部署里的人）用 `SearchSelect`。 */
 
-/* ---------- Dropdown（自制下拉，替代原生 select：原生弹层无法主题化） ---------- */
+/* ---------- Dropdown（小而有界的枚举） ----------
+   **壳在这里，弹层是 shadcn 的 DropdownMenu**。从前这里连同 SearchSelect 各自
+   实现过一遍「点外面关掉、Esc 关掉、方向键选、焦点回到触发器」，三处弹层三套
+   行为，还各自缺一点：手搓的入口连 `aria-haspopup` 都没有。
+   接口一个字没改（value / options / onChange / icon / menuLabel / footer），
+   页面照旧。 */
 export interface DropdownOption {
   value: string;
   label: ReactNode;
@@ -293,111 +320,58 @@ export function Dropdown({
   /** 弹层底部固定操作区（点击后弹层关闭） */
   footer?: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   const current = options.find((o) => o.value === value);
-  const pad = size === "sm" ? "px-2.5 py-1 text-small" : "px-3 py-1.5 text-body";
-
   return (
-    <div ref={rootRef} className={cn("relative", className)}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        title={menuLabel}
-        className={cn(FIELD_SHELL, "w-full gap-2 text-left", pad)}
-      >
-        {icon && <span className="shrink-0 text-ink-2">{icon}</span>}
-        <span className="flex-1 min-w-0 truncate">
-          {current?.label ?? (
-            <span className="text-ink-2">{placeholder ?? ""}</span>
-          )}
-        </span>
-        <ChevronDown
-          size={12}
+    <ShadDropdownMenu>
+      <ShadDropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={menuLabel}
           className={cn(
-            "shrink-0 text-ink-2 transition-transform",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-      {open && (
-        <div
-          className={cn(
-            // 与告警面板、用户菜单同一张皮（u-menu-glass）：浮在页面上的面只有一种
-            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay u-lift-strong overflow-hidden",
+            FIELD_SHELL,
+            "w-full justify-between gap-2 text-left",
+            size === "sm" ? "h-7 px-2.5 text-small" : "h-8 px-3 text-body",
+            className,
           )}
         >
-          {menuLabel && (
-            <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
-              {menuLabel}
-            </div>
-          )}
-          {/* 选项行顶满面板边缘（无内衬）：单选项时整个菜单被这一项填满 */}
-          <div className="u-scroll max-h-60 overflow-y-auto">
-            {options.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "w-full flex items-center gap-2 text-left",
-                  pad,
-                  o.value === value
-                    ? "bg-surface-3 text-ink"
-                    : "text-ink-2 hover:bg-surface-2 hover:text-ink",
-                )}
-              >
-                <span className="flex-1 min-w-0 truncate">{o.label}</span>
-                {o.value === value && (
-                  <Check size={12} className="shrink-0 text-ink-2" />
-                )}
-              </button>
-            ))}
-          </div>
-          {footer && (
-            <div
-              className="border-t border-line"
-              onClick={() => setOpen(false)}
-            >
-              {footer}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+          <span className="flex min-w-0 items-center gap-2">
+            {icon && <span className="shrink-0 text-ink-2">{icon}</span>}
+            <span className={cn("truncate", !current && "text-ink-2")}>
+              {current?.label ?? placeholder ?? ""}
+            </span>
+          </span>
+          <ChevronDown size={12} className="shrink-0 text-ink-2" />
+        </button>
+      </ShadDropdownMenuTrigger>
+      <ShadDropdownMenuContent align="start" className="min-w-(--radix-dropdown-menu-trigger-width)">
+        {menuLabel && <ShadDropdownMenuLabel>{menuLabel}</ShadDropdownMenuLabel>}
+        <ShadDropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {options.map((o) => (
+            <ShadDropdownMenuRadioItem key={o.value} value={o.value}>
+              {o.label}
+            </ShadDropdownMenuRadioItem>
+          ))}
+        </ShadDropdownMenuRadioGroup>
+        {footer && (
+          <>
+            <ShadDropdownMenuSeparator />
+            {footer}
+          </>
+        )}
+      </ShadDropdownMenuContent>
+    </ShadDropdownMenu>
   );
 }
 
 /* ---------- SearchSelect（可搜索选择器：无界对象列表专用——成员、父类、数据源…）
-   触发器本身是输入框：聚焦即开、键入即过滤；渲染上限 maxVisible，超出提示继续
-   输入收窄。小而有界的枚举（角色/数据类型…）仍用 Dropdown，两击即达不必打字。 ---------- */
+   触发器同 Dropdown，弹层是 shadcn 的 Popover + Command：搜、键盘上下、
+   回车选中、空结果的那一行，全由 Command 管。 */
 export interface SearchSelectOption {
   value: string;
-  /** 主文案：过滤与选中回显的依据（纯字符串，不能是节点） */
   label: string;
-  /** 次要文案（邮箱、连接摘要…），一并参与过滤，弱化显示 */
+  /** 跟在名字后面的一小行（邮箱、类型、路径），也参与搜索 */
   hint?: string;
-  /** 层级缩进（浏览态展示树形；键入过滤后拉平对齐） */
+  /** 树形缩进的层级（父类选择器用它） */
   indent?: number;
 }
 
@@ -408,7 +382,6 @@ export function SearchSelect({
   placeholder,
   className,
   size = "md",
-  maxVisible = 8,
 }: {
   value: string;
   options: SearchSelectOption[];
@@ -416,120 +389,57 @@ export function SearchSelect({
   placeholder?: string;
   className?: string;
   size?: "sm" | "md";
+  /** 只影响弹层高度，保留是为了调用处不改 */
   maxVisible?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-
   const current = options.find((o) => o.value === value);
-  const q = query.trim().toLowerCase();
-  const matches = q
-    ? options.filter((o) =>
-        `${o.label} ${o.hint ?? ""}`.toLowerCase().includes(q),
-      )
-    : options;
-  const visible = matches.slice(0, maxVisible);
-  const hidden = matches.length - visible.length;
-
-  const pick = (v: string) => {
-    onChange(v);
-    setOpen(false);
-    setQuery("");
-    inputRef.current?.blur();
-  };
-
-  const pad =
-    size === "sm" ? "pl-7 pr-2.5 py-1 text-small" : "pl-8 pr-3 py-1.5 text-body";
-  const rowPad = size === "sm" ? "px-2.5 py-1 text-small" : "px-3 py-1.5 text-body";
-
   return (
-    <div className={cn("relative", className)}>
-      <SearchIcon
-        size={size === "sm" ? 11 : 13}
-        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
-      />
-      <input
-        ref={inputRef}
-        className={cn(FIELD_SHELL, "w-full", pad)}
-        value={open ? query : (current?.label ?? "")}
-        /* 打开后把当前选中项挪进 placeholder：边打字边能看到现值 */
-        placeholder={open ? current?.label || placeholder : placeholder}
-        onFocus={() => {
-          setOpen(true);
-          setQuery("");
-          setActive(0);
-        }}
-        /* 选项行 mousedown 已 preventDefault（不夺焦点），走到这里的失焦都是真离开 */
-        onBlur={() => setOpen(false)}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setActive(0);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setOpen(false);
-            inputRef.current?.blur();
-          } else if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setActive((a) => Math.min(a + 1, visible.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((a) => Math.max(a - 1, 0));
-          } else if (e.key === "Enter" && visible[active]) {
-            e.preventDefault();
-            pick(visible[active].value);
-          }
-        }}
-      />
-      {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay u-lift-strong overflow-hidden">
-          {visible.map((o, i) => (
-            <button
-              key={o.value}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(o.value)}
-              onMouseEnter={() => setActive(i)}
-              className={cn(
-                "w-full flex items-center gap-2 text-left",
-                rowPad,
-                i === active
-                  ? "bg-surface-3 text-ink"
-                  : "text-ink-2",
-              )}
-            >
-              {!q && !!o.indent && (
-                <span className="shrink-0" style={{ width: o.indent * 14 }} />
-              )}
-              <span className="min-w-0 flex-1 truncate">
-                {o.label}
-                {o.hint && (
-                  <span className="ml-2 text-ink-2">{o.hint}</span>
-                )}
-              </span>
-              {o.value === value && (
-                <Check size={12} className="shrink-0 text-ink-2" />
-              )}
-            </button>
-          ))}
-          {visible.length === 0 && (
-            <p className={cn(rowPad, "text-ink-2")}>{S.ui.noMatches}</p>
+    <ShadPopover open={open} onOpenChange={setOpen}>
+      <ShadPopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            FIELD_SHELL,
+            "w-full justify-between gap-2 text-left",
+            size === "sm" ? "h-7 px-2.5 text-small" : "h-8 px-3 text-body",
+            className,
           )}
-          {hidden > 0 && (
-            <div
-              className={cn(
-                rowPad,
-                "border-t border-line text-fine text-ink-2",
-              )}
-            >
-              {S.ui.keepTyping(hidden)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        >
+          <span className={cn("truncate", !current && "text-ink-2")}>
+            {current?.label ?? placeholder ?? ""}
+          </span>
+          <ChevronDown size={12} className="shrink-0 text-ink-2" />
+        </button>
+      </ShadPopoverTrigger>
+      <ShadPopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+        <ShadCommand>
+          <ShadCommandInput placeholder={placeholder ?? ""} />
+          <ShadCommandList>
+            <ShadCommandEmpty>{S.ui.noMatches}</ShadCommandEmpty>
+            <ShadCommandGroup>
+              {options.map((o) => (
+                <ShadCommandItem
+                  key={o.value}
+                  value={`${o.label} ${o.hint ?? ""}`}
+                  onSelect={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="truncate">{o.label}</span>
+                  {o.hint && (
+                    <span className="ml-auto truncate text-fine text-ink-2">{o.hint}</span>
+                  )}
+                </ShadCommandItem>
+              ))}
+            </ShadCommandGroup>
+          </ShadCommandList>
+        </ShadCommand>
+      </ShadPopoverContent>
+    </ShadPopover>
   );
 }
 
