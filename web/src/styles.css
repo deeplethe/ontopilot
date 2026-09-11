@@ -80,8 +80,10 @@
   font-family: var(--font-sans);
   color-scheme: dark;
 
-  /* 品牌字：碑铭式衬线（Marcellus 仅 400，一字不粗） */
-  --font-brand: "Marcellus", "Georgia", "Times New Roman", serif;
+  /* 品牌字：碑铭式衬线的**小型大写**（Marcellus SC，仅 400，一字不粗）。
+     碑铭体本来就是刻在石头上的大写字，小型大写是它的本相；退回 Marcellus
+     是为了字体没加载时仍是同一副骨架，再退到 Georgia */
+  --font-brand: "Marcellus SC", "Marcellus", "Georgia", "Times New Roman", serif;
 
   --u-ground: #0a0a0a;
   /* 字色两档，不是三档。第三档（原 #7c7c7c）取消了：它承担的是"次要里的
@@ -1668,7 +1670,11 @@ a:hover > .u-mark-arrow {
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  /* **中文回退要留着**。preset 给的是 `'Geist Variable', sans-serif`——Geist 没有
+     汉字，回退到 `sans-serif` 就是系统默认那一款，与界面里其余的字不是一套。
+     Geist Variable 排前面（preset 自带的那份，字重连续），后面接回我们原来的
+     栈：Geist（Google 那份，做静态回退）、Inter、**Noto Sans SC**。 */
+  --font-sans: "Geist Variable", "Geist", "Inter", "Noto Sans SC", system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
