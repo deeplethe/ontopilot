@@ -1,21 +1,22 @@
+import { Button, Chip } from "../ui";
 import {
-  Button,
-  Chip,
-  Row,
-} from "../ui";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 /* 用户菜单：顶栏右侧的头像胶囊 + 弹出面板（个人信息 / 系统管理 / 登出）。
    Shell（KB 工作区）与 AccountShell（账户层）共用。 */
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  Check,
-  ChevronDown,
   Languages,
   Layers,
   LogOut,
@@ -69,136 +70,113 @@ export function UserMenu({ user }: { user: User }) {
   // 行通到面板边缘（与 Dropdown 同语汇）：容器不留内衬，高度由行自身撑
 
   return (
-    /* 顶栏的用户面板。**弹层是 shadcn 的 Popover**——从前是「胶囊原地长成面板」
-       的手写过渡（usePopoverFlip），一处一套行为；现在外点关闭、Esc、焦点回到
-       触发器、定位翻转都归 Radix，全站三个顶栏面板同一副。 */
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    /* 顶栏的用户菜单。**是菜单不是面板**，所以用 DropdownMenu 而不是 Popover：
+       它要的是「一列动作」加上二级菜单。语言与主题收进二级——语言以后会有好几种，
+       主题有三档，全都平铺在一级里，这张菜单会越长越长，而它们都属于「偏好」，
+       不是与个人资料、管理并列的动作。 */
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="u-avatar-btn">
-        {/* 24：胶囊是 32 高（顶栏所有控件同一个高度），头像两边各留 4 */}
-        <Avatar name={user.display_name} size={24} />
-        <span className="text-body text-ink-2">{user.display_name}</span>
+          {/* 24：胶囊是 32 高（顶栏所有控件同一个高度），头像两边各留 4 */}
+          <Avatar name={user.display_name} size={24} />
+          <span className="text-body text-ink-2">{user.display_name}</span>
         </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 overflow-hidden p-0">
-          {/* 身份头 */}
-          <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-            <Avatar name={user.display_name} size={32} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-body font-medium text-ink">
-                  {user.display_name}
-                </span>
-                {user.is_admin && (
-                  <Chip tone="neutral" className="text-fine">
-                    {S.account.adminChip}
-                  </Chip>
-                )}
-              </div>
-              <div className="truncate text-fine text-ink-2">
-                {user.email}
-              </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        {/* 身份头：不是一个可点的项，只说"你是谁" */}
+        <div className="flex items-center gap-3 px-2 py-2">
+          <Avatar name={user.display_name} size={32} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-body font-medium text-ink">
+                {user.display_name}
+              </span>
+              {user.is_admin && (
+                <Chip tone="neutral" className="text-fine">
+                  {S.account.adminChip}
+                </Chip>
+              )}
             </div>
-            {/* 朝上的三角：说明这一行是收回去的地方，同库切换器与告警面板。
-                三个面板都从各自的胶囊原地长出来，也都从第一行原地缩回去 */}
-            <ChevronDown size={12} className="shrink-0 rotate-180 text-ink-2" />
+            <div className="truncate text-fine text-ink-2">{user.email}</div>
           </div>
+        </div>
+        <DropdownMenuSeparator />
 
-          <div>
-            {/* 图标走 Row 的 icon 槽——塞在 children 里的 svg 是块级的，会把文字
-                挤到第二行 */}
-            <Row
-              density="menu"
-              className="gap-3 px-4 py-2 text-body"
-              icon={<UserRound size={13} />}
-              onClick={() => go("/account")}
+        <DropdownMenuItem onSelect={() => go("/account")}>
+          <UserRound size={13} />
+          {S.account.profile}
+        </DropdownMenuItem>
+        {/* 人人可看：全部可见库 + 我在每个库的身份 */}
+        <DropdownMenuItem onSelect={() => go("/account/kbs")}>
+          <Layers size={13} />
+          {S.account.kbsNav}
+        </DropdownMenuItem>
+        {user.is_admin && (
+          <DropdownMenuItem onSelect={() => go("/admin")}>
+            <ShieldCheck size={13} />
+            {S.account.administration}
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuSeparator />
+
+        {/* 界面语言：看的人自己定，不经过后端（docs/decisions/0004）。
+            每个选项用**它自己的语言**写——看不懂英文的人才认得出"中文" */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Languages size={13} />
+            {S.account.language}
+            <span className="ml-auto pl-2 text-fine text-ink-2">
+              {LANG_NAMES[lang]}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={lang}
+              onValueChange={(v) => setLang(v as (typeof LANGS)[number])}
             >
-              {S.account.profile}
-            </Row>
-            {/* 人人可看：全部可见库 + 我在每个库的身份 */}
-            <Row
-              density="menu"
-              className="gap-3 px-4 py-2 text-body"
-              icon={<Layers size={13} />}
-              onClick={() => go("/account/kbs")}
+              {LANGS.map((l) => (
+                <DropdownMenuRadioItem key={l} value={l}>
+                  {LANG_NAMES[l]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        {/* 主题（0038）：暗是本色，浅色给白天对着它八小时的人；跟系统是第三档 */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <SunMoon size={13} />
+            {S.account.theme}
+            <span className="ml-auto pl-2 text-fine text-ink-2">
+              {S.account.themeNames[theme]}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={theme}
+              onValueChange={(v) => {
+                setTheme(v as Theme);
+                setThemeState(v as Theme);
+              }}
             >
-              {S.account.kbsNav}
-            </Row>
-            {user.is_admin && (
-              <Row
-                density="menu"
-                className="gap-3 px-4 py-2 text-body"
-                icon={<ShieldCheck size={13} />}
-                onClick={() => go("/admin")}
-              >
-                {S.account.administration}
-              </Row>
-            )}
-          </div>
+              {THEMES.map((t) => (
+                <DropdownMenuRadioItem key={t} value={t}>
+                  {S.account.themeNames[t]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
 
-          {/* 界面语言：看的人自己定，不经过后端（docs/decisions/0004）。
-              每个选项用**它自己的语言**写——看不懂英文的人才认得出"中文" */}
-          <div className="border-t border-line">
-            <div className="flex items-center gap-3 px-4 pt-3 pb-1 text-fine text-ink-2">
-              <Languages size={13} className="text-ink-2" />
-              {S.account.language}
-            </div>
-            {LANGS.map((l) => (
-              <Row
-                density="menu"
-                className="gap-3 px-4 py-2 text-body"
-                key={l}
-                icon={
-                  <span className="block w-[13px]">
-                    {l === lang && <Check size={13} className="text-ink-2" />}
-                  </span>
-                }
-                onClick={() => setLang(l)}
-              >
-                {LANG_NAMES[l]}
-              </Row>
-            ))}
-          </div>
+        <DropdownMenuSeparator />
 
-          {/* 主题（0038）：暗是本色，浅色给白天对着它八小时的人；跟系统是第三档。
-              与语言同一个道理——看的人自己定，不经过后端 */}
-          <div className="border-t border-line">
-            <div className="flex items-center gap-3 px-4 pt-3 pb-1 text-fine text-ink-2">
-              <SunMoon size={13} className="text-ink-2" />
-              {S.account.theme}
-            </div>
-            {THEMES.map((t) => (
-              <Row
-                density="menu"
-                className="gap-3 px-4 py-2 text-body"
-                key={t}
-                icon={
-                  <span className="block w-[13px]">
-                    {t === theme && <Check size={13} className="text-ink-2" />}
-                  </span>
-                }
-                onClick={() => {
-                  setTheme(t);
-                  setThemeState(t);
-                }}
-              >
-                {S.account.themeNames[t]}
-              </Row>
-            ))}
-          </div>
-
-          <div className="border-t border-line">
-            <Row
-              density="menu"
-              danger
-              className="gap-3 px-4 py-2 text-body"
-              icon={<LogOut size={13} />}
-              onClick={logout}
-            >
-              {S.nav.signOut}
-            </Row>
-          </div>
-      </PopoverContent>
-    </Popover>
+        <DropdownMenuItem variant="destructive" onSelect={logout}>
+          <LogOut size={13} />
+          {S.nav.signOut}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
