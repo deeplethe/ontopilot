@@ -50,16 +50,17 @@
   --color-accent: var(--u-accent);
   --color-bar: var(--u-bar);
 
-  /* 圆角四档（规矩 3）。**按角色命名，不按尺寸**——同 ink / ink-2 的道理：
-     `rounded-panel` 说得出「这是个面板」，`rounded-lg` 只说得出 8px，而
-     style-guard 检查的是角色用错没有，不是数字对不对。
-     分档的理由是同一个绝对半径在不同尺寸上圆润度不同：8px 放在 24px 高的
-     chip 上很圆，放在 300px 高的面板上几乎是直角——「一个圆角」统一的是
-     数字，不是观感。嵌套时内档不得大于外档（control 6 < panel 8）。 */
-  --radius-cell: 4px;
-  --radius-control: 6px;
-  --radius-panel: 8px;
-  --radius-overlay: 12px;
+  /* 圆角四档（规矩 3）。**按角色命名，数由预设给**——名字说得出「这是个面板」，
+     `rounded-lg` 只说得出 10px，而 style-guard 检查的是角色用错没有，不是数字
+     对不对。从前这四个数是自己挑的（4/6/8/12），于是 shadcn 的按钮写死
+     `rounded-lg`＝10 时，它装在我们 8px 的卡片里——内圈比外圈还圆。
+     现在四档全部从 `--radius` 派生，**倍数与 shadcn 自己的用法对齐**：
+     它的菜单项是 md、按钮与浮层是 lg、卡片与对话框是 xl。整套圆润度只剩
+     `--radius` 一个旋钮，调它一处，控件与面一起动。 */
+  --radius-cell: calc(var(--radius) * 0.8);
+  --radius-control: var(--radius);
+  --radius-panel: calc(var(--radius) * 1.4);
+  --radius-overlay: var(--radius);
 }
 
 /* 动效两档（规矩 5）：进入用 fast，离开用 base。只在 ui/ 里用 */

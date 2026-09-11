@@ -180,6 +180,12 @@ type InputSize = { size?: "sm" | "md" };
 const BARE =
   "border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-0 px-0 dark:bg-transparent";
 
+/** 有皮的那一档**要有实底**。shadcn 默认 `bg-transparent`：在一张卡片里那是对的，
+ *  可这套界面的输入框有浮在图谱画布上的（搜索实体、筛选），透明的框底下是网格和
+ *  连线，字压在线上，看着就是一团乱。取页面底色——在卡片上它比卡片深一点，
+ *  在画布上它是一块实地，两处都读得出"这是一个可以写字的格子"。 */
+const FILLED = "bg-background dark:bg-background";
+
 export const Input = forwardRef<
   HTMLInputElement,
   Omit<InputHTMLAttributes<HTMLInputElement>, "size"> &
@@ -194,7 +200,7 @@ export const Input = forwardRef<
     <ShadInput
       ref={ref}
       className={cn(
-        bare ? BARE : size === "sm" ? "h-7" : "h-8",
+        bare ? BARE : cn(FILLED, size === "sm" ? "h-7" : "h-8"),
         // 图标槽：中号图标离左内缘 12px、文字从 34px 起；小号窄一档（8 / 28）
         icon ? (size === "sm" ? "pl-7" : "pl-[34px]") : null,
         icon ? "w-full" : className,
@@ -204,7 +210,10 @@ export const Input = forwardRef<
   );
   if (!icon) return control;
   return (
-    <div className={cn("relative", className)}>
+    /* **外层要跟控件同一个圆角**：带图标时 `className` 落在这一层（宽度、
+       投影都写在调用处），而投影是按这个盒子的形状画的——盒子没有圆角，
+       投影就是方的，里面那个圆角的输入框浮在一块方影子上，四个角看着发虚 */
+    <div className={cn("relative rounded-control", className)}>
       {/* 图标离盒左缘 12——与 nav 行的内距同一个数，于是左栏里输入框的放大镜
           与下面每一行的图标落在同一条竖线上（盒 8 / 图标 20 / 文字 42） */}
       <span
@@ -231,7 +240,11 @@ export const Textarea = forwardRef<
   return (
     <ShadTextarea
       ref={ref}
-      className={cn("u-scroll", bare ? BARE : size === "sm" ? "min-h-14" : null, className)}
+      className={cn(
+        "u-scroll",
+        bare ? BARE : cn(FILLED, size === "sm" ? "min-h-14" : null),
+        className,
+      )}
       {...props}
     />
   );
