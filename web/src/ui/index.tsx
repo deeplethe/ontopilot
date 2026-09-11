@@ -22,7 +22,7 @@ import {
   Search as SearchIcon,
 } from "lucide-react";
 import { S } from "../i18n";
-import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { badgeVariants } from "@/components/ui/badge";
 import { Checkbox as ShadCheckbox } from "@/components/ui/checkbox";
 import {
@@ -135,19 +135,30 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   return (
-    <ShadButton
+    /* **渲染原生 button，样子取 `buttonVariants`**，而不是套 shadcn 的
+       `<Button>` 组件。原因是这套仓库还在 React 18，而 shadcn v4 的组件是照
+       React 19 写的（普通函数组件，靠 19 的 ref-as-prop 接 ref）——在 18 下
+       ref 会被丢掉，于是任何 `asChild` 的触发器（下拉、弹层、tooltip）都拿不到
+       锚点，控制台一片 "Function components cannot be given refs"。
+       把 ref 落在真实 DOM 节点上，这条就绕过去了，样子一模一样。
+       升到 React 19 之后可以换回组件写法。 */
+    <button
       ref={ref}
       type={type}
-      variant={VARIANT[variant]}
-      size={size === "sm" ? "sm" : "default"}
-      className={className}
+      className={cn(
+        buttonVariants({
+          variant: VARIANT[variant],
+          size: size === "sm" ? "sm" : "default",
+        }),
+        className,
+      )}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       {...props}
     >
       {icon}
       {children}
-    </ShadButton>
+    </button>
   );
 });
 
@@ -165,14 +176,19 @@ export const IconButton = forwardRef<
   ref,
 ) {
   return (
-    <ShadButton
+    // 同上：原生节点才接得住 ref（React 18 + shadcn v4）
+    <button
       ref={ref}
       type={type}
       aria-label={label}
       title={label}
-      variant={VARIANT[variant]}
-      size={size === "sm" ? "icon-sm" : "icon"}
-      className={className}
+      className={cn(
+        buttonVariants({
+          variant: VARIANT[variant],
+          size: size === "sm" ? "icon-sm" : "icon",
+        }),
+        className,
+      )}
       {...props}
     />
   );
