@@ -551,6 +551,19 @@ async fn insert_fact_inner(
             attest_earlier(pool, *existing, validity.attested_at).await?;
             return Ok((*existing, false));
         }
+        // 没有开放行，但这次观察的文档日期落在某条**已关上**的行里：说的是那一段，不是
+        // 新的一段——处罚决定书里的「董事李文博」，日期在他的任期之内。另立一条裸行会被
+        // 读成「至今仍是」，而任期明明已经关上了。文档日期在段之后的照旧另立：那可能真是
+        // 新的一段（再次任职），拿不准时宁分勿合
+        if let Some(at) = validity.attested_at {
+            if let Some((existing, _, _, _)) = same
+                .iter()
+                .find(|(_, vf, vt, _)| vt.is_some_and(|t| at <= t) && vf.is_none_or(|f| f <= at))
+            {
+                attest_earlier(pool, *existing, validity.attested_at).await?;
+                return Ok((*existing, false));
+            }
+        }
     }
     // 时间精化候选：已有无起点的行（裸行，或只知道终点的行——并行抽取时说结束的那份
     // 文档可能先到），本次观察带了起点 → 落库后作废那行并链上。只知道终点的行，

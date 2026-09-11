@@ -204,6 +204,33 @@ async fn an_end_date_closes_the_open_span() -> anyhow::Result<()> {
     assert_eq!(again, closed);
     assert!(!created);
 
+    // 处罚决定书里提到「董事李文博」，没写日期，文档日期在任期之内：说的是这一段
+    let (mentioned, created) = utopia_store::graph::insert_fact(
+        &pool,
+        kb,
+        a,
+        Some(works_at),
+        b,
+        span(None, None, "2024-04-17"),
+        0.9,
+    )
+    .await?;
+    assert_eq!(mentioned, closed, "任期内的无日期提及并进关上的那一段");
+    assert!(!created);
+    // 任期之后的无日期提及：可能是再次任职，另立一条，等人裁
+    let (later, created) = utopia_store::graph::insert_fact(
+        &pool,
+        kb,
+        a,
+        Some(works_at),
+        b,
+        span(None, None, "2025-06-01"),
+        0.9,
+    )
+    .await?;
+    assert!(created);
+    assert_ne!(later, closed);
+
     sqlx::query("DELETE FROM knowledge_bases WHERE id = $1")
         .bind(kb)
         .execute(&pool)
