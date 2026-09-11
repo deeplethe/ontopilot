@@ -225,7 +225,7 @@ function Panel() {
       </div>
 
       {/* 查找与库切换器同一副样子：没有自己的框（bare），它是面板的一段，
-          不是面板里摆的一个控件；Esc 由 popoverFlip 统一关面板 */}
+          不是面板里摆的一个控件；Esc 与外点由 Popover 统一管 */}
       <div className="border-b border-line px-4 py-3">
         <Input
           bare
