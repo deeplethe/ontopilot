@@ -356,6 +356,7 @@ pub async fn close_superseded(
         .execute(&mut *tx)
         .await?;
     copy_evidence(&mut tx, fact_id, corrected).await?;
+    copy_qualifiers(&mut tx, fact_id, corrected).await?;
     tx.commit().await?;
     Ok(Some(corrected))
 }
@@ -399,8 +400,29 @@ pub async fn close_with_unknown_end(
         .execute(&mut *tx)
         .await?;
     copy_evidence(&mut tx, fact_id, corrected).await?;
+    copy_qualifiers(&mut tx, fact_id, corrected).await?;
     tx.commit().await?;
     Ok(Some(corrected))
+}
+
+/// 边上的属性随修正行复制（0037）：纠正的是时间区间，边上的金额、职务照旧——
+/// 不搬的话，闭合一段任职就丢了它的职务
+async fn copy_qualifiers(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    from: Uuid,
+    to: Uuid,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO fact_qualifiers (fact_id, qualifier_type_id, value, entity_id)
+         SELECT $1, qualifier_type_id, value, entity_id
+         FROM fact_qualifiers WHERE fact_id = $2
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(to)
+    .bind(from)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// 证据引用随修正行复制。表层谓词一起搬：纠正的是时间区间，不是原文说了什么。
@@ -478,6 +500,7 @@ pub async fn correct_interval(
         .execute(&mut *tx)
         .await?;
     copy_evidence(&mut tx, fact_id, corrected).await?;
+    copy_qualifiers(&mut tx, fact_id, corrected).await?;
     tx.commit().await?;
     Ok(Some(corrected))
 }

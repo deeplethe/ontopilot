@@ -487,6 +487,38 @@ async fn insert_fact_inner(
             return Ok((*ended, false));
         }
     }
+    /* **「某天结束了」的观察（没起点、有终点）撞上同断言的开放行：关上它，不另立一行。**
+    另立一行让两条各说各话，开放的那条照旧被读成「至今仍是」——实测「移出失信名单」
+    「辞去董事职务」各多出一条 `- → 日期`，而原来那条还开着。事件没有开放行
+    （两端同一刻），所以只有状态走这里。修正走 supersede（作废 + 改写，证据和边上的
+    属性随行），与 #393 关「不知哪天」同一条路；起点比终点晚的开放行不是这一段 */
+    if temporal == Temporal::State && validity.from.is_none() {
+        if let Some(to) = validity.to {
+            // 已经关在这一天的：同一件事，复用那一行
+            if let Some((ended, _, _, _)) = same.iter().find(|(_, _, vt, _)| *vt == Some(to)) {
+                attest_earlier(pool, *ended, validity.attested_at).await?;
+                return Ok((*ended, false));
+            }
+            let open = same
+                .iter()
+                .filter(|(_, vf, vt, vtp)| {
+                    vt.is_none() && vtp.is_none() && vf.is_none_or(|f| f <= to)
+                })
+                .max_by_key(|(_, vf, _, _)| *vf);
+            if let Some((open, _, _, _)) = open {
+                if let Some(closed) = crate::temporal::close_superseded(
+                    pool,
+                    *open,
+                    to,
+                    validity.to_precision.unwrap_or("day"),
+                )
+                .await?
+                {
+                    return Ok((closed, true));
+                }
+            }
+        }
+    }
     // 精确重复：同 valid_from → 复用
     if let Some((existing, _, _, _)) = same.iter().find(|(_, vf, _, _)| *vf == validity.from) {
         attest_earlier(pool, *existing, validity.attested_at).await?;
@@ -568,6 +600,17 @@ async fn insert_fact_inner(
             "INSERT INTO fact_evidence (fact_id, chunk_id, quote, proposed_predicate, document_id, doc_version)
              SELECT $1, chunk_id, quote, proposed_predicate, document_id, doc_version
              FROM fact_evidence WHERE fact_id = $2
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(id)
+        .bind(old_id)
+        .execute(pool)
+        .await?;
+        // 边上的属性也随行（0037）：裸行上已有的金额、职务不因为精化了时间而丢
+        sqlx::query(
+            "INSERT INTO fact_qualifiers (fact_id, qualifier_type_id, value, entity_id)
+             SELECT $1, qualifier_type_id, value, entity_id
+             FROM fact_qualifiers WHERE fact_id = $2
              ON CONFLICT DO NOTHING",
         )
         .bind(id)
