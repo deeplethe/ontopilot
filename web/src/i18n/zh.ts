@@ -1012,7 +1012,7 @@ export const zh: Strings = {
     refineShort: "类型消解",
     rulesShort: "业务规则",
     rulesTitle: "业务规则",
-    rulesHint: "读实体自己的属性、得出一个类或一个值的规则。规则由你编写，模型不提议。结论是派生的：它带着依据，依据变了就自动退场。",
+    rulesHint: "按实体自己的属性判定类别、或算出取值的规则。结论是派生的，依据没了就自动失效。",
     rulesEmpty: "还没有规则。",
     rulesNoMatch: "没有规则匹配。",
     ruleSearch: "搜索规则、属性、取值",
@@ -1261,10 +1261,10 @@ export const zh: Strings = {
     importSize: (bytes: number) =>
       bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(0)} KB`,
     misses: "抽取中未匹配的",
-    missesHint: "抽取时落在本体之外的类型和谓词。据此判断本体还缺什么。",
+    missesHint: "抽取时落在本体之外的类型和谓词，用来判断本体还缺什么。",
     /* 一端挂着两个以上开放值的谓词（#341）：状态一句话，后果一句话，动作在按钮上 */
     uniqueness: "并存的取值",
-    uniquenessHint: "同一个主语同时挂着多个取值、都没有结束的关系。把关系标成单值，新值就会关掉上一个。",
+    uniquenessHint: "把一次只能有一个取值的关系标出来，新值会自动关掉上一个。",
     uniquenessEmpty: "没有并存：每个持有者至多一个开放取值。",
     uniquenessSubject: (n: number) => `${n} 个主语挂着两个以上开放取值`,
     uniquenessObject: (n: number) => `${n} 个取值被两个以上主语挂着`,

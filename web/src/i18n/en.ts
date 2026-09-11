@@ -1130,7 +1130,7 @@ export const en = {
     rulesTitle: "Business rules",
     /* 说清三件事：谁写的、结论是什么身份、什么时候重算。第三件最容易被误解成
        「保存就生效」，而它其实等下一轮物化 */
-    rulesHint: "Rules that read an entity's own attributes and conclude a class or a value. You write them; the model never proposes one. A conclusion is derived: it carries the readings behind it and retires when they change.",
+    rulesHint: "Rules that decide a class or compute a value from an entity's own attributes. A conclusion is derived and lapses when its premises do.",
     rulesEmpty: "No rules yet.",
     rulesNoMatch: "No rule matches that.",
     /** 搜的是整条规则，不只是名字——判据里的谓词和值也在里面 */
@@ -1426,12 +1426,12 @@ export const en = {
     importSize: (bytes: number) =>
       bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(0)} KB`,
     misses: "Unmatched from extraction",
-    missesHint: "Types and predicates the extractor produced outside the ontology. Use them to decide what the ontology still needs.",
+    missesHint: "Types and predicates the extractor produced outside the ontology, to judge what the ontology still lacks.",
     /* ---- 一端挂着两个以上开放值的谓词（#341） ----
        文案克制：状态一句话，后果一句话，动作在按钮上。这一档的读者要判断的是
        「这条关系一次只能有一个值吗」，不是读一篇关于双时态的说明 */
     uniqueness: "Overlapping values",
-    uniquenessHint: "Relations where one subject holds several values at once, none of them closed. Mark a relation single-valued and a new value closes the previous one.",
+    uniquenessHint: "Mark the relations that may only hold one value at a time; a new value then closes the previous one.",
     uniquenessEmpty: "No overlaps. Every holder has at most one open value.",
     /* 主语侧 / 宾语侧：说人话，不写 functional / inverse functional */
     uniquenessSubject: (n: number) =>
