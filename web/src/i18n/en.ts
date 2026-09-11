@@ -1431,7 +1431,7 @@ export const en = {
        文案克制：状态一句话，后果一句话，动作在按钮上。这一档的读者要判断的是
        「这条关系一次只能有一个值吗」，不是读一篇关于双时态的说明 */
     uniqueness: "Overlapping values",
-    uniquenessHint: "Mark the relations that may only hold one value at a time; a new value then closes the previous one.",
+    uniquenessHint: "Say which relations may hold only one value at a time, and a new value will end the old one on its own.",
     uniquenessEmpty: "No overlaps. Every holder has at most one open value.",
     /* 主语侧 / 宾语侧：说人话，不写 functional / inverse functional */
     uniquenessSubject: (n: number) =>

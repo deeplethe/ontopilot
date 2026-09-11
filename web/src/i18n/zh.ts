@@ -1264,7 +1264,7 @@ export const zh: Strings = {
     missesHint: "抽取时落在本体之外的类型和谓词，用来判断本体还缺什么。",
     /* 一端挂着两个以上开放值的谓词（#341）：状态一句话，后果一句话，动作在按钮上 */
     uniqueness: "并存的取值",
-    uniquenessHint: "把一次只能有一个取值的关系标出来，新值会自动关掉上一个。",
+    uniquenessHint: "标明哪些关系同时只能有一个值，之后新值会自动结束旧值。",
     uniquenessEmpty: "没有并存：每个持有者至多一个开放取值。",
     uniquenessSubject: (n: number) => `${n} 个主语挂着两个以上开放取值`,
     uniquenessObject: (n: number) => `${n} 个取值被两个以上主语挂着`,
