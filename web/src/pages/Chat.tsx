@@ -41,6 +41,7 @@ import { useKb, useKbId } from "../kb";
 import {
   Button,
   cn,
+  ConvMark,
   DangerConfirm,
   IconButton,
   Input,
@@ -50,6 +51,7 @@ import {
   ROW_HOVER,
   Textarea,
 } from "../ui";
+import { convMarks, useLive, useUnread } from "../unread";
 import { liveAnswer, type LiveHandle, type Turn } from "../liveAnswer";
 import { NodCard } from "./PendingFacts";
 import { NextStep, nextStep, useReadiness } from "./NextStep";
@@ -116,9 +118,20 @@ export function Chat() {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   // 「最近」这一组收起来没有。默认展开：左栏本来就是为了看见这些会话
   const [recentOpen, setRecentOpen] = useState(true);
+  /* 左栏每一条会话的记号（正在写 / 写完了还没看）。两张表都活在组件外面——
+     "写完了"常常发生在这个组件已经卸载的时候（见 unread.ts 开头） */
+  const liveIds = useLive();
+  const unreadIds = useUnread();
   const scopeRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  /* 打开哪一场就等于看过哪一场：记号消掉，并且告诉 unread「此刻看的是它」——
+     正看着的那一场写完时不该变成未读。传 null（新对话、删掉了当前这场）
+     同样有意义：那之后写完的任何一场都算未读 */
+  useEffect(() => {
+    convMarks.view(activeId);
+  }, [activeId]);
 
   // 作用域弹层：点外面 / Esc 关闭（与 ui/Dropdown 同惯例）
   useEffect(() => {
@@ -305,6 +318,8 @@ export function Chat() {
 
   const removeConversation = async (id: string) => {
     await conversationsApi.remove(kb!.id, id);
+    // 记号跟着会话走，否则这个 id 会一直留在浏览器的那张表里
+    convMarks.forget(id);
     if (sessionStorage.getItem(lastKey(kb!.id)) === id) {
       sessionStorage.removeItem(lastKey(kb!.id));
     }
@@ -536,6 +551,17 @@ export function Chat() {
               ) : (
                 <Row
                   density="nav"
+                  icon={
+                    <ConvMark
+                      state={
+                        liveIds.has(c.id)
+                          ? "live"
+                          : unreadIds.has(c.id)
+                            ? "unread"
+                            : "rest"
+                      }
+                    />
+                  }
                   active={c.id === activeId}
                   className="pr-8"
                   onClick={() => openConversation(c.id)}
