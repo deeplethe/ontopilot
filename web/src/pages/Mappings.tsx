@@ -8,7 +8,7 @@
 // 搬的是界面不是逻辑：判断一条口径对不对要看得见表结构，而那在这一页。
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Plus } from "lucide-react";
+import { Database, Plug, Plus } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { api, type ConceptMapping } from "../api";
 import { S } from "../i18n";
@@ -18,16 +18,19 @@ import {
   Button,
   Checkbox,
   Chip,
-  type ChipTone,
-  cn,
+  Dropdown,
   EmptyState,
   ErrorText,
   Input,
   LinkButton,
   Loading,
+  PageHeader,
   Pager,
-  PageTitle,
+  RAIL_CLS,
+  Row,
   SearchSelect,
+  cn,
+  type ChipTone,
 } from "../ui";
 
 const PAGE = 25;
@@ -139,62 +142,53 @@ export function Mappings() {
   ];
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-4">
-      <div>
-        <PageTitle>{S.mapping.title}</PageTitle>
-        <p className="mt-1 text-small text-ink-2">{S.mapping.hint}</p>
-      </div>
-
-      {/* 分段控件用全站那一套（`bg-surface-3` 选中 + 静默的未选中），
-          不是 `u-btn-primary`——那是主操作的实心白，用在这里每个标签都像
-          一个行动号召 */}
-      <div className="flex w-fit rounded-control overflow-hidden border border-line">
+    /* **左栏切功能，不是标签页**：定义与数据源是两件不同的事（一个是判读，
+       一个是登记连接），全站凡是这种切换都在左栏（文库、审阅、本体都是）。
+       从前这里是一排按钮做的标签，选中那个还是实心主按钮——在这套语汇里
+       实心说的是"这一屏最该按的那一下"，四个标签四个行动号召。
+       内容区也从设置页那套居中限宽（max-w-4xl）改成内容页的铺满（px-8 py-6）。 */
+    <div className="flex h-full">
+      <aside className={`${RAIL_CLS} u-rail-list px-2 py-3`}>
         {(["definitions", "sources"] as const).map((t) => (
-          <Button
-            variant={tab === t ? "primary" : "ghost"}
-            size="sm"
+          <Row
             key={t}
+            density="nav"
+            active={tab === t}
+            icon={t === "definitions" ? <Database size={14} /> : <Plug size={14} />}
             onClick={() => setTab(t)}
           >
-            {t === "definitions"
-              ? S.mapping.tabDefinitions
-              : S.mapping.tabSources}
-          </Button>
+            {t === "definitions" ? S.mapping.tabDefinitions : S.mapping.tabSources}
+          </Row>
         ))}
-      </div>
+      </aside>
+
+      <div className="u-scroll flex-1 min-w-0 overflow-y-auto px-8 py-6">
+        <PageHeader
+          title={S.mapping.title}
+          sub={S.mapping.hint}
+          className="mb-4"
+        />
 
       {tab === "sources" ? (
         <DataSources kbId={kb.id} onExplored={refresh} />
       ) : (
-        <>
+        <div className="space-y-4">
+          {/* 筛选是下拉，不是一排按钮：四档状态是"挑一个看"，与全站其它页面的
+              筛选同一副控件（Dropdown），计数跟在标签里 */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex rounded-control overflow-hidden border border-line">
-              {FILTERS.map((f) => (
-                <Button
-                  variant={status === f.key ? "primary" : "ghost"}
-                  size="sm"
-                  key={f.key}
-                  onClick={() => {
-                    setStatus(f.key);
-                    setPage(0);
-                  }}
-                >
-                  {f.label}
-                  {f.n != null && (
-                    <span
-                      className={cn(
-                        "u-num",
-                        status === f.key
-                          ? "text-ink-2"
-                          : "text-ink-2",
-                      )}
-                    >
-                      {f.n}
-                    </span>
-                  )}
-                </Button>
-              ))}
-            </div>
+            <Dropdown
+              size="sm"
+              className="w-40"
+              value={status}
+              onChange={(v) => {
+                setStatus(v as StatusFilter);
+                setPage(0);
+              }}
+              options={FILTERS.map((f) => ({
+                value: f.key,
+                label: f.n != null ? `${f.label} · ${f.n}` : f.label,
+              }))}
+            />
             <Input
               size="sm"
               className="flex-1 min-w-40"
@@ -308,8 +302,9 @@ export function Mappings() {
             page={page}
             onPage={setPage}
           />
-        </>
+        </div>
       )}
+      </div>
     </div>
   );
 }
