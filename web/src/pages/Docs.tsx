@@ -15,7 +15,7 @@ import {
   Row,
   rowClass,
   SectionMark,
-} from "../ui";
+  buttonLike,} from "../ui";
 import { HeaderActions } from "./HeaderActions";
 import { usePageTitle } from "../useTitle";
 import ingestMd from "../docs/ingest.md?raw";
@@ -236,7 +236,7 @@ export function DocsPage() {
           user={me.data}
           signedOut={
             me.isError ? (
-              <Link to="/login" className="u-btn u-btn-ghost px-3 py-2 text-small">
+              <Link to="/login" className={buttonLike("ghost")}>
                 {S.login.signIn}
               </Link>
             ) : null

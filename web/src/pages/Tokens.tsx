@@ -27,7 +27,7 @@ import {
   Th,
   THead,
   Tr,
-} from "../ui";
+  buttonLike,} from "../ui";
 import { toast } from "../toast";
 
 const ymd = (iso: string) => iso.slice(0, 10);
@@ -63,7 +63,7 @@ function CopyButton({ text, small }: { text: string; small?: boolean }) {
   const [done, setDone] = useState(false);
   return (
     <Button variant="secondary" size="sm"
-      className={`u-btn u-btn-ghost ${small ? "px-2 py-1 text-fine" : "px-3 py-2 text-small"} flex items-center gap-2`}
+      className={buttonLike("ghost", small ? "sm" : "md")}
       onClick={() => {
         copyText(text);
         setDone(true);

@@ -778,21 +778,6 @@ select.input-dark option {
    页面不写 px/py/text-*，只选尺寸与变体（ui/index.tsx 的 Button）。
    `u-btn-ghost` 是迁移期的旧名（有边框，等于 secondary）；迁完删掉，
    `u-btn-quiet` 那时改回 ghost 这个名字 */
-.u-btn,
-.btn-primary,
-.btn-ghost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  border-radius: var(--radius-control);
-  font-weight: 500;
-  white-space: nowrap;
-  transition:
-    background-color var(--u-fast),
-    border-color var(--u-fast),
-    color var(--u-fast);
-}
 .u-btn:focus-visible,
 .btn-primary:focus-visible,
 .btn-ghost:focus-visible {
@@ -805,47 +790,11 @@ select.input-dark option {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.u-btn-md {
-  height: 2rem;
-  padding: 0 0.75rem;
-  font-size: var(--text-body);
-  line-height: var(--text-body--line-height);
-}
-.u-btn-sm {
-  height: 1.625rem;
-  padding: 0 0.625rem;
-  font-size: var(--text-small);
-  line-height: var(--text-small--line-height);
-}
 /* 只有图标的按钮：正方形，图标居中 */
-.u-btn-icon-md {
-  height: 2rem;
-  width: 2rem;
-  padding: 0;
-}
-.u-btn-icon-sm {
-  height: 1.625rem;
-  width: 1.625rem;
-  padding: 0;
-}
-.u-btn-primary,
-.btn-primary {
-  background: var(--u-text);
-  border: 1px solid var(--u-text);
-  color: var(--u-on-accent);
-  font-weight: 600;
-}
 .u-btn-primary:hover:not(:disabled),
 .btn-primary:hover:not(:disabled) {
   background: var(--u-text);
   border-color: var(--u-text);
-}
-.u-btn-secondary,
-.u-btn-ghost,
-.btn-ghost {
-  border: 1px solid var(--u-line-strong);
-  color: var(--u-text-2);
-  background: transparent;
 }
 .u-btn-secondary:hover:not(:disabled),
 .u-btn-ghost:hover:not(:disabled),
@@ -855,22 +804,11 @@ select.input-dark option {
   border-color: rgba(var(--u-ink-rgb), 0.22);
 }
 /* 无边框：行内动作、图标按钮、工具条 */
-.u-btn-quiet {
-  border: 1px solid transparent;
-  color: var(--u-text-2);
-  background: transparent;
-}
 .u-btn-quiet:hover:not(:disabled) {
   background: var(--u-surface-2);
   color: var(--u-text);
 }
 /* 危险实底：深红配白字（浅玫瑰做底会发粉，见 --u-danger-solid） */
-.u-btn-danger {
-  background: var(--u-danger-solid);
-  border: 1px solid var(--u-danger-solid);
-  color: var(--u-text);
-  font-weight: 600;
-}
 .u-btn-danger:hover:not(:disabled) {
   background: var(--u-danger-solid-hover);
   border-color: var(--u-danger-solid-hover);

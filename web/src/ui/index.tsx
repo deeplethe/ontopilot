@@ -21,6 +21,7 @@ import {
   Search as SearchIcon,
 } from "lucide-react";
 import { S } from "../i18n";
+import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
 // 表格原件在 ./table 里，下面 re-export；`SkeletonTableRows` 自己也要用，
 // 所以这里另取一份别名，避免与 re-export 的同名标识撞车
 import {
@@ -65,25 +66,28 @@ export function cn(...parts: (string | false | null | undefined)[]): string {
 }
 
 /* ---------- Button ----------
-   四种变体：primary（白底黑字，一屏最多一个）、secondary（描边，默认的次要动作）、
-   ghost（无边框，行内动作与工具条）、danger（深红实底，不可逆的那一下）。
-   两个尺寸与 Input 同高，同一行里顶齐不靠页面调 py。 */
+   **壳在这里，样子在 shadcn**（`@/components/ui/button`，radix base / nova preset）。
+   这一层留着的理由只有一个：整个应用按这四个名字调按钮——primary 是一屏最多一个的
+   实心，secondary 是描边的默认次要动作，ghost 是行内与工具条，danger 是不可逆的那一下。
+   名字说的是**这一下有多重**，shadcn 那边说的是长什么样，两件事分开，
+   换皮肤不必回头改三十二个页面。 */
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "color"> & {
   variant?: ButtonVariant;
   size?: "sm" | "md";
-  /** 文字左侧的图标（lucide，13 / 14 号） */
+  /** 文字左侧的图标（lucide）。shadcn 那边已经给 svg 定了尺寸与 shrink-0 */
   icon?: ReactNode;
   /** 正在提交：禁用并告诉读屏器 */
   busy?: boolean;
 };
 
-const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  primary: "u-btn-primary",
-  secondary: "u-btn-secondary",
-  ghost: "u-btn-quiet",
-  danger: "u-btn-danger",
-};
+const VARIANT = {
+  primary: "default",
+  // 我们的 secondary 是**描边**的，shadcn 的 secondary 是实心灰，对应的是 outline
+  secondary: "outline",
+  ghost: "ghost",
+  danger: "destructive",
+} as const;
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
@@ -100,22 +104,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   return (
-    <button
+    <ShadButton
       ref={ref}
       type={type}
-      className={cn(
-        "u-btn",
-        BUTTON_VARIANT[variant],
-        size === "sm" ? "u-btn-sm" : "u-btn-md",
-        className,
-      )}
+      variant={VARIANT[variant]}
+      size={size === "sm" ? "sm" : "default"}
+      className={className}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       {...props}
     >
-      {icon && <span className="shrink-0">{icon}</span>}
+      {icon}
       {children}
-    </button>
+    </ShadButton>
   );
 });
 
@@ -123,7 +124,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
    没有可见文字的按钮必须有一个名字，这是无障碍的底线 */
 export const IconButton = forwardRef<
   HTMLButtonElement,
-  ButtonHTMLAttributes<HTMLButtonElement> & {
+  Omit<ButtonHTMLAttributes<HTMLButtonElement>, "color"> & {
     label: string;
     variant?: ButtonVariant;
     size?: "sm" | "md";
@@ -133,21 +134,31 @@ export const IconButton = forwardRef<
   ref,
 ) {
   return (
-    <button
+    <ShadButton
       ref={ref}
       type={type}
       aria-label={label}
       title={label}
-      className={cn(
-        "u-btn",
-        BUTTON_VARIANT[variant],
-        size === "sm" ? "u-btn-icon-sm" : "u-btn-icon-md",
-        className,
-      )}
+      variant={VARIANT[variant]}
+      size={size === "sm" ? "icon-sm" : "icon"}
+      className={className}
       {...props}
     />
   );
 });
+
+/** 长得像按钮的**链接**（路由 Link、外链）。给 className 用，不包组件——
+ *  `<Link className={buttonLike("ghost")}>`；从前这里写的是 `u-btn u-btn-ghost`
+ *  加一串手调的内距，那串内距正是尺寸档存在的理由 */
+export function buttonLike(
+  variant: ButtonVariant = "ghost",
+  size: "sm" | "md" = "md",
+): string {
+  return buttonVariants({
+    variant: VARIANT[variant],
+    size: size === "sm" ? "sm" : "default",
+  });
+}
 
 /* ---------- Input / Textarea ---------- */
 type InputSize = { size?: "sm" | "md" };

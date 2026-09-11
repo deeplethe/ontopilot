@@ -36,7 +36,7 @@ import {
   StatusCell,
   Textarea,
   PageHeader,
-} from "../ui";
+  buttonLike,} from "../ui";
 import {
   KIND_ICON,
   SOURCE_ICONS,
@@ -1002,7 +1002,7 @@ function SourceBar({
               params={{ slug: "ingest" }}
               target="_blank"
               title={S.library.ingestGuideTitle}
-              className="u-btn u-btn-ghost px-2 py-1"
+              className={buttonLike("ghost", "sm")}
             >
               <BookOpen size={12} />
             </Link>
@@ -1019,9 +1019,7 @@ function SourceBar({
             /* 激活态用反色（与弹窗类型 tab、图标选中同一语汇），一眼可辨 */
             <Button variant="secondary" size="sm"
               onClick={onToggleHistory}
-              className={`u-btn px-3 py-1 text-small flex items-center gap-2 ${
-                historyOpen ? "u-btn-primary" : "u-btn-ghost"
-              }`}
+              className={buttonLike(historyOpen ? "primary" : "ghost", "sm")}
             >
               <HistoryIcon size={11} />
               {S.library.syncHistory}
