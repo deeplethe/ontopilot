@@ -726,46 +726,10 @@ body::before {
   appearance: textfield;
 }
 
-/* ---- buttons (Vercel: primary = white on black) ----
-   基类管形状、动效、焦点、禁用；尺寸两档管高度与字号；变体只管颜色。
-   页面不写 px/py/text-*，只选尺寸与变体（ui/index.tsx 的 Button）。
-   `u-btn-ghost` 是迁移期的旧名（有边框，等于 secondary）；迁完删掉，
-   `u-btn-quiet` 那时改回 ghost 这个名字 */
-.u-btn:focus-visible,
-.btn-primary:focus-visible,
-.btn-ghost:focus-visible {
-  outline: 2px solid var(--u-ring);
-  outline-offset: 2px;
-}
-.u-btn:disabled,
-.btn-primary:disabled,
-.btn-ghost:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-/* 只有图标的按钮：正方形，图标居中 */
-.u-btn-primary:hover:not(:disabled),
-.btn-primary:hover:not(:disabled) {
-  background: var(--u-text);
-  border-color: var(--u-text);
-}
-.u-btn-secondary:hover:not(:disabled),
-.u-btn-ghost:hover:not(:disabled),
-.btn-ghost:hover:not(:disabled) {
-  background: var(--u-surface-2);
-  color: var(--u-text);
-  border-color: rgba(var(--u-ink-rgb), 0.22);
-}
-/* 无边框：行内动作、图标按钮、工具条 */
-.u-btn-quiet:hover:not(:disabled) {
-  background: var(--u-surface-2);
-  color: var(--u-text);
-}
-/* 危险实底：深红配白字（浅玫瑰做底会发粉，见 --u-danger-solid） */
-.u-btn-danger:hover:not(:disabled) {
-  background: var(--u-danger-solid-hover);
-  border-color: var(--u-danger-solid-hover);
-}
+/* ---- buttons ----
+   按钮的样子在 `@/components/ui/button`（shadcn，radix base / nova preset），
+   语义壳在 `ui/index.tsx`。这里从前有一百多行手写的按钮类，随迁移删了；
+   留这一句是给按图索骥的人看的：**别在这个文件里再写按钮**。 */
 
 /* 行里的小柄（树的折叠箭头）：不是按钮——按钮里不能再嵌按钮——但要有 hover */
 .u-toggle {
