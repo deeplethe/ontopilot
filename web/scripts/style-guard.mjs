@@ -143,7 +143,14 @@ const RULES = [
   },
 ];
 
+/** shadcn CLI 生成的那一层不受检：它是**供应层**，按 Tailwind 原生刻度写
+ *  （text-sm / rounded-md / bg-primary），与这套规矩不是一套词。改它要么去
+ *  registry 改，要么重新 `shadcn add` 覆盖，手写规矩管不到也不该管。
+ *  规矩仍然管页面：页面怎么用这些组件、有没有自己拼控件，那是这里的事。 */
+const VENDOR = path.join("src", "components", "ui");
+
 function walk(dir, out = []) {
+  if (dir.includes(VENDOR)) return out;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, out);
