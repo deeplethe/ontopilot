@@ -2,7 +2,8 @@
    规矩在 web/DESIGN.md，守卫在 scripts/style-guard.mjs：字号五档、间距六档、
    圆角四档、颜色只认令牌、状态（hover/focus/disabled/动效）只在这里定。
    Dialog / DangerConfirm / Tooltip / Table / Field 各在自己的文件里，从这里再导出。 */
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState,
+  useId,} from "react";
 import type {
   ButtonHTMLAttributes,
   CSSProperties,
@@ -23,6 +24,11 @@ import {
 import { S } from "../i18n";
 import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
 import { badgeVariants } from "@/components/ui/badge";
+import { Checkbox as ShadCheckbox } from "@/components/ui/checkbox";
+import {
+  RadioGroup as ShadRadioGroup,
+  RadioGroupItem as ShadRadioGroupItem,
+} from "@/components/ui/radio-group";
 import { Input as ShadInput } from "@/components/ui/input";
 import { Textarea as ShadTextarea } from "@/components/ui/textarea";
 // 表格原件在 ./table 里，下面 re-export；`SkeletonTableRows` 自己也要用，
@@ -1500,19 +1506,37 @@ export function Checkbox({
   label,
   hint,
   className,
-  ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  checked,
+  onChange,
+  disabled,
+  id,
+}: {
   label: ReactNode;
   hint?: ReactNode;
+  className?: string;
+  checked?: boolean;
+  /** **收的是布尔，不是事件**：底下已经不是原生 input 了（Radix 的按钮 +
+   *  一个隐藏的输入），事件对象里的 `target.checked` 在这里没有意义 */
+  onChange?: (checked: boolean) => void;
+  disabled?: boolean;
+  id?: string;
 }) {
+  const auto = useId();
+  const inputId = id ?? auto;
   return (
-    <label className={cn("flex cursor-pointer items-start gap-2", className)}>
-      <input type="checkbox" className="mt-1 accent-accent" {...props} />
-      <span className="min-w-0">
+    <div className={cn("flex items-start gap-2", className)}>
+      <ShadCheckbox
+        id={inputId}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(v) => onChange?.(v === true)}
+        className="mt-0.5"
+      />
+      <label htmlFor={inputId} className="min-w-0 cursor-pointer">
         <span className="block text-body text-ink">{label}</span>
         {hint && <span className="block text-fine text-ink-2">{hint}</span>}
-      </span>
-    </label>
+      </label>
+    </div>
   );
 }
 
@@ -1641,22 +1665,42 @@ export const Pill = forwardRef<
 });
 
 /* ---------- Radio ---------- */
-export function Radio({
-  label,
+/* ---------- RadioGroup（一组互斥的选项） ----------
+   **一组是一个组件，不是一堆各自为政的 Radio**：方向键在组内移动、焦点只落
+   在选中的那一个上、读屏器把它们念成一组——这些是"组"的性质，Radix 的
+   RadioGroup 管着；从前每个 Radio 都是一个裸的 input，靠同名 `name` 凑成一组，
+   键盘那部分只能听浏览器的默认行为。
+   `children` 是选中之后跟在标签后面的东西（比如一个日期框）。 */
+export function RadioGroup<T extends string>({
+  value,
+  onChange,
+  options,
   className,
-  children,
-  ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
-  label: ReactNode;
-  /** 选中后跟在标签后面的东西（比如一个日期框） */
-  children?: ReactNode;
+  name,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: ReactNode; children?: ReactNode }[];
+  className?: string;
+  name?: string;
 }) {
   return (
-    <label className={cn("flex items-center gap-2 text-small text-ink-2", className)}>
-      <input type="radio" className="accent-accent" {...props} />
-      {label}
-      {children}
-    </label>
+    <ShadRadioGroup
+      value={value}
+      onValueChange={(v) => onChange(v as T)}
+      name={name}
+      className={cn("gap-2", className)}
+    >
+      {options.map((o) => (
+        <div key={o.value} className="flex items-center gap-2 text-small text-ink-2">
+          <ShadRadioGroupItem value={o.value} id={`${name ?? "radio"}-${o.value}`} />
+          <label htmlFor={`${name ?? "radio"}-${o.value}`} className="cursor-pointer">
+            {o.label}
+          </label>
+          {value === o.value && o.children}
+        </div>
+      ))}
+    </ShadRadioGroup>
   );
 }
 

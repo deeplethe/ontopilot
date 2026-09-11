@@ -258,7 +258,7 @@ function NewKbModal({
         <Checkbox
           className="mb-4"
           checked={restricted}
-          onChange={(e) => setRestricted(e.target.checked)}
+          onChange={(v) => setRestricted(v)}
           label={S.settings.kbs.visRestricted}
         />
 

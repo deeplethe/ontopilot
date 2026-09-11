@@ -20,7 +20,7 @@ import {
   Loading,
   MultiSearchSelect,
   PageHeader,
-  Radio,
+  RadioGroup,
   Table,
   TBody,
   Td,
@@ -346,17 +346,16 @@ export function Tokens() {
               <div className="grid grid-cols-2 gap-4">
                 {/* 二选一，且两个选项都要读得到——单选按钮，不是一排按钮 */}
                 <Field label={S.account.tokenScope} hint={S.account.scopeHint}>
-                  <div className="flex h-8 items-center gap-4">
-                    {(["read", "write"] as const).map((s) => (
-                      <Radio
-                        key={s}
-                        name="token-scope"
-                        checked={scope === s}
-                        onChange={() => setScope(s)}
-                        label={s === "read" ? S.account.scopeRead : S.account.scopeWrite}
-                      />
-                    ))}
-                  </div>
+                  <RadioGroup
+                    name="token-scope"
+                    className="flex h-8 flex-row items-center gap-4"
+                    value={scope}
+                    onChange={(v) => setScope(v)}
+                    options={[
+                      { value: "read" as const, label: S.account.scopeRead },
+                      { value: "write" as const, label: S.account.scopeWrite },
+                    ]}
+                  />
                 </Field>
                 <Field label={S.account.tokenExpires}>
                   <Dropdown

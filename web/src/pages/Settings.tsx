@@ -187,7 +187,7 @@ function DeploymentAdmin() {
         <Checkbox
           checked={open}
           disabled={dep.isPending || save.isPending}
-          onChange={(e) => save.mutate({ open: e.target.checked })}
+          onChange={(v) => save.mutate({ open: v })}
           label={S.settings.deployment.openReg}
           hint={S.settings.deployment.openRegHint}
         />

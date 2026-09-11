@@ -1812,7 +1812,7 @@ function SourceModal({
               <Checkbox
                 className="mb-4"
                 checked={includePrs}
-                onChange={(e) => setIncludePrs(e.target.checked)}
+                onChange={(v) => setIncludePrs(v)}
                 label={S.library.includePullRequests}
               />
             </>
@@ -2035,7 +2035,7 @@ function SourceEditModal({
               <Checkbox
                 className="mb-4"
                 checked={includePrs}
-                onChange={(e) => setIncludePrs(e.target.checked)}
+                onChange={(v) => setIncludePrs(v)}
                 label={S.library.includePullRequests}
               />
             </>

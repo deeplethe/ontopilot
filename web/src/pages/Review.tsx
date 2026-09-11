@@ -141,7 +141,7 @@ function DuplicateCard({
           className="shrink-0 self-start"
           checked={picked}
           disabled={busy || locked}
-          onChange={(e) => onPick(e.target.checked)}
+          onChange={(v) => onPick(v)}
           label={<span className="sr-only">{S.review.pickPair}</span>}
         />
         <SideCard side={item.left} />
@@ -1516,9 +1516,9 @@ export function Review() {
                         selectable().length > 0 &&
                         selectable().every((d) => picked.has(d.id))
                       }
-                      onChange={(e) =>
+                      onChange={(v) =>
                         setPicked(
-                          e.target.checked
+                          v
                             ? new Set(selectable().map((d) => d.id))
                             : new Set(),
                         )

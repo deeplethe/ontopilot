@@ -212,9 +212,9 @@ export function Mappings() {
               <Checkbox
                 checked={selectable.every((m) => picked.has(m.id))}
                 disabled={batch.isPending || individualPending}
-                onChange={(e) =>
+                onChange={(v) =>
                   setPicked(
-                    e.target.checked
+                    v
                       ? new Set(selectable.map((m) => m.id))
                       : new Set(),
                   )
@@ -354,7 +354,7 @@ function MappingRow({
             className="shrink-0 self-center"
             checked={picked}
             disabled={decide.isPending || batchPending}
-            onChange={(e) => onPick(e.target.checked)}
+            onChange={(v) => onPick(v)}
             label={
               <span className="sr-only">
                 {S.mapping.selectMapping(m.concept_name, m.source)}
@@ -498,7 +498,7 @@ function EditForm({
       {field(S.mapping.fieldSummary, summary, setSummary)}
       <Checkbox
         checked={derived}
-        onChange={(e) => setDerived(e.target.checked)}
+        onChange={(v) => setDerived(v)}
         label={S.mapping.fieldDerived}
       />
       <span className="hidden">
