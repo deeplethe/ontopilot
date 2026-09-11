@@ -2407,7 +2407,8 @@ async fn derived_one(
     derived_id: Uuid,
 ) -> AppResult<Option<DerivedFactView>> {
     Ok(sqlx::query_as(
-        "SELECT d.id,
+        "SELECT d.id, d.predicate_id, d.object_value, d.rule_id, d.attribute_rule_id,
+                d.invalidated_at, d.valid_from_precision, d.valid_to_precision,
                 d.subject_id, s.canonical_name AS subject,
                 d.object_id,
                 COALESCE(o.canonical_name, ct.label,
@@ -2470,7 +2471,8 @@ pub async fn derived_for_entity(
     //
     // 宾语的显示文本因此有三个来源：实体名、归类结论里的类标签、属性结论的值。
     Ok(sqlx::query_as(&format!(
-        "SELECT d.id,
+        "SELECT d.id, d.predicate_id, d.object_value, d.rule_id, d.attribute_rule_id,
+                d.invalidated_at, d.valid_from_precision, d.valid_to_precision,
                 d.subject_id, s.canonical_name AS subject,
                 d.object_id,
                 COALESCE(o.canonical_name,

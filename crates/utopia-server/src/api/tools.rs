@@ -81,8 +81,34 @@ pub struct ToolSink {
     pub resolved: Vec<serde_json::Value>,
 }
 
-/// 一次工具调用的产出：给模型的文本 + 给界面的一步。
-pub type ToolResult = (String, serde_json::Value);
+/// 一次调用的文本、界面步骤与可选机器读取结果；不放进跨调用累计的 ToolSink。
+pub struct ToolResult {
+    pub text: String,
+    pub step: serde_json::Value,
+    pub structured_content: Option<serde_json::Value>,
+    pub is_error: bool,
+}
+
+impl ToolResult {
+    pub fn new(text: String, step: serde_json::Value) -> Self {
+        Self {
+            text,
+            step,
+            structured_content: None,
+            is_error: false,
+        }
+    }
+
+    pub fn structured(mut self, content: serde_json::Value) -> Self {
+        self.structured_content = Some(content);
+        self
+    }
+
+    pub fn error(mut self) -> Self {
+        self.is_error = true;
+        self
+    }
+}
 
 /// 按名字派发。**未知工具不是错误**——模型偶尔会编一个名字出来，
 /// 告诉它没有这个工具，它下一轮就换一个，比中断整场对话好。
@@ -109,7 +135,7 @@ pub async fn dispatch(
         "rule_matches" => rule_matches(ctx, args).await,
         "query_data" if !ctx.mounted_sources.is_empty() => query_data(ctx, args).await,
         "remember" if ctx.can_write => remember(ctx, args).await,
-        other => (
+        other => ToolResult::new(
             format!("Unknown tool: {other}"),
             json!({ "kind": "tool", "label": other, "detail": "unknown" }),
         ),
@@ -140,7 +166,7 @@ pub async fn search_chunks(
     // 记录轴（0019 / #347）：只搜那一刻库里有的东西。全文那一路仍是"现在"，
     // 命中不会错但会缺——retrieval.rs 的头上写了
     let as_of = args["as_of"].as_str().and_then(parse_when);
-    let chunks = retrieval::hybrid(
+    let chunks = match retrieval::hybrid(
         ctx.state,
         ctx.kb_id,
         ctx.workspace_id,
@@ -149,7 +175,17 @@ pub async fn search_chunks(
         as_of,
     )
     .await
-    .unwrap_or_default();
+    {
+        Ok(chunks) => chunks,
+        Err(e) => {
+            tracing::warn!(error = %e, "MCP chunk search failed");
+            return ToolResult::new(
+                "Could not search the documents.".into(),
+                json!({"kind": "search", "label": q, "detail": "failed"}),
+            )
+            .error();
+        }
+    };
     let mut lines = Vec::new();
     for c in &chunks {
         let n = cite(sink, c.id.to_string(), |n| source_json(n, c));
@@ -167,10 +203,20 @@ pub async fn search_chunks(
     } else {
         lines.join("\n\n")
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "search", "label": q, "detail": format!("{} sources", chunks.len()) }),
     )
+    .structured(json!({
+        "kb_id": ctx.kb_id, "as_of": as_of,
+        "limit": SEARCH_TOP_K, "limit_reached": chunks.len() == SEARCH_TOP_K,
+        "chunks": chunks.iter().map(|c| json!({
+            "chunk_id": c.id, "document_id": c.document_id,
+            "seq": c.seq, "filename": c.filename,
+            "text": truncate(&c.text, TOOL_CHUNK_CHARS),
+            "truncated": c.text.trim().chars().count() > TOOL_CHUNK_CHARS,
+        })).collect::<Vec<_>>()
+    }))
 }
 
 /// 一篇文档的全文。**search_chunks 够不到的东西全在这里**：它只回前六条命中、
@@ -182,7 +228,7 @@ pub async fn get_document(
     args: &serde_json::Value,
 ) -> ToolResult {
     let refuse = |detail: &str| {
-        (
+        ToolResult::new(
             "No document with that id in this knowledge base.".to_string(),
             json!({ "kind": "document", "label": "?", "detail": detail }),
         )
@@ -247,7 +293,7 @@ pub async fn get_document(
     } else {
         format!("{header}\n\n{}", lines.join("\n\n"))
     };
-    (
+    ToolResult::new(
         text,
         json!({
             "kind": "document", "label": doc.filename,
@@ -290,7 +336,7 @@ pub async fn search_docs(
     } else {
         lines.join("\n\n")
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "docs", "label": q, "detail": format!("{} sections", hits.len()) }),
     )
@@ -300,13 +346,13 @@ pub async fn search_docs(
 /// 而不是猜一个听起来合理的门槛。
 pub async fn list_rules(ctx: &ToolCtx<'_>) -> ToolResult {
     let Ok(rules) = utopia_store::business_rules::list(&ctx.state.pool, ctx.kb_id).await else {
-        return (
+        return ToolResult::new(
             "Could not read the rules.".to_string(),
             json!({ "kind": "tool", "label": "list_rules", "detail": "failed" }),
         );
     };
     if rules.is_empty() {
-        return (
+        return ToolResult::new(
             "This base has no business rules.".to_string(),
             json!({ "kind": "tool", "label": "list_rules", "detail": "none" }),
         );
@@ -356,7 +402,7 @@ pub async fn list_rules(ctx: &ToolCtx<'_>) -> ToolResult {
         .collect::<Vec<_>>()
         .join("\n");
     let n = rules.len();
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "tool", "label": "list_rules", "detail": format!("{n} rules") }),
     )
@@ -368,7 +414,7 @@ pub async fn rule_matches(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
         .as_str()
         .and_then(|s| s.parse::<Uuid>().ok())
     else {
-        return (
+        return ToolResult::new(
             "Invalid rule_id (expected the uuid returned by list_rules).".to_string(),
             json!({ "kind": "tool", "label": "rule_matches", "detail": "invalid id" }),
         );
@@ -377,13 +423,13 @@ pub async fn rule_matches(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
     let Ok((rows, total)) =
         utopia_store::business_rules::matches(&ctx.state.pool, ctx.kb_id, rule_id, limit, 0).await
     else {
-        return (
+        return ToolResult::new(
             "Could not read what that rule marks.".to_string(),
             json!({ "kind": "tool", "label": "rule_matches", "detail": "failed" }),
         );
     };
     if rows.is_empty() {
-        return (
+        return ToolResult::new(
             "That rule marks nothing right now.".to_string(),
             json!({ "kind": "tool", "label": "rule_matches", "detail": "0" }),
         );
@@ -419,7 +465,7 @@ pub async fn rule_matches(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
     } else {
         text
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "tool", "label": "rule_matches", "detail": format!("{total} entities") }),
     )
@@ -437,10 +483,11 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
         .and_then(utopia_extract::parse_time)
         .map(|(t, p)| period_last_day(t.date_naive(), p));
     let Some((since, until, window)) = changes_window(since, until, chrono::Utc::now()) else {
-        return (
+        return ToolResult::new(
             "Invalid or missing `since` (expected YYYY-MM-DD).".to_string(),
             json!({ "kind": "changes", "label": "?", "detail": "invalid since" }),
-        );
+        )
+        .error();
     };
     let entity = args["entity_id"]
         .as_str()
@@ -451,7 +498,7 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
             .collect()
     });
     let kinds = kinds.filter(|k: &Vec<String>| !k.is_empty());
-    let rows = utopia_store::graph::graph_changes(
+    let rows = match utopia_store::graph::graph_changes(
         &ctx.state.pool,
         ctx.kb_id,
         since,
@@ -461,7 +508,17 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
         CHANGES_LIMIT,
     )
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "Graph changes lookup failed");
+            return ToolResult::new(
+                "Could not read the graph changes.".into(),
+                json!({"kind": "changes", "label": window, "detail": "failed"}),
+            )
+            .error();
+        }
+    };
     let text = if rows.is_empty() {
         format!("No recorded changes in {window}.")
     } else {
@@ -472,10 +529,24 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
     } else {
         format!("{} changes", rows.len())
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "changes", "label": window, "detail": detail }),
     )
+    .structured(json!({
+        "kb_id": ctx.kb_id, "since": since, "until": until,
+        "limit": CHANGES_LIMIT, "limit_reached": rows.len() as i64 == CHANGES_LIMIT,
+        "changes": rows.iter().map(|r| json!({
+            "fact_id": r.fact_id, "at": r.at, "kind": r.kind,
+            "subject_id": r.subject_id, "subject_name": r.subject_name,
+            "predicate_label": r.predicate_label, "object_name": r.object_name,
+            "object_value": r.object_value, "confidence": r.confidence,
+            "valid_from": r.valid_from, "valid_to": r.valid_to,
+            "valid_from_precision": r.valid_from_precision,
+            "valid_to_precision": r.valid_to_precision,
+            "document_id": r.document_id, "filename": r.filename, "quote": r.quote,
+        })).collect::<Vec<_>>()
+    }))
 }
 
 pub async fn query_data(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult {
@@ -507,7 +578,7 @@ pub async fn query_data(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResu
     } else {
         purpose.to_string()
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "query", "label": ds_name, "detail": detail }),
     )
@@ -537,7 +608,7 @@ pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult
         }
     };
     if text.is_empty() {
-        return (
+        return ToolResult::new(
             "remember requires non-empty text.".to_string(),
             json!({ "kind": "tool", "label": "remember", "detail": "empty" }),
         );
@@ -559,7 +630,7 @@ pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult
             )
             .await;
             ctx.state.emit_document(ctx.kb_id, doc_id);
-            (
+            ToolResult::new(
                 format!(
                     "Recorded the sentence (effective {}): {text}\n\
                      Facts extracted from it will be shown to the user for confirmation \
@@ -576,7 +647,7 @@ pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult
                 }),
             )
         }
-        Err(e) => (
+        Err(e) => ToolResult::new(
             format!("Failed to record: {e}"),
             json!({ "kind": "tool", "label": "remember", "detail": "failed" }),
         ),
@@ -1057,6 +1128,10 @@ mod tests {
 
     fn attribute_fact(value: serde_json::Value) -> EntityFact {
         EntityFact {
+            recorded_at: chrono::Utc::now(),
+            invalidated_at: None,
+            supersedes: None,
+            document_ids: vec![],
             id: Uuid::nil(),
             direction: "out".into(),
             predicate_key: Some("salary".into()),

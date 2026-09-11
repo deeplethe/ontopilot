@@ -50,6 +50,89 @@ Three methods are served:
 
 The two time axes matter here. `at` reads **world time** (when something was true); `as_of` reads **record time** (what Utopia held at that moment, before it revised it), and `changes` lists what moved on that axis in a window. They are separate parameters on purpose: folded into one they would answer "what happened in March" with "what we learned in March", and both look plausible.
 
+## The external read contract
+
+**RDF export is the supported machine-readable read contract.**
+`GET /api/v1/kbs/{kb_id}/export?format=turtle|jsonld` streams the whole base,
+including retracted and corrected assertions, both time axes, quoted evidence,
+source documents, and derivations linked to their rules and premise statements.
+It uses RDF reification, PROV-O and schema.org. This mapping is the compatibility
+boundary: a breaking change needs a decision record explaining why.
+
+Entities, assertions, derivations and documents have UUID-based IRIs:
+`urn:utopia:kb:{kb_id}:entity:{id}`, `…:fact:{id}`, `…:derived:{id}` and
+`…:document:{id}`. The same stored object keeps its identity across exports;
+rebuilding a graph is not an identity-preserving operation. `?base=https://example.org/`
+instead mints `https://example.org/kb/{kb_id}/{kind}/{id}`. Keep the same base when
+joining exports. Imported classes and relations retain their original IRIs.
+
+MCP remains the agent-facing surface. The structured results below use the same
+UUIDs, so an integration can join a selected result to the exported ledger.
+Ordinary `/api/v1` UI response shapes are **not** a compatibility promise: they
+have no OpenAPI contract or deprecation policy. The export route above is the
+explicit exception, not a promise covering every route with that prefix.
+
+The export does not yet include conflict/review state ([#564](https://github.com/deeplethe/utopia/issues/564))
+or the chunk identity behind a quote. Per-entity export and a SPARQL endpoint are
+also not implemented. Neither MCP nor the export promises historical proof
+snapshots: `as_of` selects the derivations held then, but proofs use the current
+premise links. Source-document links are the stored provenance, not a separately
+versioned snapshot of the evidence set.
+
+## Structured results alongside the text
+
+`find_entities`, `search_chunks`, `entity_facts` and `changes` return a JSON object
+in `result.structuredContent`, beside the unchanged human-readable `content`.
+No extra argument or protocol upgrade is needed. Other tools remain text-only.
+Read the JSON field directly; the text is presentation, not a format to parse.
+
+Every structured result includes `kb_id`. IDs are opaque UUID strings, timestamps
+are RFC3339 with fractional seconds preserved, unknown optional values are `null`,
+and empty collections are `[]`. Clients should tolerate additional fields.
+Failures have `isError: true` and no structured success payload; an empty result
+is a successful read, not an error.
+
+| Tool | Structured fields |
+|---|---|
+| `find_entities` | `entities[]`, in the same ranked order as the text: `id`, `name`, `type_key`, `type_label`, `disambiguator`, `fact_count`. This is a candidate list, not an exhaustive entity export |
+| `search_chunks` | `as_of`, `limit`, `limit_reached`, `chunks[]`. Each chunk has `chunk_id`, `document_id`, zero-based `seq`, `filename`, `text`, `truncated`. The text uses the same 800-character cutoff as the prose |
+| `entity_facts` | `entity` (`id`, `name`, `type_key`, `type_label`), effective `at`/`as_of`/`before`, `total_facts`, `matched_facts`, `limit`, `truncated`, `facts[]`, `derived_facts[]` |
+| `changes` | Effective `since` (inclusive) and `until` (exclusive), `limit`, `limit_reached`, `changes[]`. Events carry `fact_id`, `at`, `kind`, `subject_id`, `subject_name`, `predicate_label`, `object_name`, `object_value`, `confidence`, `valid_from`, `valid_to`, both validity precisions, `document_id`, `filename`, `quote` |
+
+An asserted `facts[]` entry contains `id`, `direction`, `predicate_key`,
+`predicate_label`, `inferred`, `temporal`, `other_id`, `other_name`, `object_value`,
+`confidence`, `valid_from`, `valid_to`, `valid_from_precision`, `valid_to_precision`,
+`holds_from`, `holds_to`, `recorded_at`, `invalidated_at`, `supersedes`, and
+deduplicated `document_ids`. `direction=out` means the requested entity is the
+subject; `in` means it is the object. `object_value` retains the JSON value and
+unit rather than formatting them into a string. `inferred` describes an
+unaccepted predicate name; it does **not** mean the fact is derived.
+`qualifiers[]` preserves attributes attached to the relation itself: each has
+`qualifier_type_id`, `key`, `label`, raw `value`, `entity_id`, and `entity_name`.
+
+A `derived_facts[]` entry contains `id`, `subject_id`, `subject`, `predicate_id`,
+`predicate`, `object_id`, `object`, raw `object_value`, `rule`, `rule_name`,
+`rule_id`, `attribute_rule_id`, `confidence`, `valid_from`, `valid_to`, both
+validity precisions, `derived_at`, and `invalidated_at`. Rule IDs distinguish
+axiom rules from business rules. The derivation ID joins to `…:derived:{id}` in
+RDF to follow its proof; this result does not expand the proof tree.
+
+`valid_*` describes stated world time; `holds_*` is the interpreted interval used
+for filtering assertions. `recorded_at` (or `derived_at`) and `invalidated_at`
+describe the stored record-time lifetime. A later invalidation can be present
+even when reading a row held at an earlier `as_of`. `before=T` takes precedence
+over `as_of` and reports the effective cutoff `T − 1µs`. A `changes[].at` can be
+passed to `before` without losing precision. Events have no separate event UUID;
+`fact_id` identifies the affected assertion, and can appear in multiple events.
+
+The structure follows the current text selection: assertion filters and the
+default 80-fact limit (maximum 300) apply to `facts[]`; derived conclusions only
+use `at`/`as_of`/`before` and are listed separately without that limit. `truncated`
+reports omitted matching assertions. Search returns at most six chunks and
+changes at most 40 events; `limit_reached` means the cap was reached, not that
+another result is known to exist. Narrow the query/window to inspect more.
+Historical full-text search retains the recall limitation described above.
+
 ## What an agent records waits for a nod
 
 `remember` stores the sentence immediately — searchable at once, attributed to the token's owner. The facts extracted from it do **not** enter the graph. They queue in Review as proposals, each shown beneath the sentence it came from, and a person confirms or rejects them one at a time.

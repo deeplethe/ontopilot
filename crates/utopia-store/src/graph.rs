@@ -1016,7 +1016,10 @@ pub async fn entity_detail(
     .ok_or(AppError::NotFound)?;
 
     let mut facts: Vec<EntityFact> = sqlx::query_as(&format!(
-        "SELECT f.id,
+        "SELECT f.id, f.recorded_at, f.invalidated_at, f.supersedes,
+                ARRAY(SELECT DISTINCT fe.document_id FROM fact_evidence fe
+                      WHERE fe.fact_id = f.id AND fe.document_id IS NOT NULL
+                      ORDER BY fe.document_id) AS document_ids,
                 CASE WHEN {subject} = $2 THEN 'out' ELSE 'in' END AS direction,
                 COALESCE(r.key, fact_surface_predicate(f.id)) AS predicate_key,
                 COALESCE(r.label, fact_surface_predicate(f.id)) AS predicate_label,
@@ -1992,6 +1995,32 @@ async fn adopt(
         )
         .bind(new_id)
         .bind(old_id)
+        .execute(&mut *tx)
+        .await?;
+        /* **边上的属性跟着搬**（0037）。谓词还没被采纳时金额就已经落在旧行上——
+        一句「NVIDIA invested $1.5 billion in SB Energy」在 schema.org 库里
+        `invested_in` 是未知说法，钱不能等到采纳那天才有地方放。旧行作废、
+        新行接上，属性照证据的样子整体复制；顺手在关系上补声明——
+        这些属性定义本来就在库里，缺的只是关系上的一条声明 */
+        sqlx::query(
+            "INSERT INTO fact_qualifiers (fact_id, qualifier_type_id, value, entity_id)
+             SELECT $1, qualifier_type_id, value, entity_id
+             FROM fact_qualifiers WHERE fact_id = $2
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(new_id)
+        .bind(old_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO relation_type_qualifiers (relation_type_id, qualifier_type_id)
+             SELECT $1, q.qualifier_type_id
+             FROM fact_qualifiers q JOIN relation_types r ON r.id = q.qualifier_type_id
+             WHERE q.fact_id = $2 AND r.kind = 'attribute' AND r.id <> $1
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(predicate_id)
+        .bind(new_id)
         .execute(&mut *tx)
         .await?;
         sqlx::query("UPDATE facts SET invalidated_at = now() WHERE id = $1")

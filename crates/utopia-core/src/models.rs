@@ -709,6 +709,10 @@ pub struct GraphEdge {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct EntityFact {
     pub id: Uuid,
+    pub recorded_at: DateTime<Utc>,
+    pub invalidated_at: Option<DateTime<Utc>>,
+    pub supersedes: Option<Uuid>,
+    pub document_ids: Vec<Uuid>,
     /// out = 该实体为主语；in = 为宾语
     pub direction: String,
     /// 本体没认下这条关系时回落到原文说法；两者都拿不出时为 None（更早的历史数据长这样）
@@ -1217,6 +1221,13 @@ pub struct OntologyDefect {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct DerivedFactView {
     pub id: Uuid,
+    pub predicate_id: Uuid,
+    pub object_value: Option<serde_json::Value>,
+    pub rule_id: Option<Uuid>,
+    pub attribute_rule_id: Option<Uuid>,
+    pub invalidated_at: Option<DateTime<Utc>>,
+    pub valid_from_precision: Option<String>,
+    pub valid_to_precision: Option<String>,
     pub subject_id: Uuid,
     pub subject: String,
     /// 字面值结论（业务规则的归类与属性）没有实体宾语（0021）

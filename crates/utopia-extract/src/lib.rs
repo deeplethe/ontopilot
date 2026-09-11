@@ -245,8 +245,7 @@ pub fn build_messages(
     let attr_rules = if attributes.is_empty() {
         String::new()
     } else {
-        "\n10. Attribute facts carry \"value\" (no \"object\"): number = plain number without \
-         thousands separators or unit symbols; date = \"YYYY[-MM[-DD]]\" (a zoned clock time only when the text gives one); bool = true/false; \
+        "\n10. Attribute facts carry \"value\" (no \"object\"): number = the figure **as the text writes it, magnitude and currency included** \n         (\"86亿元\", \"$5 billion\", \"4,300 人\") — never reduce it to a bare number, the server converts; date = \"YYYY[-MM[-DD]]\" (a zoned clock time only when the text gives one); bool = true/false; \
          text = a short string. Only attach an attribute to a subject of its listed class. \
          valid_from = when this value took effect, if the text says so."
             .to_string()
@@ -310,7 +309,7 @@ pub fn build_messages(
             units and all. **A stated figure left out is the loss that costs most**: the reader \
             came for those numbers, and no later step can recover one that was never written \
             down.\n\
-         8c. A listed relation followed by {{…}} can carry those **qualifiers on the edge**:             when the same sentence gives both the other entity and a figure for it — an             amount, a stake, a price, a share count — write the relation with its \"object\"             and put the figure in \"qualifiers\" keyed exactly as listed:             {{\"subject\":\"Vega Capital\",\"predicate\":\"invested_in\",\"object\":\"Northwind\",            \"qualifiers\":{{\"amount\":\"$5 billion\"}},…}}. Never invent a key that is not             listed for that relation, and never drop the figure to keep the edge — a             relation without its amount is half the sentence.
+         8c. A listed relation followed by {{…}} can carry those **qualifiers on the edge**:             when the same sentence gives both the other entity and a figure for it — an             amount, a stake, a price, a share count — write the relation with its \"object\"             and put the figure in \"qualifiers\" keyed exactly as listed, **as written in the text, currency and all** (\"€30 million\", \"15亿元人民币\", never a bare number):             {{\"subject\":\"Vega Capital\",\"predicate\":\"invested_in\",\"object\":\"Northwind\",            \"qualifiers\":{{\"amount\":\"$5 billion\"}},…}}. Never invent a key that is not             listed for that relation, and never drop the figure to keep the edge — a             relation without its amount is half the sentence. A relation you name after the text (rule 8) carries its figure the same way — keyed by the listed attribute that fits it, or by the plainest word for it (\"amount\", \"stake\", \"price\") when none does.
          8b. A **listed** relation also takes \"value\" when what the text gives is a \
             string rather than another entity — a job title, a designation, a ticker, a \
             model number. Never invent an entity for a string. And when the text introduces \
@@ -773,53 +772,7 @@ pub fn parse_adjudication(raw: &str) -> anyhow::Result<Vec<AdjudicationVerdict>>
 /// **单位照抄符号，不猜币种。** `$` 可能是美元、加元、澳元，`¥` 可能是日元或
 /// 人民币。猜出来的 "USD" 是一条没人负责的断言，而原文写的 `$` 是事实。
 pub fn parse_quantity(s: &str) -> Option<(f64, Option<String>)> {
-    let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let (body, percent) = match s.strip_suffix('%') {
-        Some(b) => (b.trim_end(), true),
-        None => (s, false),
-    };
-    let mut chars = body.chars();
-    let (body, currency) = match chars.next() {
-        Some(c) if matches!(c, '$' | '€' | '£' | '¥' | '₩' | '₹') => {
-            (chars.as_str().trim_start(), Some(c.to_string()))
-        }
-        _ => (body, None),
-    };
-    // `$5%` 不是一个量，是两个记号撞在一起
-    if percent && currency.is_some() {
-        return None;
-    }
-    let mut parts = body.split_whitespace();
-    let num = parts.next()?;
-    let scale = match parts.next() {
-        None => 1.0,
-        Some(w) => match w.to_ascii_lowercase().as_str() {
-            "thousand" => 1e3,
-            "million" => 1e6,
-            "billion" => 1e9,
-            "trillion" => 1e12,
-            _ => return None,
-        },
-    };
-    // 量级词后面还有词：那就不是纯量了
-    if parts.next().is_some() {
-        return None;
-    }
-    let cleaned: String = num.chars().filter(|c| !matches!(c, ',' | '_')).collect();
-    let n: f64 = cleaned.parse().ok()?;
-    let n = n * scale;
-    if !n.is_finite() {
-        return None;
-    }
-    let unit = if percent {
-        Some("%".to_string())
-    } else {
-        currency
-    };
-    Some((n, unit))
+    scan_quantity(s, true)
 }
 
 /// 开头是一个量、后面还挂着词的 → 那个量。`"1,250 people"` → (1250, "people")。
@@ -829,48 +782,157 @@ pub fn parse_quantity(s: &str) -> Option<(f64, Option<String>)> {
 /// 所以尾巴上有实词一律不认。而这里的调用方手上已经有一条声明了
 /// `datatype = number` 的属性——问的不再是「是不是数」，是「那个数是多少」，
 /// 判错的代价只是一个值不对，量级差着好几档。
-///
-/// 实测卡住的正是这一格：本体里有 `employeeCount (number)`、事实写着
-/// `employee_count → "1,250 people"`，词对得上、属性也在，只因为模型把单位
-/// 写进了值里就一直换不动，那条事实永远拿不到谓词。
 pub fn parse_leading_quantity(s: &str) -> Option<(f64, Option<String>)> {
+    scan_quantity(s, false)
+}
+
+/// 货币：符号、ISO 码、中英文单词，统一成符号。**只认这张表**，认不出的不猜。
+pub fn currency_unit(tok: &str) -> Option<&'static str> {
+    Some(
+        match tok.trim_matches(|c: char| c == ',' || c == '.' || c == ';') {
+            "$" | "USD" | "usd" | "US$" | "dollar" | "dollars" | "美元" => "$",
+            "€" | "EUR" | "eur" | "euro" | "euros" | "欧元" => "€",
+            "£" | "GBP" | "gbp" | "pound" | "pounds" | "英镑" => "£",
+            "¥" | "JPY" | "jpy" | "yen" | "日元" => "¥",
+            "CNY" | "cny" | "RMB" | "rmb" | "yuan" | "人民币" | "元" | "元人民币" | "人民币元" => {
+                "¥"
+            }
+            "HKD" | "hkd" | "HK$" | "港元" | "港币" => "HK$",
+            "₩" | "KRW" | "won" | "韩元" => "₩",
+            "₹" | "INR" | "rupee" | "rupees" | "卢比" => "₹",
+            _ => return None,
+        },
+    )
+}
+
+/// 量级词：英文全写，中文千/万/亿。**不认单字母**（`3M` 是一家公司）。
+fn magnitude(tok: &str) -> Option<f64> {
+    Some(match tok {
+        "thousand" | "千" => 1e3,
+        "万" => 1e4,
+        "million" | "百万" => 1e6,
+        "千万" => 1e7,
+        "亿" => 1e8,
+        "billion" | "十亿" => 1e9,
+        "trillion" | "万亿" => 1e12,
+        _ => return None,
+    })
+}
+
+/// 把 `2亿美元`、`15亿元人民币`、`€30 million`、`30 million euros`、`USD 30m`（不认 m）
+/// 这类写法拆成 [前缀货币] 数字 [量级] [后缀货币/单位] [其余]。
+/// `strict` = 整体必须就是一个量：其余部分非空就不认。
+fn scan_quantity(s: &str, strict: bool) -> Option<(f64, Option<String>)> {
     let s = s.trim();
-    // 整体就是一个量的先按严的那套解——`$5 billion` 的单位是 `$` 不是 `billion`
-    if let Some(hit) = parse_quantity(s) {
-        return Some(hit);
+    if s.is_empty() {
+        return None;
     }
-    let mut parts = s.split_whitespace();
-    let head = parts.next()?;
-    // 数字与紧跟着的百分号／单位可能不分家：`42%`、`8GW`
-    let split = head
+    let (body, percent) = match s.strip_suffix('%') {
+        Some(b) => (b.trim_end(), true),
+        None => (s, false),
+    };
+    // 1. 前缀货币：符号紧贴，或 ISO 码/单词后跟空格
+    let mut rest = body;
+    let mut currency: Option<&'static str> = None;
+    if let Some(c) = rest.chars().next() {
+        if let Some(u) = currency_unit(&c.to_string()) {
+            currency = Some(u);
+            rest = rest[c.len_utf8()..].trim_start();
+        }
+    }
+    if currency.is_none() {
+        if let Some((head, tail)) = rest.split_once(char::is_whitespace) {
+            if let Some(u) = currency_unit(head) {
+                currency = Some(u);
+                rest = tail.trim_start();
+            }
+        }
+    }
+    // 2. 数字：前导的 [-+0-9.,_]
+    let num_end = rest
         .char_indices()
         .find(|(_, c)| !matches!(c, '0'..='9' | '.' | ',' | '_' | '-' | '+'))
         .map(|(i, _)| i)
-        .unwrap_or(head.len());
-    let (num, glued) = head.split_at(split);
+        .unwrap_or(rest.len());
+    let (num, after) = rest.split_at(num_end);
     let cleaned: String = num.chars().filter(|c| !matches!(c, ',' | '_')).collect();
-    let n: f64 = cleaned.parse().ok()?;
+    let mut n: f64 = cleaned.parse().ok()?;
+    // 3. 数字后面：紧贴或空格隔开的量级词、货币词，逐个吃；吃不动的就是「其余」
+    let mut tail = after.trim_start();
+    let mut unit: Option<String> = None;
+    let mut ate_magnitude = false;
+    loop {
+        if tail.is_empty() {
+            break;
+        }
+        // 取下一个记号：中文按字（量级/货币词最长两三个字），其它按空白分词
+        let (tok, next) = next_token(tail);
+        if !ate_magnitude {
+            if let Some(m) = magnitude(tok) {
+                n *= m;
+                ate_magnitude = true;
+                tail = next.trim_start();
+                continue;
+            }
+        }
+        if unit.is_none() && currency.is_none() {
+            if let Some(u) = currency_unit(tok) {
+                unit = Some(u.to_string());
+                tail = next.trim_start();
+                continue;
+            }
+        }
+        break;
+    }
+    if percent && (currency.is_some() || unit.is_some()) {
+        return None;
+    }
     if !n.is_finite() {
         return None;
     }
-    // 紧贴着的记号优先当单位（`42%` → `%`），否则取后面第一个词
-    let mut rest = parts;
-    let (scale, unit) = if glued.is_empty() {
-        match rest.next() {
-            None => (1.0, None),
-            Some(w) => match w.to_ascii_lowercase().as_str() {
-                "thousand" => (1e3, rest.next().map(str::to_string)),
-                "million" => (1e6, rest.next().map(str::to_string)),
-                "billion" => (1e9, rest.next().map(str::to_string)),
-                "trillion" => (1e12, rest.next().map(str::to_string)),
-                _ => (1.0, Some(w.to_string())),
-            },
-        }
+    // 9.2 × 1e8 在二进制浮点里是 919999999.9999999；乘过量级词的数本来就是整数，收回去
+    if ate_magnitude && (n - n.round()).abs() < 1e-6 * n.abs().max(1.0) {
+        n = n.round();
+    }
+    let unit = if percent {
+        Some("%".to_string())
     } else {
-        (1.0, Some(glued.to_string()))
+        currency.map(str::to_string).or(unit)
     };
-    let n = n * scale;
-    n.is_finite().then_some((n, unit))
+    if strict {
+        return tail.is_empty().then_some((n, unit));
+    }
+    // 宽松：其余部分的第一个词当单位（`1,250 people` → people），没有货币时才用
+    if unit.is_none() && !tail.is_empty() {
+        let (tok, _) = next_token(tail);
+        return Some((n, Some(tok.to_string())));
+    }
+    Some((n, unit))
+}
+
+/// 下一个记号：ASCII 按空白切；CJK 试最长三字、两字、一字里能认出的量级/货币词，
+/// 都认不出就取到下一个空白为止
+fn next_token(s: &str) -> (&str, &str) {
+    let first = s.chars().next().unwrap_or(' ');
+    if first.is_ascii() {
+        let end = s.find(char::is_whitespace).unwrap_or(s.len());
+        return (&s[..end], &s[end..]);
+    }
+    let idx: Vec<usize> = s
+        .char_indices()
+        .map(|(i, _)| i)
+        .chain(std::iter::once(s.len()))
+        .collect();
+    for len in [4usize, 3, 2, 1] {
+        if idx.len() > len {
+            let cand = &s[..idx[len]];
+            if magnitude(cand).is_some() || currency_unit(cand).is_some() {
+                return (cand, &s[idx[len]..]);
+            }
+        }
+    }
+    let end = s.find(char::is_whitespace).unwrap_or(s.len());
+    (&s[..end], &s[end..])
 }
 
 /// 属性值按 datatype 归一。失败返回 None——宁缺勿脏，调用方跳过并记日志。
@@ -1243,6 +1305,35 @@ mod tests {
         assert_eq!(parse_quantity("3.5 million"), Some((3.5e6, None)));
         assert_eq!(parse_quantity("35,000"), Some((35000.0, None)));
         assert_eq!(parse_quantity("  42 "), Some((42.0, None)));
+        // 币种：符号、ISO 码、中英文单词，统一成符号；量级：英文全写与中文千万亿
+        assert_eq!(
+            parse_quantity("EUR 30 million"),
+            Some((3e7, Some("€".into())))
+        );
+        assert_eq!(
+            parse_quantity("30 million euros"),
+            Some((3e7, Some("€".into())))
+        );
+        assert_eq!(
+            parse_quantity("USD 5 billion"),
+            Some((5e9, Some("$".into())))
+        );
+        assert_eq!(parse_quantity("2亿美元"), Some((2e8, Some("$".into()))));
+        assert_eq!(
+            parse_quantity("15亿元人民币"),
+            Some((1.5e9, Some("¥".into())))
+        );
+        assert_eq!(parse_quantity("3000万元"), Some((3e7, Some("¥".into()))));
+        assert_eq!(parse_quantity("1.5亿"), Some((1.5e8, None)));
+        // 乘过量级的数收成整数：9.2 亿不是 919999999.9999999
+        assert_eq!(
+            parse_quantity("9.2亿元"),
+            Some((920000000.0, Some("¥".into())))
+        );
+        assert_eq!(
+            parse_quantity("$2.5 billion"),
+            Some((2500000000.0, Some("$".into())))
+        );
 
         // 尾巴上还有实词：含义不再只是那个数，宁可当实体也不当量
         assert_eq!(parse_quantity("900 million weekly active users"), None);
@@ -1284,6 +1375,19 @@ mod tests {
             Some((5e9, Some("$".into())))
         );
         // 开头不是数就还是不认
+        // 币种在尾巴上也认；认不出的词才落到「单位是第一个词」
+        assert_eq!(
+            parse_leading_quantity("30 million euros in cash"),
+            Some((3e7, Some("€".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("15亿元人民币的投资"),
+            Some((1.5e9, Some("¥".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("30 million francs"),
+            Some((3e7, Some("francs".into())))
+        );
         assert_eq!(parse_leading_quantity("about ten"), None);
         assert_eq!(parse_leading_quantity(""), None);
 

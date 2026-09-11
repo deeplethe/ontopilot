@@ -1,0 +1,506 @@
+//! #550: read IDs through the actual authenticated MCP handler, against PostgreSQL.
+use super::*;
+use std::sync::Arc;
+use tools::{ToolCtx, ToolResult};
+
+const CORRECTION: &str = "2026-03-20T12:00:00.123456Z";
+
+struct Fixture {
+    state: AppState,
+    org: Uuid,
+    ws: Uuid,
+    kb: Uuid,
+    other_kb: Uuid,
+    subject: Uuid,
+    object: Uuid,
+    fact: Uuid,
+    corrected: Uuid,
+    attribute: Uuid,
+    derived: Uuid,
+    derived_value: Uuid,
+    document: Uuid,
+    chunk: Uuid,
+    token: String,
+    dir: std::path::PathBuf,
+}
+
+impl Fixture {
+    async fn new() -> anyhow::Result<Option<Self>> {
+        let Some(url) = utopia_store::test_db::url() else {
+            return Ok(None);
+        };
+        let pool = sqlx::PgPool::connect(&url).await?;
+        utopia_store::db::migrate(&pool).await?;
+        let dir = std::env::temp_dir().join(format!("utopia-mcp-{}", Uuid::now_v7()));
+        let search = Arc::new(utopia_search::SearchIndex::open(&dir.join("search"))?);
+        let config = utopia_core::config::AppConfig {
+            data_dir: dir.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let mut f = Self {
+            state: AppState::new(pool.clone(), &config, search, "test-only".into()),
+            org: Uuid::now_v7(),
+            ws: Uuid::now_v7(),
+            kb: Uuid::now_v7(),
+            other_kb: Uuid::now_v7(),
+            subject: Uuid::now_v7(),
+            object: Uuid::now_v7(),
+            fact: Uuid::now_v7(),
+            corrected: Uuid::now_v7(),
+            attribute: Uuid::now_v7(),
+            derived: Uuid::now_v7(),
+            derived_value: Uuid::now_v7(),
+            document: Uuid::now_v7(),
+            chunk: Uuid::now_v7(),
+            token: String::new(),
+            dir,
+        };
+        let (user, ty, relation, attr, rule, business, chunk2) = (
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+        );
+        // Interpolation is limited to locally generated UUIDs and the fixed timestamp.
+        sqlx::raw_sql(&format!(
+            r#"
+            INSERT INTO organizations(id,name) VALUES ('{org}','mcp-test');
+            INSERT INTO workspaces(id,org_id,name) VALUES ('{ws}','{org}','mcp-test');
+            INSERT INTO users(id,org_id,email,password_hash,display_name)
+                VALUES ('{user}','{org}','{user}@example.test','unused','MCP reader');
+            INSERT INTO knowledge_bases(id,workspace_id,name) VALUES
+                ('{kb}','{ws}','mcp-test'), ('{other_kb}','{ws}','other-base');
+            INSERT INTO kb_members(kb_id,user_id,role) VALUES ('{kb}','{user}','viewer');
+            INSERT INTO entity_types(id,kb_id,key,label) VALUES ('{ty}','{kb}','thing','Thing');
+            INSERT INTO relation_types(id,kb_id,key,label,kind,datatype) VALUES
+                ('{relation}','{kb}','works_for','works for','relation',NULL),
+                ('{attr}','{kb}','weight','weight','attribute','number');
+            INSERT INTO entities(id,kb_id,type_id,canonical_name,created_at) VALUES
+                ('{subject}','{kb}','{ty}','Alice','2026-01-01'),
+                ('{object}','{kb}','{ty}','Acme','2026-01-01');
+            INSERT INTO documents(id,kb_id,filename,sha256,created_at)
+                VALUES ('{document}','{kb}','orchard.md',repeat('0',64),'2026-01-01');
+            INSERT INTO chunks(id,kb_id,document_id,seq,text,created_at) VALUES
+                ('{chunk}','{kb}','{document}',0,repeat('orchard ',120),'2026-01-01'),
+                ('{chunk2}','{kb}','{document}',1,'Alice works for Acme.','2026-01-01');
+            INSERT INTO facts(id,kb_id,subject_id,predicate_id,object_id,valid_from,
+                valid_from_precision,recorded_at,invalidated_at) VALUES
+                ('{fact}','{kb}','{subject}','{relation}','{object}','2026-01-01',
+                 'day','2026-03-10','{correction}');
+            INSERT INTO facts(id,kb_id,subject_id,predicate_id,object_id,valid_from,
+                valid_from_precision,recorded_at,supersedes) VALUES
+                ('{corrected}','{kb}','{subject}','{relation}','{object}','2026-02-01',
+                 'day','{correction}','{fact}');
+            INSERT INTO facts(id,kb_id,subject_id,predicate_id,object_value,valid_from,
+                valid_from_precision,recorded_at) VALUES
+                ('{attribute}','{kb}','{subject}','{attr}','{{"value":7,"unit":"kg"}}',
+                 '2026-01-01','year','2026-03-10');
+            INSERT INTO fact_evidence(fact_id,chunk_id,document_id,doc_version,quote) VALUES
+                ('{fact}','{chunk}','{document}',1,'Alice works for Acme.'),
+                ('{corrected}','{chunk}','{document}',1,'Alice works for Acme.'),
+                ('{corrected}','{chunk2}','{document}',1,'Alice works for Acme.');
+            INSERT INTO fact_qualifiers(fact_id,qualifier_type_id,value)
+                VALUES ('{corrected}','{attr}','{{"value":3,"unit":"kg"}}');
+            INSERT INTO rules(id,kb_id,predicate_id,kind)
+                VALUES ('{rule}','{kb}','{relation}','symmetric');
+            INSERT INTO derived_facts(id,kb_id,subject_id,predicate_id,object_id,rule_id,
+                derived_at,invalidated_at,valid_from,valid_from_precision) VALUES
+                ('{derived}','{kb}','{object}','{relation}','{subject}','{rule}',
+                 '2026-03-15','2026-04-01','2026-01-01','day');
+            INSERT INTO fact_derivations(derived_fact_id,premise_fact_id,seq)
+                VALUES ('{derived}','{fact}',0);
+            INSERT INTO attribute_rules(id,kb_id,name,subject_type_id,conclusion,
+                conclude_predicate_id,conclude_value) VALUES
+                ('{business}','{kb}','Weight rule','{ty}','attribute','{attr}',
+                 '{{"value":8,"unit":"kg"}}');
+            INSERT INTO derived_facts(id,kb_id,subject_id,predicate_id,object_value,
+                attribute_rule_id,derived_at,valid_from,valid_from_precision) VALUES
+                ('{derived_value}','{kb}','{subject}','{attr}','{{"value":8,"unit":"kg"}}',
+                 '{business}','2026-03-15','2026-01-01','day');
+            INSERT INTO fact_derivations(derived_fact_id,premise_fact_id,seq)
+                VALUES ('{derived_value}','{attribute}',0);
+        "#,
+            org = f.org,
+            ws = f.ws,
+            kb = f.kb,
+            other_kb = f.other_kb,
+            subject = f.subject,
+            object = f.object,
+            document = f.document,
+            chunk = f.chunk,
+            fact = f.fact,
+            corrected = f.corrected,
+            attribute = f.attribute,
+            derived = f.derived,
+            derived_value = f.derived_value,
+            correction = CORRECTION
+        ))
+        .execute(&pool)
+        .await?;
+        f.token = utopia_store::tokens::issue(&pool, user, "MCP test", "read", Some(&[f.kb]), None)
+            .await?
+            .1;
+        f.state.search.reindex_document(
+            &f.kb.to_string(),
+            &f.document.to_string(),
+            &[(f.chunk.to_string(), "orchard ".repeat(120))],
+        )?;
+        Ok(Some(f))
+    }
+
+    async fn request(
+        &self,
+        kb: Uuid,
+        method: &str,
+        params: Value,
+    ) -> crate::error::ApiResult<Json<Value>> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            format!("Bearer {}", self.token).parse().unwrap(),
+        );
+        handle(
+            State(self.state.clone()),
+            Path(kb),
+            headers,
+            Json(json!({"jsonrpc":"2.0","id":1,"method":method,"params":params})),
+        )
+        .await
+    }
+
+    async fn call(&self, name: &str, args: Value) -> anyhow::Result<Value> {
+        let response = self
+            .request(self.kb, "tools/call", json!({"name":name,"arguments":args}))
+            .await
+            .map_err(|_| anyhow::anyhow!("MCP request failed"))?
+            .0;
+        assert!(response.get("error").is_none(), "{response}");
+        Ok(response["result"].clone())
+    }
+
+    async fn clean(self) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM organizations WHERE id=$1")
+            .bind(self.org)
+            .execute(&self.state.pool)
+            .await?;
+        let dir = self.dir.clone();
+        drop(self);
+        std::fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+}
+
+fn uuid(value: &Value) -> Uuid {
+    value.as_str().unwrap().parse().unwrap()
+}
+
+#[tokio::test]
+async fn find_entities_returns_ranked_ids_and_keeps_text() -> anyhow::Result<()> {
+    let Some(f) = Fixture::new().await? else {
+        return Ok(());
+    };
+    let result = f.call("find_entities", json!({"name":"Alice"})).await?;
+    assert_eq!(result["isError"], false);
+    assert_eq!(
+        uuid(&result["structuredContent"]["entities"][0]["id"]),
+        f.subject
+    );
+    assert_eq!(
+        result["structuredContent"]["entities"][0]["type_key"],
+        "thing"
+    );
+    assert_eq!(
+        result["content"][0]["text"],
+        format!("Best match: {} | Alice | Thing | 2 facts", f.subject)
+    );
+    let empty = f.call("find_entities", json!({"name":"Nobody"})).await?;
+    assert_eq!(empty["structuredContent"]["entities"], json!([]));
+    assert_eq!(empty["content"][0]["text"], "No matching entities.");
+    let invalid = f.call("find_entities", json!({})).await?;
+    assert_eq!(invalid["isError"], true);
+    assert!(invalid.get("structuredContent").is_none());
+    assert!(f
+        .request(
+            f.other_kb,
+            "tools/call",
+            json!({"name":"find_entities","arguments":{"name":"Alice"}})
+        )
+        .await
+        .is_err());
+    let listed = f
+        .request(f.kb, "tools/list", json!({}))
+        .await
+        .map_err(|e| e.0)?
+        .0;
+    assert!(!listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "remember"));
+    f.clean().await
+}
+
+#[tokio::test]
+async fn search_chunks_returns_chunk_and_document_ids_with_the_same_excerpt() -> anyhow::Result<()>
+{
+    let Some(f) = Fixture::new().await? else {
+        return Ok(());
+    };
+    let result = f.call("search_chunks", json!({"query":"orchard"})).await?;
+    let chunk = &result["structuredContent"]["chunks"][0];
+    assert_eq!(uuid(&chunk["chunk_id"]), f.chunk);
+    assert_eq!(uuid(&chunk["document_id"]), f.document);
+    assert_eq!(chunk["seq"], 0);
+    assert_eq!(chunk["truncated"], true);
+    assert_eq!(
+        result["content"][0]["text"],
+        format!(
+            "[1] \"orchard.md\" section 1 (document_id: {}):\n{}",
+            f.document,
+            chunk["text"].as_str().unwrap()
+        )
+    );
+    let empty = f
+        .call(
+            "search_chunks",
+            json!({"query":"orchard","as_of":"2025-01-01"}),
+        )
+        .await?;
+    assert_eq!(empty["structuredContent"]["chunks"], json!([]));
+    assert_eq!(empty["content"][0]["text"], "No results.");
+    f.clean().await
+}
+
+#[tokio::test]
+async fn entity_facts_keeps_identity_values_filters_and_both_clocks() -> anyhow::Result<()> {
+    let Some(f) = Fixture::new().await? else {
+        return Ok(());
+    };
+    let result = f
+        .call("entity_facts", json!({"entity_id":f.subject}))
+        .await?;
+    let data = &result["structuredContent"];
+    assert_eq!(uuid(&data["entity"]["id"]), f.subject);
+    let facts = data["facts"].as_array().unwrap();
+    let corrected = facts
+        .iter()
+        .find(|r| uuid(&r["id"]) == f.corrected)
+        .unwrap();
+    assert_eq!(corrected["recorded_at"], CORRECTION);
+    assert_eq!(
+        corrected["qualifiers"][0]["value"],
+        json!({"value":3,"unit":"kg"})
+    );
+    assert_eq!(uuid(&corrected["supersedes"]), f.fact);
+    assert_eq!(
+        corrected["document_ids"],
+        json!([f.document]),
+        "same source is deduplicated"
+    );
+    let attribute = facts
+        .iter()
+        .find(|r| uuid(&r["id"]) == f.attribute)
+        .unwrap();
+    assert_eq!(attribute["object_value"], json!({"value":7,"unit":"kg"}));
+    assert_eq!(attribute["valid_from_precision"], "year");
+    let derived = &data["derived_facts"][0];
+    assert_eq!(uuid(&derived["id"]), f.derived_value);
+    assert_eq!(derived["object_value"], json!({"value":8,"unit":"kg"}));
+    assert_eq!(derived["rule"], "business");
+    assert!(derived["rule_id"].is_null());
+    uuid(&derived["attribute_rule_id"]);
+    // The same UUID is the RDF statement's identity, not a newly minted response ID.
+    let exported = utopia_store::export::facts_page(&f.state.pool, f.kb, None).await?;
+    assert!(exported
+        .iter()
+        .any(|r| r.id == uuid(&corrected["id"]) && r.documents == vec![f.document]));
+    let incoming = f
+        .call("entity_facts", json!({"entity_id":f.object}))
+        .await?;
+    assert_eq!(incoming["structuredContent"]["facts"][0]["direction"], "in");
+    assert_eq!(
+        uuid(&incoming["structuredContent"]["facts"][0]["other_id"]),
+        f.subject
+    );
+    let limited = f
+        .call("entity_facts", json!({"entity_id":f.subject,"limit":1}))
+        .await?;
+    assert_eq!(
+        limited["structuredContent"]["facts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(limited["structuredContent"]["truncated"], true);
+    let filtered = f
+        .call(
+            "entity_facts",
+            json!({"entity_id":f.subject,"predicate":"weight"}),
+        )
+        .await?;
+    assert_eq!(
+        filtered["structuredContent"]["facts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        uuid(&filtered["structuredContent"]["facts"][0]["id"]),
+        f.attribute
+    );
+    let empty = f
+        .call(
+            "entity_facts",
+            json!({"entity_id":f.subject,"at":"2025-01-01","as_of":CORRECTION}),
+        )
+        .await?;
+    assert_eq!(empty["structuredContent"]["facts"], json!([]));
+    assert_eq!(empty["structuredContent"]["derived_facts"], json!([]));
+    let history = f
+        .call(
+            "entity_facts",
+            json!({"entity_id":f.subject,"before":CORRECTION,"as_of":"2026-05-01"}),
+        )
+        .await?;
+    let old = history["structuredContent"]["facts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| uuid(&r["id"]) == f.fact)
+        .unwrap();
+    assert_eq!(old["invalidated_at"], CORRECTION);
+    assert_eq!(
+        history["structuredContent"]["as_of"],
+        "2026-03-20T12:00:00.123455Z"
+    );
+    assert!(history["structuredContent"]["derived_facts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| uuid(&r["id"]) == f.derived));
+    let early = f
+        .call(
+            "entity_facts",
+            json!({"entity_id":f.subject,"as_of":"2026-03-12"}),
+        )
+        .await?;
+    assert_eq!(early["structuredContent"]["derived_facts"], json!([]));
+    // Supplying a foreign entity UUID must not reveal its name or facts.
+    sqlx::query("INSERT INTO entities(id,kb_id,canonical_name) VALUES ($1,$2,'Hidden')")
+        .bind(f.other_kb)
+        .bind(f.other_kb)
+        .execute(&f.state.pool)
+        .await?;
+    let foreign = f
+        .call("entity_facts", json!({"entity_id":f.other_kb}))
+        .await?;
+    assert_eq!(foreign["isError"], true);
+    assert_eq!(foreign["content"][0]["text"], "Entity not found.");
+    assert!(foreign.get("structuredContent").is_none());
+    f.clean().await
+}
+
+#[tokio::test]
+async fn changes_returns_fact_ids_and_a_reusable_correction_timestamp() -> anyhow::Result<()> {
+    let Some(f) = Fixture::new().await? else {
+        return Ok(());
+    };
+    let result = f
+        .call(
+            "changes",
+            json!({"since":"2026-03-20","until":"2026-03-20","kinds":["corrected"]}),
+        )
+        .await?;
+    let change = &result["structuredContent"]["changes"][0];
+    assert_eq!(uuid(&change["fact_id"]), f.corrected);
+    assert_eq!(uuid(&change["document_id"]), f.document);
+    assert_eq!(change["at"], CORRECTION);
+    assert_eq!(result["structuredContent"]["until"], "2026-03-21T00:00:00Z");
+    assert!(result["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains(CORRECTION));
+    let before = f
+        .call(
+            "entity_facts",
+            json!({"entity_id":f.object,"before":change["at"]}),
+        )
+        .await?;
+    assert_eq!(uuid(&before["structuredContent"]["facts"][0]["id"]), f.fact);
+    let empty = f
+        .call("changes", json!({"since":"2025","until":"2025"}))
+        .await?;
+    assert_eq!(empty["structuredContent"]["changes"], json!([]));
+    assert_eq!(empty["structuredContent"]["limit_reached"], false);
+    sqlx::query(
+        "INSERT INTO facts(id,kb_id,subject_id,predicate_id,object_value,recorded_at)
+                 SELECT gen_random_uuid(),kb_id,subject_id,predicate_id,
+                        jsonb_build_object('value',n),'2026-03-21'::timestamptz
+                 FROM facts CROSS JOIN generate_series(1,41) n WHERE id=$1",
+    )
+    .bind(f.attribute)
+    .execute(&f.state.pool)
+    .await?;
+    let capped = f
+        .call(
+            "changes",
+            json!({"since":"2026-03-21","until":"2026-03-21"}),
+        )
+        .await?;
+    assert_eq!(
+        capped["structuredContent"]["changes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        40
+    );
+    assert_eq!(capped["structuredContent"]["limit_reached"], true);
+    f.clean().await
+}
+
+#[tokio::test]
+async fn failed_reads_do_not_become_successful_empty_results() -> anyhow::Result<()> {
+    let Some(f) = Fixture::new().await? else {
+        return Ok(());
+    };
+    f.state.pool.close().await;
+    let ctx = ToolCtx {
+        state: &f.state,
+        kb_id: f.kb,
+        workspace_id: f.ws,
+        mounted_sources: &[],
+        can_write: false,
+        actor: None,
+        via_token: None,
+        question: None,
+    };
+    for (name, args) in [
+        ("find_entities", json!({"name":"Alice"})),
+        ("search_chunks", json!({"query":"orchard"})),
+        ("entity_facts", json!({"entity_id":f.subject})),
+        ("changes", json!({"since":"2026"})),
+    ] {
+        let result =
+            tool_result(tools::dispatch(&ctx, &mut ToolSink::default(), name, &args).await);
+        assert_eq!(result["isError"], true, "{name}: {result}");
+        assert!(result.get("structuredContent").is_none());
+    }
+    // Reconnect only for fixture cleanup.
+    let mut f = f;
+    f.state.pool = sqlx::PgPool::connect(&utopia_store::test_db::url().unwrap()).await?;
+    f.clean().await
+}
+
+#[test]
+fn text_only_results_do_not_acquire_a_structured_payload() {
+    let result = tool_result(ToolResult::new("existing text".into(), json!({})));
+    assert_eq!(
+        result,
+        json!({"content":[{"type":"text","text":"existing text"}],"isError":false})
+    );
+}

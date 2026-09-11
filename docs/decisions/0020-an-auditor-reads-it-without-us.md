@@ -12,6 +12,13 @@ Not another Utopia. A regulator, an auditor, or the team's own graph tooling: so
 
 ## Identity
 
+The RDF mapping is the supported external machine-readable read contract
+(clarified in [#550](https://github.com/deeplethe/utopia/issues/550)). A breaking
+change needs a decision record explaining why; the internal tables and UI API
+shapes are not that boundary. MCP may return the same UUIDs alongside its prose
+so a caller can join an agent result to this export. The user-facing contract is
+documented in [Agents over MCP](../../web/src/docs/mcp.md#the-external-read-contract).
+
 Classes and relations that came in from an import **keep the IRI they came with**. A base built from the schema.org pack exports `schema:Organization`, not a Utopia mint of it, so the file lines up with the vocabulary the reader already has. That is the payoff for having stored `iri` on `entity_types` and `relation_types` since the first import.
 
 Everything else is minted under a base namespace: entities, documents, and one IRI per fact. Facts get their own IRI rather than blank nodes because a statement someone may have to cite has to be addressable, and because `supersedes` needs somewhere to point. A class or relation the ontology grew itself is minted from its **key** rather than its uuid — the key is what the base already uses as its identifier (`UNIQUE (kb_id, key)`, and it is what the extraction prompt and the API speak), so the file stays readable; a rename is the one event that moves such an IRI, and renaming a class is rarer than reading the export.
@@ -41,6 +48,13 @@ Each statement is `prov:wasDerivedFrom` the documents its evidence chunks belong
 One of the five built-in packs is PROV-O, so a base that has it loaded already knows these terms.
 
 ## What is not here
+
+- **Conflict/review state and chunk identity behind a quote.** Quotes and source
+  documents are exported, but these are separate gaps; conflict state is tracked
+  in [#564](https://github.com/deeplethe/utopia/issues/564).
+- **Historical proof snapshots.** Premise links can be rewritten when a conclusion
+  is reproved. The record-time lifetime survives; earlier versions of the proof
+  do not (0019). RDF's `prov:used` edges identify premises, not their sequence.
 
 - **A SPARQL endpoint.** The escape hatch over an in-memory Oxigraph projection was the original plan and stays a later cut. Someone who asked for "the reasoning behind this decision" wants a file they can keep; a query endpoint is the second thing they ask for, not the first.
 - **Import of our own export.** The export is not a backup format, and reading it back would need entity resolution to be told "these IRIs are already resolved". Nothing stops it later; nothing depends on it now.

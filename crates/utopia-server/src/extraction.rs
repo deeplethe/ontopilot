@@ -305,8 +305,10 @@ fn verify_span(
     }) {
         return SpanVerdict::Rebind((*k).clone());
     }
-    // 单个普通词（"company"）包在别的名字里不算：那是指代，不是点名
-    let names_something = s.len() >= 2 || looks_proper(s[0].raw);
+    // 单个词包在别的名字里不算改绑："company" 是指代，句首的 "Stockholders" 大写也
+    // 不是专名的证据（召回测量台第二轮：主语从 NVIDIA 改绑到了「年度股东大会」）。
+    // 单个词只认精确/词干命中（上面 `slot_matches` 那一关）
+    let names_something = s.len() >= 2;
     let mut supersets: Vec<(&String, usize)> = others
         .iter()
         .filter_map(|k| {
@@ -346,6 +348,12 @@ fn verify_span(
         let last = s[end - 1].raw;
         let possessive = last.ends_with("'s") || last.ends_with("\u{2019}s");
         let after = &s[end..];
+        // 名字后面接着 and / & 再接专名，是并列（"SB Energy and SoftBank"）：名字是名单里
+        // 的一项，不是修饰语。连词跟冠词一样是语法词，不是词表
+        let after = match after.first() {
+            Some(w) if matches!(w.clean.as_str(), "and" | "&") => &after[1..],
+            _ => after,
+        };
         if possessive || after.iter().any(|w| !looks_proper(w.raw)) {
             return SpanVerdict::Described(span.to_string());
         }
@@ -904,7 +912,12 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
     写入时按这里的 key 对模型给的 qualifiers，对不上的进丢弃表让人看见 */
     let rtype_by_id: HashMap<Uuid, &utopia_core::models::RelationType> =
         rtypes.iter().map(|r| (r.id, r)).collect();
-    let qualifier_defs: HashMap<Uuid, Vec<&utopia_core::models::RelationType>> = rtypes
+    let attr_by_key: HashMap<String, &utopia_core::models::RelationType> = rtypes
+        .iter()
+        .filter(|r| r.kind == "attribute")
+        .map(|r| (r.key.to_lowercase(), r))
+        .collect();
+    let mut qualifier_defs: HashMap<Uuid, Vec<&utopia_core::models::RelationType>> = rtypes
         .iter()
         .filter(|r| r.kind != "attribute" && !r.qualifiers.is_empty())
         .map(|r| {
@@ -1487,8 +1500,10 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                     continue;
                 };
                 let mut object_value = serde_json::json!({ "value": normalized });
-                if let Some(u) = attr.unit.as_deref().filter(|u| !u.is_empty()) {
-                    // 单位随事实落笔：类型上的单位以后改了，旧值仍按记录时的单位读
+                // 单位随事实落笔：类型上的单位以后改了，旧值仍按记录时的单位读。
+                // 记哪个单位照 `unit_for`——从前这里无条件盖上声明的单位，实测
+                //「提供 500 兆瓦的风电」被模型记成金额，再盖上 ¥ 就成了 500 块钱
+                if let Some(u) = unit_for(&raw, datatype, None, attr.unit.as_deref()) {
                     object_value["unit"] = serde_json::json!(u);
                 }
                 if await_nod {
@@ -2299,21 +2314,136 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 同一条边再听到一次带了金额的，是同一条边补上金额。
                 值照 datatype 换算，单位另记一格（与 object_value 同形）；
                 key 不在声明里、换不动、与已记的不一致——三种都进丢弃表，不静默 */
-                if let (Some(pid), Some(quals)) = (predicate_id, f.qualifiers.as_ref()) {
-                    let defs = qualifier_defs.get(&pid);
+                /* 谓词未知（0010，说法在证据上）时属性照写：值落在事实上，声明等
+                关系被采纳时在 `adopt` 里补。不写的话，`invested_in` 在 schema.org
+                库里是未知说法，一句话里的 $1.5 billion 就没有地方放——召回台上
+                `oh-invest` 那一条正是这么丢的 */
+                if let Some(quals) = f.qualifiers.as_ref() {
+                    let pid = predicate_id;
+                    // 克隆出这一组引用：下面撞上已有属性时要往 qualifier_defs 里追加声明
+                    let defs: Vec<&utopia_core::models::RelationType> = pid
+                        .and_then(|p| qualifier_defs.get(&p).cloned())
+                        .unwrap_or_default();
+                    /* 模型常把币种单独写成一个键（`"amount": "1500000000", "currency": "CNY"`），
+                    而不是写进数额里。那不是一个属性，是数额的单位——先把它拿出来，
+                    数值属性解不出单位时用它，别让它作为未知 key 进丢弃表 */
+                    let sibling_currency: Option<&'static str> = quals
+                        .iter()
+                        .find(|(k, _)| {
+                            matches!(
+                                k.trim().to_lowercase().as_str(),
+                                "currency" | "币种" | "货币" | "unit" | "单位"
+                            )
+                        })
+                        .and_then(|(_, v)| v.as_str())
+                        .and_then(utopia_extract::currency_unit);
                     for (key, raw) in quals {
-                        let Some(def) = defs.and_then(|d| {
-                            d.iter().find(|q| q.key.eq_ignore_ascii_case(key.trim()))
-                        }) else {
-                            drop_signal(
-                                state,
+                        // 模型对没提到的属性会写 null：那是「原文没说」，不是坏值，不记
+                        if raw.is_null() {
+                            continue;
+                        }
+                        if matches!(
+                            key.trim().to_lowercase().as_str(),
+                            "currency" | "币种" | "货币" | "unit" | "单位"
+                        ) {
+                            continue;
+                        }
+                        let declared = defs
+                            .iter()
+                            .find(|q| q.key.eq_ignore_ascii_case(key.trim()))
+                            .copied();
+                        /* **未知 key 撞上本库已有的属性定义 → 补一条声明，不丢值。**
+                        实测不声明时模型照样写 `amount`、`stake`、`round`，八条全进
+                        丢弃表——而这三个属性定义明明都在库里，缺的只是关系上的一条
+                        声明。补声明不新建任何东西、可撤（本体页取消勾选即可），
+                        所以跟自动扩本体走同一个开关 */
+                        let adopted = match declared {
+                            Some(d) => Some(d),
+                            /* 谓词还未知（0010，说法在证据上）：没有关系可声明，值绑到库里
+                            已有的属性定义、先落在事实上，采纳时 `adopt` 再补声明。这一步
+                            不动本体，所以不看自动扩本体的开关 */
+                            None if pid.is_none() => {
+                                attr_by_key.get(&key.trim().to_lowercase()).copied()
+                            }
+                            None if kb.auto_extend_ontology => {
+                                match attr_by_key.get(&key.trim().to_lowercase()).copied() {
+                                    Some(attr) => {
+                                        let pid = pid.expect("checked above");
+                                        match utopia_store::ontology::add_relation_qualifier(
+                                            &state.pool,
+                                            doc.kb_id,
+                                            pid,
+                                            attr.id,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => {
+                                                tracing::info!(kb_id = %doc.kb_id, relation = %f.predicate, qualifier = %attr.key, "边上的属性按语料补了声明");
+                                                qualifier_defs.entry(pid).or_default().push(attr);
+                                                Some(attr)
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(kb_id = %doc.kb_id, error = %e, "补声明失败");
+                                                None
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        tracing::debug!(kb_id = %doc.kb_id, relation = %f.predicate, key = %key, attrs = attr_by_key.len(), "边上的属性：key 撞不上本库任何属性定义");
+                                        None
+                                    }
+                                }
+                            }
+                            None => {
+                                tracing::debug!(kb_id = %doc.kb_id, relation = %f.predicate, key = %key, auto_extend = kb.auto_extend_ontology, "边上的属性：未声明且不自动扩本体");
+                                None
+                            }
+                        };
+                        let Some(def) = adopted else {
+                            /* **绑不上属性定义的数也不丢。** 库里没有这个属性（schema.org 里
+                            `amount` 是关系不是属性）、或本体冻着不让扩——从前这里进丢弃表，
+                            数就只剩丢弃表里的一个样例。现在照 8a 的样子落成主语上的一条
+                            字面值事实：值按原文、单位另记一格、原词 `关系.键` 进证据的
+                            proposed_predicate，缺的定义记进 ontology_misses（0010 的样子），
+                            采纳时人来决定它归哪儿。图里有它、有证据、能查到 */
+                            let wording = format!("{}.{}", f.predicate.trim(), key.trim());
+                            let unit = raw
+                                .as_str()
+                                .and_then(utopia_extract::parse_leading_quantity)
+                                .and_then(|(_, u)| u)
+                                .or_else(|| sibling_currency.map(str::to_string));
+                            let mut literal = serde_json::json!({ "value": raw });
+                            if let Some(u) = unit {
+                                literal["unit"] = serde_json::Value::String(u);
+                            }
+                            let _ = utopia_store::ontology::record_miss(
+                                &state.pool,
                                 doc.kb_id,
-                                document_id,
-                                utopia_store::extraction_drops::reason::QUALIFIER_UNKNOWN,
-                                &format!("{}.{}", f.predicate, key),
-                                Some(&raw.to_string()),
+                                "attribute_type",
+                                &wording,
+                                Some(&format!("{} → {raw}", f.subject.trim())),
                             )
                             .await;
+                            let (literal_id, _) = utopia_store::graph::insert_value_fact(
+                                &state.pool,
+                                doc.kb_id,
+                                subject_id,
+                                None,
+                                &literal,
+                                validity,
+                                confidence,
+                            )
+                            .await?;
+                            touched_facts.push(literal_id);
+                            utopia_store::graph::add_evidence(
+                                &state.pool,
+                                literal_id,
+                                chunk.id,
+                                f.quote.as_deref(),
+                                Some(wording.as_str()),
+                            )
+                            .await?;
+                            tracing::debug!(kb_id = %doc.kb_id, wording = %wording, "边上的属性绑不上定义，落成主语上的字面值");
                             continue;
                         };
                         let dt = def.datatype.as_deref().unwrap_or("text");
@@ -2330,12 +2460,7 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                             continue;
                         };
                         let mut value = serde_json::json!({ "value": normalized });
-                        let unit = raw
-                            .as_str()
-                            .and_then(utopia_extract::parse_leading_quantity)
-                            .and_then(|(_, u)| u)
-                            .or_else(|| def.unit.clone().filter(|u| !u.is_empty()));
-                        if let Some(u) = unit {
+                        if let Some(u) = unit_for(raw, dt, sibling_currency, def.unit.as_deref()) {
                             value["unit"] = serde_json::Value::String(u);
                         }
                         let write = utopia_store::graph::upsert_fact_qualifier(
@@ -2850,6 +2975,129 @@ async fn chunk_lists(
     )))
 }
 
+/// 一条值该记什么单位（#600「单位是读出来的，不是猜的」，实体上的属性与边上的属性同一条规矩）。
+///
+/// 原文里认得出的用原文的（€、¥、%、"EUR 30 million" 的 €）；模型把币种单独写成
+/// 一个键时用那个；原文里写着声明的那个单位（"4300 人" 对 "人"）也算读出来的。
+/// 原文带着一个认不出的单位记号（"500 兆瓦"、"francs"）时**不能**拿声明的缺省顶上——
+/// 实测 `EUR 30 million` 被存成了 `$`，`500 兆瓦` 被存成了 500 块钱；单位写错比不写更糟。
+/// 只有原文完全没有单位记号（一个光秃秃的数）才落回声明的缺省。
+fn unit_for(
+    raw: &serde_json::Value,
+    datatype: &str,
+    sibling_currency: Option<&str>,
+    declared: Option<&str>,
+) -> Option<String> {
+    let declared = declared.map(str::trim).filter(|u| !u.is_empty());
+    let text = raw.as_str();
+    if let Some(u) = text
+        .and_then(utopia_extract::parse_leading_quantity)
+        .and_then(|(_, u)| u)
+    {
+        return Some(u);
+    }
+    if let (Some(c), "number") = (sibling_currency, datatype) {
+        return Some(c.to_string());
+    }
+    if let (Some(t), Some(d)) = (text, declared) {
+        if t.contains(d) {
+            return Some(d.to_string());
+        }
+    }
+    let has_unit_token = text.is_some_and(|t| {
+        t.chars()
+            .any(|c| c.is_alphabetic() || matches!(c, '$' | '€' | '£' | '¥' | '₩' | '₹' | '%'))
+    });
+    if has_unit_token {
+        None
+    } else {
+        declared.map(str::to_string)
+    }
+}
+
+#[cfg(test)]
+mod unit_for_tests {
+    use super::unit_for;
+    use serde_json::{json, Value};
+
+    fn s(t: &str) -> Value {
+        Value::String(t.to_string())
+    }
+
+    #[test]
+    fn a_unit_is_read_from_the_text_before_anything_else() {
+        assert_eq!(
+            unit_for(&s("EUR 30 million"), "number", None, Some("$")).as_deref(),
+            Some("€")
+        );
+        assert_eq!(
+            unit_for(&s("8.6亿元"), "number", None, Some("$")).as_deref(),
+            Some("¥")
+        );
+        assert_eq!(
+            unit_for(&s("12%"), "number", None, Some("¥")).as_deref(),
+            Some("%")
+        );
+        assert_eq!(
+            unit_for(&s("$5 billion"), "number", None, None).as_deref(),
+            Some("$")
+        );
+    }
+
+    #[test]
+    fn a_sibling_currency_is_the_unit_of_a_bare_number() {
+        assert_eq!(
+            unit_for(&s("1500000000"), "number", Some("CNY"), Some("$")).as_deref(),
+            Some("CNY")
+        );
+        // 文本型属性没有币种可言
+        assert_eq!(unit_for(&s("B 轮"), "text", Some("CNY"), None), None);
+    }
+
+    #[test]
+    fn the_declared_unit_written_in_the_text_counts_as_read() {
+        assert_eq!(
+            unit_for(&s("4300 人"), "number", None, Some("人")).as_deref(),
+            Some("人")
+        );
+        assert_eq!(
+            unit_for(&s("三年"), "text", None, Some("年")).as_deref(),
+            Some("年")
+        );
+    }
+
+    #[test]
+    fn an_unknown_unit_token_is_never_overwritten_by_the_default() {
+        // 宽松扫描把尾巴上的记号当单位读出来：记的是原文的单位，不是声明的 ¥
+        assert_eq!(
+            unit_for(&s("500 兆瓦"), "number", None, Some("¥")).as_deref(),
+            Some("兆瓦")
+        );
+        assert_eq!(
+            unit_for(&s("30 million francs"), "number", None, Some("$")).as_deref(),
+            Some("francs")
+        );
+        // 扫描读不出、原文却明明带着字：也不拿缺省顶上
+        assert_eq!(
+            unit_for(&s("about five hundred"), "number", None, Some("$")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_bare_figure_takes_the_declared_default() {
+        assert_eq!(
+            unit_for(&s("4300"), "number", None, Some("人")).as_deref(),
+            Some("人")
+        );
+        assert_eq!(
+            unit_for(&json!(4300), "number", None, Some("人")).as_deref(),
+            Some("人")
+        );
+        assert_eq!(unit_for(&s("4300"), "number", None, Some("")), None);
+    }
+}
+
 #[cfg(test)]
 mod name_tests {
     use super::{clause_suspect, is_entity_name};
@@ -3046,6 +3294,8 @@ mod tests {
             ),
             SpanVerdict::Rebind("Sam Altman".into())
         );
+        // 单个词包在别的名字里不改绑（#595）：句首大写不是专名的证据。"Altman" 绑错到
+        // OpenAI 时只记指代——改绑要么精确/词干命中，要么两个词以上
         assert_eq!(
             verify_span(
                 Some("Altman"),
@@ -3054,7 +3304,20 @@ mod tests {
                 "Altman announced the deal",
                 &d
             ),
-            SpanVerdict::Rebind("Sam Altman".into())
+            SpanVerdict::Coreference("Altman".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("Stockholders"),
+                "NVIDIA",
+                "",
+                "Stockholders approved the election of each of our ten (10) director nominees",
+                &declared(&[
+                    "NVIDIA",
+                    "2026 Annual Meeting of Stockholders of NVIDIA Corporation"
+                ])
+            ),
+            SpanVerdict::Coreference("Stockholders".into())
         );
         assert_eq!(
             verify_span(
@@ -3248,6 +3511,43 @@ mod tests {
         assert_eq!(
             written_verdict("the company", "OpenAI", "", true, &d),
             SpanVerdict::Ok
+        );
+    }
+
+    /// 名字后面接着 and 再接专名，是并列的一项，不是描述（#595）；接着 and 再接小写
+    /// 的描述还是描述
+    #[test]
+    fn a_name_in_a_coordination_is_one_of_the_list() {
+        let d = declared(&["SB Energy", "SoftBank", "OpenAI"]);
+        let q = "SB Energy and SoftBank will build at least 10 GW of new energy generation";
+        assert_eq!(
+            verify_span(Some("SB Energy and SoftBank"), "SB Energy", "", q, &d),
+            SpanVerdict::Ok
+        );
+        assert_eq!(
+            verify_span(
+                Some("SB Energy & SoftBank"),
+                "SB Energy",
+                "",
+                "SB Energy & SoftBank will build",
+                &d
+            ),
+            SpanVerdict::Ok
+        );
+        // 绑在后一项上：名字前面带词，只记
+        assert_eq!(
+            verify_span(Some("SB Energy and SoftBank"), "SoftBank", "", q, &d),
+            SpanVerdict::Prefixed("SB Energy and SoftBank".into())
+        );
+        assert_eq!(
+            verify_span(
+                Some("OpenAI and its investors"),
+                "OpenAI",
+                "",
+                "OpenAI and its investors agreed",
+                &d
+            ),
+            SpanVerdict::Described("OpenAI and its investors".into())
         );
     }
 

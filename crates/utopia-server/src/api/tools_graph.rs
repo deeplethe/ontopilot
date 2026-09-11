@@ -105,7 +105,10 @@ async fn resolve(ctx: &ToolCtx<'_>, sink: &mut ToolSink, raw: &str) -> Result<Re
             note: None,
         });
     }
-    let hits = lookup(ctx, raw).await;
+    let hits = lookup(ctx, raw).await.map_err(|e| {
+        tracing::warn!(error = %e, "Entity lookup failed");
+        "could not look up entities".to_string()
+    })?;
     let (ranked, by_question) = rank_by_question(ctx, rank(hits, raw), raw).await;
     let Some(first) = ranked.first() else {
         return Err(format!("no entity named \"{raw}\" in this base"));
@@ -181,7 +184,17 @@ fn contains_ci(haystack: Option<&str>, needle: &str) -> bool {
 
 pub async fn find_entities(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> ToolResult {
     let name = args["name"].as_str().unwrap_or("").to_string();
-    let hits = lookup(ctx, &name).await;
+    let hits = match lookup(ctx, &name).await {
+        Ok(hits) => hits,
+        Err(e) => {
+            tracing::warn!(error = %e, "Entity lookup failed");
+            return ToolResult::new(
+                "Could not look up entities.".into(),
+                json!({"kind": "entity", "label": name, "detail": "failed"}),
+            )
+            .error();
+        }
+    };
     let (ranked, by_question) = rank_by_question(ctx, rank(hits, &name), &name).await;
     let text = if ranked.is_empty() {
         "No matching entities.".to_string()
@@ -202,10 +215,18 @@ pub async fn find_entities(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
     for n in &ranked {
         remember(sink, n);
     }
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "entity", "label": name, "detail": format!("{} matches", ranked.len()) }),
     )
+    .structured(json!({
+        "kb_id": ctx.kb_id,
+        "entities": ranked.iter().map(|n| json!({
+            "id": n.id, "name": n.name, "type_key": n.type_key,
+            "type_label": n.type_label, "disambiguator": n.disambiguator,
+            "fact_count": n.degree,
+        })).collect::<Vec<_>>()
+    }))
 }
 
 // ---- entity_facts ----------------------------------------------------------------
@@ -315,22 +336,20 @@ pub(super) fn predicates_of(facts: &[EntityFact]) -> String {
 /// 子串找不到时按词找：每个词各去库里捞一把，名字里含的词数达到「全部减一、至少两个」
 /// 的候选算命中（"OpenAI board members" → "OpenAI's board of directors"）。
 /// 模型给的名字常带一个库里没有的词（members、公司、这个），全词命中会把它们全漏掉
-async fn lookup(ctx: &ToolCtx<'_>, raw: &str) -> Vec<GraphNode> {
-    let (hits, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, raw, 8, 0)
-        .await
-        .unwrap_or_default();
+async fn lookup(ctx: &ToolCtx<'_>, raw: &str) -> utopia_core::AppResult<Vec<GraphNode>> {
+    let (hits, _) =
+        utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, raw, 8, 0).await?;
     if !hits.is_empty() {
-        return hits;
+        return Ok(hits);
     }
     let words: Vec<&str> = raw.split_whitespace().filter(|w| w.len() >= 2).collect();
     if words.len() < 2 {
-        return hits;
+        return Ok(hits);
     }
     let mut pool: Vec<GraphNode> = Vec::new();
     for w in &words {
-        let (found, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, w, 40, 0)
-            .await
-            .unwrap_or_default();
+        let (found, _) =
+            utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, w, 40, 0).await?;
         for n in found {
             if !pool.iter().any(|p| p.id == n.id) {
                 pool.push(n);
@@ -344,7 +363,7 @@ async fn lookup(ctx: &ToolCtx<'_>, raw: &str) -> Vec<GraphNode> {
         .filter(|(s, _)| *s >= need)
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.degree.cmp(&a.1.degree)));
-    scored.into_iter().map(|(_, n)| n).take(8).collect()
+    Ok(scored.into_iter().map(|(_, n)| n).take(8).collect())
 }
 
 /// 名字里含了几个词（大小写不敏感）
@@ -528,28 +547,40 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
         Err(e) => {
-            return (
+            return ToolResult::new(
                 format!(
                     "Invalid entity: {e} (expected a name, or the uuid returned by find_entities)."
                 ),
                 json!({ "kind": "facts", "label": "?", "detail": "invalid id" }),
             )
+            .error()
         }
     };
     let m = moments(args);
     let filter = FactFilter::from_args(args);
     let limit = limit_of(args, FACTS_DEFAULT);
-    let Ok((node, facts)) =
-        utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, m.at, m.as_of).await
-    else {
-        return (
-            "Entity not found.".to_string(),
-            json!({ "kind": "facts", "label": "?", "detail": "not found" }),
-        );
-    };
+    let (node, facts) =
+        match utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, m.at, m.as_of)
+            .await
+        {
+            Ok(detail) => detail,
+            Err(e) => {
+                let text = if matches!(e, utopia_core::AppError::NotFound) {
+                    "Entity not found."
+                } else {
+                    tracing::warn!(error = %e, "Entity facts lookup failed");
+                    "Could not read the entity facts."
+                };
+                return ToolResult::new(
+                    text.into(),
+                    json!({"kind": "facts", "label": "?", "detail": "failed"}),
+                )
+                .error();
+            }
+        };
     // 规则的结论也是这个实体的一部分（0021）。**不给的话模型会拿那些读数自己再判
     // 一遍**——而阈值写在规则里，它看不见，于是两处判断迟早不一致
-    let derived =
+    let derived = match
         // 两根轴一起传（#549）：as_of 回到三月，派生也回到三月
         utopia_store::reasoning::derived_for_entity(
             &ctx.state.pool,
@@ -558,9 +589,15 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
             m.at,
             m.as_of,
         )
-        .await
-        .unwrap_or_default();
-    let derived: Vec<String> = derived
+        .await {
+            Ok(derived) => derived,
+            Err(e) => {
+                tracing::warn!(error = %e, "Derived facts lookup failed");
+                return ToolResult::new("Could not read the derived facts.".into(),
+                    json!({"kind": "facts", "label": node.name, "detail": "failed"})).error();
+            }
+        };
+    let derived_lines: Vec<String> = derived
         .iter()
         .map(|d| {
             format!(
@@ -624,13 +661,50 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
                 ));
             }
         }
-        lines.extend(derived);
+        lines.extend(derived_lines);
     }
     let detail = entity_facts_detail(shown.len(), m.at, m.as_of, m.before);
-    (
+    ToolResult::new(
         lines.join("\n"),
         json!({ "kind": "facts", "label": node.name, "detail": detail }),
     )
+    .structured(json!({
+        "kb_id": ctx.kb_id,
+        "entity": {"id": node.id, "name": node.name,
+            "type_key": node.type_key, "type_label": node.type_label},
+        "at": m.at, "as_of": m.as_of, "before": m.before,
+        "total_facts": facts.len(), "matched_facts": kept.len(),
+        "limit": limit, "truncated": shown.len() < kept.len(),
+        "facts": shown.iter().map(|f| json!({
+            "id": f.id, "direction": f.direction,
+            "predicate_key": f.predicate_key, "predicate_label": f.predicate_label,
+            "inferred": f.inferred, "temporal": f.temporal,
+            "other_id": f.other_id, "other_name": f.other_name,
+            "object_value": f.object_value, "confidence": f.confidence,
+            "qualifiers": f.qualifiers.iter().map(|q| json!({
+                "qualifier_type_id": q.qualifier_type_id, "key": q.key, "label": q.label,
+                "value": q.value, "entity_id": q.entity_id, "entity_name": q.entity_name,
+            })).collect::<Vec<_>>(),
+            "valid_from": f.valid_from, "valid_to": f.valid_to,
+            "valid_from_precision": f.valid_from_precision,
+            "valid_to_precision": f.valid_to_precision,
+            "holds_from": f.holds_from, "holds_to": f.holds_to,
+            "recorded_at": f.recorded_at, "invalidated_at": f.invalidated_at,
+            "supersedes": f.supersedes, "document_ids": f.document_ids,
+        })).collect::<Vec<_>>(),
+        "derived_facts": derived.iter().map(|d| json!({
+            "id": d.id, "subject_id": d.subject_id, "subject": d.subject,
+            "predicate_id": d.predicate_id, "predicate": d.predicate,
+            "object_id": d.object_id, "object": d.object, "object_value": d.object_value,
+            "rule": d.rule, "rule_name": d.rule_name,
+            "rule_id": d.rule_id, "attribute_rule_id": d.attribute_rule_id,
+            "valid_from": d.valid_from, "valid_to": d.valid_to,
+            "valid_from_precision": d.valid_from_precision,
+            "valid_to_precision": d.valid_to_precision,
+            "derived_at": d.derived_at, "invalidated_at": d.invalidated_at,
+            "confidence": d.confidence,
+        })).collect::<Vec<_>>()
+    }))
 }
 
 // ---- neighbors -------------------------------------------------------------------
@@ -643,7 +717,7 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
         Err(e) => {
-            return (
+            return ToolResult::new(
                 format!("Unknown entity: {e}."),
                 json!({ "kind": "neighbors", "label": "?", "detail": "unknown entity" }),
             )
@@ -655,7 +729,7 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
     let Ok((node, facts)) =
         utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, m.at, m.as_of).await
     else {
-        return (
+        return ToolResult::new(
             "Entity not found.".to_string(),
             json!({ "kind": "neighbors", "label": "?", "detail": "not found" }),
         );
@@ -734,7 +808,7 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
         }
     }
     let detail = format!("{} of {} linked", shown.len(), linked.len());
-    (
+    ToolResult::new(
         lines.join("\n"),
         json!({ "kind": "neighbors", "label": node.name, "detail": detail }),
     )
@@ -750,7 +824,7 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
         Err(e) => {
-            return (
+            return ToolResult::new(
                 format!("Unknown entity: {e}."),
                 json!({ "kind": "timeline", "label": "?", "detail": "unknown entity" }),
             )
@@ -762,7 +836,7 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
     let Ok((node, facts)) =
         utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, None, m.as_of).await
     else {
-        return (
+        return ToolResult::new(
             "Entity not found.".to_string(),
             json!({ "kind": "timeline", "label": "?", "detail": "not found" }),
         );
@@ -821,7 +895,7 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
         }
     }
     let detail = format!("{} of {} dated", shown.len(), dated.len());
-    (
+    ToolResult::new(
         lines.join("\n"),
         json!({ "kind": "timeline", "label": node.name, "detail": detail }),
     )
@@ -879,7 +953,7 @@ pub async fn paths_between(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
                 ends.push(r);
             }
             Err(e) => {
-                return (
+                return ToolResult::new(
                     format!("Unknown `{key}`: {e}."),
                     json!({ "kind": "path", "label": "?", "detail": "unknown entity" }),
                 )
@@ -910,7 +984,7 @@ pub async fn paths_between(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
     {
         Ok(p) => p,
         Err(e) => {
-            return (
+            return ToolResult::new(
                 format!("Path search failed: {e}"),
                 json!({ "kind": "path", "label": "?", "detail": "failed" }),
             )
@@ -932,7 +1006,7 @@ pub async fn paths_between(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
             from.name,
             to.name
         ));
-        return (
+        return ToolResult::new(
             lines.join("\n"),
             json!({ "kind": "path", "label": label, "detail": "no path" }),
         );
@@ -954,7 +1028,7 @@ pub async fn paths_between(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
         if paths.len() == 1 { "" } else { "s" },
         if shortest == 1 { "" } else { "s" }
     );
-    (
+    ToolResult::new(
         lines.join("\n"),
         json!({ "kind": "path", "label": label, "detail": detail }),
     )
@@ -1057,6 +1131,10 @@ mod tests {
 
     fn fact(direction: &str, pred: &str, other: &str, other_type: Option<&str>) -> EntityFact {
         EntityFact {
+            recorded_at: chrono::Utc::now(),
+            invalidated_at: None,
+            supersedes: None,
+            document_ids: vec![],
             id: Uuid::now_v7(),
             direction: direction.into(),
             predicate_key: Some(pred.into()),

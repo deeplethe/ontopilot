@@ -590,6 +590,10 @@ pub fn emit_derived(
         let p = names.fact(*premise);
         sink.r(&stmt, &prov("used"), &p)?;
     }
+    for premise in &d.premises_derived {
+        let p = names.derived(*premise);
+        sink.r(&stmt, &prov("used"), &p)?;
+    }
     Ok(())
 }
 
@@ -1037,26 +1041,31 @@ mod tests {
             rule: "transitive".into(),
             rule_name: None,
             premises: vec![id(5)],
-            premises_derived: Vec::new(),
+            premises_derived: vec![id(6)],
         };
-        let quads = export(Format::Turtle, |sink, names, vocab| {
-            emit_derived(sink, names, vocab, &derived).unwrap();
-        });
-        let stmt = "<urn:utopia:kb:01a06dc4-f40a-7013-b09f-1b499e2e7441:derived:07070707-0707-0707-0707-070707070707>";
-        assert!(has(
-            &quads,
-            stmt,
-            "urn:utopia:ns:derived",
-            "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"
-        ));
-        assert_eq!(
-            objects(&quads, stmt, "http://www.w3.org/ns/prov#used"),
-            vec![STMT]
-        );
-        assert!(
-            !has(&quads, SUBJ, WORKS_FOR, OBJ),
-            "推出来的边不写成平铺三元组：那会让人把引擎的结论当成文档里的话"
-        );
+        for format in [Format::Turtle, Format::JsonLd] {
+            let quads = export(format, |sink, names, vocab| {
+                emit_derived(sink, names, vocab, &derived).unwrap();
+            });
+            let stmt = "<urn:utopia:kb:01a06dc4-f40a-7013-b09f-1b499e2e7441:derived:07070707-0707-0707-0707-070707070707>";
+            assert!(has(
+                &quads,
+                stmt,
+                "urn:utopia:ns:derived",
+                "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"
+            ));
+            assert_eq!(
+                objects(&quads, stmt, "http://www.w3.org/ns/prov#used"),
+                vec![
+                    STMT.to_string(),
+                    Names::new(kb(), None).unwrap().derived(id(6)).to_string()
+                ]
+            );
+            assert!(
+                !has(&quads, SUBJ, WORKS_FOR, OBJ),
+                "推出来的边不写成平铺三元组：那会让人把引擎的结论当成文档里的话"
+            );
+        }
     }
 
     #[test]

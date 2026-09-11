@@ -1,6 +1,6 @@
 # 0037 · A relation carries its own attributes
 
-- **Status**: written · cut 1 in progress: `relation_type_qualifiers` and `fact_qualifiers`
+- **Status**: cut 1 merged (#598) · cut 1b (units, auto-declaration, sibling currency; #600) · `relation_type_qualifiers` and `fact_qualifiers`
   (migration 0049), a relation declares its qualifiers, extraction writes them, the panel and
   the export read them · not in this cut: an entity-valued qualifier (the column is reserved,
   nothing writes it), a second row plus a conflict when two mentions of one edge disagree
@@ -97,12 +97,44 @@ instead of a class.
    one more triple on it, predicate = the attribute's IRI, object = the literal typed by the
    attribute's datatype. RDF 1.2's reifier is the same shape.
 
+## What the test waves found (2026-09-11)
+
+Four waves on an isolated base, each document pressing one rule (repeatability ×3, the
+rules corpus declared and undeclared, a Chinese corpus declared and undeclared):
+
+- **Repeatable.** Three runs of the original corpus, both investment edges carry their
+  amount every time; the model's `stake: "minority"` is refused by the number datatype and
+  lands in the drop report, not in the graph.
+- **A qualifier the relation never declared, but the base already defines** (`amount`,
+  `stake`, `round` exist as attributes) is now declared from the corpus and written, under
+  the same `auto_extend_ontology` switch as the rest of the growth loop. The declaration is
+  additive (`add_relation_qualifier`): documents extract in parallel and a replace-all write
+  clobbered one document's declaration with another's.
+- **Currency.** The model normalises `€30 million` and `15亿元人民币` to a bare number or
+  writes the currency as a sibling key (`"currency": "CNY"`). The prompt now asks for the
+  figure as written, the scanner reads ISO codes, currency words and CJK magnitudes (万, 亿),
+  a sibling `currency` key becomes the unit, and the attribute's default unit is used only
+  when the text carries no unit token at all — a wrong currency is worse than none. The same
+  rule (`unit_for`) now governs an attribute written on an entity, which used to stamp the
+  declared unit unconditionally: `500 兆瓦` filed under 金额 came out as ¥500.
+- **Two mentions of one edge in parallel can both insert.** The dedup in `insert_fact_inner`
+  is a read-then-write with no unique index behind it; two documents describing the same
+  `(subject, predicate, object, moment)` extracted at the same time produced two rows with
+  different amounts and no conflict. The next cut (two rows plus `fact_conflicts` for a
+  disagreement) has to close this first — a per-base advisory lock around the insert, or a
+  partial unique index on live rows.
+- The model dates "earlier this year" to a concrete day and so mints a moment the text never
+  gave; identity follows the model's date. Visible on the timeline, not a qualifier defect.
+
 ## Open questions
 
-- Where does the amount go when the relation is not adopted yet (`predicate_id` is null,
-  wording on the evidence)? This cut drops it with a reason. Keeping it keyed by wording
-  until adoption would preserve the figure; the bootstrap would then have to propose the
-  qualifier along with the relation.
+- ~~Where does the amount go when the relation is not adopted yet?~~ Answered: a qualifier
+  on a fact whose predicate is unknown binds to an attribute the base already defines (no
+  ontology change, so no switch), and adoption (`adopt`) carries the qualifiers onto the new
+  row and declares them on the relation. A qualifier that binds to nothing — the base has no
+  such attribute, or the ontology is frozen — is written as a literal fact on the subject,
+  worded `relation.key` on its evidence and recorded in `ontology_misses`, the shape rule 8a
+  gives an unlisted figure. Nothing about an edge is dropped for want of a definition.
 - The canvas. An edge label with the amount is a rendering change and belongs with the
   parallel-edge work; the timeline reading an event as a point is
   [0031](0031-an-event-holds-at-the-moment-it-names.md)'s UI cut.

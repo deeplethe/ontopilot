@@ -199,7 +199,7 @@ pub(super) fn tools_schema(can_write: bool, data_source_names: &[String]) -> ser
 ///
 /// 判据直接取自工具表里的 `required`：加一个必填参数，这里自动跟上，
 /// 不必记得来改第二处。
-fn check_call(
+pub(super) fn check_call(
     tools: &serde_json::Value,
     name: &str,
     raw_args: &str,
@@ -980,7 +980,8 @@ pub async fn chat(
                     via_token: None,
                     question: Some(&query),
                 };
-                let (result, step) = tools::dispatch(&ctx, &mut sink, &call.name, &args).await;
+                let tools::ToolResult { text: result, step, .. } =
+                    tools::dispatch(&ctx, &mut sink, &call.name, &args).await;
                 // **这一步发生在正文的哪个位置。**
                 //
                 // 模型是边说边调的：说一句、查一下、再说一句。SSE 上 `delta` 与
