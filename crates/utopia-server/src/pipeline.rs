@@ -62,10 +62,13 @@ async fn run(state: &AppState, document_id: Uuid) -> anyhow::Result<()> {
     let filename = doc.filename.clone();
     let parsed =
         tokio::task::spawn_blocking(move || utopia_ingest::parse(&filename, &bytes)).await??;
-    let text_len = parsed.text.chars().count() as i32;
+    // PDF 提取偶尔会在流里夹 NUL（字体 ToUnicode / 编码内容），Postgres TEXT 不收
+    // 0x00，落到 chunks.text 直接报 invalid byte sequence，整篇 failed。这里先剥掉。
+    let parsed_text: String = parsed.text.chars().filter(|c| *c != '\0').collect();
+    let text_len = parsed_text.chars().count() as i32;
 
     // 2. 分块 + 入库
-    let pieces = utopia_ingest::chunk_text(&parsed.text);
+    let pieces = utopia_ingest::chunk_text(&parsed_text);
     let chunk_pairs =
         utopia_store::documents::replace_chunks(&state.pool, doc.kb_id, document_id, &pieces)
             .await?;
