@@ -202,6 +202,18 @@
   --u-on-danger: #ffffff;
   /* 浮岛的投影：暗底下要重，浅底下要轻 */
   --u-shadow: rgba(0, 0, 0, 0.5);
+  /* 浮起两档。**从前这一档根本不在令牌里**：页面写的是 Tailwind 自带的
+     `shadow-lg` / `shadow-2xl`，它们是按浅色界面调的黑影，压在近黑的底上
+     几乎看不见，于是没人发现界面里还有一套不归自己管的颜色——翻成纸底之后
+     它们全冒出来了，而且深浅与 `--u-shadow` 对不上。
+     u-lift：贴着画布浮的控件（搜索框、图例）。
+     u-lift-strong：盖在页面上的浮层（菜单、对话框、停靠面板、toast）。 */
+  --u-lift: 0 4px 16px var(--u-shadow);
+  --u-lift-strong: 0 12px 40px var(--u-shadow);
+  /* 播放头那一圈。暗底上是一圈光晕（它本来就该是"亮着的那一条"），
+     纸底上改成一圈纸色的描边——同一个作用（把 2px 的头从柱子里分出来），
+     换一种手法：一圈黑光晕压在浅色的柱子上只是一团糊 */
+  --u-scrub-head-ring: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
   /* 语义色的另外两个三元组：底色淡染（chip / mark）按透明度调 */
   --u-ok-rgb: 76, 195, 138;
   --u-warn-rgb: 242, 182, 109;
@@ -287,6 +299,7 @@
   --u-active: rgba(0, 0, 0, 0.055);
   --u-pill-bg: rgba(255, 255, 255, 0.92);
   --u-shadow: rgba(0, 0, 0, 0.18);
+  --u-scrub-head-ring: 0 0 0 1.5px rgba(var(--u-ground-rgb), 0.95);
   --u-ok-rgb: 26, 127, 75;
   --u-warn-rgb: 154, 106, 18;
   --u-code-quote: #6b7280;
@@ -327,6 +340,14 @@ body::before {
    `glass-strong border-l-0` 这种写法里 border-l-0 是输的——左栏四边都有
    1px 边框，内容整体偏 1px，两个页面左上角本该重合的输入框差一像素。 */
 @layer components {
+  /* 浮起：页面只说"浮哪一档"，深浅交给主题 */
+  .u-lift {
+    box-shadow: var(--u-lift);
+  }
+  .u-lift-strong {
+    box-shadow: var(--u-lift-strong);
+  }
+
   /* **backdrop 要去色**。这一层的底色本身是纯中性的（rgba(10,10,10)、
      白 2.5%，三个通道相等），可 backdrop-filter 把背后的画布糊上来一起显示——
      图上的节点是有类型色的，蓝紫一片时透上来就是一块偏蓝的面。
@@ -1518,7 +1539,7 @@ a:hover > .u-mark-arrow {
   height: 28px;
   border-radius: 1px;
   background: var(--u-text);
-  box-shadow: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
+  box-shadow: var(--u-scrub-head-ring);
   cursor: ew-resize;
 }
 .scrubber-range::-moz-range-thumb {
@@ -1527,7 +1548,7 @@ a:hover > .u-mark-arrow {
   border: none;
   border-radius: 1px;
   background: var(--u-text);
-  box-shadow: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
+  box-shadow: var(--u-scrub-head-ring);
   cursor: ew-resize;
 }
 .scrubber-range::-webkit-slider-runnable-track {
@@ -1721,5 +1742,5 @@ a:hover > .u-mark-arrow {
 
 /* 时间岛：投影从页面里收进来（0038） */
 .u-scrub-island {
-  box-shadow: 0 12px 40px var(--u-shadow);
+  box-shadow: var(--u-lift-strong);
 }

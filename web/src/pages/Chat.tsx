@@ -414,7 +414,7 @@ export function Chat() {
               />
             </Button>
             {scopeOpen && (
-              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-overlay shadow-2xl overflow-hidden">
+              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-overlay u-lift-strong overflow-hidden">
                 <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
                   {S.ask.scopeLabel}
                 </div>
@@ -575,7 +575,7 @@ export function Chat() {
                     className="fixed inset-0 z-10"
                     onClick={() => setMenuFor(null)}
                   />
-                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 shadow-xl">
+                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 u-lift-strong">
                     <Row
                       density="menu"
                       onClick={() => {

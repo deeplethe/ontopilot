@@ -126,6 +126,16 @@ const RULES = [
     allow: /rgba\(0,\s*0,\s*0,\s*0\)/g,
   },
   {
+    id: "raw-shadow",
+    /* Tailwind 自带的阴影是按浅色界面调的黑影，与 `--u-shadow` 不是一回事；
+       暗底上它们几乎看不见，所以能一直混在页面里没人察觉。浮起只有两档：
+       贴着画布的控件 `u-lift`，盖在页面上的浮层 `u-lift-strong`。
+       `shadow-none` 是"把它取消掉"，不是一档深浅，放行 */
+    re: /\bshadow-(sm|md|lg|xl|2xl)\b/g,
+    why: "浮起两档：u-lift（贴着画布的控件）/ u-lift-strong（浮层）；深浅归 --u-shadow（规矩 4）",
+    ui: true,
+  },
+  {
     id: "native-confirm",
     re: /\bwindow\.(confirm|alert)\(|(?<![.\w])(confirm|alert)\(/g,
     why: "确认走 DangerConfirm / Dialog，不用 window.confirm（规矩 5）",

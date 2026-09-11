@@ -480,8 +480,7 @@ export const zh: Strings = {
       notion: "Notion",
     },
     sourceKindHints: {
-      folder:
-        "一个普通文件夹。选中它，把文件直接上传（或拖）进去——不监听、不同步。",
+      folder: "可在文件夹中管理上传的文件：上传、拖入、删除都在这里。",
       url: "抓取所列的网页；内容变化时更新同一篇文档。",
       rss: "订阅一个源；每条目成为一篇文档，日期取其发布时间。",
       jira_issues:

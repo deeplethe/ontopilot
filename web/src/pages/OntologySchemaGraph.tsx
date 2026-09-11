@@ -1069,7 +1069,7 @@ export function OntologySchemaGraph({
               {unscopedPop.open && (
                 <div
                   ref={unscopedPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay shadow-2xl"
+                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay u-lift-strong"
                 >
                   {/* 与库切换器、告警面板、图谱页的类图例同一副解剖：第一行就是
                       触发它的那个胶囊自己，三角翻上去，点它收回；**没有浮在角上的
