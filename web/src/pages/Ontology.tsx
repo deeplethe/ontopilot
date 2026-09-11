@@ -77,7 +77,7 @@ import {
   THead,
   Tr,
   localDateTime,
-} from "../ui";
+  chipLike,} from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
 const RAIL_ROW_H = 34;
@@ -1509,7 +1509,7 @@ function RefinePanel({
                   <span
                     key={c.id}
                     title={c.description}
-                    className="u-chip u-chip-neutral u-num text-fine"
+                    className={chipLike("neutral", "u-num text-fine")}
                   >
                     {c.label} {c.distance.toFixed(2)}
                   </span>
@@ -1557,7 +1557,7 @@ function RefinePanel({
                       {r.coarse ?? S.graph.untyped} → {r.choice}
                     </span>
                     {r.crosses_axis && (
-                      <span className="u-chip u-chip-warn text-fine">
+                      <span className={chipLike("warn", "text-fine")}>
                         {S.ontology.refineCrossesAxis}
                       </span>
                     )}

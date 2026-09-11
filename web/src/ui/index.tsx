@@ -1369,7 +1369,7 @@ export function RailItem({
       // 计数只在有东西时出现，写成一枚 chip；0 不写——一栏灰零只是噪音
       trailing={
         count !== undefined && count > 0 ? (
-          <span className="u-chip u-chip-neutral u-num">{count}</span>
+          <span className={chipLike("neutral", "u-num")}>{count}</span>
         ) : undefined
       }
       {...props}

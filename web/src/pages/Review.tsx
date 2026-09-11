@@ -39,7 +39,7 @@ import {
   Segmented,
   GroupLabel,
   PageHeader,
-} from "../ui";
+  chipLike,} from "../ui";
 
 const DUP_PAGE = 6;
 const FACT_PAGE = 10;
@@ -150,13 +150,13 @@ function DuplicateCard({
       </div>
       <div className="mt-3 pt-3 flex items-center gap-3 border-t border-line">
         {locked ? (
-          <span className="u-chip u-chip-info">
+          <span className={chipLike("info")}>
             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warn animate-pulse" />
             {S.review.agentDeciding}
           </span>
         ) : (
           <span
-            className={`u-chip ${item.stage === "human" ? "u-chip-warn" : "u-chip-neutral"}`}
+            className={chipLike(item.stage === "human" ? "warn" : "neutral")}
           >
             {item.stage === "human"
               ? S.review.stageHuman
@@ -253,7 +253,7 @@ function FactRow({
           {fact.object_name ?? "?"}
         </span>
         {range && <span className="text-small text-ink-2">({range})</span>}
-        <span className="u-chip u-chip-warn ml-auto">
+        <span className={chipLike("warn", "ml-auto")}>
           {S.review.confidence(Math.round(fact.confidence * 100))}
         </span>
       </div>
@@ -329,7 +329,7 @@ function ConflictRow({
             ({S.review.conflictSince(c.new_valid_from.slice(0, 10))})
           </span>
         )}
-        <span className="u-chip u-chip-warn ml-auto">
+        <span className={chipLike("warn", "ml-auto")}>
           {S.review.conflictReason[c.reason] ?? c.reason}
         </span>
       </div>
@@ -468,7 +468,7 @@ function MergeRow({
         </div>
       </div>
       {merge.reverted_at ? (
-        <span className="u-chip u-chip-neutral shrink-0">
+        <span className={chipLike("neutral", "shrink-0")}>
           {S.review.reverted}
         </span>
       ) : (
