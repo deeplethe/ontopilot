@@ -193,6 +193,12 @@
      就会在纸底上糊成一块灰带 */
   --u-active: rgba(var(--u-ink-rgb), 0.09);
   --u-pill-bg: rgba(12, 12, 12, 0.9);
+  /* 指到的那块名字牌。暗底上往亮里走一档——与 chrome 里 hover 升一层面
+     （surface → surface-2）是同一个说法，只是画布上的面必须够实，
+     底下压着的是线和点，不是页面的底 */
+  --u-pill-bg-hover: rgba(42, 42, 42, 0.96);
+  /* 选中的那块名字牌：底浅字深，反着来。暗底上它就是墨色本身 */
+  --u-pill-invert: var(--u-text);
   --u-halo: rgba(var(--u-ground-rgb), 0.92);
   /* 时间轴刻度：走过的、播放头、没到的 */
   --u-scrub-past: rgba(var(--u-ink-rgb), 0.32);
@@ -308,6 +314,12 @@
   /* 指到 0.03 → 选中 0.055，与暗色那边 0.045 → 0.09 同一个倍数，绝对值减半 */
   --u-active: rgba(0, 0, 0, 0.055);
   --u-pill-bg: rgba(255, 255, 255, 0.92);
+  /* 纸底上反过来：hover 往暗里走一档（chrome 的 --u-surface 也是加黑） */
+  --u-pill-bg-hover: rgba(236, 236, 236, 0.96);
+  /* 反色那一档**不跟着墨色走**：纸底上的墨是 #171717，一块纯黑的牌子压在
+     一张浅色的图上，比暗底上那块近白的牌子重得多——同样是"反过来"，
+     在纸上要收一档。深灰仍然与指到的那块浅灰分得清清楚楚 */
+  --u-pill-invert: #3f3f3f;
   --u-shadow: rgba(0, 0, 0, 0.18);
   --u-scrub-head-ring: 0 0 0 1.5px rgba(var(--u-ground-rgb), 0.95);
   --u-ok-rgb: 26, 127, 75;
