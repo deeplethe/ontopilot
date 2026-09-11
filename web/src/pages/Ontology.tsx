@@ -1363,8 +1363,10 @@ function PropertyDefinition({
       </Def>
       {/* 边上的属性（0037）：这条关系的边能带哪些属性，按属性的 label 列 */}
       <Def label={S.ontology.qualifiers}>
-        {rel.qualifiers.length > 0
-          ? rel.qualifiers.map(typeName).join(", ")
+        {/* `?? []`：这一格是后加的（0037），**旧版本的后端不发它**。
+            少一格不该让整块面板崩掉——点一条关系就白屏，正是这么来的 */}
+        {(rel.qualifiers ?? []).length > 0
+          ? (rel.qualifiers ?? []).map(typeName).join(", ")
           : S.ontology.noQualifiers}
       </Def>
       <Def label={S.ontology.temporal}>{temporal}</Def>

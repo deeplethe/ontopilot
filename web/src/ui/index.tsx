@@ -180,6 +180,13 @@ type InputSize = { size?: "sm" | "md" };
 const BARE =
   "border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-0 px-0 dark:bg-transparent";
 
+/** 一个"框"的皮：边、圆角、实底、焦点环，与 `Input` 完全同一副。
+ *  下拉、搜索选择器这些**自己画触发器**的控件用它——从前它们蹭的是手写的
+ *  `.input-dark`，那个类随按钮/输入框迁移删掉了，于是触发器一夜之间没了皮
+ *  （"怎么有没背景的框"）。皮只此一份，谁要谁引。 */
+export const FIELD_SHELL =
+  "flex items-center rounded-control border border-input bg-background text-body text-ink transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50";
+
 /** 有皮的那一档**要有实底**。shadcn 默认 `bg-transparent`：在一张卡片里那是对的，
  *  可这套界面的输入框有浮在图谱画布上的（搜索实体、筛选），透明的框底下是网格和
  *  连线，字压在线上，看着就是一团乱。取页面底色——在卡片上它比卡片深一点，
@@ -314,7 +321,7 @@ export function Dropdown({
         type="button"
         onClick={() => setOpen(!open)}
         title={menuLabel}
-        className={cn("input-dark w-full flex items-center gap-2 text-left", pad)}
+        className={cn(FIELD_SHELL, "w-full gap-2 text-left", pad)}
       >
         {icon && <span className="shrink-0 text-ink-2">{icon}</span>}
         <span className="flex-1 min-w-0 truncate">
@@ -445,7 +452,7 @@ export function SearchSelect({
       />
       <input
         ref={inputRef}
-        className={cn("input-dark w-full", pad)}
+        className={cn(FIELD_SHELL, "w-full", pad)}
         value={open ? query : (current?.label ?? "")}
         /* 打开后把当前选中项挪进 placeholder：边打字边能看到现值 */
         placeholder={open ? current?.label || placeholder : placeholder}
@@ -613,7 +620,7 @@ export function MultiSearchSelect({
         />
       <input
           ref={inputRef}
-          className="input-dark w-full pl-7 pr-2.5 py-1 text-small"
+          className={cn(FIELD_SHELL, "w-full pl-7 pr-2.5 py-1 text-small")}
           value={query}
           placeholder={placeholder}
           onFocus={() => {
@@ -775,7 +782,8 @@ export function ColorPicker({
             onChange={(e) => onChange(e.target.value)}
             placeholder={ENTITY_PALETTE[0]}
             className={cn(
-              "input-dark w-full px-2 py-1 text-small font-mono",
+              FIELD_SHELL,
+              "w-full px-2 py-1 text-small font-mono",
               !valid && "!border-danger",
             )}
           />
