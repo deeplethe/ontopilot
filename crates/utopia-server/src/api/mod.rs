@@ -30,6 +30,7 @@ use axum::{Json, Router};
 use serde_json::json;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use utopia_core::config::AppConfig;
 use utopia_core::error::AppError;
@@ -507,11 +508,35 @@ pub fn router(state: AppState, cfg: &AppConfig) -> Router {
         )
         .layer(cors);
 
-    // SPA 托管：产物存在则挂载，history fallback 到 index.html
+    /* SPA 托管。**分两条路，因为它们的失败方式不一样**：
+
+       `/assets` 下面是构建产物，文件名带内容哈希。这里的 ServeDir **不带兜底**，
+       所以缺文件就是 404。从前它和页面共用一个带 history fallback 的服务，于是
+       升级之后旧哈希的请求拿到的是 `200 text/html` 的首页——浏览器按模块脚本
+       解析一张网页，光凭 MIME 就拒绝执行，界面白屏（#616）。
+
+       缓存指示按文件名本来的含义给：带哈希的产物换了内容就换名字，可以
+       `immutable` 存一年；`index.html` 每次都要回源确认，否则它会指着一批
+       已经不存在的哈希。少了这一条，升级要等浏览器的启发式缓存自己过期。 */
     let index = std::path::Path::new(&cfg.web_dist).join("index.html");
     if index.exists() {
-        let serve = ServeDir::new(&cfg.web_dist).fallback(ServeFile::new(index));
-        app = app.fallback_service(serve);
+        /* 每条路各自套自己的头。**层要挂在这一段的 Router 上，不能挂在整个
+           app 上**——挂在 app 上，API 的响应也会跟着被扣上 `immutable`。 */
+        let assets = Router::new()
+            .fallback_service(ServeDir::new(
+                std::path::Path::new(&cfg.web_dist).join("assets"),
+            ))
+            .layer(SetResponseHeaderLayer::overriding(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=31536000, immutable"),
+            ));
+        let spa = Router::new()
+            .fallback_service(ServeDir::new(&cfg.web_dist).fallback(ServeFile::new(index)))
+            .layer(SetResponseHeaderLayer::overriding(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("no-cache"),
+            ));
+        app = app.nest("/assets", assets).fallback_service(spa);
         tracing::info!("已托管前端产物: {}", cfg.web_dist);
     }
 
