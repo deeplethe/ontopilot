@@ -5,11 +5,16 @@
 //
 // 一条告警 = 一次故障，写完不再变，没有"已解决"。
 // 「已读」逐人——一个人读过不代表别人也该从未读里消失。
-import { type Ref, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, ChevronDown } from "lucide-react";
+import { Bell } from "lucide-react";
 
 import { api, type AlertGroup } from "../api";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { S } from "../i18n";
 import { toast } from "../toast";
 import {
@@ -22,7 +27,6 @@ import {
   LinkButton,
   Pager,
   localDateTime,} from "../ui";
-import { usePopoverFlip } from "../ui/popoverFlip";
 
 const PAGE = 8;
 
@@ -162,7 +166,7 @@ function AlertRow({
   );
 }
 
-function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: () => void }) {
+function Panel() {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const qc = useQueryClient();
@@ -209,25 +213,15 @@ function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: 
   const total = list.data?.total ?? 0;
 
   return (
-    // top-0 而不是 top-9：面板要从铃铛**原位**长出来，右上角对齐
-    <div
-      ref={panelRef}
-      className="u-menu-glass absolute right-0 top-0 w-[420px] rounded-overlay u-lift-strong z-50 overflow-hidden"
-    >
-      {/* 第一行就是关掉这张面板——同库切换器：面板从铃铛原位长出来，
-          右端那个朝上的三角正落在铃铛上，"再点一下缩回去"。
-          从前这里是一个浮在角上的关闭叉，它得跟发丝边框对齐，永远差半像素 */}
-      <div
-        onClick={onClose}
-        className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
-      >
-        {/* 与库切换器的第一行同构：图标 + 名字 + 朝上的三角。图标是铃铛本身
-            ——这一行就是那个铃铛长出来的样子 */}
+    <>
+      {/* 标题行。**不再兼任关闭键**：从前面板是从铃铛原位长出来的，第一行压着
+          铃铛，点它就缩回去；换成标准弹层之后关闭归 Esc、外点与铃铛本身，
+          这一行只说这是什么 */}
+      <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <Bell size={15} strokeWidth={1.8} className="shrink-0 text-ink-2" />
         <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
           {S.alerts.title}
         </span>
-        <ChevronDown size={12} className="shrink-0 rotate-180 text-ink-2" />
       </div>
 
       {/* 查找与库切换器同一副样子：没有自己的框（bare），它是面板的一段，
@@ -286,14 +280,12 @@ function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: 
           />
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 export function AlertBell() {
-  // 跟用户菜单同一份原地变形：两个面板紧挨着，动画差一点点来回点两下就看得出来
-  const { open, setOpen, close, rootRef, anchorRef, panelRef } =
-    usePopoverFlip<HTMLButtonElement, HTMLDivElement>();
+  const [open, setOpen] = useState(false);
   const unread = useQuery({
     queryKey: ["alerts", "unread"],
     queryFn: () => api.alertsUnread(),
@@ -303,24 +295,20 @@ export function AlertBell() {
   const n = unread.data?.unread ?? 0;
 
   return (
-    <div ref={rootRef} className="relative">
-      <IconButton
-        size="md"
-        ref={anchorRef}
-        label={S.alerts.badgeLabel}
-        aria-expanded={open}
-        className={cn("relative", open && "bg-surface-2 text-ink")}
-        onClick={() => (open ? close() : setOpen(true))}
-      >
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <IconButton size="md" label={S.alerts.badgeLabel} className="relative">
         <Bell size={15} />
         {/* 角标也是个点，不是数字。"有事没看"是二元的，具体几条打开就知道；
             数字还会随重试一路往上跳，跳到三位数就把铃铛撑变形了 */}
         {n > 0 && (
           <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-danger" />
         )}
-      </IconButton>
-      {/* 关掉的入口在面板第一行（那儿正好压着铃铛），不再是浮在角上的一个叉 */}
-      {open && <Panel panelRef={panelRef} onClose={close} />}
-    </div>
+        </IconButton>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[420px] overflow-hidden p-0">
+        <Panel />
+      </PopoverContent>
+    </Popover>
   );
 }
