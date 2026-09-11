@@ -37,6 +37,12 @@ import {
 } from "../api";
 import { S } from "../i18n";
 import { toast } from "../toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useKb, useKbId } from "../kb";
 import {
   Button,
@@ -113,7 +119,6 @@ export function Chat() {
   // 会话搜索。**搜标题也搜正文**——人记得住的往往是问过的那句话
   const [convSearch, setConvSearch] = useState("");
   // 三点菜单展开的是哪一条。同时只开一个
-  const [menuFor, setMenuFor] = useState<string | null>(null);
   // 「最近」这一组收起来没有。默认展开：左栏本来就是为了看见这些会话
   const [recentOpen, setRecentOpen] = useState(true);
   const scopeRef = useRef<HTMLDivElement>(null);
@@ -555,58 +560,44 @@ export function Chat() {
                   </span>
                 </Row>
               )}
-              {/* 三点菜单：**一个入口装下所有动作**。从前右边直接是删除，
-                  而删除是这里最不该一步到位的那个 */}
+              {/* 三点菜单：**一个入口装下所有动作**（从前右边直接是删除，
+                  而删除是这里最不该一步到位的那个）。走 shadcn 的
+                  DropdownMenu：弹层样式与全站统一，触发器由 Radix 自动带上
+                  `aria-haspopup`——按钮的"按下去沉 1px"那条特意排除了菜单
+                  触发器，手搓的入口没有这个标记，所以从前一点就跳。 */}
               {renamingId !== c.id && (
-                <IconButton
-                  size="sm"
-                  label={S.ask.moreActions}
-                  className={cn(REVEAL, "absolute right-1 top-1/2 -translate-y-1/2")}
-                  onClick={() => setMenuFor(menuFor === c.id ? null : c.id)}
-                >
-                  <MoreHorizontal size={14} />
-                </IconButton>
-              )}
-              {menuFor === c.id && (
-                <>
-                  {/* 点别处就关。铺满全屏而不是监听 document：不必在卸载时
-                      记得摘监听器 */}
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setMenuFor(null)}
-                  />
-                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 u-lift-strong">
-                    <Row
-                      density="menu"
-                      onClick={() => {
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton
+                      size="sm"
+                      label={S.ask.moreActions}
+                      className={cn(REVEAL, "absolute right-1 top-1/2 -translate-y-1/2")}
+                    >
+                      <MoreHorizontal size={14} />
+                    </IconButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem
+                      onSelect={() => {
                         setRenameDraft(c.title || "");
                         setRenamingId(c.id);
-                        setMenuFor(null);
                       }}
                     >
                       {S.ask.rename}
-                    </Row>
-                    <Row
-                      density="menu"
-                      onClick={() => {
-                        navigator.clipboard?.writeText(c.title || "");
-                        setMenuFor(null);
-                      }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => navigator.clipboard?.writeText(c.title || "")}
                     >
                       {S.ask.copyTitle}
-                    </Row>
-                    <Row
-                      density="menu"
-                      danger
-                      onClick={() => {
-                        setPendingDelete(c);
-                        setMenuFor(null);
-                      }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => setPendingDelete(c)}
                     >
                       {S.ask.deleteConversation}
-                    </Row>
-                  </div>
-                </>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           ))}
