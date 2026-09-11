@@ -208,6 +208,9 @@
      它们全冒出来了，而且深浅与 `--u-shadow` 对不上。
      u-lift：贴着画布浮的控件（搜索框、图例）。
      u-lift-strong：盖在页面上的浮层（菜单、对话框、停靠面板、toast）。 */
+  /* 页面顶上那层晕。暗底上是一点墨色的空间感；纸底上不加——同样一层墨压在
+     近白的底上，只会把正文区压得比左栏深一档，看着像两块颜色 */
+  --u-page-glow: rgba(var(--u-ink-rgb), 0.045);
   --u-lift: 0 4px 16px var(--u-shadow);
   --u-lift-strong: 0 12px 40px var(--u-shadow);
   /* 播放头那一圈。暗底上是一圈光晕（它本来就该是"亮着的那一条"），
@@ -239,13 +242,15 @@
   /* 底是浅灰，不是白。白留给浮在它上面的东西（见 --u-raise）——
      从前底是 #fafafa、面板反而更深，那是把暗色的做法直接翻了个面：
      暗底上"比底亮"是对的，纸底上照抄成"比底暗"，于是每一块面板都是灰的 */
-  --u-ground: #f5f5f5;
+  /* 底回到近白。**灰的底是给白卡片当衬的**，而这套界面的框（左栏、顶栏、
+     导航条）本来就与底同色，底一暗，整屏就先灰了一层，白只剩下卡片那几块 */
+  --u-ground: #fafafa;
   --u-text: #171717;
   --u-text-2: #5f5f5f;
   --u-accent: #262626;
   --u-accent-deep: 23, 23, 23;
   --u-ink-rgb: 23, 23, 23;
-  --u-ground-rgb: 245, 245, 245;
+  --u-ground-rgb: 250, 250, 250;
   --u-on-accent: #fafafa;
   --u-ok: #1a7f4b;
   --u-warn: #9a6a12;
@@ -268,11 +273,12 @@
      是页面的框，不是浮在页面上的东西。暗色那边这个令牌本来就是底色本身
      （`rgba(10,10,10,0.86)` 压在 #0a0a0a 上），浅色照同一个道理取底色；
      白留给真正浮起来的（--u-raise 的面板、菜单、对话框） */
-  --u-surface-strong: rgba(245, 245, 245, 0.9);
-  --u-surface-strong-hover: rgba(245, 245, 245, 0.97);
+  --u-surface-strong: rgba(250, 250, 250, 0.9);
+  --u-surface-strong-hover: rgba(250, 250, 250, 0.97);
   --u-menu-surface: rgba(255, 255, 255, 0.95);
   --u-menu-surface-hover: rgba(255, 255, 255, 1);
   --u-bubble: #ffffff;
+  --u-page-glow: transparent;
   --u-scrim: rgba(0, 0, 0, 0.35);
   --u-pop-surface: rgba(255, 255, 255, 0.98);
   --u-modal-surface: rgba(255, 255, 255, 0.97);
@@ -335,7 +341,7 @@ body::before {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(1000px 600px at 50% -20%, rgba(var(--u-ink-rgb), 0.045), transparent 60%),
+    radial-gradient(1000px 600px at 50% -20%, var(--u-page-glow), transparent 60%),
     var(--u-ground);
 }
 
