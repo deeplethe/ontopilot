@@ -31,6 +31,8 @@ export const HOVER_MUTE = 0.78;
 export let PILL_BG = "rgba(12,12,12,0.9)";
 /** 指到的那一块底。静止那档是 `PILL_BG`，选中那档反色，见 `drawNodeLabel` */
 export let PILL_BG_HOVER = "rgba(42,42,42,0.96)";
+/** 选中那一档的底（反色）。**不等于 `PILL_TEXT`**：纸底上的墨是近黑的 */
+export let PILL_INVERT = "#ededed";
 export let PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
 export let PILL_TEXT = "#ededed"; // --u-text
 /* 裸字的光晕：与画布同色（--u-ground）的一圈描边，只为把从字底下穿过的
@@ -151,7 +153,7 @@ export function drawNodeLabel(
   ctx.beginPath();
   ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
   ctx.fillStyle = data.labelInvert
-    ? PILL_TEXT
+    ? PILL_INVERT
     : data.labelLift
       ? PILL_BG_HOVER
       : PILL_BG;
@@ -326,6 +328,7 @@ export function refreshPalette() {
   MUTED_SHELL = token("--u-node-muted", MUTED_SHELL);
   PILL_BG = token("--u-pill-bg", PILL_BG);
   PILL_BG_HOVER = token("--u-pill-bg-hover", PILL_BG_HOVER);
+  PILL_INVERT = token("--u-pill-invert", PILL_INVERT);
   PILL_BORDER = token("--u-line-strong", PILL_BORDER);
   PILL_TEXT = token("--u-text", PILL_TEXT);
   LABEL_HALO = token("--u-halo", LABEL_HALO);
