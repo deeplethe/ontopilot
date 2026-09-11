@@ -1289,12 +1289,20 @@ export function PageHeader({
 
 /* ---------- SectionMark（分区字标：Docs/账户层等，逐字母入场，点击回应用） ---------- */
 import { Link as RouterLink } from "@tanstack/react-router";
-export function SectionMark({ text, title }: { text: string; title: string }) {
+export function SectionMark({
+  text,
+  title,
+  className,
+}: {
+  text: string;
+  title: string;
+  className?: string;
+}) {
   return (
     <RouterLink
       to="/"
       title={title}
-      className="u-wordmark-top relative inline-flex text-ink"
+      className={cn("u-wordmark-top relative inline-flex text-ink", className)}
       style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.01em" }}
     >
       {[...text].map((ch, i) => (
