@@ -223,6 +223,8 @@
   /* 页面顶上那层晕。暗底上是一点墨色的空间感；纸底上不加——同样一层墨压在
      近白的底上，只会把正文区压得比左栏深一档，看着像两块颜色 */
   --u-page-glow: rgba(var(--u-ink-rgb), 0.045);
+  /* 选中的导航标签从下划线往上透的那一点光（见 .u-tab.is-active::before） */
+  --u-tab-glow: rgba(var(--u-ink-rgb), 0.06);
   --u-lift: 0 4px 16px var(--u-shadow);
   --u-lift-strong: 0 12px 40px var(--u-shadow);
   /* 播放头那一圈。暗底上是一圈光晕（它本来就该是"亮着的那一条"），
@@ -323,6 +325,7 @@
   --u-menu-surface-hover: rgba(255, 255, 255, 1);
   --u-bubble: #ffffff;
   --u-page-glow: transparent;
+  --u-tab-glow: transparent;
   --u-scrim: rgba(0, 0, 0, 0.35);
   --u-pop-surface: rgba(255, 255, 255, 0.98);
   --u-modal-surface: rgba(255, 255, 255, 0.97);
@@ -992,18 +995,16 @@ body::before {
   color: var(--u-text);
   border-bottom-color: var(--u-text);
 }
-/* 选中的那一页从下划线往上透一点光：白 6% 在底，到一半高处就没了——说的是
-   「光从线上来」，不是给标签涂一块底。压在文字后面，不接指针 */
+/* 选中的那一页从下划线往上透一点光：暗底上是白 6% 在底、到一半高处就没了——
+   说的是「光从线上来」，不是给标签涂一块底。**纸底上不透**：同一道渐变换成墨色
+   就成了一块往上晕开的灰，那不是光，是脏。纸底上选中靠的是字色加下划线，
+   本来就够。压在文字后面，不接指针 */
 .u-tab.is-active::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(
-    to top,
-    rgba(var(--u-ink-rgb), 0.06),
-    rgba(var(--u-ink-rgb), 0) 50%
-  );
+  background: linear-gradient(to top, var(--u-tab-glow), transparent 50%);
   pointer-events: none;
 }
 

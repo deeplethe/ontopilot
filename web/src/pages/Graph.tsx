@@ -1775,6 +1775,12 @@ export function Graph() {
 /* ============ 时间轴（底部居中悬浮岛：播放 + 密度带 + 拖动） ============ */
 
 /** 轨道 clientX → 对齐天步进的时间值（数据精度即 day，拖动求精细；播放仍按月推进求节奏）。 */
+/** 轨道两端的余量，**等于轨道自己的圆角**（`rounded-control`）。
+ *  柱子与播放头都缩进这么多：不缩的话，最左最右那几根正好落在圆角的弧里，
+ *  看着像被切掉了一块；播放头走到头时也会贴上弧线。位置换算跟着一起缩，
+ *  否则点在轨道最左边得到的值会比看到的位置偏一点。 */
+const SCRUB_INSET = 10;
+
 function scrubValueAt(
   clientX: number,
   track: HTMLDivElement | null,
@@ -1785,7 +1791,12 @@ function scrubValueAt(
   const rect = track.getBoundingClientRect();
   // 布局未成形（宽度 0）时避免除零产出 NaN
   if (rect.width < 1) return maxTs;
-  const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  const span = rect.width - SCRUB_INSET * 2;
+  if (span < 1) return maxTs;
+  const frac = Math.min(
+    1,
+    Math.max(0, (clientX - rect.left - SCRUB_INSET) / span),
+  );
   const raw = minTs + frac * (maxTs - minTs);
   return Math.min(maxTs, minTs + Math.round((raw - minTs) / DAY_MS) * DAY_MS);
 }
@@ -2046,8 +2057,12 @@ function TimeScrubber({
             ≈ 430px，而轨道内宽才 ~455px——柱子被挤成 0.1px，整条看起来是空的。
             实测就是这么丢的。柱子稀疏时留 2px 好数，密了就贴在一起当密度带看 */}
         <div
-          className="absolute inset-x-1.5 top-1.5 bottom-1.5 flex items-end"
-          style={{ gap: bars.length > 120 ? 0 : bars.length > 40 ? 1 : 2 }}
+          className="absolute top-1.5 bottom-1.5 flex items-end"
+          style={{
+            left: SCRUB_INSET,
+            right: SCRUB_INSET,
+            gap: bars.length > 120 ? 0 : bars.length > 40 ? 1 : 2,
+          }}
         >
           {bars.map((b) => {
             // 进入即亮（桶起点为判据）：播放头脚下的柱子即已覆盖——进度条通用语义
@@ -2089,6 +2104,8 @@ function TimeScrubber({
         <input
           type="range"
           className="scrubber-range"
+          /* CSS 里那条 width:100% 要让开，否则左右缩进之后整条会溢出 */
+          style={{ left: SCRUB_INSET, right: SCRUB_INSET, width: "auto" }}
           min={minTs}
           max={maxTs}
           step={DAY_MS}
