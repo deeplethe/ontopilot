@@ -267,9 +267,10 @@ export function DocsPage() {
           {/* 上下都留足空白：标题不顶着头，末段内容能滚到屏幕中部——人读屏幕中间。
               排版交给官方 @tailwindcss/typography（prose，16px 基准），
               自定义只剩：标题锚点 id、外链新开、表格横向滚动容器 */}
-          {/* 颜色走 `.u-doc-prose`（styles.css）：插件的 neutral 灰阶带蓝相、
-              invert 变体是写死的暗色，两个都不用，接令牌 */}
-          <article className="prose u-doc-prose prose-headings:scroll-mt-6 prose-code:before:content-none prose-code:after:content-none flex-1 min-w-0 max-w-3xl mx-auto px-8 pt-16 pb-[40vh]">
+          {/* 排版走官方的 shadcn/typeset（src/typeset.css）：容器里的
+              标题、列表、表格、代码全由它管，内容本身不带一个类；
+              字号与字体在 `.typeset-docs` 那个预设里调，颜色接我们的令牌 */}
+          <article className="typeset typeset-docs [&_h1]:scroll-mt-6 [&_h2]:scroll-mt-6 [&_h3]:scroll-mt-6 flex-1 min-w-0 max-w-3xl mx-auto px-8 pt-16 pb-[40vh]">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{

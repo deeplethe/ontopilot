@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./typeset.css";
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
@@ -1699,36 +1700,21 @@ a:hover > .u-mark-arrow {
   }
 }
 
-/* **这一块必须在 @layer 之外**：排版插件的 `prose` 是 utilities 层的东西，
-   层的先后压过选择器的强弱——把它放进 components 层，插件自带的
-   `--tw-prose-*` 会照样赢，于是文档正文的字色一直停在插件的浅色灰阶，
-   翻到暗底上就是一片看不清的深灰（"字色不随主题改变"）。层外不属于任何层，
-   赢过所有层，这也是 styles.css 里控件类当初要包进 components 层的同一条规律
-   反过来用。 */
-/* 文档正文（Tailwind 排版插件）。**颜色全部接到令牌上**，两个变体都不用：
-   从前这里挂的是 `prose-invert`，那是插件的暗色变体——标题、链接、行内代码、
-   表头一律取近白，压在纸底上就是一片看不见的白。而它的另一头（默认变体）
-   又是插件自己那套灰阶，与这套界面的墨色不是一回事。
-   插件把每一处颜色都留成了 `--tw-prose-*`，所以这里只需把它们接到
-   `--u-text` / `--u-text-2` / `--u-line` 上，浅暗两套跟着主题走，
-   页面上不再需要任何 `dark:` 或 invert 的判断。 */
-.u-doc-prose {
-  --tw-prose-body: var(--u-text-2);
-  --tw-prose-headings: var(--u-text);
-  --tw-prose-lead: var(--u-text-2);
-  --tw-prose-links: var(--u-text);
-  --tw-prose-bold: var(--u-text);
-  --tw-prose-counters: var(--u-text-2);
-  --tw-prose-bullets: var(--u-line-strong);
-  --tw-prose-hr: var(--u-line);
-  --tw-prose-quotes: var(--u-text);
-  --tw-prose-quote-borders: var(--u-line);
-  --tw-prose-captions: var(--u-text-2);
-  --tw-prose-code: var(--u-text);
-  --tw-prose-kbd: var(--u-text);
-  --tw-prose-kbd-shadows: var(--u-ink-rgb);
-  --tw-prose-pre-code: var(--u-text);
-  --tw-prose-pre-bg: var(--u-well);
-  --tw-prose-th-borders: var(--u-line-strong);
-  --tw-prose-td-borders: var(--u-line);
+/* ---- typeset：内置手册那一面 ----
+   官方那张 typeset.css 只管 `.typeset` 容器里的东西，容器外一律不碰。
+   这里只调它开放的那几个变量：字走我们已经装好的那两款（Geist 变体 +
+   等宽），**中文回退跟着 --font-sans 一起带过来**；正文 15px、行高 1.75、
+   段间距 1.25em 按 shadcn 文档给的文档预设。
+   颜色不在这儿定——typeset 用的是 currentColor 与 --typeset-muted/rule，
+   接到我们的令牌上，暗浅两套自动跟着走。 */
+.typeset-docs {
+  --typeset-font-body: var(--font-sans);
+  --typeset-font-heading: var(--font-sans);
+  --typeset-font-mono: var(--font-mono);
+  --typeset-size: 15px;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+  --typeset-muted: var(--u-text-2);
+  --typeset-rule: var(--u-line);
+  color: var(--u-text);
 }
