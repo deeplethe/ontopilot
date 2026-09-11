@@ -112,7 +112,8 @@ import {
   ToolTower,
   cn,
   GroupLabel,
-} from "../ui";
+  chipLike,
+  Chip,} from "../ui";
 import { usePopoverFlip } from "../ui/popoverFlip";
 import { useKb, useKbId } from "../kb";
 import { toast } from "../toast";
@@ -2431,7 +2432,7 @@ function ProofSteps({ kbId, steps }: { kbId: string; steps: ProofStep[] }) {
               {st.object ?? "?"}
             </span>
             {st.retracted && (
-              <span className="u-chip u-chip-warn text-fine">{S.graph.proofRetracted}</span>
+              <Chip tone="warn" className="text-fine">{S.graph.proofRetracted}</Chip>
             )}
           </div>
           <div className="mt-1 space-y-1 pl-2">
@@ -2600,7 +2601,7 @@ function ContestedChip({
           });
         }
       }}
-      className="u-chip u-chip-contest shrink-0 !text-fine !px-2 cursor-pointer"
+      className={chipLike("contest", "shrink-0 cursor-pointer text-fine")}
       title={S.graph.contestedHint(c.kind, c.derived ?? null)}
     >
       {S.graph.contestedChip}
@@ -3234,9 +3235,9 @@ function FactRow({
               {interval || S.graph.undated}
             </span>
             {fact.stale && (
-              <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
+              <Chip tone="neutral" className="shrink-0 text-fine">
                 {S.graph.staleFactChip}
-              </span>
+              </Chip>
             )}
             {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
             <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">

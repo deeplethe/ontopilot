@@ -1075,52 +1075,8 @@ body::before {
 }
 
 /* ---- chips ---- */
-.u-chip {
-  display: inline-block;
-  border-radius: var(--radius-cell);
-  padding: 0.125rem 0.5rem;
-  font-size: var(--text-fine);
-  line-height: var(--text-fine--line-height);
-  white-space: nowrap;
-}
-.u-chip-neutral {
-  background: rgba(var(--u-ink-rgb), 0.08);
-  color: var(--u-text-2);
-}
-.u-chip-info {
-  background: rgba(var(--u-ink-rgb), 0.12);
-  color: var(--u-text);
-}
-.u-chip-success {
-  background: rgba(var(--u-ok-rgb), 0.12);
-  color: var(--u-ok);
-}
-.u-chip-warn {
-  background: rgba(var(--u-warn-rgb), 0.12);
-  color: var(--u-warn);
-}
 /* 争议（0017 §3）：与图上的争议边同一个色相 */
-.u-chip-contest {
-  background: rgba(var(--u-contest-rgb), 0.14);
-  color: var(--u-contest);
-}
-.u-chip-danger {
-  background: rgba(var(--u-danger-rgb), 0.12);
-  color: var(--u-danger);
-}
-.u-chip-violet {
-  background: rgba(var(--u-violet-rgb), 0.12);
-  color: var(--u-violet);
-}
 /* 可点的 chip：指针停上提亮一点 */
-.u-chip-click {
-  cursor: pointer;
-  vertical-align: middle;
-  transition: filter var(--u-fast);
-}
-.u-chip-click:hover {
-  filter: brightness(1.25);
-}
 }
 
 /* 浏览态里的程度标注：同一个警示色，但没有填充、没有药丸形状。

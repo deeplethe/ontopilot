@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { S } from "../i18n";
 import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
+import { badgeVariants } from "@/components/ui/badge";
 import { Input as ShadInput } from "@/components/ui/input";
 import { Textarea as ShadTextarea } from "@/components/ui/textarea";
 // 表格原件在 ./table 里，下面 re-export；`SkeletonTableRows` 自己也要用，
@@ -933,7 +934,7 @@ export function StatusCell({
 
 /* ---------- Chip（状态胶囊） ---------- */
 export type ChipTone =
-  "neutral" | "info" | "success" | "warn" | "danger" | "violet";
+  "neutral" | "info" | "success" | "warn" | "danger" | "violet" | "contest";
 
 export function Chip({
   tone = "neutral",
@@ -949,24 +950,51 @@ export function Chip({
   onClick?: () => void;
   children: ReactNode;
 }) {
+  /* 形状走 shadcn 的 Badge，**颜色仍是我们的语义色**：Badge 只有
+     default / secondary / destructive 这几档，而 chip 在这套语汇里说的是
+     状态——ready、3 dropped、contested、derived 各有各的色，它们是令牌，
+     不是变体。所以底用 outline 的骨架，色按 tone 贴上去。 */
+  const cls = cn(
+    badgeVariants({ variant: "outline" }),
+    "border-transparent",
+    CHIP_TONE[tone],
+    onClick && "cursor-pointer",
+    className,
+  );
   if (onClick) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        title={title}
-        className={cn("u-chip u-chip-click", `u-chip-${tone}`, className)}
-      >
+      <button type="button" onClick={onClick} title={title} className={cls}>
         {children}
       </button>
     );
   }
   return (
-    <span className={cn("u-chip", `u-chip-${tone}`, className)} title={title}>
+    <span className={cls} title={title}>
       {children}
     </span>
   );
 }
+
+/** chip 的样子，给不能是组件的地方用：行内那个 `role="link"` 的 span
+ *  （外面已经是一条可点的行，按钮里不能再套按钮） */
+export function chipLike(tone: ChipTone = "neutral", className?: string): string {
+  return cn(
+    badgeVariants({ variant: "outline" }),
+    "border-transparent",
+    CHIP_TONE[tone],
+    className,
+  );
+}
+
+const CHIP_TONE: Record<ChipTone, string> = {
+  neutral: "bg-surface-2 text-ink-2",
+  success: "bg-ok/12 text-ok",
+  warn: "bg-warn/12 text-warn",
+  danger: "bg-danger/12 text-danger",
+  info: "bg-violet/12 text-violet",
+  contest: "bg-contest/12 text-contest",
+  violet: "bg-violet/12 text-violet",
+};
 
 /* ---------- LinkButton（长得像一句话的动作：表格行末的"重抽""删除"） ---------- */
 export function LinkButton({
