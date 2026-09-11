@@ -519,8 +519,23 @@ async fn insert_fact_inner(
             }
         }
     }
-    // 精确重复：同 valid_from → 复用
-    if let Some((existing, _, _, _)) = same.iter().find(|(_, vf, _, _)| *vf == validity.from) {
+    // 精确重复：同 valid_from → 复用。同起点、**这次带了终点、那行还开着** → 关上它
+    // （「自 2020-01-10 起任董事」之后读到「2020-01-10 至 2024-04-30 任董事」）
+    if let Some((existing, _, vt, vtp)) = same.iter().find(|(_, vf, _, _)| *vf == validity.from) {
+        if temporal == Temporal::State && vt.is_none() && vtp.is_none() {
+            if let Some(to) = validity.to {
+                if let Some(closed) = crate::temporal::close_superseded(
+                    pool,
+                    *existing,
+                    to,
+                    validity.to_precision.unwrap_or("day"),
+                )
+                .await?
+                {
+                    return Ok((closed, true));
+                }
+            }
+        }
         attest_earlier(pool, *existing, validity.attested_at).await?;
         return Ok((*existing, false));
     }
@@ -537,14 +552,34 @@ async fn insert_fact_inner(
             return Ok((*existing, false));
         }
     }
-    // 时间精化候选：已有无时无终的裸行，本次观察带了起点 → 落库后作废裸行并链上
+    // 时间精化候选：已有无起点的行（裸行，或只知道终点的行——并行抽取时说结束的那份
+    // 文档可能先到），本次观察带了起点 → 落库后作废那行并链上。只知道终点的行，
+    // 终点跟着走：这次没说终点就沿用它的，说了就得是同一个
+    let mut validity = validity;
     let refine_target = if validity.from.is_some() {
         same.iter()
-            .find(|(_, vf, vt, _)| vf.is_none() && vt.is_none())
-            .map(|(id, _, _, _)| *id)
+            .find(|(_, vf, vt, _)| {
+                vf.is_none() && (vt.is_none() || validity.to.is_none() || *vt == validity.to)
+            })
+            .map(|(id, _, vt, vtp)| (*id, *vt, vtp.clone()))
     } else {
         None
     };
+    if let Some((_, Some(vt), vtp)) = &refine_target {
+        if validity.to.is_none() {
+            validity.to = Some(*vt);
+            validity.to_precision = vtp.as_deref().map(|p| match p {
+                "year" => "year",
+                "month" => "month",
+                "day" => "day",
+                "hour" => "hour",
+                "minute" => "minute",
+                "second" => "second",
+                _ => ENDED_UNKNOWN,
+            });
+        }
+    }
+    let refine_target = refine_target.map(|(id, _, _)| id);
 
     let id = Uuid::now_v7();
     let insert_sql = match object {

@@ -14,6 +14,37 @@ fn day(s: &str) -> Stamp {
     format!("{s}T00:00:00Z").parse().unwrap()
 }
 
+fn span(
+    from: Option<&str>,
+    to: Option<&str>,
+    attested: &str,
+) -> utopia_store::graph::Validity<'static> {
+    utopia_store::graph::Validity {
+        from: from.map(day),
+        from_precision: from.map(|_| "day"),
+        to: to.map(day),
+        to_precision: to.map(|_| "day"),
+        attested_at: Some(day(attested)),
+    }
+}
+
+async fn live(
+    pool: &PgPool,
+    kb: Uuid,
+    pred: Uuid,
+    object: Uuid,
+) -> Result<Vec<LiveRow>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, valid_from, valid_to, supersedes FROM facts
+         WHERE kb_id = $1 AND predicate_id = $2 AND object_id = $3 AND invalidated_at IS NULL",
+    )
+    .bind(kb)
+    .bind(pred)
+    .bind(object)
+    .fetch_all(pool)
+    .await
+}
+
 fn ends(to: &str, attested: &str) -> utopia_store::graph::Validity<'static> {
     utopia_store::graph::Validity {
         from: None,
@@ -172,6 +203,140 @@ async fn an_end_date_closes_the_open_span() -> anyhow::Result<()> {
     .await?;
     assert_eq!(again, closed);
     assert!(!created);
+
+    sqlx::query("DELETE FROM knowledge_bases WHERE id = $1")
+        .bind(kb)
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM organizations WHERE id = $1")
+        .bind(org)
+        .execute(&pool)
+        .await?;
+    Ok(())
+}
+
+/// 同一段的三种来法，都只剩一条活着的行：
+/// 起点先到、后来的文档把整段说全；终点先到（并行抽取时说结束的那份先落库）、起点后到。
+#[tokio::test]
+async fn a_span_told_in_two_halves_is_one_row() -> anyhow::Result<()> {
+    let Some(url) = utopia_store::test_db::url() else {
+        return Ok(());
+    };
+    let pool = PgPool::connect(&url).await?;
+    let tag = Uuid::now_v7();
+    let (org, ws, kb) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    sqlx::query("INSERT INTO organizations (id, name) VALUES ($1, $2)")
+        .bind(org)
+        .bind(format!("halves-{tag}"))
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO workspaces (id, org_id, name) VALUES ($1, $2, $3)")
+        .bind(ws)
+        .bind(org)
+        .bind(format!("halves-{tag}"))
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO knowledge_bases (id, workspace_id, name) VALUES ($1, $2, $3)")
+        .bind(kb)
+        .bind(ws)
+        .bind(format!("halves-{tag}"))
+        .execute(&pool)
+        .await?;
+    let class = Uuid::now_v7();
+    sqlx::query("INSERT INTO entity_types (id, kb_id, key, label) VALUES ($1, $2, $3, $4)")
+        .bind(class)
+        .bind(kb)
+        .bind("org")
+        .bind("Org")
+        .execute(&pool)
+        .await?;
+    let listed = utopia_store::ontology::create_relation_type(
+        &pool,
+        kb,
+        "listed",
+        "listed",
+        "state",
+        Default::default(),
+        "",
+        "relation",
+        &[],
+        &[],
+        None,
+        None,
+    )
+    .await?;
+    let mut ids = Vec::new();
+    for name in ["法院", "澜图新材料", "第二家"] {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO entities (id, kb_id, type_id, canonical_name) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(id)
+        .bind(kb)
+        .bind(class)
+        .bind(format!("{name}-{tag}"))
+        .execute(&pool)
+        .await?;
+        ids.push(id);
+    }
+    let (court, a, b) = (ids[0], ids[1], ids[2]);
+
+    // 起点先到，后来的文档把整段说全（同起点 + 终点）→ 关上，不另立
+    let (first, _) = utopia_store::graph::insert_fact(
+        &pool,
+        kb,
+        court,
+        Some(listed),
+        a,
+        span(Some("2024-11-05"), None, "2024-11-07"),
+        0.9,
+    )
+    .await?;
+    let (closed, created) = utopia_store::graph::insert_fact(
+        &pool,
+        kb,
+        court,
+        Some(listed),
+        a,
+        span(Some("2024-11-05"), Some("2025-03-12"), "2025-03-14"),
+        0.9,
+    )
+    .await?;
+    assert!(created);
+    let rows = live(&pool, kb, listed, a).await?;
+    assert_eq!(rows.len(), 1, "同起点带终点：关上原来那行");
+    assert_eq!(rows[0].0, closed);
+    assert_eq!(rows[0].2, Some(day("2025-03-12")));
+    assert_eq!(rows[0].3, Some(first));
+
+    // 终点先到（说结束的那份文档先落库），起点后到 → 一行，两头都有
+    let (end_only, _) = utopia_store::graph::insert_fact(
+        &pool,
+        kb,
+        court,
+        Some(listed),
+        b,
+        ends("2025-03-12", "2025-03-14"),
+        0.9,
+    )
+    .await?;
+    let (merged, created) = utopia_store::graph::insert_fact(
+        &pool,
+        kb,
+        court,
+        Some(listed),
+        b,
+        span(Some("2024-11-05"), None, "2024-11-07"),
+        0.9,
+    )
+    .await?;
+    assert!(created);
+    let rows = live(&pool, kb, listed, b).await?;
+    assert_eq!(rows.len(), 1, "起点后到：并进只知道终点的那行");
+    assert_eq!(rows[0].0, merged);
+    assert_eq!(rows[0].1, Some(day("2024-11-05")), "起点是后到的");
+    assert_eq!(rows[0].2, Some(day("2025-03-12")), "终点沿用先到的");
+    assert_eq!(rows[0].3, Some(end_only));
 
     sqlx::query("DELETE FROM knowledge_bases WHERE id = $1")
         .bind(kb)
