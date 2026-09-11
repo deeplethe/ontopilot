@@ -64,7 +64,6 @@ import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronDown,
   ChevronRight,
   CircleDashed,
   ExternalLink,
@@ -114,7 +113,11 @@ import {
   GroupLabel,
   chipLike,
   Chip,} from "../ui";
-import { usePopoverFlip } from "../ui/popoverFlip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useKb, useKbId } from "../kb";
 import { toast } from "../toast";
 
@@ -264,16 +267,11 @@ export function Graph() {
   // 推出来的边显不显示。默认显示——推理默认关着，有派生就意味着用户开过开关
   const [showDerived, setShowDerived] = useState(true);
   // 信息窗默认收起：它答的是「什么时候推的」，那是偶尔才问的问题
-  /* Inference 也用原地展开，与「+N 个类」、通知、用户菜单同一套。
-     **贴左下角**：塔在画布左下，面板要从那个 ⋯ 按钮往右上长开 */
-  const derivedPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>(
-    "bottom left",
-  );
-  /* 「+N 个类」用与通知/用户卡片同一套原地展开：面板压到 chip 的真实边界
-     （圆角 999px）再长成卡片。**贴左边，所以锚点角是 top left** */
-  const legendPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>(
-    "top left",
-  );
+  /* 画布上的两块浮层（Inference、「+N 个类」）与顶栏那三个面板同一副：
+     shadcn 的 Popover。从前是手写的原地展开，面板第一行还要把触发它的那个
+     胶囊再画一遍当关闭键；统一之后关闭归 Esc、外点与触发器本身 */
+  const [derivedOpen, setDerivedOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [legendQ, setLegendQ] = useState("");
   /* 正在退场的实体。**面板不能一取消选中就卸载**——那样它是瞬间消失的。
      先留在原地演完退场，再真的移除。用 selectedRef 取当前值而不是把
@@ -1359,16 +1357,9 @@ export function Graph() {
               点开看到的就是全部（搜得到任何一个），写「+3」等于承诺了另一件事 */}
 
           {legendRest.length > 0 && (
-            <div className="relative" ref={legendPop.rootRef}>
-              <Pill
-                ref={legendPop.anchorRef}
-                active={legendPop.open}
-                title={S.graph.legendAllHint}
-                aria-expanded={legendPop.open}
-                onClick={() =>
-                  legendPop.open ? legendPop.close() : legendPop.setOpen(true)
-                }
-              >
+            <Popover open={legendOpen} onOpenChange={setLegendOpen}>
+              <PopoverTrigger asChild>
+              <Pill active={legendOpen} title={S.graph.legendAllHint}>
                 {S.graph.legendMore(types.length)}
                 {/* 收起来的类里有正被隐藏的就点一下。**不点就是无声过滤**：
                     在面板里关掉一个类、把面板一收，界面上再没有任何东西说它被关了 */}
@@ -1376,25 +1367,13 @@ export function Graph() {
                   <span className="h-1.5 w-1.5 rounded-full bg-ink-2" />
                 )}
               </Pill>
-              {legendPop.open && (
-                <div
-                  ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay u-lift-strong"
-                >
-                  {/* 与库切换器、告警面板、用户菜单同一副解剖：第一行是触发它的
-                      那个胶囊自己，三角翻上去，点它缩回；没有浮在角上的关闭叉
-                      ——「哪儿展开的就从哪儿收回去」 */}
-                  <div
-                    onClick={() => legendPop.close()}
-                    className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
-                  >
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 overflow-hidden p-0">
+                  {/* 标题行只说这是什么，不再兼任关闭键 */}
+                  <div className="flex items-center gap-3 border-b border-line px-4 py-3">
                     <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
                       {S.graph.legendMore(types.length)}
                     </span>
-                    <ChevronDown
-                      size={12}
-                      className="shrink-0 rotate-180 text-ink-2"
-                    />
                   </div>
                   {/* 全开 / 全关。**从顶栏那枚独立胶囊搬进来的**：它只在有隐藏时
                       才出现，于是那一排的宽度会随着你点类跳来跳去；而它要做的事
@@ -1506,9 +1485,8 @@ export function Graph() {
                       </div>
                     )}
                   </div>
-                </div>
-              )}
-            </div>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 
@@ -1615,10 +1593,9 @@ export function Graph() {
             「显不显示推出来的边」正是同一族问题。外壳保持中性，
             金色只出现在图标本身——与色点用在类胶囊上是同一个做法。 */}
         {derivedCount > 0 && (
-          /* **两层**：外层只负责定位，内层才有 overflow-hidden。
-             那个类是给按钮堆裁圆角的，可面板是同一个盒子的子元素——
-             合成一层的话面板会被一起裁掉，实测只剩塔本身那 32px 宽 */
-          <div className="relative" ref={derivedPop.rootRef}>
+          /* 面板现在走 Popover（Portal 到 body），不再是塔的子元素，
+             所以外层这一圈只是为了跟下一座塔隔开 */
+          <div className="relative">
             <ToolTower>
               <ToolButton
                 role="switch"
@@ -1636,29 +1613,25 @@ export function Graph() {
               {/* 展开成一个小窗：这批边是什么时候推的、现在还推不推、手动再跑一次。
                   **与开关分成两个按钮**——「藏起来」是每天要点的，「什么时候推的」
                   是偶尔才问的，合成一个会让常用动作多一步 */}
-              <ToolButton
-                ref={derivedPop.anchorRef}
-                aria-expanded={derivedPop.open}
-                active={derivedPop.open}
-                label={S.graph.derivedPanel}
-                icon={
-                  <span className="grid h-4 w-4 shrink-0 place-items-center leading-none">
-                    ⋯
-                  </span>
-                }
-                onClick={() =>
-                  derivedPop.open ? derivedPop.close() : derivedPop.setOpen(true)
-                }
-              />
+              <Popover open={derivedOpen} onOpenChange={setDerivedOpen}>
+                <PopoverTrigger asChild>
+                  <ToolButton
+                    active={derivedOpen}
+                    label={S.graph.derivedPanel}
+                    icon={
+                      <span className="grid h-4 w-4 shrink-0 place-items-center leading-none">
+                        ⋯
+                      </span>
+                    }
+                  />
+                </PopoverTrigger>
+                {kb && (
+                  <PopoverContent side="right" align="end" className="w-72 p-0">
+                    <DerivedPanel kbId={kb.id} count={derivedCount} />
+                  </PopoverContent>
+                )}
+              </Popover>
             </ToolTower>
-            {derivedPop.open && kb && (
-              <DerivedPanel
-                panelRef={derivedPop.panelRef}
-                kbId={kb.id}
-                count={derivedCount}
-                onClose={() => derivedPop.close()}
-              />
-            )}
           </div>
         )}
         <ToolTower>
@@ -2192,17 +2165,7 @@ function fmtInterval(f: EntityFact): string {
  *
  * 手动按钮留在这里而不是别处：想重推的人正是刚看完这三行、觉得数字太旧的那个人。
  */
-function DerivedPanel({
-  panelRef,
-  kbId,
-  count,
-  onClose,
-}: {
-  panelRef: React.Ref<HTMLDivElement>;
-  kbId: string;
-  count: number;
-  onClose: () => void;
-}) {
+function DerivedPanel({ kbId, count }: { kbId: string; count: number }) {
   const qc = useQueryClient();
   const kb = useQuery({
     queryKey: ["kbOne", kbId],
@@ -2233,13 +2196,10 @@ function DerivedPanel({
     ? Math.round((Date.now() - new Date(last).getTime()) / 60000)
     : null;
 
-  // **盖在触发器原位往右上长开**（bottom-0 left-0），而不是在旁边挂一扇窗。
-  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-panel
+  /* 内容而已：定位、关闭、外点都归 Popover（与顶栏三个面板同一套）。
+     从前它自己盖在触发器原位往右上长开，还得带一个关闭叉 */
   return (
-    <div
-      ref={panelRef}
-      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-overlay px-3 pb-3 pt-3 u-lift-strong"
-    >
+    <div className="px-3 pb-3 pt-3">
       {/* items-center 而不是 baseline：标题旁边站着一个按钮和一个关闭键，
           按基线对齐会让那两个看着往上飘 */}
       <div className="flex items-center gap-2">
@@ -2258,16 +2218,6 @@ function DerivedPanel({
             {run.isPending ? S.graph.derivedRunning : S.graph.derivedRun}
           </Button>
         )}
-        {/* 固定 18px 方格：**别让关闭键撑起标题行的高**——一撑高，
-            行里最矮的标题就被居中挤出上下空当，看着像上边距过大 */}
-        <IconButton
-          size="sm"
-          label={S.graph.close}
-          className={armed ? "ml-auto" : undefined}
-          onClick={onClose}
-        >
-          ×
-        </IconButton>
       </div>
 
       {/* 问句 + 两个目标。**取消排在前面**：从「跑」那一下移过来最先碰到的
