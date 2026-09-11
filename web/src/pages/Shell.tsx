@@ -117,8 +117,10 @@ export function Shell() {
       </header>
 
       {/* Tab 导航条：图标 + 文字，选中的那一项是一颗填底的药丸 */}
-      {/* px-6 + 药丸自己的左 12：第一个标签的图标仍与字标同在 32 */}
-      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-center gap-1 px-6 py-2">
+      {/* **px-8 与顶栏同一个数**：药丸有了底之后，左边该对齐的是盒不是图标——
+          字标从 32 起，第一颗药丸的盒也从 32 起，一条线。从前标签没有底，
+          看得见的左缘就是图标，所以那时对的是图标（px-4 + 标签左 16 = 32） */}
+      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-center gap-1 px-8 py-2">
         {TABS.map(({ to, label, Icon }) => (
           <Link
             key={to}
