@@ -940,7 +940,13 @@ fn next_token(s: &str) -> (&str, &str) {
 pub fn normalize_attr_value(datatype: &str, raw: &serde_json::Value) -> Option<serde_json::Value> {
     match datatype {
         "number" => match raw {
-            serde_json::Value::Number(n) => Some(serde_json::Value::Number(n.clone())),
+            // 模型给的 JSON 数也过一遍 f64：`65` 与 "65%" 解出来的 `65.0` 是同一个数，
+            // 而 serde_json 把整数和浮点当两种值——实测同一条边上 65 撞 65.0 记成了冲突
+            serde_json::Value::Number(n) => n
+                .as_f64()
+                .filter(|f| f.is_finite())
+                .and_then(serde_json::Number::from_f64)
+                .map(serde_json::Value::Number),
             serde_json::Value::String(s) => {
                 let cleaned: String = s
                     .chars()
@@ -1461,7 +1467,11 @@ mod tests {
             normalize_attr_value("number", &json!("35,000")),
             Some(json!(35000.0))
         );
-        assert_eq!(normalize_attr_value("number", &json!(42)), Some(json!(42)));
+        // JSON 里的整数也落成同一种数：`42` 与 "42" 解出来是同一个值
+        assert_eq!(
+            normalize_attr_value("number", &json!(42)),
+            Some(json!(42.0))
+        );
         assert_eq!(normalize_attr_value("number", &json!("about ten")), None);
         assert_eq!(
             normalize_attr_value("date", &json!("2024-07")),
@@ -1649,5 +1659,22 @@ mod tests {
         assert!(user.contains("k1 [person]: Zhang Wei"));
         assert!(user.contains("k2 [person]: Zhang Wei"));
         assert!(user.contains("subject_ref/object_ref"));
+    }
+}
+
+#[cfg(test)]
+mod a_number_is_one_number {
+    use super::normalize_attr_value;
+    use serde_json::json;
+
+    /// 模型写 `65` 还是 "65%"，落下来都是同一个数——不然同一条边上会记成冲突
+    #[test]
+    fn a_number_is_one_number_however_it_is_written() {
+        let a = normalize_attr_value("number", &json!(65)).unwrap();
+        let b = normalize_attr_value("number", &json!("65%")).unwrap();
+        let c = normalize_attr_value("number", &json!("65")).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        assert_eq!(a.as_f64(), Some(65.0));
     }
 }

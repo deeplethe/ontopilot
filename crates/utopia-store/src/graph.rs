@@ -107,6 +107,23 @@ pub enum QualifierWrite {
 
 /// 往一条边上写一个字面值属性。**属性不进事实的去重键**：同一条边再听到一次带了
 /// 金额的，是同一条边补上金额，不是第二条边。
+/// 两个属性值是不是同一个：数按数比（`65` 与 `65.0` 是同一个数——老库里存着整数，
+/// 新写的是浮点），其余按结构比
+fn qualifier_values_agree(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a, b) {
+        (serde_json::Value::Number(x), serde_json::Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (serde_json::Value::Object(x), serde_json::Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| qualifier_values_agree(v, w)))
+        }
+        (serde_json::Value::Array(x), serde_json::Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(v, w)| qualifier_values_agree(v, w))
+        }
+        _ => a == b,
+    }
+}
+
 pub async fn upsert_fact_qualifier(
     pool: &PgPool,
     fact_id: Uuid,
@@ -121,7 +138,7 @@ pub async fn upsert_fact_qualifier(
     .fetch_optional(pool)
     .await?;
     match existing {
-        Some((v,)) if &v == value => Ok(QualifierWrite::Same),
+        Some((v,)) if qualifier_values_agree(&v, value) => Ok(QualifierWrite::Same),
         Some(_) => Ok(QualifierWrite::Conflict),
         None => {
             sqlx::query(
