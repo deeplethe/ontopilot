@@ -2988,6 +2988,11 @@ fn unit_for(
     sibling_currency: Option<&str>,
     declared: Option<&str>,
 ) -> Option<String> {
+    // 文本、日期、布尔值没有单位可言："3年"、"30日" 是文本，尾巴上的字不是单位
+    // ——实测「期限=3年」被记成了 `3年 年`
+    if datatype != "number" {
+        return None;
+    }
     let declared = declared.map(str::trim).filter(|u| !u.is_empty());
     let text = raw.as_str();
     if let Some(u) = text
@@ -3052,6 +3057,9 @@ mod unit_for_tests {
         );
         // 文本型属性没有币种可言
         assert_eq!(unit_for(&s("B 轮"), "text", Some("CNY"), None), None);
+        // 文本值尾巴上的字也不是单位："3年" 是期限的写法，不是 3 个「年」
+        assert_eq!(unit_for(&s("3年"), "text", None, Some("")), None);
+        assert_eq!(unit_for(&s("30日"), "text", None, None), None);
     }
 
     #[test]
@@ -3059,10 +3067,6 @@ mod unit_for_tests {
         assert_eq!(
             unit_for(&s("4300 人"), "number", None, Some("人")).as_deref(),
             Some("人")
-        );
-        assert_eq!(
-            unit_for(&s("三年"), "text", None, Some("年")).as_deref(),
-            Some("年")
         );
     }
 
