@@ -199,10 +199,9 @@ export function Mappings() {
                 setPage(0);
               }}
             />
-          </div>
-
-          {selectable.length > 0 && (
-            <div className="flex items-center justify-end gap-3 flex-wrap">
+            {/* **一条工具行**：筛选、搜索、全选、批量动作排在一起。
+                从前它们各占一行，三行控件压在内容上面，读到列表要先翻过一块 */}
+            {selectable.length > 0 && (
               <Checkbox
                 checked={selectable.every((m) => picked.has(m.id))}
                 disabled={batch.isPending || individualPending}
@@ -214,9 +213,11 @@ export function Mappings() {
                   )
                 }
                 label={S.mapping.selectPage}
+                className="shrink-0"
               />
-              {selectedIds.length > 0 && (
-                <>
+            )}
+            {selectedIds.length > 0 && (
+              <>
                   <span className="u-num text-small text-ink-2">
                     {S.mapping.selected(selectedIds.length)}
                   </span>
@@ -245,10 +246,9 @@ export function Mappings() {
                   >
                     {S.mapping.reject}
                   </LinkButton>
-                </>
-              )}
-            </div>
-          )}
+              </>
+            )}
+          </div>
 
           {status === "rejected" && (
             <p className="text-small text-ink-2">{S.mapping.rejectedHint}</p>

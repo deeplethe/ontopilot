@@ -329,7 +329,11 @@ export function Dropdown({
           title={menuLabel}
           className={cn(
             FIELD_SHELL,
-            "w-full justify-between gap-2 text-left",
+            /* **调用方给了宽度就不塞 `w-full`**：这里的 `cn` 只是把类拼起来，
+               不做 Tailwind 的冲突消解，两个 `w-` 同时在场时谁赢看生成顺序，
+               不看写的顺序——`className="w-40"` 曾经完全不起作用 */
+            className?.includes("w-") ? null : "w-full",
+            "justify-between gap-2 text-left",
             size === "sm" ? "h-7 px-2.5 text-small" : "h-8 px-3 text-body",
             className,
           )}
@@ -403,7 +407,11 @@ export function SearchSelect({
           aria-expanded={open}
           className={cn(
             FIELD_SHELL,
-            "w-full justify-between gap-2 text-left",
+            /* **调用方给了宽度就不塞 `w-full`**：这里的 `cn` 只是把类拼起来，
+               不做 Tailwind 的冲突消解，两个 `w-` 同时在场时谁赢看生成顺序，
+               不看写的顺序——`className="w-40"` 曾经完全不起作用 */
+            className?.includes("w-") ? null : "w-full",
+            "justify-between gap-2 text-left",
             size === "sm" ? "h-7 px-2.5 text-small" : "h-8 px-3 text-body",
             className,
           )}
