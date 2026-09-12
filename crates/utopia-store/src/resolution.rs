@@ -292,9 +292,14 @@ pub async fn resolve_mention(
         });
     };
 
-    // 这一轮**看过**的同名候选。下面无论走哪条分支决定新建，都要把它们递给
-    // `create_entity`：它们是已经被判过「不是同一个」的，锁不该再把它们捞回来
-    let weighed: Vec<Uuid> = candidates.iter().map(|c| c.id).collect();
+    // 这一次调用**绝不能归上去**的全部：调用方点名排除的（`exclude`），加上这一轮
+    // 看过、并且会被判「不是同一个」的同名候选。下面无论走哪条分支决定新建，都要把
+    // 这份名单递给 `create_entity`——锁里那条回捞按名字捞，不给名单就会把它们捞回来
+    let weighed: Vec<Uuid> = exclude
+        .iter()
+        .copied()
+        .chain(candidates.iter().map(|c| c.id))
+        .collect();
 
     // 有画像的候选算相似度；无画像（历史数据/无 embedding 期创建）单独归类
     let mut scored: Vec<(&Candidate, f32)> = Vec::new();
@@ -898,8 +903,12 @@ async fn resolve_type_drift(
         }
     }
 
-    // 跨类型同名的候选也都掂量过了（见 resolve_type_drift 上面那一段）
-    let weighed: Vec<Uuid> = cross.iter().map(|c| c.id).collect();
+    // 同上：点名排除的，加上跨类型同名里掂量过的
+    let weighed: Vec<Uuid> = exclude
+        .iter()
+        .copied()
+        .chain(cross.iter().map(|c| c.id))
+        .collect();
     let (id, created) = create_entity(pool, kb_id, type_id, name, context, &weighed).await?;
     if !created {
         // 并行的另一份文档刚建好它：用它的，审核对也是它排的
