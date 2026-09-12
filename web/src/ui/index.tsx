@@ -1424,6 +1424,39 @@ export function Row({
    都是它。**与列表里的行同一副样子**（Row density="nav"，圆角、缩进）——
    钉在底部的靠外面那条分隔线说明「这几个是常驻的」，不靠把行本身画成方的。
    计数给了就显示，0 也显示（灰一档）：队列清空了是个有意义的事实。 */
+/** 一条会话此刻站在哪儿，画在左栏行的图标格里（14 宽，与别处的图标同一格，
+ *  所以标题仍落在同一条竖线上，见 rowClass 的说明）。
+ *
+ *  三档：`rest` 空心小方块——它本身也是个记号，说明这一列每一行都是一场对话；
+ *  `live` 三个点在跳；`unread` 实心蓝方块，写完了而你还没回来看。
+ *  **形状一档不变**（都是 10 的方块、`rounded-cell`），只有里外与颜色在变——
+ *  与图上那块名字牌同一个道理：换状态不换形状，余光里才认得出是同一样东西。 */
+export function ConvMark({ state }: { state: "rest" | "live" | "unread" }) {
+  return (
+    <span
+      className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"
+      aria-hidden
+    >
+      {state === "live" ? (
+        <span className="u-dots">
+          <span />
+          <span />
+          <span />
+        </span>
+      ) : (
+        <span
+          className={cn(
+            // 12 的方块配 `rounded-cell`（4）才读成"圆角方块"：10 上的 4
+            // 已经接近一个圆，而圆点在这套语汇里是状态灯，不是一场对话
+            "h-3 w-3 rounded-cell border",
+            state === "unread" ? "border-unread bg-unread" : "border-ink-2",
+          )}
+        />
+      )}
+    </span>
+  );
+}
+
 export function RailItem({
   active,
   icon,

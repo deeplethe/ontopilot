@@ -49,6 +49,7 @@
   --color-contest: var(--u-contest);
   --color-violet: var(--u-violet);
   --color-accent: var(--u-accent);
+  --color-unread: var(--u-unread);
   --color-bar: var(--u-bar);
 
   /* 圆角四档（规矩 3）。**按角色命名，数由预设给**——名字说得出「这是个面板」，
@@ -218,6 +219,11 @@
   --u-on-danger: #ffffff;
   /* 浮岛的投影：暗底下要重，浅底下要轻 */
   --u-shadow: rgba(0, 0, 0, 0.5);
+  /* 未读那一枚记号的蓝。**chrome 本来零色相，这是唯一一处例外**，而且是
+     故意的：ok / warn / danger 说的是"这件事好不好"，未读说的是"这里有你
+     还没看过的东西"，借用三档语义色里的任何一档都会被读成一个判断。蓝在
+     这套语汇里还没有别的意思，于是它能只说这一件事。 */
+  --u-unread: #4d8dff;
   /* 浮起两档。**从前这一档根本不在令牌里**：页面写的是 Tailwind 自带的
      `shadow-lg` / `shadow-2xl`，它们是按浅色界面调的黑影，压在近黑的底上
      几乎看不见，于是没人发现界面里还有一套不归自己管的颜色——翻成纸底之后
@@ -367,6 +373,8 @@
      在纸上要收一档。深灰仍然与指到的那块浅灰分得清清楚楚 */
   --u-pill-invert: #3f3f3f;
   --u-shadow: rgba(0, 0, 0, 0.18);
+  /* 纸底上同一枚蓝要压深一档才立得住（浅蓝在白纸上是一团雾） */
+  --u-unread: #2563eb;
   --u-scrub-head-ring: 0 0 0 1.5px rgba(var(--u-ground-rgb), 0.95);
   --u-ok-rgb: 26, 127, 75;
   --u-warn-rgb: 154, 106, 18;
@@ -1071,6 +1079,45 @@ body::before {
 .u-nav-active {
   background: var(--u-active);
   color: var(--u-text);
+}
+
+/* 正在写的那一场，左栏那一格里跳三个点。**它替的是那枚空心小方块**，不是
+   加在它旁边——同一格、同一个位置，一列会话的字因此不会因为某一场在写而错开。
+   点用文字的次色：这一格说的是状态，不是内容，不该比标题还重。 */
+.u-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.u-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: var(--u-text-2);
+  animation: u-dots-kf 1.1s ease-in-out infinite;
+}
+.u-dots > span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.u-dots > span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes u-dots-kf {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+/* 设了减少动效就不跳：三个点站着也说得清"这一场在写" */
+@media (prefers-reduced-motion: reduce) {
+  .u-dots > span {
+    animation: none;
+    opacity: 0.65;
+  }
 }
 
 /* 引用定位闪现：进场强光收敛到持有亮度（运动比静态边框更抓眼）。
