@@ -42,7 +42,7 @@ import {
   Th,
   THead,
   Tr,
-} from "../ui";
+  chipLike,} from "../ui";
 
 export type TableTab = "classes" | "properties" | "attributes";
 
@@ -239,7 +239,7 @@ function ClassesTable({
                     把它们都列着 */}
                 {t.parents.length > 1 && (
                   <span
-                    className="u-chip u-chip-neutral shrink-0 !px-2 !text-fine"
+                    className={chipLike("neutral", "shrink-0 px-2 text-fine")}
                     title={S.ontology.multiParentHint}
                   >
                     +{t.parents.length - 1}
@@ -310,7 +310,7 @@ function Axioms({ r }: { r: RelationTypeView }) {
   return (
     <span className="flex flex-wrap gap-1">
       {shown.map(([, mark, title]) => (
-        <span key={mark} className="u-chip u-chip-neutral !px-2 !text-fine" title={title}>
+        <span key={mark} className={chipLike("neutral", "px-2 text-fine")} title={title}>
           {mark}
         </span>
       ))}

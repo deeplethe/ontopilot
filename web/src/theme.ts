@@ -42,6 +42,11 @@ export function resolvedTheme(): Resolved {
 
 function apply(r: Resolved) {
   document.documentElement.dataset.theme = r;
+  /* shadcn 的暗色变体认的是 `.dark` 这个类（`@custom-variant dark`），
+     我们自己的令牌与画布认的是 `data-theme`。**两个都落**：这样从 shadcn
+     registry 里拿来的组件不用改一个字就跟着主题走，而 `data-theme` 那一套
+     （画布读令牌、首帧前那段脚本）原样不动 */
+  document.documentElement.classList.toggle("dark", r === "dark");
   for (const fn of listeners) fn(r);
 }
 

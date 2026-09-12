@@ -6,7 +6,7 @@ import { S } from "../i18n";
 import {
   Button,
   Wordmark,
-} from "../ui";
+  buttonLike,} from "../ui";
 import { usePageTitle } from "../useTitle";
 import { LoginScene } from "./LoginScene";
 
@@ -59,7 +59,7 @@ export function NotFound() {
   usePageTitle(S.app.name, "Punishment 404");
   return (
     <PunishmentPage message={S.nav.notFound}>
-      <Link to="/" className="u-btn u-btn-ghost px-4 py-2 text-small flex items-center gap-2">
+      <Link to="/" className={buttonLike("ghost")}>
         <Home size={12} />
         {S.nav.returnHome}
       </Link>

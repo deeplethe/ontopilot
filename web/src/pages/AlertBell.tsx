@@ -5,11 +5,16 @@
 //
 // 一条告警 = 一次故障，写完不再变，没有"已解决"。
 // 「已读」逐人——一个人读过不代表别人也该从未读里消失。
-import { type Ref, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, ChevronDown } from "lucide-react";
+import { Bell } from "lucide-react";
 
 import { api, type AlertGroup } from "../api";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { S } from "../i18n";
 import { toast } from "../toast";
 import {
@@ -21,8 +26,7 @@ import {
   Input,
   LinkButton,
   Pager,
-} from "../ui";
-import { usePopoverFlip } from "../ui/popoverFlip";
+  localDateTime,} from "../ui";
 
 const PAGE = 8;
 
@@ -43,12 +47,6 @@ const SEVERITY_TONE: Record<string, ChipTone> = {
   error: "danger",
   warning: "warn",
   info: "info",
-};
-/** 未读的那个点：**有没有点说的是读没读过，什么颜色说的是多重** */
-const SEVERITY_DOT: Record<string, string> = {
-  error: "bg-danger",
-  warning: "bg-warn",
-  info: "bg-accent",
 };
 
 function AlertRow({
@@ -86,24 +84,25 @@ function AlertRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" && g.unread > 0) onRead(g);
       }}
-      className="u-row-shell relative w-full cursor-pointer border-b border-line px-4 py-3 text-left last:border-b-0"
+      className={cn(
+        "u-row-shell relative w-full cursor-pointer border-b border-line px-4 py-3 text-left last:border-b-0",
+        // 读过的整条退一档：标题、库名、时间、明细一起暗下去，扫一眼就知道
+        // 哪几条还没看。悬停照常
+        g.unread === 0 && "opacity-65",
+      )}
     >
-      {/* 未读就是一个红点。整行描边或底色会让面板在告警多时变成一片红，
-          而红点只占它该占的那一点地方，读过就没了。
-          **点在内距里，不占文字那一列**：排在文字左边的话，每条告警的正文
-          就比面板标题和上面那道查找往右缩 18px，一张面板里三种左缘 */}
-      <span
-        className={cn(
-          "absolute left-1.5 top-5 h-1.5 w-1.5 rounded-full",
-          g.unread > 0 ? (SEVERITY_DOT[g.severity] ?? "bg-danger") : "bg-transparent",
-        )}
-      />
+      {/* **读没读过靠整条的明暗，不靠一个点。**从前未读是左边一颗色点，它只能
+          塞进内距里（排进文字那一列的话，正文会比面板标题和查找框往右缩 18px，
+          一张面板三种左缘），结果是紧贴着左边框，看着像掉在外面。
+          现在未读的标题是正文色加中等字重，读过的整条退到次级色——一眼扫下去，
+          亮的是还没看的。严重程度由右边那个计数 chip 的颜色说，不必再来一个点。 */}
       <div className="min-w-0">
-        {/* 标题行只放标题和次数。标题一直是正文色：读过只是不再加粗——
-            淡下去那一档现在与提示、明细同色，一条读过的告警整条糊成一片 */}
         <div className="flex items-center gap-2">
           <span
-            className={cn("min-w-0 flex-1 text-body text-ink", g.unread > 0 && "font-medium")}
+            className={cn(
+              "min-w-0 flex-1 text-body",
+              g.unread > 0 ? "font-medium text-ink" : "text-ink-2",
+            )}
           >
             {worded?.title ?? S.alerts.unknownKind(g.kind)}
           </span>
@@ -121,7 +120,7 @@ function AlertRow({
           </Chip>
           {/* 取组里最新的那一次 */}
           <span className="u-num ml-auto shrink-0 text-fine text-ink-2">
-            {new Date(g.latest_at).toLocaleString()}
+            {localDateTime(g.latest_at)}
           </span>
         </div>
         {worded && (
@@ -162,7 +161,7 @@ function AlertRow({
   );
 }
 
-function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: () => void }) {
+function Panel() {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const qc = useQueryClient();
@@ -209,29 +208,19 @@ function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: 
   const total = list.data?.total ?? 0;
 
   return (
-    // top-0 而不是 top-9：面板要从铃铛**原位**长出来，右上角对齐
-    <div
-      ref={panelRef}
-      className="u-menu-glass absolute right-0 top-0 w-[420px] rounded-overlay u-lift-strong z-50 overflow-hidden"
-    >
-      {/* 第一行就是关掉这张面板——同库切换器：面板从铃铛原位长出来，
-          右端那个朝上的三角正落在铃铛上，"再点一下缩回去"。
-          从前这里是一个浮在角上的关闭叉，它得跟发丝边框对齐，永远差半像素 */}
-      <div
-        onClick={onClose}
-        className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
-      >
-        {/* 与库切换器的第一行同构：图标 + 名字 + 朝上的三角。图标是铃铛本身
-            ——这一行就是那个铃铛长出来的样子 */}
+    <>
+      {/* 标题行。**不再兼任关闭键**：从前面板是从铃铛原位长出来的，第一行压着
+          铃铛，点它就缩回去；换成标准弹层之后关闭归 Esc、外点与铃铛本身，
+          这一行只说这是什么 */}
+      <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <Bell size={15} strokeWidth={1.8} className="shrink-0 text-ink-2" />
         <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
           {S.alerts.title}
         </span>
-        <ChevronDown size={12} className="shrink-0 rotate-180 text-ink-2" />
       </div>
 
       {/* 查找与库切换器同一副样子：没有自己的框（bare），它是面板的一段，
-          不是面板里摆的一个控件；Esc 由 popoverFlip 统一关面板 */}
+          不是面板里摆的一个控件；Esc 与外点由 Popover 统一管 */}
       <div className="border-b border-line px-4 py-3">
         <Input
           bare
@@ -286,14 +275,12 @@ function Panel({ panelRef, onClose }: { panelRef: Ref<HTMLDivElement>; onClose: 
           />
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 export function AlertBell() {
-  // 跟用户菜单同一份原地变形：两个面板紧挨着，动画差一点点来回点两下就看得出来
-  const { open, setOpen, close, rootRef, anchorRef, panelRef } =
-    usePopoverFlip<HTMLButtonElement, HTMLDivElement>();
+  const [open, setOpen] = useState(false);
   const unread = useQuery({
     queryKey: ["alerts", "unread"],
     queryFn: () => api.alertsUnread(),
@@ -303,24 +290,20 @@ export function AlertBell() {
   const n = unread.data?.unread ?? 0;
 
   return (
-    <div ref={rootRef} className="relative">
-      <IconButton
-        size="md"
-        ref={anchorRef}
-        label={S.alerts.badgeLabel}
-        aria-expanded={open}
-        className={cn("relative", open && "bg-surface-2 text-ink")}
-        onClick={() => (open ? close() : setOpen(true))}
-      >
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <IconButton size="md" label={S.alerts.badgeLabel} className="relative">
         <Bell size={15} />
         {/* 角标也是个点，不是数字。"有事没看"是二元的，具体几条打开就知道；
             数字还会随重试一路往上跳，跳到三位数就把铃铛撑变形了 */}
         {n > 0 && (
           <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-danger" />
         )}
-      </IconButton>
-      {/* 关掉的入口在面板第一行（那儿正好压着铃铛），不再是浮在角上的一个叉 */}
-      {open && <Panel panelRef={panelRef} onClose={close} />}
-    </div>
+        </IconButton>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[420px] overflow-hidden p-0">
+        <Panel />
+      </PopoverContent>
+    </Popover>
   );
 }

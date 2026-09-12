@@ -52,31 +52,33 @@ import {
   Button,
   Chip,
   DangerConfirm,
+  Dialog,
   Disclosure,
   IconButton,
   Input,
+  LinkButton,
   Loading,
+  PageHeader,
   Pager,
+  RAIL_CLS,
+  ROW_TRAILING,
   RailItem,
   Row,
-  ROW_TRAILING,
+  Segmented,
   SkeletonRows,
   Spinner,
-  rowClass,
-  Segmented,
-  RAIL_CLS,
-  cn,
-  pageSlice,
-  PageHeader,
-  Dialog,
-  LinkButton,
-  Table,
+  Status,
   TBody,
+  THead,
+  Table,
   Td,
   Th,
-  THead,
   Tr,
+  chipLike,
+  cn,
   localDateTime,
+  pageSlice,
+  rowClass,
 } from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
@@ -1363,8 +1365,10 @@ function PropertyDefinition({
       </Def>
       {/* 边上的属性（0037）：这条关系的边能带哪些属性，按属性的 label 列 */}
       <Def label={S.ontology.qualifiers}>
-        {rel.qualifiers.length > 0
-          ? rel.qualifiers.map(typeName).join(", ")
+        {/* `?? []`：这一格是后加的（0037），**旧版本的后端不发它**。
+            少一格不该让整块面板崩掉——点一条关系就白屏，正是这么来的 */}
+        {(rel.qualifiers ?? []).length > 0
+          ? (rel.qualifiers ?? []).map(typeName).join(", ")
           : S.ontology.noQualifiers}
       </Def>
       <Def label={S.ontology.temporal}>{temporal}</Def>
@@ -1507,7 +1511,7 @@ function RefinePanel({
                   <span
                     key={c.id}
                     title={c.description}
-                    className="u-chip u-chip-neutral u-num text-fine"
+                    className={chipLike("neutral", "u-num text-fine")}
                   >
                     {c.label} {c.distance.toFixed(2)}
                   </span>
@@ -1555,9 +1559,9 @@ function RefinePanel({
                       {r.coarse ?? S.graph.untyped} → {r.choice}
                     </span>
                     {r.crosses_axis && (
-                      <span className="u-chip u-chip-warn text-fine">
+                      <Status tone="warn" className="text-fine">
                         {S.ontology.refineCrossesAxis}
-                      </span>
+                      </Status>
                     )}
                     <span className="ml-auto u-num text-fine text-ink-2">
                       {Math.round(r.confidence * 100)}%

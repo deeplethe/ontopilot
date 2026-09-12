@@ -15,7 +15,7 @@ import {
   Row,
   rowClass,
   SectionMark,
-} from "../ui";
+  buttonLike,} from "../ui";
 import { HeaderActions } from "./HeaderActions";
 import { usePageTitle } from "../useTitle";
 import ingestMd from "../docs/ingest.md?raw";
@@ -177,8 +177,8 @@ export function DocsPage() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-8">
-        <SectionMark text={S.docs.brand} title={S.docs.backTitle} />
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-12 shrink-0 flex items-center px-2">
+        <SectionMark className="pl-3" text={S.docs.brand} title={S.docs.backTitle} />
         {/* 居中搜索：检索打包在本地的全部文档；宽度对齐正文栏（max-w-3xl 去掉 px-8） */}
         <div
           ref={searchRef}
@@ -236,7 +236,7 @@ export function DocsPage() {
           user={me.data}
           signedOut={
             me.isError ? (
-              <Link to="/login" className="u-btn u-btn-ghost px-3 py-2 text-small">
+              <Link to="/login" className={buttonLike("ghost")}>
                 {S.login.signIn}
               </Link>
             ) : null
@@ -267,9 +267,10 @@ export function DocsPage() {
           {/* 上下都留足空白：标题不顶着头，末段内容能滚到屏幕中部——人读屏幕中间。
               排版交给官方 @tailwindcss/typography（prose，16px 基准），
               自定义只剩：标题锚点 id、外链新开、表格横向滚动容器 */}
-          {/* 颜色走 `.u-doc-prose`（styles.css）：插件的 neutral 灰阶带蓝相、
-              invert 变体是写死的暗色，两个都不用，接令牌 */}
-          <article className="prose u-doc-prose prose-headings:scroll-mt-6 prose-code:before:content-none prose-code:after:content-none flex-1 min-w-0 max-w-3xl mx-auto px-8 pt-16 pb-[40vh]">
+          {/* 排版走官方的 shadcn/typeset（src/typeset.css）：容器里的
+              标题、列表、表格、代码全由它管，内容本身不带一个类；
+              字号与字体在 `.typeset-docs` 那个预设里调，颜色接我们的令牌 */}
+          <article className="typeset typeset-docs [&_h1]:scroll-mt-6 [&_h2]:scroll-mt-6 [&_h3]:scroll-mt-6 flex-1 min-w-0 max-w-3xl mx-auto px-8 pt-16 pb-[40vh]">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{

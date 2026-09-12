@@ -1,7 +1,7 @@
 /* Chat：agentic 对话（检索/图谱工具 + remember 记忆）。
    会话持久化：左栏会话列表;上下文由服务端拼,前端只发 conversation_id + 新消息;
    行动轨迹(steps)与引用(sources)随消息落库,历史回放与实时流共用渲染。 */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import Markdown from "react-markdown";
@@ -26,7 +26,6 @@ import {
   Waypoints,
   Wrench,
 } from "lucide-react";
-import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import {
   api,
   conversationsApi,
@@ -37,6 +36,12 @@ import {
 } from "../api";
 import { S } from "../i18n";
 import { toast } from "../toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useKb, useKbId } from "../kb";
 import {
   Button,
@@ -113,7 +118,6 @@ export function Chat() {
   // 会话搜索。**搜标题也搜正文**——人记得住的往往是问过的那句话
   const [convSearch, setConvSearch] = useState("");
   // 三点菜单展开的是哪一条。同时只开一个
-  const [menuFor, setMenuFor] = useState<string | null>(null);
   // 「最近」这一组收起来没有。默认展开：左栏本来就是为了看见这些会话
   const [recentOpen, setRecentOpen] = useState(true);
   const scopeRef = useRef<HTMLDivElement>(null);
@@ -397,12 +401,15 @@ export function Chat() {
         <div className="flex items-center gap-3 min-w-0">
           {/* 作用域 chip：提问点位可见"在问哪个库"，切库沿用现有语义（开新会话） */}
           <div ref={scopeRef} className="relative shrink-0">
-            {/* 左内距去掉：图标的左缘落在上面占位符的起点上，与顶栏切换器同一个
-                图标——两处都是「在哪个库」 */}
+            {/* 图标的左缘要落在上面占位符的起点上（与顶栏切换器同一个图标——
+                两处都是「在哪个库」）。**做法是整颗按钮左挂一档，不是把内距抹掉**：
+                抹掉内距，图标就贴死在按钮的边上，指针一停，底色紧紧箍着图标，
+                左边没有一点余地。挂出去则内距照留——图标落在同一个位置，
+                而那块底色在它四周是匀的。挂多少就给多少内距（都是 8）。 */}
             <Button
               variant="ghost"
               size="sm"
-              className="max-w-52 border-0 pl-0"
+              className="max-w-52 border-0 px-2 -ml-2"
               title={S.ask.scopeLabel}
               onClick={() => setScopeOpen((v) => !v)}
             >
@@ -555,68 +562,52 @@ export function Chat() {
                   </span>
                 </Row>
               )}
-              {/* 三点菜单：**一个入口装下所有动作**。从前右边直接是删除，
-                  而删除是这里最不该一步到位的那个 */}
+              {/* 三点菜单：**一个入口装下所有动作**（从前右边直接是删除，
+                  而删除是这里最不该一步到位的那个）。走 shadcn 的
+                  DropdownMenu：弹层样式与全站统一，触发器由 Radix 自动带上
+                  `aria-haspopup`——按钮的"按下去沉 1px"那条特意排除了菜单
+                  触发器，手搓的入口没有这个标记，所以从前一点就跳。 */}
               {renamingId !== c.id && (
-                <IconButton
-                  size="sm"
-                  label={S.ask.moreActions}
-                  className={cn(REVEAL, "absolute right-1 top-1/2 -translate-y-1/2")}
-                  onClick={() => setMenuFor(menuFor === c.id ? null : c.id)}
-                >
-                  <MoreHorizontal size={14} />
-                </IconButton>
-              )}
-              {menuFor === c.id && (
-                <>
-                  {/* 点别处就关。铺满全屏而不是监听 document：不必在卸载时
-                      记得摘监听器 */}
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setMenuFor(null)}
-                  />
-                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 u-lift-strong">
-                    <Row
-                      density="menu"
-                      onClick={() => {
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton
+                      size="sm"
+                      label={S.ask.moreActions}
+                      className={cn(REVEAL, "absolute right-1 top-1/2 -translate-y-1/2")}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal size={14} />
+                    </IconButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem
+                      onSelect={() => {
                         setRenameDraft(c.title || "");
                         setRenamingId(c.id);
-                        setMenuFor(null);
                       }}
                     >
                       {S.ask.rename}
-                    </Row>
-                    <Row
-                      density="menu"
-                      onClick={() => {
-                        navigator.clipboard?.writeText(c.title || "");
-                        setMenuFor(null);
-                      }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => navigator.clipboard?.writeText(c.title || "")}
                     >
                       {S.ask.copyTitle}
-                    </Row>
-                    <Row
-                      density="menu"
-                      danger
-                      onClick={() => {
-                        setPendingDelete(c);
-                        setMenuFor(null);
-                      }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => setPendingDelete(c)}
                     >
                       {S.ask.deleteConversation}
-                    </Row>
-                  </div>
-                </>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           ))}
-          {/* 文字从 20 起（盒 12 + 8），与上面每条会话的标题同一条线 */}
+          {/* 文字从 20 起：栏的 px-2（8）加行自己的 px-3（12），与「最近」和
+              上面每条会话的标题同一条线。写成 px-2 就落在 16，差那 4px 一眼看得出 */}
           {convs.data?.conversations.length === 0 && (
-            /* 34 = 行内距 12 + 图标 14 + 间距 8：这句话与上面每一条会话的
-               标题同一条竖线，而不是自己另起一列 */
-            <p className="py-2 pl-[34px] pr-3 text-small text-ink-2">
-              {S.ask.noConversations}
-            </p>
+            <p className="px-3 py-2 text-small text-ink-2">{S.ask.noConversations}</p>
           )}
         </div>
         )}
@@ -646,7 +637,7 @@ export function Chat() {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto u-scroll px-4 py-6">
+            <div className="flex-1 overflow-y-auto u-scroll u-chat-fade px-4 pt-6 pb-12">
               <div className="max-w-3xl mx-auto space-y-4">
                 {shown.map((t, i) => (
                   <TurnView key={i} turn={t} live={streaming && i === shown.length - 1} />
@@ -732,26 +723,34 @@ function stepIcon(kind: ChatStep["kind"]) {
 }
 
 /** 工具步骤 → 球体状态：思考球讲当前动作的语言 */
-function orbState(kind?: ChatStep["kind"]): OrbState {
-  if (kind === "search" || kind === "docs") return "searching";
-  if (kind === "entity" || kind === "neighbors" || kind === "path")
-    return "connecting";
-  if (kind === "facts" || kind === "timeline" || kind === "changes")
-    return "solving";
-  if (kind === "query" || kind === "tool") return "working";
-  return "listening"; // 尚无步骤：刚接到消息
-}
+/** 一段 markdown。**按文本记忆化**：一次生成里每来一个词元，整条消息都要重渲染，
+ *  而 react-markdown 每次都把那一段从头解析一遍——答案越长每个词元越贵，读起来
+ *  就是越写越顿。收了尾的段落文本不再变，`memo` 让它们一次也不重解析；
+ *  还在长的那一段照旧，它本来就得重解析。 */
+const Segment = memo(function Segment({ text }: { text: string }) {
+  return (
+    <div className="u-chat-prose">
+      <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {text}
+      </Markdown>
+    </div>
+  );
+});
 
-/** 思考指示：thinking-orbs 球体 + 当前动作（应用是深色定妆，theme 钉死 dark）。 */
+/** 思考指示：**正在做的那句话自己在发光**。
+ *
+ * 这里换过两轮。最早是 `thinking-orbs` 的球体，跟这套界面不是一路——chrome 是
+ * 零色偏的中性灰，花样留给画布，而那颗球自带一套发光点阵，`theme` 还写死成暗色。
+ * 换成房里的转圈之后问题只剩一半：在做什么本来就由那行字说了
+ * （「检索文档 · 3 篇」），旁边再转一个零件，等于同一件事说两遍，而且转圈说的是
+ * 「有个东西在忙」，跟屏幕上这句话没关系。
+ *
+ * 现在没有零件：亮带横扫过那行字。它既是「还在动」，也是「动的是这句话」。
+ * 还没有步骤可说的时候就扫「Thinking…」——那也是一句话，不是一个图标。 */
 function Thinking({ step }: { step?: ChatStep }) {
   return (
-    <span className="inline-flex items-center gap-3 text-ink-2">
-      <ThinkingOrb state={orbState(step?.kind)} size={20} theme="dark" />
-      {step && (
-        <span className="text-small truncate">
-          {step.label} · {step.detail}
-        </span>
-      )}
+    <span className="u-thinking text-small truncate">
+      {step ? `${step.label} · ${step.detail}` : S.ask.thinking}
     </span>
   );
 }
@@ -807,11 +806,10 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
                流式中经 remend 修补未闭合语法（粗体/围栏/链接），
                rehype-highlight 做代码高亮——成熟件组装，观感自持。
                **只有还在长的那一段需要 remend**：先前的段落已经收尾了 */
-            <div key={i} className="u-chat-prose">
-              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                {live && seg.last ? remend(seg.text) : seg.text}
-              </Markdown>
-            </div>
+            <Segment
+              key={i}
+              text={live && seg.last ? remend(seg.text) : seg.text}
+            />
           ),
         )}
         {thinking && <Thinking step={lastStep} />}

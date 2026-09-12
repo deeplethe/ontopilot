@@ -117,8 +117,7 @@ export const zh: Strings = {
     kbSettingsBtn: "设置",
     tokensNav: "Agent 与令牌",
     tokensTitle: "个人访问令牌",
-    tokensHint:
-      "令牌让 agent 经 MCP 以你的身份使用 Utopia，权限永远不超过你自己。缺省只读，限定到你选的库，随时可在这里撤销。",
+    tokensHint: "令牌让 agent 以你的身份通过 MCP 访问 Utopia，权限不超过你自己。默认只读，限定在你选的库，可随时在这里撤销。",
     newToken: "新令牌",
     tokenName: "名字",
     tokenNamePlaceholder: "我的笔记本",
@@ -717,13 +716,6 @@ export const zh: Strings = {
     editCancel: "取消",
     editSaved: "实体已更新",
     editEmptyName: "名称不能为空",
-    sameNameNote: (n: number) => `另有 ${n} 个实体同名。`,
-    sameNameHint: "如果它们是同一个东西，去「审阅」里合并。",
-    mergeInto: "并入",
-    mergeTitle: "合并实体",
-    mergeIntoHint: "把那个实体并进这一个。它的事实搬过来；合并可以撤销。",
-    mergeConfirm: (from: string, into: string) =>
-      `把「${from}」并进「${into}」？它的事实会搬过来。可以在审阅页撤销。`,
     viewRelations: "关系",
     viewTimeline: "时间线",
     viewHistory: "记录历史",
@@ -1013,9 +1005,7 @@ export const zh: Strings = {
     refineShort: "类型消解",
     rulesShort: "业务规则",
     rulesTitle: "业务规则",
-    rulesHint:
-      "一条规则读一个实体自己的属性，得出一个类或一个值。判据由你写下——模型不会提议。" +
-      "规则得出的结论是派生的：它不会盖掉断言，它带着让它成立的那几条读数，读数变了它自己退场。",
+    rulesHint: "按实体自己的属性判定类别、或算出取值的规则。结论是派生的，依据没了就自动失效。",
     rulesEmpty: "还没有规则。",
     rulesNoMatch: "没有规则匹配。",
     ruleSearch: "搜索规则、属性、取值",
@@ -1085,8 +1075,7 @@ export const zh: Strings = {
     ruleCappedHint:
       "有些实体同一属性的读数太多，组合展不完，这条规则在它们身上的结论是不完整的。",
     refineTitle: "类型消解",
-    refineHint:
-      "类挂得大致对、但本体里有更具体的那一个。先看一遍再落库——改类不进任何时间轴，这是唯一能在它发生之前看见它的地方。",
+    refineHint: "人工收窄定得过宽的实体类型。",
     refinePreview: "先看一遍",
     refineLooking: "计算中…",
     refineRun: "跑一遍并落库",
@@ -1194,8 +1183,7 @@ export const zh: Strings = {
     deleteBlocked: "在用中——无法删除",
     importShort: "导入",
     importTitle: "导入本体",
-    importHint:
-      "载入一个 OWL 或 RDFS 文件（.owl、.rdf、.ttl）。类与属性按 IRI 匹配，所以重新导入同一份词汇表的新版本，是更新它已建出来的东西，而不是再建一份。",
+    importHint: "导入 OWL 或 RDFS 文件（.owl、.rdf、.ttl）。类与属性按 IRI 匹配，导入同一份词汇表的新版本会更新已有的，不会再进一份。",
     importPick: "选择文件",
     importChange: "换一个",
     importReading: "读取中…",
@@ -1266,12 +1254,10 @@ export const zh: Strings = {
     importSize: (bytes: number) =>
       bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(0)} KB`,
     misses: "抽取中未匹配的",
-    missesHint:
-      "抽取器产出了这些，但它们不在你的本体里（于是降级成了 concept / related to）。它们是扩展本体的信号。",
+    missesHint: "抽取时落在本体之外的类型和谓词，用来判断本体还缺什么。",
     /* 一端挂着两个以上开放值的谓词（#341）：状态一句话，后果一句话，动作在按钮上 */
     uniqueness: "并存的取值",
-    uniquenessHint:
-      "同一个持有者挂着两个取值，都没有终点。除非这条关系声明了一次只能有一个值，接任就不会闭合前任——问任何一个过去的日期，两个都会答。",
+    uniquenessHint: "标明哪些关系同时只能有一个值，之后新值会自动结束旧值。",
     uniquenessEmpty: "没有并存：每个持有者至多一个开放取值。",
     uniquenessSubject: (n: number) => `${n} 个主语挂着两个以上开放取值`,
     uniquenessObject: (n: number) => `${n} 个取值被两个以上主语挂着`,
@@ -1357,7 +1343,7 @@ export const zh: Strings = {
   },
   mapping: {
     title: "数据映射",
-    hint: "业务概念在数据库里对应什么、怎么算。问数只按确认过的口径回答。",
+    hint: "每个业务概念对应库里的哪张表、哪一列，以及怎么算。对话只用已确认的定义作答。",
     tabDefinitions: "口径",
     tabSources: "数据源",
     filterAll: "全部",
@@ -1693,7 +1679,7 @@ export const zh: Strings = {
       "那些说法仍然会汇集到「未匹配」下，只是要等你点头。",
     materialize: "物化推理",
     materializeNote:
-      "把本体蕴含的事实写进账本——传递链与对称对。默认关：声明可能是错的，而这一步会改图。派生事实带标记，也随时可以撤回。",
+      "把本体蕴含的事实写进账本——传递链与对称对。它们带派生标记、单列一段，背后的声明要是错了，撤掉只要一下。",
     autoResolveTypes: "抽取后自动消解实体类型",
     autoResolveTypesNote:
       "每篇文档抽完，对引擎还没看过的实体跑一轮类型消解。只有在现类子树里精化的才自动落地，跨轴的改判仍留在本体页等你。每一批都列在本体页，随时可以撤回。",

@@ -2,7 +2,8 @@
    规矩在 web/DESIGN.md，守卫在 scripts/style-guard.mjs：字号五档、间距六档、
    圆角四档、颜色只认令牌、状态（hover/focus/disabled/动效）只在这里定。
    Dialog / DangerConfirm / Tooltip / Table / Field 各在自己的文件里，从这里再导出。 */
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState,
+  useId,} from "react";
 import type {
   ButtonHTMLAttributes,
   CSSProperties,
@@ -21,6 +22,43 @@ import {
   Search as SearchIcon,
 } from "lucide-react";
 import { S } from "../i18n";
+import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
+import { badgeVariants } from "@/components/ui/badge";
+import { Checkbox as ShadCheckbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+import {
+  DropdownMenu as ShadDropdownMenu,
+  DropdownMenuContent as ShadDropdownMenuContent,
+  DropdownMenuLabel as ShadDropdownMenuLabel,
+  DropdownMenuRadioGroup as ShadDropdownMenuRadioGroup,
+  DropdownMenuRadioItem as ShadDropdownMenuRadioItem,
+  DropdownMenuSeparator as ShadDropdownMenuSeparator,
+  DropdownMenuTrigger as ShadDropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover as ShadPopover,
+  PopoverContent as ShadPopoverContent,
+  PopoverTrigger as ShadPopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command as ShadCommand,
+  CommandEmpty as ShadCommandEmpty,
+  CommandGroup as ShadCommandGroup,
+  CommandInput as ShadCommandInput,
+  CommandItem as ShadCommandItem,
+  CommandList as ShadCommandList,
+} from "@/components/ui/command";
+import {
+  RadioGroup as ShadRadioGroup,
+  RadioGroupItem as ShadRadioGroupItem,
+} from "@/components/ui/radio-group";
+import { Input as ShadInput } from "@/components/ui/input";
+import { Textarea as ShadTextarea } from "@/components/ui/textarea";
 // 表格原件在 ./table 里，下面 re-export；`SkeletonTableRows` 自己也要用，
 // 所以这里另取一份别名，避免与 re-export 的同名标识撞车
 import {
@@ -44,7 +82,7 @@ export function Wordmark({ className }: { className?: string }) {
       rel="noreferrer"
       title="utopia.bi"
       className={cn("relative inline-flex text-ink", className)}
-      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
+      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.01em" }}
     >
       {[...S.app.name].map((ch, i) => (
         <span
@@ -65,25 +103,28 @@ export function cn(...parts: (string | false | null | undefined)[]): string {
 }
 
 /* ---------- Button ----------
-   四种变体：primary（白底黑字，一屏最多一个）、secondary（描边，默认的次要动作）、
-   ghost（无边框，行内动作与工具条）、danger（深红实底，不可逆的那一下）。
-   两个尺寸与 Input 同高，同一行里顶齐不靠页面调 py。 */
+   **壳在这里，样子在 shadcn**（`@/components/ui/button`，radix base / nova preset）。
+   这一层留着的理由只有一个：整个应用按这四个名字调按钮——primary 是一屏最多一个的
+   实心，secondary 是描边的默认次要动作，ghost 是行内与工具条，danger 是不可逆的那一下。
+   名字说的是**这一下有多重**，shadcn 那边说的是长什么样，两件事分开，
+   换皮肤不必回头改三十二个页面。 */
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "color"> & {
   variant?: ButtonVariant;
   size?: "sm" | "md";
-  /** 文字左侧的图标（lucide，13 / 14 号） */
+  /** 文字左侧的图标（lucide）。shadcn 那边已经给 svg 定了尺寸与 shrink-0 */
   icon?: ReactNode;
   /** 正在提交：禁用并告诉读屏器 */
   busy?: boolean;
 };
 
-const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  primary: "u-btn-primary",
-  secondary: "u-btn-secondary",
-  ghost: "u-btn-quiet",
-  danger: "u-btn-danger",
-};
+const VARIANT = {
+  primary: "default",
+  // 我们的 secondary 是**描边**的，shadcn 的 secondary 是实心灰，对应的是 outline
+  secondary: "outline",
+  ghost: "ghost",
+  danger: "destructive",
+} as const;
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
@@ -100,22 +141,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   return (
-    <button
+    <ShadButton
       ref={ref}
       type={type}
-      className={cn(
-        "u-btn",
-        BUTTON_VARIANT[variant],
-        size === "sm" ? "u-btn-sm" : "u-btn-md",
-        className,
-      )}
+      variant={VARIANT[variant]}
+      size={size === "sm" ? "sm" : "default"}
+      className={className}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       {...props}
     >
-      {icon && <span className="shrink-0">{icon}</span>}
+      {icon}
       {children}
-    </button>
+    </ShadButton>
   );
 });
 
@@ -123,7 +161,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
    没有可见文字的按钮必须有一个名字，这是无障碍的底线 */
 export const IconButton = forwardRef<
   HTMLButtonElement,
-  ButtonHTMLAttributes<HTMLButtonElement> & {
+  Omit<ButtonHTMLAttributes<HTMLButtonElement>, "color"> & {
     label: string;
     variant?: ButtonVariant;
     size?: "sm" | "md";
@@ -133,24 +171,55 @@ export const IconButton = forwardRef<
   ref,
 ) {
   return (
-    <button
+    <ShadButton
       ref={ref}
       type={type}
       aria-label={label}
       title={label}
-      className={cn(
-        "u-btn",
-        BUTTON_VARIANT[variant],
-        size === "sm" ? "u-btn-icon-sm" : "u-btn-icon-md",
-        className,
-      )}
+      variant={VARIANT[variant]}
+      size={size === "sm" ? "icon-sm" : "icon"}
+      className={className}
       {...props}
     />
   );
 });
 
-/* ---------- Input / Textarea ---------- */
+/** 长得像按钮的**链接**（路由 Link、外链）。给 className 用，不包组件——
+ *  `<Link className={buttonLike("ghost")}>`；从前这里写的是 `u-btn u-btn-ghost`
+ *  加一串手调的内距，那串内距正是尺寸档存在的理由 */
+export function buttonLike(
+  variant: ButtonVariant = "ghost",
+  size: "sm" | "md" = "md",
+): string {
+  return buttonVariants({
+    variant: VARIANT[variant],
+    size: size === "sm" ? "sm" : "default",
+  });
+}
+
+/* ---------- Input / Textarea ----------
+   同 Button：壳在这里，皮在 shadcn。这一层留的是两件 shadcn 不管的事——
+   **图标槽**（左栏那道带放大镜的筛选框，图标要与下面每一行的图标落在同一条
+   竖线上）和 **bare**（装在别的面里的输入，自己不带皮：切换器顶上的查找、
+   对话的输入区）。尺寸仍按我们的两档说话，映到 shadcn 的高度上。 */
 type InputSize = { size?: "sm" | "md" };
+
+/** 没有自己的皮的那一档：去边框、去底、去焦点环，交给外面那块面 */
+const BARE =
+  "border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-0 px-0 dark:bg-transparent";
+
+/** 一个"框"的皮：边、圆角、实底、焦点环，与 `Input` 完全同一副。
+ *  下拉、搜索选择器这些**自己画触发器**的控件用它——从前它们蹭的是手写的
+ *  `.input-dark`，那个类随按钮/输入框迁移删掉了，于是触发器一夜之间没了皮
+ *  （"怎么有没背景的框"）。皮只此一份，谁要谁引。 */
+export const FIELD_SHELL =
+  "flex items-center rounded-control border border-input bg-background text-body text-ink transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50";
+
+/** 有皮的那一档**要有实底**。shadcn 默认 `bg-transparent`：在一张卡片里那是对的，
+ *  可这套界面的输入框有浮在图谱画布上的（搜索实体、筛选），透明的框底下是网格和
+ *  连线，字压在线上，看着就是一团乱。取页面底色——在卡片上它比卡片深一点，
+ *  在画布上它是一块实地，两处都读得出"这是一个可以写字的格子"。 */
+const FILLED = "bg-background dark:bg-background";
 
 export const Input = forwardRef<
   HTMLInputElement,
@@ -163,11 +232,16 @@ export const Input = forwardRef<
     }
 >(function Input({ className, size = "md", icon, bare, ...props }, ref) {
   const control = (
-    <input
+    <ShadInput
       ref={ref}
       className={cn(
-        bare ? "u-input-bare" : "input-dark",
-        bare ? null : size === "sm" ? "u-input-sm" : "u-input-md",
+        /* bare 的输入框**连控件的高度也不要**。`bare` 说的是「它是面板的一段，
+           不是面板里摆的一个控件」，可它还顶着 h-8 + py-1：32 高的盒子里装一行
+           20 的字，剩下那 12px 不是对半分的，字就往下坐了一点，看着是上面的留白
+           比下面大。高度交还给行高，竖向留白交还给外面那块面（告警面板、库切换器
+           都是 py-3），上下就真的一样了。
+           textarea 那一档不动：它的高度本来就是 rows 给的，不是控件档位。 */
+        bare ? cn(BARE, "h-auto py-0") : cn(FILLED, size === "sm" ? "h-7" : "h-8"),
         // 图标槽：中号图标离左内缘 12px、文字从 34px 起；小号窄一档（8 / 28）
         icon ? (size === "sm" ? "pl-7" : "pl-[34px]") : null,
         icon ? "w-full" : className,
@@ -177,7 +251,10 @@ export const Input = forwardRef<
   );
   if (!icon) return control;
   return (
-    <div className={cn("relative", className)}>
+    /* **外层要跟控件同一个圆角**：带图标时 `className` 落在这一层（宽度、
+       投影都写在调用处），而投影是按这个盒子的形状画的——盒子没有圆角，
+       投影就是方的，里面那个圆角的输入框浮在一块方影子上，四个角看着发虚 */
+    <div className={cn("relative rounded-control", className)}>
       {/* 图标离盒左缘 12——与 nav 行的内距同一个数，于是左栏里输入框的放大镜
           与下面每一行的图标落在同一条竖线上（盒 8 / 图标 20 / 文字 42） */}
       <span
@@ -202,11 +279,11 @@ export const Textarea = forwardRef<
     }
 >(function Textarea({ className, size = "md", bare, ...props }, ref) {
   return (
-    <textarea
+    <ShadTextarea
       ref={ref}
       className={cn(
         "u-scroll",
-        bare ? "u-input-bare" : cn("input-dark", size === "sm" ? "u-input-sm" : "u-input-md"),
+        bare ? BARE : cn(FILLED, size === "sm" ? "min-h-14" : null),
         className,
       )}
       {...props}
@@ -220,7 +297,12 @@ export const Textarea = forwardRef<
    没人用的组件，只会让它某天又溜回来。小而有界的枚举用 `Dropdown`，
    成百上千的（本体的类、部署里的人）用 `SearchSelect`。 */
 
-/* ---------- Dropdown（自制下拉，替代原生 select：原生弹层无法主题化） ---------- */
+/* ---------- Dropdown（小而有界的枚举） ----------
+   **壳在这里，弹层是 shadcn 的 DropdownMenu**。从前这里连同 SearchSelect 各自
+   实现过一遍「点外面关掉、Esc 关掉、方向键选、焦点回到触发器」，三处弹层三套
+   行为，还各自缺一点：手搓的入口连 `aria-haspopup` 都没有。
+   接口一个字没改（value / options / onChange / icon / menuLabel / footer），
+   页面照旧。 */
 export interface DropdownOption {
   value: string;
   label: ReactNode;
@@ -250,111 +332,62 @@ export function Dropdown({
   /** 弹层底部固定操作区（点击后弹层关闭） */
   footer?: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   const current = options.find((o) => o.value === value);
-  const pad = size === "sm" ? "px-2.5 py-1 text-small" : "px-3 py-1.5 text-body";
-
   return (
-    <div ref={rootRef} className={cn("relative", className)}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        title={menuLabel}
-        className={cn("input-dark w-full flex items-center gap-2 text-left", pad)}
-      >
-        {icon && <span className="shrink-0 text-ink-2">{icon}</span>}
-        <span className="flex-1 min-w-0 truncate">
-          {current?.label ?? (
-            <span className="text-ink-2">{placeholder ?? ""}</span>
-          )}
-        </span>
-        <ChevronDown
-          size={12}
+    <ShadDropdownMenu>
+      <ShadDropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={menuLabel}
           className={cn(
-            "shrink-0 text-ink-2 transition-transform",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-      {open && (
-        <div
-          className={cn(
-            // 与告警面板、用户菜单同一张皮（u-menu-glass）：浮在页面上的面只有一种
-            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay u-lift-strong overflow-hidden",
+            FIELD_SHELL,
+            /* **调用方给了宽度就不塞 `w-full`**：这里的 `cn` 只是把类拼起来，
+               不做 Tailwind 的冲突消解，两个 `w-` 同时在场时谁赢看生成顺序，
+               不看写的顺序——`className="w-40"` 曾经完全不起作用 */
+            className?.includes("w-") ? null : "w-full",
+            "justify-between gap-2 text-left",
+            size === "sm" ? "h-7 px-2.5 text-small" : "h-8 px-3 text-body",
+            className,
           )}
         >
-          {menuLabel && (
-            <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
-              {menuLabel}
-            </div>
-          )}
-          {/* 选项行顶满面板边缘（无内衬）：单选项时整个菜单被这一项填满 */}
-          <div className="u-scroll max-h-60 overflow-y-auto">
-            {options.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "w-full flex items-center gap-2 text-left",
-                  pad,
-                  o.value === value
-                    ? "bg-surface-3 text-ink"
-                    : "text-ink-2 hover:bg-surface-2 hover:text-ink",
-                )}
-              >
-                <span className="flex-1 min-w-0 truncate">{o.label}</span>
-                {o.value === value && (
-                  <Check size={12} className="shrink-0 text-ink-2" />
-                )}
-              </button>
-            ))}
-          </div>
-          {footer && (
-            <div
-              className="border-t border-line"
-              onClick={() => setOpen(false)}
-            >
-              {footer}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+          <span className="flex min-w-0 items-center gap-2">
+            {icon && <span className="shrink-0 text-ink-2">{icon}</span>}
+            <span className={cn("truncate", !current && "text-ink-2")}>
+              {current?.label ?? placeholder ?? ""}
+            </span>
+          </span>
+          <ChevronDown size={12} className="shrink-0 text-ink-2" />
+        </button>
+      </ShadDropdownMenuTrigger>
+      <ShadDropdownMenuContent align="start" className="min-w-(--radix-dropdown-menu-trigger-width)">
+        {menuLabel && <ShadDropdownMenuLabel>{menuLabel}</ShadDropdownMenuLabel>}
+        <ShadDropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {options.map((o) => (
+            <ShadDropdownMenuRadioItem key={o.value} value={o.value}>
+              {o.label}
+            </ShadDropdownMenuRadioItem>
+          ))}
+        </ShadDropdownMenuRadioGroup>
+        {footer && (
+          <>
+            <ShadDropdownMenuSeparator />
+            {footer}
+          </>
+        )}
+      </ShadDropdownMenuContent>
+    </ShadDropdownMenu>
   );
 }
 
 /* ---------- SearchSelect（可搜索选择器：无界对象列表专用——成员、父类、数据源…）
-   触发器本身是输入框：聚焦即开、键入即过滤；渲染上限 maxVisible，超出提示继续
-   输入收窄。小而有界的枚举（角色/数据类型…）仍用 Dropdown，两击即达不必打字。 ---------- */
+   触发器同 Dropdown，弹层是 shadcn 的 Popover + Command：搜、键盘上下、
+   回车选中、空结果的那一行，全由 Command 管。 */
 export interface SearchSelectOption {
   value: string;
-  /** 主文案：过滤与选中回显的依据（纯字符串，不能是节点） */
   label: string;
-  /** 次要文案（邮箱、连接摘要…），一并参与过滤，弱化显示 */
+  /** 跟在名字后面的一小行（邮箱、类型、路径），也参与搜索 */
   hint?: string;
-  /** 层级缩进（浏览态展示树形；键入过滤后拉平对齐） */
+  /** 树形缩进的层级（父类选择器用它） */
   indent?: number;
 }
 
@@ -365,7 +398,6 @@ export function SearchSelect({
   placeholder,
   className,
   size = "md",
-  maxVisible = 8,
 }: {
   value: string;
   options: SearchSelectOption[];
@@ -373,120 +405,61 @@ export function SearchSelect({
   placeholder?: string;
   className?: string;
   size?: "sm" | "md";
+  /** 只影响弹层高度，保留是为了调用处不改 */
   maxVisible?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-
   const current = options.find((o) => o.value === value);
-  const q = query.trim().toLowerCase();
-  const matches = q
-    ? options.filter((o) =>
-        `${o.label} ${o.hint ?? ""}`.toLowerCase().includes(q),
-      )
-    : options;
-  const visible = matches.slice(0, maxVisible);
-  const hidden = matches.length - visible.length;
-
-  const pick = (v: string) => {
-    onChange(v);
-    setOpen(false);
-    setQuery("");
-    inputRef.current?.blur();
-  };
-
-  const pad =
-    size === "sm" ? "pl-7 pr-2.5 py-1 text-small" : "pl-8 pr-3 py-1.5 text-body";
-  const rowPad = size === "sm" ? "px-2.5 py-1 text-small" : "px-3 py-1.5 text-body";
-
   return (
-    <div className={cn("relative", className)}>
-      <SearchIcon
-        size={size === "sm" ? 11 : 13}
-        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
-      />
-      <input
-        ref={inputRef}
-        className={cn("input-dark w-full", pad)}
-        value={open ? query : (current?.label ?? "")}
-        /* 打开后把当前选中项挪进 placeholder：边打字边能看到现值 */
-        placeholder={open ? current?.label || placeholder : placeholder}
-        onFocus={() => {
-          setOpen(true);
-          setQuery("");
-          setActive(0);
-        }}
-        /* 选项行 mousedown 已 preventDefault（不夺焦点），走到这里的失焦都是真离开 */
-        onBlur={() => setOpen(false)}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setActive(0);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setOpen(false);
-            inputRef.current?.blur();
-          } else if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setActive((a) => Math.min(a + 1, visible.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((a) => Math.max(a - 1, 0));
-          } else if (e.key === "Enter" && visible[active]) {
-            e.preventDefault();
-            pick(visible[active].value);
-          }
-        }}
-      />
-      {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay u-lift-strong overflow-hidden">
-          {visible.map((o, i) => (
-            <button
-              key={o.value}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(o.value)}
-              onMouseEnter={() => setActive(i)}
-              className={cn(
-                "w-full flex items-center gap-2 text-left",
-                rowPad,
-                i === active
-                  ? "bg-surface-3 text-ink"
-                  : "text-ink-2",
-              )}
-            >
-              {!q && !!o.indent && (
-                <span className="shrink-0" style={{ width: o.indent * 14 }} />
-              )}
-              <span className="min-w-0 flex-1 truncate">
-                {o.label}
-                {o.hint && (
-                  <span className="ml-2 text-ink-2">{o.hint}</span>
-                )}
-              </span>
-              {o.value === value && (
-                <Check size={12} className="shrink-0 text-ink-2" />
-              )}
-            </button>
-          ))}
-          {visible.length === 0 && (
-            <p className={cn(rowPad, "text-ink-2")}>{S.ui.noMatches}</p>
+    <ShadPopover open={open} onOpenChange={setOpen}>
+      <ShadPopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            FIELD_SHELL,
+            /* **调用方给了宽度就不塞 `w-full`**：这里的 `cn` 只是把类拼起来，
+               不做 Tailwind 的冲突消解，两个 `w-` 同时在场时谁赢看生成顺序，
+               不看写的顺序——`className="w-40"` 曾经完全不起作用 */
+            className?.includes("w-") ? null : "w-full",
+            "justify-between gap-2 text-left",
+            size === "sm" ? "h-7 px-2.5 text-small" : "h-8 px-3 text-body",
+            className,
           )}
-          {hidden > 0 && (
-            <div
-              className={cn(
-                rowPad,
-                "border-t border-line text-fine text-ink-2",
-              )}
-            >
-              {S.ui.keepTyping(hidden)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        >
+          <span className={cn("truncate", !current && "text-ink-2")}>
+            {current?.label ?? placeholder ?? ""}
+          </span>
+          <ChevronDown size={12} className="shrink-0 text-ink-2" />
+        </button>
+      </ShadPopoverTrigger>
+      <ShadPopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+        <ShadCommand>
+          <ShadCommandInput placeholder={placeholder ?? ""} />
+          <ShadCommandList>
+            <ShadCommandEmpty>{S.ui.noMatches}</ShadCommandEmpty>
+            <ShadCommandGroup>
+              {options.map((o) => (
+                <ShadCommandItem
+                  key={o.value}
+                  value={`${o.label} ${o.hint ?? ""}`}
+                  onSelect={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="truncate">{o.label}</span>
+                  {o.hint && (
+                    <span className="ml-auto truncate text-fine text-ink-2">{o.hint}</span>
+                  )}
+                </ShadCommandItem>
+              ))}
+            </ShadCommandGroup>
+          </ShadCommandList>
+        </ShadCommand>
+      </ShadPopoverContent>
+    </ShadPopover>
   );
 }
 
@@ -577,7 +550,7 @@ export function MultiSearchSelect({
         />
       <input
           ref={inputRef}
-          className="input-dark w-full pl-7 pr-2.5 py-1 text-small"
+          className={cn(FIELD_SHELL, "w-full pl-7 pr-2.5 py-1 text-small")}
           value={query}
           placeholder={placeholder}
           onFocus={() => {
@@ -739,7 +712,8 @@ export function ColorPicker({
             onChange={(e) => onChange(e.target.value)}
             placeholder={ENTITY_PALETTE[0]}
             className={cn(
-              "input-dark w-full px-2 py-1 text-small font-mono",
+              FIELD_SHELL,
+              "w-full px-2 py-1 text-small font-mono",
               !valid && "!border-danger",
             )}
           />
@@ -915,9 +889,58 @@ export function StatusCell({
   );
 }
 
+/* ---------- Status（一个状态） ----------
+   **颜色只上那个点，字不上色。**从前状态是一枚填色的胶囊（绿底绿字的
+   "Confirmed"、琥珀底琥珀字的 "Pending"），一列表格里十几个填色块，
+   眼睛先看见的是一片颜色，而不是那一列在说什么。点只占它该占的那一点地方，
+   颜色仍然分得出成没成、等不等人，字回到正文的灰。
+
+   `Chip` 留给**不是状态**的东西：计数、库名、公理名、"派生"这类标记——
+   它们是贴在内容上的标签，本来就该有个盒子把自己圈出来。 */
+export function Status({
+  tone = "neutral",
+  pulse,
+  className,
+  title,
+  children,
+}: {
+  tone?: ChipTone;
+  /** 这件事**正在进行**：点跟着呼吸。给「agent 正在裁这一对」这种活状态用 */
+  pulse?: boolean;
+  className?: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1.5 text-small text-ink-2", className)}
+      title={title}
+    >
+      <span
+        className={cn(
+          "h-1.5 w-1.5 shrink-0 rounded-full",
+          STATUS_DOT[tone],
+          pulse && "animate-pulse",
+        )}
+      />
+      {children}
+    </span>
+  );
+}
+
+const STATUS_DOT: Record<ChipTone, string> = {
+  neutral: "bg-ink-2",
+  success: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  info: "bg-violet",
+  violet: "bg-violet",
+  contest: "bg-contest",
+};
+
 /* ---------- Chip（状态胶囊） ---------- */
 export type ChipTone =
-  "neutral" | "info" | "success" | "warn" | "danger" | "violet";
+  "neutral" | "info" | "success" | "warn" | "danger" | "violet" | "contest";
 
 export function Chip({
   tone = "neutral",
@@ -933,24 +956,55 @@ export function Chip({
   onClick?: () => void;
   children: ReactNode;
 }) {
+  /* 形状走 shadcn 的 Badge，**颜色仍是我们的语义色**：Badge 只有
+     default / secondary / destructive 这几档，而 chip 在这套语汇里说的是
+     状态——ready、3 dropped、contested、derived 各有各的色，它们是令牌，
+     不是变体。所以底用 outline 的骨架，色按 tone 贴上去。 */
+  const cls = cn(
+    badgeVariants({ variant: "outline" }),
+    /* **方角，不是药丸**：shadcn 的 badge 底子是 `rounded-4xl`，一位数的计数
+       会缩成一个圆点。这套语汇里 chip 说的是状态（Ready、3 dropped、
+       contested），是一块牌子不是一颗豆子，走 cell 那一档（规矩 3）。
+       几何（高 20、内距 8、字号 xs）仍照 shadcn 的来 */
+    "rounded-cell border-transparent",
+    CHIP_TONE[tone],
+    onClick && "cursor-pointer",
+    className,
+  );
   if (onClick) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        title={title}
-        className={cn("u-chip u-chip-click", `u-chip-${tone}`, className)}
-      >
+      <button type="button" onClick={onClick} title={title} className={cls}>
         {children}
       </button>
     );
   }
   return (
-    <span className={cn("u-chip", `u-chip-${tone}`, className)} title={title}>
+    <span className={cls} title={title}>
       {children}
     </span>
   );
 }
+
+/** chip 的样子，给不能是组件的地方用：行内那个 `role="link"` 的 span
+ *  （外面已经是一条可点的行，按钮里不能再套按钮） */
+export function chipLike(tone: ChipTone = "neutral", className?: string): string {
+  return cn(
+    badgeVariants({ variant: "outline" }),
+    "rounded-cell border-transparent",
+    CHIP_TONE[tone],
+    className,
+  );
+}
+
+const CHIP_TONE: Record<ChipTone, string> = {
+  neutral: "bg-surface-2 text-ink-2",
+  success: "bg-ok/12 text-ok",
+  warn: "bg-warn/12 text-warn",
+  danger: "bg-danger/12 text-danger",
+  info: "bg-violet/12 text-violet",
+  contest: "bg-contest/12 text-contest",
+  violet: "bg-violet/12 text-violet",
+};
 
 /* ---------- LinkButton（长得像一句话的动作：表格行末的"重抽""删除"） ---------- */
 export function LinkButton({
@@ -1017,6 +1071,19 @@ export function PageTitle({
 }) {
   return <h2 className={cn("u-title text-title", className)}>{children}</h2>;
 }
+
+/** 一张卡片底下那排动作的形状。**只此一份**：审阅页有七种卡（重复对、待确认的
+ *  事实、时态冲突、过期断言、本体缺陷、公理冲突、人提的事实），从前它们三种站法
+ *  都有——三张靠右下、三张靠左下、两张干脆挂在某一行的右端。一个人从一张卡走到
+ *  下一张，每次都要重新找「裁决在哪」。
+ *
+ *  规矩两条：**动作在卡片左下**，与卡片里每一行文字同一条左边线，一列卡下来
+ *  按钮落在同一条竖线上，指针几乎不用横向移动；**会换行**，因为有的卡有五六个
+ *  选项，靠右排一旦折行，左缘就参差不齐。
+ *
+ *  还有一条不在这个类里、但同样是规矩：**危险的那一个永远排在最后**。左对齐之后
+ *  最左边是指针最先够到的位置，那里不该是「拒绝」。 */
+export const CARD_ACTIONS = "mt-3 flex flex-wrap items-center gap-2";
 
 /* ---------- EmptyState ---------- */
 export function EmptyState({
@@ -1214,13 +1281,21 @@ export function PageHeader({
 
 /* ---------- SectionMark（分区字标：Docs/账户层等，逐字母入场，点击回应用） ---------- */
 import { Link as RouterLink } from "@tanstack/react-router";
-export function SectionMark({ text, title }: { text: string; title: string }) {
+export function SectionMark({
+  text,
+  title,
+  className,
+}: {
+  text: string;
+  title: string;
+  className?: string;
+}) {
   return (
     <RouterLink
       to="/"
       title={title}
-      className="u-wordmark-top relative inline-flex text-ink"
-      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
+      className={cn("u-wordmark-top relative inline-flex text-ink", className)}
+      style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.01em" }}
     >
       {[...text].map((ch, i) => (
         <span
@@ -1376,7 +1451,7 @@ export function RailItem({
       // 计数只在有东西时出现，写成一枚 chip；0 不写——一栏灰零只是噪音
       trailing={
         count !== undefined && count > 0 ? (
-          <span className="u-chip u-chip-neutral u-num">{count}</span>
+          <span className={chipLike("neutral", "u-num")}>{count}</span>
         ) : undefined
       }
       {...props}
@@ -1387,6 +1462,73 @@ export function RailItem({
         {external && <ArrowUpRight size={11} className="shrink-0 opacity-50" />}
       </span>
     </Row>
+  );
+}
+
+/** 菜单里的一行「标签 + 可改的值」。**整行是触发器，弹层落在值那一头**——
+ *  这一行读起来是「语言：English」，要改的是冒号后面那一格，弹层就该出现在
+ *  那一格上，像填空。摊在下面会把菜单越拉越长，甩到右边又会盖住旁边的面板。
+ *  行的节奏与菜单里其余的行一致（px-4 py-2，正文号，图标间距 3）。 */
+const MENU_ROW = "gap-3 rounded-none px-4 py-2 text-body";
+
+export function MenuSelect({
+  icon,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  /** 选项自己的图标是**可选的**：主题那三档各有公认的符号（月亮 / 太阳 /
+   *  一块屏），图标一眼就把三个选项分开了。语言没有这种符号——国旗不是语言，
+   *  说中文的不止一个地方——那一档就只有字，对勾负责说选中的是哪个。 */
+  options: { value: string; label: string; icon?: ReactNode }[];
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        className={cn(
+          MENU_ROW,
+          // 行的样子归菜单：去掉 Select 自带的框与底，留下"一行"
+          "h-auto w-full border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent",
+          "justify-start text-ink",
+        )}
+      >
+        <span className="text-ink-2">{icon}</span>
+        <span>{label}</span>
+        <span className="ml-auto pl-2 text-fine text-ink-2">
+          {options.find((o) => o.value === value)?.label ?? value}
+        </span>
+      </SelectTrigger>
+      {/* **popper 定位，不是 item-aligned。**Select 缺省是把"选中的那一项"盖在
+          触发器上（一个原生 select 的样子）；在这张菜单里它算出来的位置是
+          (0, 900)——视口外的左下角，于是弹层开了却看不见（`data-state=open`、
+          内容也挂上了，就是不在屏幕上）。item-aligned 那套要量触发器，而触发器
+          在一层 portal 里；popper 走 floating-ui，逐帧跟着触发器，也才认 align。 */}
+      <SelectContent
+        position="popper"
+        side="bottom"
+        align="end"
+        sideOffset={4}
+        /* **弹层按内容宽，不按触发器宽。**触发器是整行，而 shadcn 的 viewport 在
+           popper 模式下写死 `min-w-(--radix-select-trigger-width)`，于是弹层跟着
+           撑满整条菜单，看着像菜单自己长出来两行。它该落在值那一格上，像一个填空。
+           改的是 `--radix-popper-anchor-width` 而不是 `--radix-select-trigger-width`：
+           后者是 Radix 写在内容元素**内联样式**上的（`var(--radix-popper-anchor-width)`），
+           class 压不过内联，只能改它引的那一格。 */
+        className="[--radix-popper-anchor-width:auto]"
+      >
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.icon && <span className="text-ink-2">{o.icon}</span>}
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -1456,19 +1598,37 @@ export function Checkbox({
   label,
   hint,
   className,
-  ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  checked,
+  onChange,
+  disabled,
+  id,
+}: {
   label: ReactNode;
   hint?: ReactNode;
+  className?: string;
+  checked?: boolean;
+  /** **收的是布尔，不是事件**：底下已经不是原生 input 了（Radix 的按钮 +
+   *  一个隐藏的输入），事件对象里的 `target.checked` 在这里没有意义 */
+  onChange?: (checked: boolean) => void;
+  disabled?: boolean;
+  id?: string;
 }) {
+  const auto = useId();
+  const inputId = id ?? auto;
   return (
-    <label className={cn("flex cursor-pointer items-start gap-2", className)}>
-      <input type="checkbox" className="mt-1 accent-accent" {...props} />
-      <span className="min-w-0">
+    <div className={cn("flex items-start gap-2", className)}>
+      <ShadCheckbox
+        id={inputId}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(v) => onChange?.(v === true)}
+        className="mt-0.5"
+      />
+      <label htmlFor={inputId} className="min-w-0 cursor-pointer">
         <span className="block text-body text-ink">{label}</span>
         {hint && <span className="block text-fine text-ink-2">{hint}</span>}
-      </span>
-    </label>
+      </label>
+    </div>
   );
 }
 
@@ -1597,22 +1757,42 @@ export const Pill = forwardRef<
 });
 
 /* ---------- Radio ---------- */
-export function Radio({
-  label,
+/* ---------- RadioGroup（一组互斥的选项） ----------
+   **一组是一个组件，不是一堆各自为政的 Radio**：方向键在组内移动、焦点只落
+   在选中的那一个上、读屏器把它们念成一组——这些是"组"的性质，Radix 的
+   RadioGroup 管着；从前每个 Radio 都是一个裸的 input，靠同名 `name` 凑成一组，
+   键盘那部分只能听浏览器的默认行为。
+   `children` 是选中之后跟在标签后面的东西（比如一个日期框）。 */
+export function RadioGroup<T extends string>({
+  value,
+  onChange,
+  options,
   className,
-  children,
-  ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
-  label: ReactNode;
-  /** 选中后跟在标签后面的东西（比如一个日期框） */
-  children?: ReactNode;
+  name,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: ReactNode; children?: ReactNode }[];
+  className?: string;
+  name?: string;
 }) {
   return (
-    <label className={cn("flex items-center gap-2 text-small text-ink-2", className)}>
-      <input type="radio" className="accent-accent" {...props} />
-      {label}
-      {children}
-    </label>
+    <ShadRadioGroup
+      value={value}
+      onValueChange={(v) => onChange(v as T)}
+      name={name}
+      className={cn("gap-2", className)}
+    >
+      {options.map((o) => (
+        <div key={o.value} className="flex items-center gap-2 text-small text-ink-2">
+          <ShadRadioGroupItem value={o.value} id={`${name ?? "radio"}-${o.value}`} />
+          <label htmlFor={`${name ?? "radio"}-${o.value}`} className="cursor-pointer">
+            {o.label}
+          </label>
+          {value === o.value && o.children}
+        </div>
+      ))}
+    </ShadRadioGroup>
   );
 }
 

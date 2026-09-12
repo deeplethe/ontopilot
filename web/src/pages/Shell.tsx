@@ -97,9 +97,9 @@ export function Shell() {
           字标与切换器之间 gap-6（切换器自己只有 px-2）：切换器的图标正好落在第二个
           标签的图标上（132；英文界面下的巧合，字标或标签一换尺寸就得重量）——
           两行同一套节奏 */}
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center gap-6 px-8">
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-12 shrink-0 flex items-center gap-6 px-2">
         {/* 字标：逐字母淡入，hover 浮出 ↗，点击去官网 */}
-        <Wordmark className="u-wordmark-top" />
+        <Wordmark className="u-wordmark-top pl-3" />
         {/* 知识库切换器紧跟字标，中间不画斜杠——它不是面包屑的第二级，就是
             「现在在哪个库」。Workspace 已从概念层折叠为部署级隐形管道
             （settings/members 仍经它走 API，如 organizations 之于单租户）。
@@ -116,9 +116,14 @@ export function Shell() {
         />
       </header>
 
-      {/* Tab 导航条：图标 + 文字，激活态下划线（Vercel 式） */}
-      {/* px-4 + 标签自己的左 16：第一个标签的图标与字标同在 32 */}
-      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-stretch gap-1 px-4">
+      {/* Tab 导航条：图标 + 文字，选中的那一项是一颗填底的药丸。
+          **左边一条线：盒从 8 起，内容从 20 起**——与左栏完全一样
+          （栏 px-2 = 8，行 px-3 = 12，于是图标落在 20、文字落在 42）。
+          顶栏的字标也按这条线：header pl-2 + 字标 pl-3 = 20。
+          三处左缘从此是同一条竖线，往下看不会错位。
+          py-1 而不是 py-2：药丸自己已经 32 高，外面再垫 8 上下，整条 48，
+          压着下面的正文；垫 4 是 40，与顶栏 48 加起来正好一屏不占太多 */}
+      <nav className="glass-strong border-x-0 border-t-0 shrink-0 flex items-center gap-1 px-2 py-1">
         {TABS.map(({ to, label, Icon }) => (
           <Link
             key={to}

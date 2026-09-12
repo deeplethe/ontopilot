@@ -36,7 +36,8 @@ import {
   StatusCell,
   Textarea,
   PageHeader,
-} from "../ui";
+  buttonLike,
+  localDateTime,} from "../ui";
 import {
   KIND_ICON,
   SOURCE_ICONS,
@@ -566,11 +567,13 @@ export function Library() {
               <>
               {/* 历史视图下过滤框只藏不撤（invisible 保留占位），标题行高度不塌、不抖 */}
               <div className={`relative ${showHistory ? "invisible" : ""}`}>
+                {/* 中号带放大镜，与图谱、本体、成员那几页的筛选条同一副身材。
+                    从前这里是小号，挨着看就比别处矮一档 */}
                 <Search
                   size={13}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
                 />
-                <Input size="sm" className="w-52 pl-8 pr-8"
+                <Input className="w-52 pl-[34px] pr-8"
                   placeholder={S.library.filterPlaceholder}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
@@ -1002,7 +1005,7 @@ function SourceBar({
               params={{ slug: "ingest" }}
               target="_blank"
               title={S.library.ingestGuideTitle}
-              className="u-btn u-btn-ghost px-2 py-1"
+              className={buttonLike("ghost", "sm")}
             >
               <BookOpen size={12} />
             </Link>
@@ -1019,9 +1022,7 @@ function SourceBar({
             /* 激活态用反色（与弹窗类型 tab、图标选中同一语汇），一眼可辨 */
             <Button variant="secondary" size="sm"
               onClick={onToggleHistory}
-              className={`u-btn px-3 py-1 text-small flex items-center gap-2 ${
-                historyOpen ? "u-btn-primary" : "u-btn-ghost"
-              }`}
+              className={buttonLike(historyOpen ? "primary" : "ghost", "sm")}
             >
               <HistoryIcon size={11} />
               {S.library.syncHistory}
@@ -1814,7 +1815,7 @@ function SourceModal({
               <Checkbox
                 className="mb-4"
                 checked={includePrs}
-                onChange={(e) => setIncludePrs(e.target.checked)}
+                onChange={(v) => setIncludePrs(v)}
                 label={S.library.includePullRequests}
               />
             </>
@@ -2037,7 +2038,7 @@ function SourceEditModal({
               <Checkbox
                 className="mb-4"
                 checked={includePrs}
-                onChange={(e) => setIncludePrs(e.target.checked)}
+                onChange={(v) => setIncludePrs(v)}
                 label={S.library.includePullRequests}
               />
             </>
@@ -2155,7 +2156,7 @@ function DeletedTable({
               <td className="px-4 py-3 text-ink-2">{d.filename}</td>
               <td className="px-4 py-3 text-ink-2">{src?.name ?? S.library.uploads}</td>
               <td className="px-4 py-3 u-num text-ink-2">
-                {d.deleted_at ? new Date(d.deleted_at).toLocaleString() : ""}
+                {d.deleted_at ? localDateTime(d.deleted_at) : ""}
               </td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <LinkButton onClick={() => onRestore(d.id)}>

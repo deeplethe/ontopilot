@@ -94,7 +94,8 @@ export function MyKbs() {
         <div className="mb-4">
           <Input
             icon={<Search size={13} />}
-            className="w-72"
+            /* 筛选条上的搜索框全站一个宽度：w-64（成员、规则、数据口径都是它） */
+            className="w-64"
             placeholder={S.account.kbsFilter}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -258,7 +259,7 @@ function NewKbModal({
         <Checkbox
           className="mb-4"
           checked={restricted}
-          onChange={(e) => setRestricted(e.target.checked)}
+          onChange={(v) => setRestricted(v)}
           label={S.settings.kbs.visRestricted}
         />
 

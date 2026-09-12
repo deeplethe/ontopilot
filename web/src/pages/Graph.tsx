@@ -64,7 +64,6 @@ import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronDown,
   ChevronRight,
   CircleDashed,
   ExternalLink,
@@ -96,7 +95,6 @@ import { predicateSentence } from "../predicateText";
 import {
   Button,
   CanvasLoading,
-  DangerConfirm,
   ExpandCard,
   HOVER_ROW,
   IconButton,
@@ -112,8 +110,13 @@ import {
   ToolTower,
   cn,
   GroupLabel,
-} from "../ui";
-import { usePopoverFlip } from "../ui/popoverFlip";
+  chipLike,
+  Chip,} from "../ui";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useKb, useKbId } from "../kb";
 import { toast } from "../toast";
 
@@ -263,16 +266,11 @@ export function Graph() {
   // 推出来的边显不显示。默认显示——推理默认关着，有派生就意味着用户开过开关
   const [showDerived, setShowDerived] = useState(true);
   // 信息窗默认收起：它答的是「什么时候推的」，那是偶尔才问的问题
-  /* Inference 也用原地展开，与「+N 个类」、通知、用户菜单同一套。
-     **贴左下角**：塔在画布左下，面板要从那个 ⋯ 按钮往右上长开 */
-  const derivedPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>(
-    "bottom left",
-  );
-  /* 「+N 个类」用与通知/用户卡片同一套原地展开：面板压到 chip 的真实边界
-     （圆角 999px）再长成卡片。**贴左边，所以锚点角是 top left** */
-  const legendPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>(
-    "top left",
-  );
+  /* 画布上的两块浮层（Inference、「+N 个类」）与顶栏那三个面板同一副：
+     shadcn 的 Popover。从前是手写的原地展开，面板第一行还要把触发它的那个
+     胶囊再画一遍当关闭键；统一之后关闭归 Esc、外点与触发器本身 */
+  const [derivedOpen, setDerivedOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [legendQ, setLegendQ] = useState("");
   /* 正在退场的实体。**面板不能一取消选中就卸载**——那样它是瞬间消失的。
      先留在原地演完退场，再真的移除。用 selectedRef 取当前值而不是把
@@ -1358,16 +1356,9 @@ export function Graph() {
               点开看到的就是全部（搜得到任何一个），写「+3」等于承诺了另一件事 */}
 
           {legendRest.length > 0 && (
-            <div className="relative" ref={legendPop.rootRef}>
-              <Pill
-                ref={legendPop.anchorRef}
-                active={legendPop.open}
-                title={S.graph.legendAllHint}
-                aria-expanded={legendPop.open}
-                onClick={() =>
-                  legendPop.open ? legendPop.close() : legendPop.setOpen(true)
-                }
-              >
+            <Popover open={legendOpen} onOpenChange={setLegendOpen}>
+              <PopoverTrigger asChild>
+              <Pill active={legendOpen} title={S.graph.legendAllHint}>
                 {S.graph.legendMore(types.length)}
                 {/* 收起来的类里有正被隐藏的就点一下。**不点就是无声过滤**：
                     在面板里关掉一个类、把面板一收，界面上再没有任何东西说它被关了 */}
@@ -1375,25 +1366,13 @@ export function Graph() {
                   <span className="h-1.5 w-1.5 rounded-full bg-ink-2" />
                 )}
               </Pill>
-              {legendPop.open && (
-                <div
-                  ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay u-lift-strong"
-                >
-                  {/* 与库切换器、告警面板、用户菜单同一副解剖：第一行是触发它的
-                      那个胶囊自己，三角翻上去，点它缩回；没有浮在角上的关闭叉
-                      ——「哪儿展开的就从哪儿收回去」 */}
-                  <div
-                    onClick={() => legendPop.close()}
-                    className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
-                  >
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 overflow-hidden p-0">
+                  {/* 标题行只说这是什么，不再兼任关闭键 */}
+                  <div className="flex items-center gap-3 border-b border-line px-4 py-3">
                     <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
                       {S.graph.legendMore(types.length)}
                     </span>
-                    <ChevronDown
-                      size={12}
-                      className="shrink-0 rotate-180 text-ink-2"
-                    />
                   </div>
                   {/* 全开 / 全关。**从顶栏那枚独立胶囊搬进来的**：它只在有隐藏时
                       才出现，于是那一排的宽度会随着你点类跳来跳去；而它要做的事
@@ -1505,9 +1484,8 @@ export function Graph() {
                       </div>
                     )}
                   </div>
-                </div>
-              )}
-            </div>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 
@@ -1614,10 +1592,9 @@ export function Graph() {
             「显不显示推出来的边」正是同一族问题。外壳保持中性，
             金色只出现在图标本身——与色点用在类胶囊上是同一个做法。 */}
         {derivedCount > 0 && (
-          /* **两层**：外层只负责定位，内层才有 overflow-hidden。
-             那个类是给按钮堆裁圆角的，可面板是同一个盒子的子元素——
-             合成一层的话面板会被一起裁掉，实测只剩塔本身那 32px 宽 */
-          <div className="relative" ref={derivedPop.rootRef}>
+          /* 面板现在走 Popover（Portal 到 body），不再是塔的子元素，
+             所以外层这一圈只是为了跟下一座塔隔开 */
+          <div className="relative">
             <ToolTower>
               <ToolButton
                 role="switch"
@@ -1635,29 +1612,25 @@ export function Graph() {
               {/* 展开成一个小窗：这批边是什么时候推的、现在还推不推、手动再跑一次。
                   **与开关分成两个按钮**——「藏起来」是每天要点的，「什么时候推的」
                   是偶尔才问的，合成一个会让常用动作多一步 */}
-              <ToolButton
-                ref={derivedPop.anchorRef}
-                aria-expanded={derivedPop.open}
-                active={derivedPop.open}
-                label={S.graph.derivedPanel}
-                icon={
-                  <span className="grid h-4 w-4 shrink-0 place-items-center leading-none">
-                    ⋯
-                  </span>
-                }
-                onClick={() =>
-                  derivedPop.open ? derivedPop.close() : derivedPop.setOpen(true)
-                }
-              />
+              <Popover open={derivedOpen} onOpenChange={setDerivedOpen}>
+                <PopoverTrigger asChild>
+                  <ToolButton
+                    active={derivedOpen}
+                    label={S.graph.derivedPanel}
+                    icon={
+                      <span className="grid h-4 w-4 shrink-0 place-items-center leading-none">
+                        ⋯
+                      </span>
+                    }
+                  />
+                </PopoverTrigger>
+                {kb && (
+                  <PopoverContent side="right" align="end" className="w-72 p-0">
+                    <DerivedPanel kbId={kb.id} count={derivedCount} />
+                  </PopoverContent>
+                )}
+              </Popover>
             </ToolTower>
-            {derivedPop.open && kb && (
-              <DerivedPanel
-                panelRef={derivedPop.panelRef}
-                kbId={kb.id}
-                count={derivedCount}
-                onClose={() => derivedPop.close()}
-              />
-            )}
           </div>
         )}
         <ToolTower>
@@ -1774,6 +1747,12 @@ export function Graph() {
 /* ============ 时间轴（底部居中悬浮岛：播放 + 密度带 + 拖动） ============ */
 
 /** 轨道 clientX → 对齐天步进的时间值（数据精度即 day，拖动求精细；播放仍按月推进求节奏）。 */
+/** 轨道两端的余量，**等于轨道自己的圆角**（`rounded-control`）。
+ *  柱子与播放头都缩进这么多：不缩的话，最左最右那几根正好落在圆角的弧里，
+ *  看着像被切掉了一块；播放头走到头时也会贴上弧线。位置换算跟着一起缩，
+ *  否则点在轨道最左边得到的值会比看到的位置偏一点。 */
+const SCRUB_INSET = 10;
+
 function scrubValueAt(
   clientX: number,
   track: HTMLDivElement | null,
@@ -1784,7 +1763,12 @@ function scrubValueAt(
   const rect = track.getBoundingClientRect();
   // 布局未成形（宽度 0）时避免除零产出 NaN
   if (rect.width < 1) return maxTs;
-  const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  const span = rect.width - SCRUB_INSET * 2;
+  if (span < 1) return maxTs;
+  const frac = Math.min(
+    1,
+    Math.max(0, (clientX - rect.left - SCRUB_INSET) / span),
+  );
   const raw = minTs + frac * (maxTs - minTs);
   return Math.min(maxTs, minTs + Math.round((raw - minTs) / DAY_MS) * DAY_MS);
 }
@@ -2045,8 +2029,12 @@ function TimeScrubber({
             ≈ 430px，而轨道内宽才 ~455px——柱子被挤成 0.1px，整条看起来是空的。
             实测就是这么丢的。柱子稀疏时留 2px 好数，密了就贴在一起当密度带看 */}
         <div
-          className="absolute inset-x-1.5 top-1.5 bottom-1.5 flex items-end"
-          style={{ gap: bars.length > 120 ? 0 : bars.length > 40 ? 1 : 2 }}
+          className="absolute top-1.5 bottom-1.5 flex items-end"
+          style={{
+            left: SCRUB_INSET,
+            right: SCRUB_INSET,
+            gap: bars.length > 120 ? 0 : bars.length > 40 ? 1 : 2,
+          }}
         >
           {bars.map((b) => {
             // 进入即亮（桶起点为判据）：播放头脚下的柱子即已覆盖——进度条通用语义
@@ -2088,6 +2076,8 @@ function TimeScrubber({
         <input
           type="range"
           className="scrubber-range"
+          /* CSS 里那条 width:100% 要让开，否则左右缩进之后整条会溢出 */
+          style={{ left: SCRUB_INSET, right: SCRUB_INSET, width: "auto" }}
           min={minTs}
           max={maxTs}
           step={DAY_MS}
@@ -2174,18 +2164,7 @@ function fmtInterval(f: EntityFact): string {
  *
  * 手动按钮留在这里而不是别处：想重推的人正是刚看完这三行、觉得数字太旧的那个人。
  */
-function DerivedPanel({
-  panelRef,
-  kbId,
-  count,
-  onClose,
-}: {
-  panelRef: React.Ref<HTMLDivElement>;
-  kbId: string;
-  count: number;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
+function DerivedPanel({ kbId, count }: { kbId: string; count: number }) {
   const kb = useQuery({
     queryKey: ["kbOne", kbId],
     queryFn: () => api.kbDetail(kbId),
@@ -2198,6 +2177,7 @@ function DerivedPanel({
 
      也没有用全站的 DangerConfirm：那是红标题、可要求逐字输入的危险级，
      留给删库那类不可逆操作。重跑推理重但可重复，够不上那一档 */
+  const qc = useQueryClient();
   const [armed, setArmed] = useState(false);
   const run = useMutation({
     mutationFn: () => api.runInference(kbId),
@@ -2215,13 +2195,10 @@ function DerivedPanel({
     ? Math.round((Date.now() - new Date(last).getTime()) / 60000)
     : null;
 
-  // **盖在触发器原位往右上长开**（bottom-0 left-0），而不是在旁边挂一扇窗。
-  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-panel
+  /* 内容而已：定位、关闭、外点都归 Popover（与顶栏三个面板同一套）。
+     从前它自己盖在触发器原位往右上长开，还得带一个关闭叉 */
   return (
-    <div
-      ref={panelRef}
-      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-overlay px-3 pb-3 pt-3 u-lift-strong"
-    >
+    <div className="px-3 pb-3 pt-3">
       {/* items-center 而不是 baseline：标题旁边站着一个按钮和一个关闭键，
           按基线对齐会让那两个看着往上飘 */}
       <div className="flex items-center gap-2">
@@ -2240,16 +2217,6 @@ function DerivedPanel({
             {run.isPending ? S.graph.derivedRunning : S.graph.derivedRun}
           </Button>
         )}
-        {/* 固定 18px 方格：**别让关闭键撑起标题行的高**——一撑高，
-            行里最矮的标题就被居中挤出上下空当，看着像上边距过大 */}
-        <IconButton
-          size="sm"
-          label={S.graph.close}
-          className={armed ? "ml-auto" : undefined}
-          onClick={onClose}
-        >
-          ×
-        </IconButton>
       </div>
 
       {/* 问句 + 两个目标。**取消排在前面**：从「跑」那一下移过来最先碰到的
@@ -2431,7 +2398,7 @@ function ProofSteps({ kbId, steps }: { kbId: string; steps: ProofStep[] }) {
               {st.object ?? "?"}
             </span>
             {st.retracted && (
-              <span className="u-chip u-chip-warn text-fine">{S.graph.proofRetracted}</span>
+              <Chip tone="warn" className="text-fine">{S.graph.proofRetracted}</Chip>
             )}
           </div>
           <div className="mt-1 space-y-1 pl-2">
@@ -2600,7 +2567,7 @@ function ContestedChip({
           });
         }
       }}
-      className="u-chip u-chip-contest shrink-0 !text-fine !px-2 cursor-pointer"
+      className={chipLike("contest", "shrink-0 cursor-pointer text-fine")}
       title={S.graph.contestedHint(c.kind, c.derived ?? null)}
     >
       {S.graph.contestedChip}
@@ -2679,37 +2646,14 @@ function EntityPanel({
   const e: GraphNode | undefined = detail.data?.entity;
 
   // 实体修正（名字、类型）在弹窗里：面板只展示
-  const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
-  // 同名的其他实体：详情接口打开就给。改名之后再用响应里的那份覆盖——
-  // 改完名可能撞上一批新的同名，那时候的答案比打开时的新
-  const [renamedPeers, setRenamedPeers] = useState<GraphNode[] | null>(null);
-  const sameName = renamedPeers ?? detail.data?.same_name ?? [];
-  const setSameName = setRenamedPeers;
-  // 手动合并：把同名的那个并进**当前这个**。方向写死是有意的——
-  // 用户正在看的就是他判断为「主」的那一个
-  // 「并进来」先问一句。从前是浏览器原生 confirm()，和全站的对话框不是一套；
-  // 合并可撤销，所以走轻确认（不要求打字），同 Library 的重抽
-  const [mergeCandidate, setMergeCandidate] = useState<{ id: string; name: string } | null>(
-    null,
-  );
-  // 什么让你这么定（0026）：可不写；写了就跟着合并进台账
-  const [mergeWhy, setMergeWhy] = useState("");
-  const merge = useMutation({
-    mutationFn: ({ source, why }: { source: string; why: string }) =>
-      api.mergeEntities(kbId, source, entityId, why),
-    onSuccess: () => {
-      toast.success(S.toast.saved);
-      // 本地把并掉的那个摘掉，别等重取——它已经不存在了，留着会让人再点一次
-      setSameName((prev) =>
-        (prev ?? sameName).filter((p) => p.id !== merge.variables?.source),
-      );
-      qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
-      qc.invalidateQueries({ queryKey: ["graph"] });
-      qc.invalidateQueries({ queryKey: ["review", kbId] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  /* **同名的其他实体不在这块面板上出现。**（曾经有一条横幅，列出同名的
+     每一个并给「并进来」。）两个问题：那些行只有类型名可读，同名的七个
+     全写着「Organization」，界面在问"它们是同一个吗"却不给判断的依据；
+     而且横幅没有高度上限，同名多几个就把 Relations / History / Derived
+     挤到屏幕外。合并是 Review 那边的事——那里有并排比对。
+     这块面板只回答"我正在看的这个实体是什么"。 */
+
   const openEdit = () => {
     if (!e) return;
     setEditing(true);
@@ -2794,90 +2738,10 @@ function EntityPanel({
           entityId={entityId}
           entity={e}
           onClose={() => setEditing(false)}
-          onSaved={(peers) => {
-            setEditing(false);
-            setSameName(peers);
-          }}
+          onSaved={() => setEditing(false)}
         />
       )}
 
-      {/* 同名不是错误——两个张伟可以并存。只提示，判定是不是同一个是人的事 */}
-      {sameName.length > 0 && (
-        <div className="mx-4 mt-3 rounded-panel border border-line bg-surface px-3 py-2">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-fine text-ink-2">
-              {S.graph.sameNameNote(sameName.length)}{" "}
-              <span className="text-ink-2">{S.graph.sameNameHint}</span>
-            </p>
-            <IconButton
-              size="sm"
-              label={S.graph.close}
-              className="shrink-0"
-              onClick={() => setSameName([])}
-            >
-              <X size={11} />
-            </IconButton>
-          </div>
-          {/* 每个同名的给两个动作：去看它，或者把它并进来。
-              **方向写死成「并进当前这个」**——合并有方向（源消失、事实搬到目标上），
-              而当前打开的这个就是用户正在看、正在判断的那一个 */}
-          <div className="mt-2 space-y-1">
-            {sameName.map((p) => (
-              <div key={p.id} className="flex items-center gap-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="min-w-0 flex-1 justify-start"
-                  onClick={() => onNavigate(p.id)}
-                >
-                  <span className="truncate">
-                    {p.type_label ?? S.graph.untyped}
-                    {p.disambiguator && p.disambiguator !== p.type_label
-                      ? ` · ${p.disambiguator}`
-                      : ""}
-                  </span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0"
-                  disabled={merge.isPending}
-                  title={S.graph.mergeIntoHint}
-                  onClick={() => setMergeCandidate({ id: p.id, name: p.name })}
-                >
-                  {S.graph.mergeInto}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {mergeCandidate && (
-        <DangerConfirm
-          title={S.graph.mergeTitle}
-          hint={S.graph.mergeConfirm(mergeCandidate.name, e?.name ?? "")}
-          confirmLabel={S.graph.mergeInto}
-          cancelLabel={S.graph.editCancel}
-          busy={merge.isPending}
-          onConfirm={() => {
-            merge.mutate({ source: mergeCandidate.id, why: mergeWhy });
-            setMergeCandidate(null);
-            setMergeWhy("");
-          }}
-          onCancel={() => {
-            setMergeCandidate(null);
-            setMergeWhy("");
-          }}
-        >
-          <Input
-            className="w-full"
-            placeholder={S.review.rationalePlaceholder}
-            value={mergeWhy}
-            onChange={(e) => setMergeWhy(e.target.value)}
-          />
-        </DangerConfirm>
-      )}
 
       {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}
       {/* **左边比头部多一档**（24 而不是 16）。两个盒子本来都从 px-4 起，可
@@ -3234,9 +3098,9 @@ function FactRow({
               {interval || S.graph.undated}
             </span>
             {fact.stale && (
-              <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
+              <Chip tone="neutral" className="shrink-0 text-fine">
                 {S.graph.staleFactChip}
-              </span>
+              </Chip>
             )}
             {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
             <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
