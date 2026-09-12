@@ -1,4 +1,4 @@
-import { Button, chipLike } from "../ui";
+import { Button, Status } from "../ui";
 /* 等人点头的事实（docs/decisions/0015）。
    一句 remember 抽出的三元组先进待确认队列，不上图；人在这里点头它才进账本。
    **原句在上，三元组在下**：只列三元组等于要人凭空判断它对不对——
@@ -80,7 +80,9 @@ export function PendingFactRow({
         <span className="text-body font-medium text-ink">{objectText(fact)}</span>
         {range && <span className="text-small text-ink-2">({range})</span>}
         {!fact.predicate_label && (
-          <span className={chipLike("warn", "ml-auto")}>{S.review.pendingNoPredicateChip}</span>
+          <Status tone="warn" className="ml-auto shrink-0">
+            {S.review.pendingNoPredicateChip}
+          </Status>
         )}
       </div>
       <div className="mt-3 flex items-center gap-2">

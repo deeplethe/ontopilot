@@ -29,18 +29,17 @@ import {
   Button,
   Checkbox,
   Chip,
-  type ChipTone,
-  cn,
+  GroupLabel,
   Input,
   LinkButton,
+  PageHeader,
   Pager,
   RAIL_CLS,
   RailItem,
   Segmented,
-  GroupLabel,
-  PageHeader,
   Status,
-  chipLike,
+  cn,
+  type ChipTone,
 } from "../ui";
 
 const DUP_PAGE = 6;
@@ -152,18 +151,15 @@ function DuplicateCard({
       </div>
       <div className="mt-3 pt-3 flex items-center gap-3 border-t border-line">
         {locked ? (
-          <span className={chipLike("info")}>
-            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warn animate-pulse" />
+          <Status tone="warn" pulse>
             {S.review.agentDeciding}
-          </span>
+          </Status>
         ) : (
-          <span
-            className={chipLike(item.stage === "human" ? "warn" : "neutral")}
-          >
+          <Status tone={item.stage === "human" ? "warn" : "neutral"}>
             {item.stage === "human"
               ? S.review.stageHuman
               : S.review.stageAdjudicating}
-          </span>
+          </Status>
         )}
         {typesDiffer(item) && (
           <Chip tone="warn" title={S.review.typesDifferHint}>
@@ -255,7 +251,9 @@ function FactRow({
           {fact.object_name ?? "?"}
         </span>
         {range && <span className="text-small text-ink-2">({range})</span>}
-        <span className={chipLike("warn", "ml-auto")}>
+        {/* 置信度是**一个数**，不是一个状态：与这一页另外三处置信度同一副
+            素色数字。从前这里是一枚填色的琥珀胶囊，同一个数在同一页有两副样子 */}
+        <span className="ml-auto u-num text-small text-ink-2 shrink-0">
           {S.review.confidence(Math.round(fact.confidence * 100))}
         </span>
       </div>
@@ -331,9 +329,9 @@ function ConflictRow({
             ({S.review.conflictSince(c.new_valid_from.slice(0, 10))})
           </span>
         )}
-        <span className={chipLike("warn", "ml-auto")}>
+        <Status tone="warn" className="ml-auto shrink-0">
           {S.review.conflictReason[c.reason] ?? c.reason}
-        </span>
+        </Status>
       </div>
       <div className="mt-3 flex items-center gap-2 justify-end">
         <Button variant="danger" size="sm"
@@ -470,9 +468,7 @@ function MergeRow({
         </div>
       </div>
       {merge.reverted_at ? (
-        <span className={chipLike("neutral", "shrink-0")}>
-          {S.review.reverted}
-        </span>
+        <Status className="shrink-0">{S.review.reverted}</Status>
       ) : (
         <Button variant="secondary" size="sm" className="shrink-0"
           disabled={busy}

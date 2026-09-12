@@ -52,32 +52,34 @@ import {
   Button,
   Chip,
   DangerConfirm,
+  Dialog,
   Disclosure,
   IconButton,
   Input,
+  LinkButton,
   Loading,
+  PageHeader,
   Pager,
+  RAIL_CLS,
+  ROW_TRAILING,
   RailItem,
   Row,
-  ROW_TRAILING,
+  Segmented,
   SkeletonRows,
   Spinner,
-  rowClass,
-  Segmented,
-  RAIL_CLS,
-  cn,
-  pageSlice,
-  PageHeader,
-  Dialog,
-  LinkButton,
-  Table,
+  Status,
   TBody,
+  THead,
+  Table,
   Td,
   Th,
-  THead,
   Tr,
+  chipLike,
+  cn,
   localDateTime,
-  chipLike,} from "../ui";
+  pageSlice,
+  rowClass,
+} from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
 const RAIL_ROW_H = 34;
@@ -1557,9 +1559,9 @@ function RefinePanel({
                       {r.coarse ?? S.graph.untyped} → {r.choice}
                     </span>
                     {r.crosses_axis && (
-                      <span className={chipLike("warn", "text-fine")}>
+                      <Status tone="warn" className="text-fine">
                         {S.ontology.refineCrossesAxis}
-                      </span>
+                      </Status>
                     )}
                     <span className="ml-auto u-num text-fine text-ink-2">
                       {Math.round(r.confidence * 100)}%
