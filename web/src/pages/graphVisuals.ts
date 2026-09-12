@@ -332,16 +332,24 @@ export function inkAt(alpha: number): string {
  * 纸底上同一个 rgba(90,90,90,0.25) 加上去就溢出成白——「没选中时所有线都是白的」
  * 就是这么来的。暗度必须编码进 RGB（Graph.tsx 里 EDGE_DIM 那条注释说的同一件事）。
  * 暗色那一套是加法下调出来的，不动；浅色把 α 在这里就混掉。 */
-function flattenOnLight(color: string): string {
+export function flattenOnLight(color: string): string {
   if (typeof document === "undefined" || document.documentElement.dataset.theme !== "light") {
     return color;
   }
-  const m = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/.exec(color);
-  if (!m) return color;
-  const a = Number(m[4]);
-  const ground = token("--u-ground-rgb", "250,250,250").split(",").map((v) => Number(v.trim()));
-  const ch = (i: number) => Math.round(Number(m[i]) * a + ground[i - 1] * (1 - a));
-  return `rgb(${ch(1)},${ch(2)},${ch(3)})`;
+  /* **两种写法都要认。**令牌里写的是 `rgba(176,120,20,0.6)`，打包时 Lightning CSS
+     把它压成 `#b0781499` —— 同一个颜色，十六进制带 alpha。从前这里只有一条
+     `rgba(...)` 的正则，压缩之后的写法整个漏过去，半透明没摊平就交给了 sigma，
+     于是那条派生边在纸底上被**加**成一道亮黄。（它没早点炸，是因为另一个 bug
+     兜住了：只认六位的 `hexToRgb` 把 `#b0781499` 读成不透明的中灰，线画成了灰的。
+     两个错凑成一个看着还行的结果，修好一个另一个就露出来。）
+     走 `parseRgba` 就不用管写法；alpha 已经是 1 的原样退回，省一次无谓的改写。 */
+  const [r, g, b, a] = parseRgba(color);
+  if (a >= 1) return color;
+  const ground = token("--u-ground-rgb", "250,250,250")
+    .split(",")
+    .map((v) => Number(v.trim()));
+  const ch = (v: number, i: number) => Math.round(v * a + ground[i] * (1 - a));
+  return `rgb(${ch(r, 0)},${ch(g, 1)},${ch(b, 2)})`;
 }
 
 /** 启动时和切主题后调一次，然后 `sigma.refresh()`。 */
