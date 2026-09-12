@@ -43,6 +43,7 @@
   --color-contest: var(--u-contest);
   --color-violet: var(--u-violet);
   --color-accent: var(--u-accent);
+  --color-bar: var(--u-bar);
 
   /* 圆角四档（规矩 3）。**按角色命名，不按尺寸**——同 ink / ink-2 的道理：
      `rounded-panel` 说得出「这是个面板」，`rounded-lg` 只说得出 8px，而
@@ -104,6 +105,15 @@
   /* 面板只比背景亮一丁点：边界主要由 --u-line 那条线交代，填充不负责撑出
      一个盒子。三档一起收窄，静止→悬停仍是 5 级灰，跳得不比从前明显。
      悬停与选中属于**行**，不属于面板——面板是槽，槽不响应指针（DESIGN.md 6） */
+  /* **浮起来的面**：面板、卡片、栏、对话框的输入框、用户气泡。
+     与下面那三档「面」不是一回事——`--u-surface` 那三档是压进去的（分段控件的
+     槽、kbd、井、指到的行、选中的行），浮起来的是撑出来的。
+     一句话两个主题都成立：**浮起来的东西更亮**。暗底上是往白里加一点，
+     纸底上「更亮」走到尽头就是白 —— 这也是纸底上的界面本来的样子，
+     灰的是页面，白的是纸片，而不是反过来。 */
+  --u-raise: rgba(255, 255, 255, 0.025);
+  /* 用户说的那句话比一块面板更该被看见，所以比 raise 再实一档 */
+  --u-bubble: rgba(255, 255, 255, 0.08);
   --u-surface: rgba(255, 255, 255, 0.025);
   --u-surface-2: rgba(255, 255, 255, 0.045);
   --u-surface-3: rgba(255, 255, 255, 0.08);
@@ -147,6 +157,11 @@
   --u-pop-surface: rgba(16, 16, 16, 0.98);
   --u-modal-surface: rgba(12, 12, 12, 0.97);
   --u-card-surface: rgba(12, 12, 12, 0.92);
+  /* 图里的柱子。**不是 accent**：accent 是"这一屏最该按的那个按钮"，
+     实心的一档，浅色下就是近黑。一张十四根柱子的小图铺这个色，画面上最重的
+     一块成了"上周办了几件"。柱子是读的东西不是按的东西，取墨色的一半——
+     暗底上是中灰，纸底上也是中灰，两边一样重。只定义一次：ink-rgb 自己翻面 */
+  --u-bar: rgba(var(--u-ink-rgb), 0.55);
   /* 画布网格两级 */
   --u-grid: rgba(var(--u-ink-rgb), 0.055);
   --u-grid-2: rgba(var(--u-ink-rgb), 0.02);
@@ -172,7 +187,18 @@
   --u-edge-relation: rgba(128, 128, 128, 0.3);
   --u-edge-relation-focus: rgba(var(--u-ink-rgb), 0.6);
   --u-edge-schema-dim: rgba(48, 48, 48, 0.4);
+  /* 选中的那一行的底（左栏、表格、菜单都用它）。从前这个数直接写在
+     `.u-nav-active` 里，于是浅色版没处调——而它正是最需要按主题分开调的一个：
+     指到的一档与选中的一档之间要留得出差别，黑压白比白压黑重，两边同一个数
+     就会在纸底上糊成一块灰带 */
+  --u-active: rgba(var(--u-ink-rgb), 0.09);
   --u-pill-bg: rgba(12, 12, 12, 0.9);
+  /* 指到的那块名字牌。暗底上往亮里走一档——与 chrome 里 hover 升一层面
+     （surface → surface-2）是同一个说法，只是画布上的面必须够实，
+     底下压着的是线和点，不是页面的底 */
+  --u-pill-bg-hover: rgba(42, 42, 42, 0.96);
+  /* 选中的那块名字牌：底浅字深，反着来。暗底上它就是墨色本身 */
+  --u-pill-invert: var(--u-text);
   --u-halo: rgba(var(--u-ground-rgb), 0.92);
   /* 时间轴刻度：走过的、播放头、没到的 */
   --u-scrub-past: rgba(var(--u-ink-rgb), 0.32);
@@ -182,6 +208,21 @@
   --u-on-danger: #ffffff;
   /* 浮岛的投影：暗底下要重，浅底下要轻 */
   --u-shadow: rgba(0, 0, 0, 0.5);
+  /* 浮起两档。**从前这一档根本不在令牌里**：页面写的是 Tailwind 自带的
+     `shadow-lg` / `shadow-2xl`，它们是按浅色界面调的黑影，压在近黑的底上
+     几乎看不见，于是没人发现界面里还有一套不归自己管的颜色——翻成纸底之后
+     它们全冒出来了，而且深浅与 `--u-shadow` 对不上。
+     u-lift：贴着画布浮的控件（搜索框、图例）。
+     u-lift-strong：盖在页面上的浮层（菜单、对话框、停靠面板、toast）。 */
+  /* 页面顶上那层晕。暗底上是一点墨色的空间感；纸底上不加——同样一层墨压在
+     近白的底上，只会把正文区压得比左栏深一档，看着像两块颜色 */
+  --u-page-glow: rgba(var(--u-ink-rgb), 0.045);
+  --u-lift: 0 4px 16px var(--u-shadow);
+  --u-lift-strong: 0 12px 40px var(--u-shadow);
+  /* 播放头那一圈。暗底上是一圈光晕（它本来就该是"亮着的那一条"），
+     纸底上改成一圈纸色的描边——同一个作用（把 2px 的头从柱子里分出来），
+     换一种手法：一圈黑光晕压在浅色的柱子上只是一团糊 */
+  --u-scrub-head-ring: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
   /* 语义色的另外两个三元组：底色淡染（chip / mark）按透明度调 */
   --u-ok-rgb: 76, 195, 138;
   --u-warn-rgb: 242, 182, 109;
@@ -204,6 +245,11 @@
    语义色换成同一色相的深版：浅底上淡玫瑰/淡金读不出来。 */
 :root[data-theme="light"] {
   color-scheme: light;
+  /* 底是浅灰，不是白。白留给浮在它上面的东西（见 --u-raise）——
+     从前底是 #fafafa、面板反而更深，那是把暗色的做法直接翻了个面：
+     暗底上"比底亮"是对的，纸底上照抄成"比底暗"，于是每一块面板都是灰的 */
+  /* 底回到近白。**灰的底是给白卡片当衬的**，而这套界面的框（左栏、顶栏、
+     导航条）本来就与底同色，底一暗，整屏就先灰了一层，白只剩下卡片那几块 */
   --u-ground: #fafafa;
   --u-text: #171717;
   --u-text-2: #5f5f5f;
@@ -220,15 +266,25 @@
   --u-violet: #6d4fd6;
   --u-line: rgba(0, 0, 0, 0.08);
   --u-line-strong: rgba(0, 0, 0, 0.14);
+  /* 压进去的那三档留在墨色这一边：白纸上的槽、井、指到与选中的行都是变暗。
+     0.015 是面板还在用它的时候压出来的——面板改用 --u-raise 之后，
+     这一档只剩下槽与 kbd，在白纸片上要看得见，回到 0.03 */
+  --u-raise: #ffffff;
   --u-surface: rgba(0, 0, 0, 0.03);
-  --u-surface-2: rgba(0, 0, 0, 0.05);
-  --u-surface-3: rgba(0, 0, 0, 0.08);
+  --u-surface-2: rgba(0, 0, 0, 0.03);
+  --u-surface-3: rgba(0, 0, 0, 0.055);
   --u-ring: rgba(0, 0, 0, 0.5);
-  --u-well: rgba(0, 0, 0, 0.05);
-  --u-surface-strong: rgba(250, 250, 250, 0.86);
-  --u-surface-strong-hover: rgba(250, 250, 250, 0.94);
-  --u-menu-surface: rgba(252, 252, 252, 0.9);
-  --u-menu-surface-hover: rgba(252, 252, 252, 0.98);
+  --u-well: rgba(0, 0, 0, 0.03);
+  /* **框跟页面同色**，不跟着「浮起来的面用白」那条走：左栏、顶栏、导航条
+     是页面的框，不是浮在页面上的东西。暗色那边这个令牌本来就是底色本身
+     （`rgba(10,10,10,0.86)` 压在 #0a0a0a 上），浅色照同一个道理取底色；
+     白留给真正浮起来的（--u-raise 的面板、菜单、对话框） */
+  --u-surface-strong: rgba(250, 250, 250, 0.9);
+  --u-surface-strong-hover: rgba(250, 250, 250, 0.97);
+  --u-menu-surface: rgba(255, 255, 255, 0.95);
+  --u-menu-surface-hover: rgba(255, 255, 255, 1);
+  --u-bubble: #ffffff;
+  --u-page-glow: transparent;
   --u-scrim: rgba(0, 0, 0, 0.35);
   --u-pop-surface: rgba(255, 255, 255, 0.98);
   --u-modal-surface: rgba(255, 255, 255, 0.97);
@@ -255,8 +311,17 @@
   --u-edge-relation: rgba(23, 23, 23, 0.4);
   --u-edge-relation-focus: rgba(23, 23, 23, 0.85);
   --u-edge-schema-dim: rgba(23, 23, 23, 0.12);
+  /* 指到 0.03 → 选中 0.055，与暗色那边 0.045 → 0.09 同一个倍数，绝对值减半 */
+  --u-active: rgba(0, 0, 0, 0.055);
   --u-pill-bg: rgba(255, 255, 255, 0.92);
+  /* 纸底上反过来：hover 往暗里走一档（chrome 的 --u-surface 也是加黑） */
+  --u-pill-bg-hover: rgba(236, 236, 236, 0.96);
+  /* 反色那一档**不跟着墨色走**：纸底上的墨是 #171717，一块纯黑的牌子压在
+     一张浅色的图上，比暗底上那块近白的牌子重得多——同样是"反过来"，
+     在纸上要收一档。深灰仍然与指到的那块浅灰分得清清楚楚 */
+  --u-pill-invert: #3f3f3f;
   --u-shadow: rgba(0, 0, 0, 0.18);
+  --u-scrub-head-ring: 0 0 0 1.5px rgba(var(--u-ground-rgb), 0.95);
   --u-ok-rgb: 26, 127, 75;
   --u-warn-rgb: 154, 106, 18;
   --u-code-quote: #6b7280;
@@ -288,7 +353,7 @@ body::before {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(1000px 600px at 50% -20%, rgba(var(--u-ink-rgb), 0.045), transparent 60%),
+    radial-gradient(1000px 600px at 50% -20%, var(--u-page-glow), transparent 60%),
     var(--u-ground);
 }
 
@@ -297,6 +362,42 @@ body::before {
    `glass-strong border-l-0` 这种写法里 border-l-0 是输的——左栏四边都有
    1px 边框，内容整体偏 1px，两个页面左上角本该重合的输入框差一像素。 */
 @layer components {
+  /* 文档正文（Tailwind 排版插件）。**颜色全部接到令牌上**，两个变体都不用：
+     从前这里挂的是 `prose-invert`，那是插件的暗色变体——标题、链接、行内代码、
+     表头一律取近白，压在纸底上就是一片看不见的白。而它的另一头（默认变体）
+     又是插件自己那套灰阶，与这套界面的墨色不是一回事。
+     插件把每一处颜色都留成了 `--tw-prose-*`，所以这里只需把它们接到
+     `--u-text` / `--u-text-2` / `--u-line` 上，浅暗两套跟着主题走，
+     页面上不再需要任何 `dark:` 或 invert 的判断。 */
+  .u-doc-prose {
+    --tw-prose-body: var(--u-text-2);
+    --tw-prose-headings: var(--u-text);
+    --tw-prose-lead: var(--u-text-2);
+    --tw-prose-links: var(--u-text);
+    --tw-prose-bold: var(--u-text);
+    --tw-prose-counters: var(--u-text-2);
+    --tw-prose-bullets: var(--u-line-strong);
+    --tw-prose-hr: var(--u-line);
+    --tw-prose-quotes: var(--u-text);
+    --tw-prose-quote-borders: var(--u-line);
+    --tw-prose-captions: var(--u-text-2);
+    --tw-prose-code: var(--u-text);
+    --tw-prose-kbd: var(--u-text);
+    --tw-prose-kbd-shadows: var(--u-ink-rgb);
+    --tw-prose-pre-code: var(--u-text);
+    --tw-prose-pre-bg: var(--u-well);
+    --tw-prose-th-borders: var(--u-line-strong);
+    --tw-prose-td-borders: var(--u-line);
+  }
+
+  /* 浮起：页面只说"浮哪一档"，深浅交给主题 */
+  .u-lift {
+    box-shadow: var(--u-lift);
+  }
+  .u-lift-strong {
+    box-shadow: var(--u-lift-strong);
+  }
+
   /* **backdrop 要去色**。这一层的底色本身是纯中性的（rgba(10,10,10)、
      白 2.5%，三个通道相等），可 backdrop-filter 把背后的画布糊上来一起显示——
      图上的节点是有类型色的，蓝紫一片时透上来就是一块偏蓝的面。
@@ -304,7 +405,7 @@ body::before {
      去掉饱和，再谈透明度。这也正是「chrome 零色偏、彩色只属于数据」
      那条原则该管到的地方——面板是 chrome，它不该跟着背后画的是什么变颜色 */
   .glass {
-    background: var(--u-surface);
+    background: var(--u-raise);
     backdrop-filter: blur(14px) saturate(0.3);
     -webkit-backdrop-filter: blur(14px) saturate(0.3);
     border: 1px solid var(--u-line);
@@ -1021,7 +1122,7 @@ select.input-dark option {
 .u-composer {
   border-radius: var(--radius-panel);
   border: 1px solid rgba(var(--u-ink-rgb), 0.12);
-  background: var(--u-surface);
+  background: var(--u-raise);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: border-color var(--u-fast);
@@ -1135,7 +1236,7 @@ select.input-dark option {
    （输入框、控件、卡片），一条已经说完的话不是其中之一，给它描边就是在暗示
    还能点。角色靠这块 8% 的底区分就够了 */
 .u-bubble-user {
-  background: rgba(var(--u-ink-rgb), 0.08);
+  background: var(--u-bubble);
 }
 .u-highlight {
   border-color: rgba(var(--u-ink-rgb), 0.45) !important;
@@ -1143,7 +1244,7 @@ select.input-dark option {
   box-shadow: 0 0 0 2px rgba(var(--u-ink-rgb), 0.12);
 }
 .u-nav-active {
-  background: rgba(var(--u-ink-rgb), 0.09);
+  background: var(--u-active);
   color: var(--u-text);
 }
 
@@ -1488,7 +1589,7 @@ a:hover > .u-mark-arrow {
   height: 28px;
   border-radius: 1px;
   background: var(--u-text);
-  box-shadow: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
+  box-shadow: var(--u-scrub-head-ring);
   cursor: ew-resize;
 }
 .scrubber-range::-moz-range-thumb {
@@ -1497,7 +1598,7 @@ a:hover > .u-mark-arrow {
   border: none;
   border-radius: 1px;
   background: var(--u-text);
-  box-shadow: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
+  box-shadow: var(--u-scrub-head-ring);
   cursor: ew-resize;
 }
 .scrubber-range::-webkit-slider-runnable-track {
@@ -1691,5 +1792,5 @@ a:hover > .u-mark-arrow {
 
 /* 时间岛：投影从页面里收进来（0038） */
 .u-scrub-island {
-  box-shadow: 0 12px 40px var(--u-shadow);
+  box-shadow: var(--u-lift-strong);
 }

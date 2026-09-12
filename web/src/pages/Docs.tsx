@@ -204,7 +204,7 @@ export function DocsPage() {
             )}
           </div>
           {q.trim().length >= 2 && (
-            <div className="u-menu-glass u-pop-in u-pop-in-tl absolute inset-x-0 top-full mt-2 rounded-overlay shadow-2xl overflow-hidden">
+            <div className="u-menu-glass u-pop-in u-pop-in-tl absolute inset-x-0 top-full mt-2 rounded-overlay u-lift-strong overflow-hidden">
               {results.length === 0 ? (
                 <p className="px-4 py-3 text-small text-ink-2">{S.docs.noResults}</p>
               ) : (
@@ -267,8 +267,9 @@ export function DocsPage() {
           {/* 上下都留足空白：标题不顶着头，末段内容能滚到屏幕中部——人读屏幕中间。
               排版交给官方 @tailwindcss/typography（prose，16px 基准），
               自定义只剩：标题锚点 id、外链新开、表格横向滚动容器 */}
-          {/* prose-neutral：默认 gray 阶带蓝相（oklch 258°），违反 chrome 零色偏 */}
-          <article className="prose prose-neutral prose-invert prose-headings:scroll-mt-6 prose-code:before:content-none prose-code:after:content-none flex-1 min-w-0 max-w-3xl mx-auto px-8 pt-16 pb-[40vh]">
+          {/* 颜色走 `.u-doc-prose`（styles.css）：插件的 neutral 灰阶带蓝相、
+              invert 变体是写死的暗色，两个都不用，接令牌 */}
+          <article className="prose u-doc-prose prose-headings:scroll-mt-6 prose-code:before:content-none prose-code:after:content-none flex-1 min-w-0 max-w-3xl mx-auto px-8 pt-16 pb-[40vh]">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{

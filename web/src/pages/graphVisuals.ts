@@ -29,6 +29,10 @@ export let MUTED_SHELL = "#151515";
    每划过一个节点就换一次，压到底会让整张画布不停明灭 */
 export const HOVER_MUTE = 0.78;
 export let PILL_BG = "rgba(12,12,12,0.9)";
+/** 指到的那一块底。静止那档是 `PILL_BG`，选中那档反色，见 `drawNodeLabel` */
+export let PILL_BG_HOVER = "rgba(42,42,42,0.96)";
+/** 选中那一档的底（反色）。**不等于 `PILL_TEXT`**：纸底上的墨是近黑的 */
+export let PILL_INVERT = "#ededed";
 export let PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
 export let PILL_TEXT = "#ededed"; // --u-text
 /* 裸字的光晕：与画布同色（--u-ground）的一圈描边，只为把从字底下穿过的
@@ -61,9 +65,14 @@ export function hexToRgb(hex: string): [number, number, number] {
 }
 
 /** c1 向 c2 按 t 比例混色 */
+/** 两色按比例混。**两端都走 `parseRgba`，不是 `hexToRgb`**：令牌读回来的值
+ *  是 `rgb(23,23,23)` 这种写法，用只认 `#rrggbb` 的解析器会静静地退回中灰
+ *  （`hexToRgb` 认不出就返回 128,128,128），于是 `mix(类型色, INK, t)` 混的
+ *  不是墨色而是一团灰——选中与悬停的那圈环因此在两个主题里都发闷。
+ *  从前 `INK` 是字面量 "#ffffff" 才没露馅，0038 把它改成从令牌读之后才显出来。 */
 export function mix(c1: string, c2: string, t: number): string {
-  const [r1, g1, b1] = hexToRgb(c1);
-  const [r2, g2, b2] = hexToRgb(c2);
+  const [r1, g1, b1] = parseRgba(c1);
+  const [r2, g2, b2] = parseRgba(c2);
   const f = (a: number, b: number) => Math.round(a + (b - a) * t);
   return `rgb(${f(r1, r2)},${f(g1, g2)},${f(b1, b2)})`;
 }
@@ -132,26 +141,35 @@ export function drawNodeLabel(
   const x = data.x + dx + w + padX > vw ? data.x - dx - w : data.x + dx;
   const y = data.y - dy - size / 2 < 0 ? data.y + dy : data.y - dy;
   ctx.save();
-  if (data.labelSlab) {
-    /* 一块底，圆角 cell（4）、无描边——底已经把它托起来了。
-       **两档**：指到的是深底浅字，选中的反过来，浅底深字。同一副形状、同一个
-       位置，只有明暗调个个儿——"指着"与"选中"是同一件事的两个程度，从前一个是
-       浮起来的两行卡片、一个是这块底牌，看着像两种不同的东西 */
-    const h = size + padY * 2;
+  /* **名字总是一块牌子**：一块底 + 一圈细边，圆角 cell（4）。三档只换颜色，
+     形状与位置一动不动——
+       静止   `--u-pill-bg` + `--u-line-strong` 的边
+       指到的 `--u-pill-bg-hover`，底亮一档，并浮起来（投影）
+       选中的 反色（浅底深字），加粗一档，也浮起来
+     从前静止那档是裸字加一圈画布色描边，只有指到/选中的才有底。裸字在一片
+     连线和节点之间读起来费劲——描边压住的是线，压不住线背后深浅不一的底，
+     而一块牌子自带一个稳定的底。代价是画面更满，所以牌子的边只有一档细线、
+     静止那档不带投影：一屏几十块牌子，每块都浮着就糊成一片。 */
+  const h = size + padY * 2;
+  if (data.labelLift) {
     ctx.shadowColor = token("--u-shadow", "rgba(0,0,0,0.6)");
     ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
-    ctx.fillStyle = data.labelInvert ? PILL_TEXT : PILL_BG;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  } else {
-    /* 裸字：先描一圈画布色再填字（canvas 版的 paint-order: stroke fill），
-       连线从字底下穿过时不至于糊在一起 */
-    ctx.lineWidth = 3.5;
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = LABEL_HALO;
-    ctx.strokeText(data.label, x, y);
+  }
+  ctx.beginPath();
+  ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
+  ctx.fillStyle = data.labelInvert
+    ? PILL_INVERT
+    : data.labelLift
+      ? PILL_BG_HOVER
+      : PILL_BG;
+  ctx.fill();
+  // 投影只跟着底走：描边再来一次会把那圈黑描重一倍
+  ctx.shadowBlur = 0;
+  /* 反色那一档不描边：浅底自己就与画布分得开，再描一圈看着像两层皮 */
+  if (!data.labelInvert) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = PILL_BORDER;
+    ctx.stroke();
   }
   ctx.fillStyle = data.labelInvert ? LABEL_HALO : PILL_TEXT;
   ctx.fillText(data.label, x, y);
@@ -314,6 +332,8 @@ export function refreshPalette() {
   NODE_BORDER_BASE = token("--u-node-border", NODE_BORDER_BASE);
   MUTED_SHELL = token("--u-node-muted", MUTED_SHELL);
   PILL_BG = token("--u-pill-bg", PILL_BG);
+  PILL_BG_HOVER = token("--u-pill-bg-hover", PILL_BG_HOVER);
+  PILL_INVERT = token("--u-pill-invert", PILL_INVERT);
   PILL_BORDER = token("--u-line-strong", PILL_BORDER);
   PILL_TEXT = token("--u-text", PILL_TEXT);
   LABEL_HALO = token("--u-halo", LABEL_HALO);

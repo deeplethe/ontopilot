@@ -529,8 +529,7 @@ export const en = {
       notion: "Notion",
     },
     sourceKindHints: {
-      folder:
-        "A plain folder. Select it and upload (or drag) files straight into it — nothing is watched or synced.",
+      folder: "Holds the files you upload: add, drag in and remove them here.",
       url: "Fetches the listed web pages; changed pages update the same document.",
       rss: "Subscribes to a feed; each entry becomes a document dated by its publish time.",
       jira_issues:

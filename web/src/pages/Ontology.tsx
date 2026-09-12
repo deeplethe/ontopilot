@@ -827,7 +827,7 @@ function DockedPanel({
     <div
       // 与图谱页的实体面板同一副壳：同宽（w-96）、同一个顶部起点（给顶上那排
       // 药丸让位），同一个头部解剖。两页并排看是同一件东西
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-3 right-3 bottom-3 w-96 z-10 rounded-overlay shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-3 right-3 bottom-3 w-96 z-10 rounded-overlay u-lift-strong flex flex-col`}
     >
       <div className="shrink-0 flex items-start justify-between gap-2 px-4 py-4 border-b border-line">
         <div className="min-w-0">{header}</div>

@@ -62,17 +62,21 @@ function DailyBars({ days }: { days: ReviewSummary["decided"]["daily"] }) {
   const max = Math.max(1, ...days.map((d) => d.count));
   return (
     <div>
+      {/* 一天一格、格里居中一根柱，**柱子本身有上限宽**。从前是 `flex-1`
+          直接铺满：这张卡横着能有一千多像素，十四根柱子就成了十四块板，
+          有数的那天看着像一堵墙而不是一根柱 */}
       <div className="flex h-16 items-end gap-1">
         {days.map((d) => (
-          <div
-            key={d.day}
-            className="flex-1 rounded-none bg-accent"
-            style={{
-              height: `${Math.max(2, Math.round((d.count / max) * 64))}px`,
-              opacity: d.count === 0 ? 0.25 : 1,
-            }}
-            title={`${d.day} · ${d.count}`}
-          />
+          <div key={d.day} className="flex h-full flex-1 items-end justify-center">
+            <div
+              className="w-full max-w-[18px] rounded-none bg-bar"
+              style={{
+                height: `${Math.max(2, Math.round((d.count / max) * 64))}px`,
+                opacity: d.count === 0 ? 0.25 : 1,
+              }}
+              title={`${d.day} · ${d.count}`}
+            />
+          </div>
         ))}
       </div>
       <div className="mt-1 flex justify-between text-fine text-ink-2">

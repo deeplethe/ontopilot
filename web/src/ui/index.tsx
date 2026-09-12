@@ -43,7 +43,7 @@ export function Wordmark({ className }: { className?: string }) {
       target="_blank"
       rel="noreferrer"
       title="utopia.bi"
-      className={cn("relative inline-flex text-white", className)}
+      className={cn("relative inline-flex text-ink", className)}
       style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
     >
       {[...S.app.name].map((ch, i) => (
@@ -298,7 +298,7 @@ export function Dropdown({
         <div
           className={cn(
             // 与告警面板、用户菜单同一张皮（u-menu-glass）：浮在页面上的面只有一种
-            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay shadow-2xl overflow-hidden",
+            "u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay u-lift-strong overflow-hidden",
           )}
         >
           {menuLabel && (
@@ -320,7 +320,7 @@ export function Dropdown({
                   "w-full flex items-center gap-2 text-left",
                   pad,
                   o.value === value
-                    ? "bg-surface-3 text-white"
+                    ? "bg-surface-3 text-ink"
                     : "text-ink-2 hover:bg-surface-2 hover:text-ink",
                 )}
               >
@@ -441,7 +441,7 @@ export function SearchSelect({
         }}
       />
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay u-lift-strong overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -453,7 +453,7 @@ export function SearchSelect({
                 "w-full flex items-center gap-2 text-left",
                 rowPad,
                 i === active
-                  ? "bg-surface-3 text-white"
+                  ? "bg-surface-3 text-ink"
                   : "text-ink-2",
               )}
             >
@@ -610,7 +610,7 @@ export function MultiSearchSelect({
         />
       </div>
       {open && (
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay shadow-2xl overflow-hidden">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 mt-1 w-full rounded-overlay u-lift-strong overflow-hidden">
           {visible.map((o, i) => (
             <button
               key={o.value}
@@ -621,7 +621,7 @@ export function MultiSearchSelect({
               className={cn(
                 "w-full flex items-center gap-2 text-left px-2.5 py-1 text-small",
                 i === active
-                  ? "bg-surface-3 text-white"
+                  ? "bg-surface-3 text-ink"
                   : "text-ink-2",
               )}
             >
@@ -714,7 +714,7 @@ export function ColorPicker({
       )}
       {open && (
         // 显式宽度：绝对定位的收缩宽度会被 inline-block 触发器的容器块钳死
-        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-overlay p-3 shadow-2xl">
+        <div className="u-menu-glass u-pop-in u-pop-in-tl absolute z-50 left-0 top-full mt-2 w-56 rounded-overlay p-3 u-lift-strong">
           <div className="grid grid-cols-8 gap-1.5 mb-2.5">
             {ENTITY_PALETTE.map((c) => (
               <button
@@ -1219,7 +1219,7 @@ export function SectionMark({ text, title }: { text: string; title: string }) {
     <RouterLink
       to="/"
       title={title}
-      className="u-wordmark-top relative inline-flex text-white"
+      className="u-wordmark-top relative inline-flex text-ink"
       style={{ fontFamily: "var(--font-brand)", letterSpacing: "0.06em" }}
     >
       {[...text].map((ch, i) => (
@@ -1507,7 +1507,7 @@ export function ToolTower({
   return (
     <div
       className={cn(
-        "u-tower group glass-strong flex flex-col overflow-hidden rounded-panel shadow-xl",
+        "u-tower group glass-strong flex flex-col overflow-hidden rounded-panel u-lift-strong",
         className,
       )}
     >

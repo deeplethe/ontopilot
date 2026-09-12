@@ -480,8 +480,7 @@ export const zh: Strings = {
       notion: "Notion",
     },
     sourceKindHints: {
-      folder:
-        "一个普通文件夹。选中它，把文件直接上传（或拖）进去——不监听、不同步。",
+      folder: "可在文件夹中管理上传的文件：上传、拖入、删除都在这里。",
       url: "抓取所列的网页；内容变化时更新同一篇文档。",
       rss: "订阅一个源；每条目成为一篇文档，日期取其发布时间。",
       jira_issues:
@@ -642,7 +641,7 @@ export const zh: Strings = {
     chunkOf: (filename: string, seq: number) => `${filename} · 第 ${seq} 段`,
   },
   ask: {
-    greeting: "问问 Utopia 记得什么",
+    greeting: "问问 Utopia 都记住了什么",
     emptyTitle: "对话",
     emptyBody:
       "与你的知识库对话——带引用的回答、关于时间的提问，而且它会记住。\n请先在「文库」上传文档，并在「管理 → 模型」里配置模型。",
