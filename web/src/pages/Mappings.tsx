@@ -197,9 +197,13 @@ export function Mappings() {
                 setStatus(v as StatusFilter);
                 setPage(0);
               }}
+              /* 计数写进括号里，不是用间隔点挂在后面。「Pending · 0」读起来是
+                 两样并列的东西（这一页别处的 `·` 正是这个用法：口径 · 来源 ·
+                 表），而这里的 0 不是第二个字段，是「Pending 有几条」——
+                 括号说的就是这个从属关系。 */
               options={FILTERS.map((f) => ({
                 value: f.key,
-                label: f.n != null ? `${f.label} · ${f.n}` : f.label,
+                label: f.n != null ? `${f.label} (${f.n})` : f.label,
               }))}
             />
             {/* **一条工具行**：筛选、搜索、全选、批量动作排在一起。
