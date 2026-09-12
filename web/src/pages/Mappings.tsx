@@ -22,7 +22,6 @@ import {
   EmptyState,
   ErrorText,
   Input,
-  LinkButton,
   Loading,
   PageHeader,
   Pager,
@@ -241,8 +240,10 @@ export function Mappings() {
                   >
                     {S.mapping.approve}
                   </Button>
-                  <LinkButton
-                    tone="danger"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-danger"
                     disabled={batch.isPending || individualPending}
                     onClick={() =>
                       batch.mutate({
@@ -252,7 +253,7 @@ export function Mappings() {
                     }
                   >
                     {S.mapping.reject}
-                  </LinkButton>
+                  </Button>
               </>
             )}
           </div>
@@ -403,33 +404,39 @@ function MappingRow({
           onCancel={() => setEditing(false)}
         />
       ) : (
-        /* 行里的动作：拍板那一下是个按钮，其余是链接。**十一行十一个实底
-           按钮**（原来「确认」是 primary）等于把一页都染成动作，而一屏最多
-           一个 primary。拒绝是点了就生效的那种，所以它红（同成员页的移出） */
-        <div className="mt-2 flex items-center gap-3 flex-wrap">
+        /* 行里的动作：**拍板那一下描边，其余是 ghost，都不是实底。**十一行
+           十一个实底按钮等于把一整页染成动作，而一屏最多一个 primary。
+           但「不是实底」不等于「长成一句话」——从前这三个是 `LinkButton`：
+           没有内距、没有 hover 底、颜色就是正文那档灰，跟它们上面那行说明
+           一个样，看着不像能点。ghost 补回控件该有的两件事：一圈内距，
+           和指针停上去的那块底。静止时仍然轻。
+           拒绝**静止时就该是红的**：它是点了就生效的那一下，人要在按之前
+           看出来它跟「编辑」不是一类，而不是划过去才发现。 */
+        <div className="mt-2 -ml-2 flex items-center gap-1 flex-wrap">
           {m.status === "proposed" && (
             <>
-              <Button variant="secondary" size="sm"
+              <Button variant="secondary" size="sm" className="ml-2"
                 disabled={decide.isPending || batchPending || picked}
                 onClick={() => decide.mutate("confirmed")}
               >
                 {S.mapping.approve}
               </Button>
-              <LinkButton
-                tone="danger"
+              <Button variant="ghost" size="sm" className="text-danger"
                 disabled={batchPending || picked}
                 onClick={() =>
                   !picked && !decide.isPending && decide.mutate("rejected")
                 }
               >
                 {S.mapping.reject}
-              </LinkButton>
+              </Button>
             </>
           )}
-          <LinkButton onClick={() => setEditing(true)}>{S.mapping.edit}</LinkButton>
-          <LinkButton onClick={() => setShowHistory((v) => !v)}>
+          <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+            {S.mapping.edit}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setShowHistory((v) => !v)}>
             {S.mapping.history}
-          </LinkButton>
+          </Button>
         </div>
       )}
 
@@ -666,14 +673,15 @@ function DataSources({
             >
               {S.mapping.syncSchema}
             </Button>
-            <LinkButton
-              tone="danger"
-              className="shrink-0"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 text-danger"
               disabled={unmount.isPending}
               onClick={() => unmount.mutate(d.id)}
             >
               {S.mapping.unmount}
-            </LinkButton>
+            </Button>
           </div>
         ))}
         {!hasMounted && (
