@@ -931,6 +931,9 @@ function SourceBar({
     (cfg.urls ? `${cfg.urls.length} URLs` : "");
   const rssMode: RssContentMode =
     cfg.content_mode === "full_new_items" ? "full_new_items" : "feed";
+  // 补全进度只在这一档开着时才有话说
+  const hydration =
+    source.rss_full_content?.state === "disabled" ? null : source.rss_full_content;
 
   return (
     <div className="glass rounded-panel mb-3">
@@ -973,12 +976,15 @@ function SourceBar({
                         ? S.library.rssModeFullShort
                         : S.library.rssModeFeedShort}
                     </span>
-                    {/* **「有没有这一块」由服务端说。**从前这里是
-                        `rssMode === "full_new_items"`——把服务端算 state 的那条
-                        CASE 在前端又推了一遍，同一条规矩两份，改一处就会分叉。 */}
-                    {source.rss_full_content && (
+                    {/* **这一档开没开由服务端的 `state` 说，不由前端重推。**
+                        从前这里是 `rssMode === "full_new_items"`——把服务端那条
+                        CASE 在前端又算了一遍，同一条规矩两份。
+                        块对任何 RSS 来源都在（0033 决定 2），所以看的是 state：
+                        `disabled` 的来源没有补全队列，那五个 0 不是「队列空着」，
+                        是「这里没有队列」，不该显示。 */}
+                    {hydration && (
                       <span className="text-ink-2 shrink-0 u-num">
-                        {S.library.rssHydrationCounts(source.rss_full_content)}
+                        {S.library.rssHydrationCounts(hydration)}
                       </span>
                     )}
                   </>
