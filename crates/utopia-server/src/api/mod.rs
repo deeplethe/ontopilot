@@ -489,39 +489,36 @@ pub fn router(state: AppState, cfg: &AppConfig) -> Router {
         .allow_credentials(true);
 
     /* **`/api` 下面认不出来的路径是 404，不是首页。**
-       下面那个 history fallback 是给页面路由用的：刷新 /graph 要拿到 index.html。
-       可它挂在**整个应用**上，于是拼错或已经删掉的接口也落进同一张网，回的是
-       `200 text/html`。客户端那头 `res.json()` 抛 "Unexpected token '<'"，
-       报错的位置离原因十万八千里；对着 MCP 与 RDF 那两个对外契约的集成方更糟，
-       通用 HTTP 客户端看到 200 当成功，解析器看到的是一张网页。
-       给嵌套的 API 路由自己一个兜底，形状与其余错误一致（error.rs 里
-       `NotFound` 就映射成 404）。 */
+    下面那个 history fallback 是给页面路由用的：刷新 /graph 要拿到 index.html。
+    可它挂在**整个应用**上，于是拼错或已经删掉的接口也落进同一张网，回的是
+    `200 text/html`。客户端那头 `res.json()` 抛 "Unexpected token '<'"，
+    报错的位置离原因十万八千里；对着 MCP 与 RDF 那两个对外契约的集成方更糟，
+    通用 HTTP 客户端看到 200 当成功，解析器看到的是一张网页。
+    给嵌套的 API 路由自己一个兜底，形状与其余错误一致（error.rs 里
+    `NotFound` 就映射成 404）。 */
     let api = api.fallback(|| async { ApiErr(AppError::NotFound) });
     let mut app = Router::new()
         .nest("/api/v1", api)
         /* 版本号写错、或者干脆忘了写的请求（`/api/kbs`、`/api/v2/...`）落不进上面
-           那个嵌套，还是会掉到首页去。**`/api` 底下没有页面**，所以整条前缀都收住；
-           静态段比通配更具体，`/api/v1/...` 仍然走上面那个路由。 */
-        .route(
-            "/api/{*rest}",
-            any(|| async { ApiErr(AppError::NotFound) }),
-        )
+        那个嵌套，还是会掉到首页去。**`/api` 底下没有页面**，所以整条前缀都收住；
+        静态段比通配更具体，`/api/v1/...` 仍然走上面那个路由。 */
+        .route("/api/{*rest}", any(|| async { ApiErr(AppError::NotFound) }))
         .layer(cors);
 
     /* SPA 托管。**分两条路，因为它们的失败方式不一样**：
 
-       `/assets` 下面是构建产物，文件名带内容哈希。这里的 ServeDir **不带兜底**，
-       所以缺文件就是 404。从前它和页面共用一个带 history fallback 的服务，于是
-       升级之后旧哈希的请求拿到的是 `200 text/html` 的首页——浏览器按模块脚本
-       解析一张网页，光凭 MIME 就拒绝执行，界面白屏（#616）。
+    `/assets` 下面是构建产物，文件名带内容哈希。这里的 ServeDir **不带兜底**，
+    所以缺文件就是 404。从前它和页面共用一个带 history fallback 的服务，于是
+    升级之后旧哈希的请求拿到的是 `200 text/html` 的首页——浏览器按模块脚本
+    解析一张网页，光凭 MIME 就拒绝执行，界面白屏（#616）。
 
-       缓存指示按文件名本来的含义给：带哈希的产物换了内容就换名字，可以
-       `immutable` 存一年；`index.html` 每次都要回源确认，否则它会指着一批
-       已经不存在的哈希。少了这一条，升级要等浏览器的启发式缓存自己过期。 */
+    缓存指示按文件名本来的含义给：带哈希的产物换了内容就换名字，可以
+    `immutable` 存一年；`index.html` 每次都要回源确认，否则它会指着一批
+    已经不存在的哈希。少了这一条，升级要等浏览器的启发式缓存自己过期。 */
     let index = std::path::Path::new(&cfg.web_dist).join("index.html");
     if index.exists() {
         /* 每条路各自套自己的头。**层要挂在这一段的 Router 上，不能挂在整个
-           app 上**——挂在 app 上，API 的响应也会跟着被扣上 `immutable`。 */
+        app 上**——挂在 app 上，API 的响应也会跟着被扣上 `immutable`。 */
         let assets = Router::new()
             .fallback_service(ServeDir::new(
                 std::path::Path::new(&cfg.web_dist).join("assets"),
