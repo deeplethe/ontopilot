@@ -977,6 +977,17 @@ body::before {
 }
 
 /* 对话输入框的外壳 */
+/* 答案滚到输入框上沿是**化开**，不是被切一刀。遮罩打在滚动区自己身上，
+   不是在输入框上面盖一条底色的渐变——盖底色要跟身后那块地的颜色对上，
+   而这一屏底下还有页面的微光，对不齐就成了一条平白的横带。遮罩不管底色：
+   最后那 2.5rem 里内容自己淡成透明，深浅两套皮肤都不用改。
+   底部留 pb-12（48px）比渐隐区高一档：滚到底时淡掉的是那块净空，
+   不是最后一行字。 */
+.u-chat-fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+}
+
 .u-composer {
   border-radius: var(--radius-panel);
   border: 1px solid rgba(var(--u-ink-rgb), 0.12);

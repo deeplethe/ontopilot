@@ -635,7 +635,7 @@ export function Chat() {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto u-scroll px-4 py-6">
+            <div className="flex-1 overflow-y-auto u-scroll u-chat-fade px-4 pt-6 pb-12">
               <div className="max-w-3xl mx-auto space-y-4">
                 {shown.map((t, i) => (
                   <TurnView key={i} turn={t} live={streaming && i === shown.length - 1} />
