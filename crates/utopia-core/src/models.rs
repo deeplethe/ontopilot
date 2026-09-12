@@ -333,15 +333,33 @@ pub struct SourceView {
     pub doc_count: i64,
     /// 已标记"不在来源中"的文档数（url 全集对账 / custom 墓碑产生）
     pub missing_count: i64,
-    /// full_new_items 的当前代状态；非 full-content 来源为 NULL
-    pub rss_full_content_state: Option<String>,
-    pub rss_full_content_generation: Option<i32>,
-    pub rss_full_content_baseline_count: Option<i32>,
-    pub rss_full_content_pending_count: i64,
-    pub rss_full_content_queued_count: i64,
-    pub rss_full_content_retrying_count: i64,
-    pub rss_full_content_complete_count: i64,
-    pub rss_full_content_terminal_count: i64,
+    /// 全文补全那一块。**不是 RSS 的来源整块是 NULL**（0033 决定 2 / #417）。
+    /// 从前这里是八个平铺的列，而「不适用」在其中三个上写作 NULL、在另外五个
+    /// 上写作 0——一个文件夹来源会报 `queued_count: 0`，那是在谈一个它根本
+    /// 没有的队列。现在适不适用由这一格在不在说了算
+    #[sqlx(json(nullable))]
+    pub rss_full_content: Option<RssFullContentSummary>,
+}
+
+/// 一个 RSS 来源当前代的全文补全进度。
+///
+/// 五个计数只有凑在一起才有意义（Library 那条状态栏一次读完），所以一起走。
+/// `state` 是服务端算好的那一档，调用方不必拿 kind 与 content_mode 再推一遍。
+///
+/// **`generation` 与 `baseline_count` 不在这里**（0033 决定 2）：代号是内部状态，
+/// 基线那一批也不属于「还有多少活要干」这五个数——它是起点，不是进度。
+/// 要它们的地方读 `rss_full_content::counts`。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RssFullContentSummary {
+    /// `pending`（还没建基线）| `active` | `disabled`（是 RSS，但没开全文）
+    pub state: String,
+    pub pending: i64,
+    /// queued 与 hydrating 合成一格
+    pub queued: i64,
+    pub retrying: i64,
+    pub complete: i64,
+    /// terminal、deleted、superseded 合成一格
+    pub terminal: i64,
 }
 
 /// 审计事件视图（带操作人显示名；删号后为 NULL）。纯审计展示用。
