@@ -789,17 +789,6 @@ export const en = {
     editSaved: "Entity updated",
     editEmptyName: "Name cannot be empty",
     /* 同名不是错误——两个张伟可以并存。只提示，不阻断 */
-    sameNameNote: (n: number) =>
-      n === 1
-        ? "One other entity shares this name."
-        : `${n} other entities share this name.`,
-    sameNameHint: "If they are the same thing, merge them under Review.",
-    mergeInto: "Merge in",
-    mergeTitle: "Merge entities",
-    mergeIntoHint:
-      "Fold that entity into this one. Its facts move here; merges can be reverted.",
-    mergeConfirm: (from: string, into: string) =>
-      `Merge “${from}” into “${into}”? Its facts move here. You can revert this from Review.`,
     viewRelations: "Relations",
     viewTimeline: "Timeline",
     /* 第三视图：记录时间轴——不是"事情何时发生"，而是"我们何时这么认为" */

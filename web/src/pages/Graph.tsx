@@ -95,7 +95,6 @@ import { predicateSentence } from "../predicateText";
 import {
   Button,
   CanvasLoading,
-  DangerConfirm,
   ExpandCard,
   HOVER_ROW,
   IconButton,
@@ -2166,7 +2165,6 @@ function fmtInterval(f: EntityFact): string {
  * 手动按钮留在这里而不是别处：想重推的人正是刚看完这三行、觉得数字太旧的那个人。
  */
 function DerivedPanel({ kbId, count }: { kbId: string; count: number }) {
-  const qc = useQueryClient();
   const kb = useQuery({
     queryKey: ["kbOne", kbId],
     queryFn: () => api.kbDetail(kbId),
@@ -2179,6 +2177,7 @@ function DerivedPanel({ kbId, count }: { kbId: string; count: number }) {
 
      也没有用全站的 DangerConfirm：那是红标题、可要求逐字输入的危险级，
      留给删库那类不可逆操作。重跑推理重但可重复，够不上那一档 */
+  const qc = useQueryClient();
   const [armed, setArmed] = useState(false);
   const run = useMutation({
     mutationFn: () => api.runInference(kbId),
@@ -2647,37 +2646,14 @@ function EntityPanel({
   const e: GraphNode | undefined = detail.data?.entity;
 
   // 实体修正（名字、类型）在弹窗里：面板只展示
-  const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
-  // 同名的其他实体：详情接口打开就给。改名之后再用响应里的那份覆盖——
-  // 改完名可能撞上一批新的同名，那时候的答案比打开时的新
-  const [renamedPeers, setRenamedPeers] = useState<GraphNode[] | null>(null);
-  const sameName = renamedPeers ?? detail.data?.same_name ?? [];
-  const setSameName = setRenamedPeers;
-  // 手动合并：把同名的那个并进**当前这个**。方向写死是有意的——
-  // 用户正在看的就是他判断为「主」的那一个
-  // 「并进来」先问一句。从前是浏览器原生 confirm()，和全站的对话框不是一套；
-  // 合并可撤销，所以走轻确认（不要求打字），同 Library 的重抽
-  const [mergeCandidate, setMergeCandidate] = useState<{ id: string; name: string } | null>(
-    null,
-  );
-  // 什么让你这么定（0026）：可不写；写了就跟着合并进台账
-  const [mergeWhy, setMergeWhy] = useState("");
-  const merge = useMutation({
-    mutationFn: ({ source, why }: { source: string; why: string }) =>
-      api.mergeEntities(kbId, source, entityId, why),
-    onSuccess: () => {
-      toast.success(S.toast.saved);
-      // 本地把并掉的那个摘掉，别等重取——它已经不存在了，留着会让人再点一次
-      setSameName((prev) =>
-        (prev ?? sameName).filter((p) => p.id !== merge.variables?.source),
-      );
-      qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
-      qc.invalidateQueries({ queryKey: ["graph"] });
-      qc.invalidateQueries({ queryKey: ["review", kbId] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  /* **同名的其他实体不在这块面板上出现。**（曾经有一条横幅，列出同名的
+     每一个并给「并进来」。）两个问题：那些行只有类型名可读，同名的七个
+     全写着「Organization」，界面在问"它们是同一个吗"却不给判断的依据；
+     而且横幅没有高度上限，同名多几个就把 Relations / History / Derived
+     挤到屏幕外。合并是 Review 那边的事——那里有并排比对。
+     这块面板只回答"我正在看的这个实体是什么"。 */
+
   const openEdit = () => {
     if (!e) return;
     setEditing(true);
@@ -2762,90 +2738,10 @@ function EntityPanel({
           entityId={entityId}
           entity={e}
           onClose={() => setEditing(false)}
-          onSaved={(peers) => {
-            setEditing(false);
-            setSameName(peers);
-          }}
+          onSaved={() => setEditing(false)}
         />
       )}
 
-      {/* 同名不是错误——两个张伟可以并存。只提示，判定是不是同一个是人的事 */}
-      {sameName.length > 0 && (
-        <div className="mx-4 mt-3 rounded-panel border border-line bg-surface px-3 py-2">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-fine text-ink-2">
-              {S.graph.sameNameNote(sameName.length)}{" "}
-              <span className="text-ink-2">{S.graph.sameNameHint}</span>
-            </p>
-            <IconButton
-              size="sm"
-              label={S.graph.close}
-              className="shrink-0"
-              onClick={() => setSameName([])}
-            >
-              <X size={11} />
-            </IconButton>
-          </div>
-          {/* 每个同名的给两个动作：去看它，或者把它并进来。
-              **方向写死成「并进当前这个」**——合并有方向（源消失、事实搬到目标上），
-              而当前打开的这个就是用户正在看、正在判断的那一个 */}
-          <div className="mt-2 space-y-1">
-            {sameName.map((p) => (
-              <div key={p.id} className="flex items-center gap-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="min-w-0 flex-1 justify-start"
-                  onClick={() => onNavigate(p.id)}
-                >
-                  <span className="truncate">
-                    {p.type_label ?? S.graph.untyped}
-                    {p.disambiguator && p.disambiguator !== p.type_label
-                      ? ` · ${p.disambiguator}`
-                      : ""}
-                  </span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0"
-                  disabled={merge.isPending}
-                  title={S.graph.mergeIntoHint}
-                  onClick={() => setMergeCandidate({ id: p.id, name: p.name })}
-                >
-                  {S.graph.mergeInto}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {mergeCandidate && (
-        <DangerConfirm
-          title={S.graph.mergeTitle}
-          hint={S.graph.mergeConfirm(mergeCandidate.name, e?.name ?? "")}
-          confirmLabel={S.graph.mergeInto}
-          cancelLabel={S.graph.editCancel}
-          busy={merge.isPending}
-          onConfirm={() => {
-            merge.mutate({ source: mergeCandidate.id, why: mergeWhy });
-            setMergeCandidate(null);
-            setMergeWhy("");
-          }}
-          onCancel={() => {
-            setMergeCandidate(null);
-            setMergeWhy("");
-          }}
-        >
-          <Input
-            className="w-full"
-            placeholder={S.review.rationalePlaceholder}
-            value={mergeWhy}
-            onChange={(e) => setMergeWhy(e.target.value)}
-          />
-        </DangerConfirm>
-      )}
 
       {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}
       {/* **左边比头部多一档**（24 而不是 16）。两个盒子本来都从 px-4 起，可

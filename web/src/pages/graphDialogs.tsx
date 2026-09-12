@@ -22,8 +22,7 @@ export function EntityDialog({
   entityId: string;
   entity: GraphNode;
   onClose: () => void;
-  /** 保存成功：带回同名的其他实体——改完名可能撞上一批新的同名 */
-  onSaved: (sameName: GraphNode[]) => void;
+  onSaved: () => void;
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState(entity.name);
@@ -54,7 +53,7 @@ export function EntityDialog({
       qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
       qc.invalidateQueries({ queryKey: ["graph", kbId] });
       qc.invalidateQueries({ queryKey: ["ontology", kbId] });
-      onSaved(r.same_name);
+      onSaved();
     },
     onError: (err: Error) => toast.error(err.message),
   });

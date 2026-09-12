@@ -716,13 +716,6 @@ export const zh: Strings = {
     editCancel: "取消",
     editSaved: "实体已更新",
     editEmptyName: "名称不能为空",
-    sameNameNote: (n: number) => `另有 ${n} 个实体同名。`,
-    sameNameHint: "如果它们是同一个东西，去「审阅」里合并。",
-    mergeInto: "并入",
-    mergeTitle: "合并实体",
-    mergeIntoHint: "把那个实体并进这一个。它的事实搬过来；合并可以撤销。",
-    mergeConfirm: (from: string, into: string) =>
-      `把「${from}」并进「${into}」？它的事实会搬过来。可以在审阅页撤销。`,
     viewRelations: "关系",
     viewTimeline: "时间线",
     viewHistory: "记录历史",
