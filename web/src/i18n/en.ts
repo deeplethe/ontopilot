@@ -118,8 +118,11 @@ export const en = {
     kbsFilter: "Filter by name…",
     kbOpen: "Open",
     kbRestricted: "Restricted",
-    kbStats: (docs: number, members: number) =>
-      `${docs} doc${docs === 1 ? "" : "s"} · ${members} member${members === 1 ? "" : "s"}`,
+    kbNameLabel: "Knowledge base",
+    kbRoleLabel: "My role",
+    kbDocsLabel: "Docs",
+    kbMembersLabel: "Members",
+    kbAccessLabel: "Access",
     addedBy: (name: string, date: string) => `Added by ${name} · ${date}`,
     joinedOn: (date: string) => `Joined ${date}`,
     openToEveryone: "Open to everyone",

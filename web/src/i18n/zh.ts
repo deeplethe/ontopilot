@@ -107,8 +107,11 @@ export const zh: Strings = {
     kbsFilter: "按名字筛选…",
     kbOpen: "公开",
     kbRestricted: "受限",
-    kbStats: (docs: number, members: number) =>
-      `${docs} 篇文档 · ${members} 名成员`,
+    kbNameLabel: "知识库",
+    kbRoleLabel: "我的身份",
+    kbDocsLabel: "文档",
+    kbMembersLabel: "成员",
+    kbAccessLabel: "权限来源",
     addedBy: (name: string, date: string) => `由 ${name} 加入 · ${date}`,
     joinedOn: (date: string) => `${date} 加入`,
     openToEveryone: "对所有人开放",

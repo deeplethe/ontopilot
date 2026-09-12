@@ -19,6 +19,12 @@ import {
   Loading,
   MultiSearchSelect,
   PageHeader,
+  TBody,
+  THead,
+  Table,
+  Td,
+  Th,
+  Tr,
 } from "../ui";
 
 const ymd = (iso: string) => iso.slice(0, 10);
@@ -102,59 +108,91 @@ export function MyKbs() {
           />
         </div>
 
-        {/* 一个面板装多行，不是一行一张卡片（DESIGN.md 6）。一行说清三件事：
-            这是哪个库、里面有多少东西、我在里面是什么身份 */}
-        <div className="glass rounded-panel divide-y divide-line">
-          {rows.map((row) => {
-            const canManage = row.my_role === "admin" || row.my_role === "owner";
-            return (
-              <div key={row.kb.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-body text-ink">{row.kb.name}</span>
-                    {row.kb.is_default && (
-                      <Chip tone="neutral">{S.settings.kbs.defaultChip}</Chip>
-                    )}
-                    {row.kb.visibility === "restricted" && (
-                      <span className="flex items-center gap-1 text-fine text-ink-2">
-                        <Lock size={10} />
-                        {S.account.kbRestricted}
-                      </span>
-                    )}
-                    {row.my_role && (
-                      <Chip tone={canManage ? "info" : "neutral"}>
-                        {S.account.roleNames[row.my_role] ?? row.my_role}
-                      </Chip>
-                    )}
-                  </div>
-                  <div className="mt-1 truncate text-small text-ink-2">
-                    <span className="u-num">
-                      {S.account.kbStats(row.doc_count, row.member_count)}
-                    </span>
-                    <span className="mx-2">·</span>
-                    {joinInfo(row)}
-                  </div>
-                </div>
-                {/* 设置在前、打开在后：不是每一行都有设置（要 admin），把总是在的
-                    那个放右端，一列按钮的右缘才不会一行一个样 */}
-                <div className="flex shrink-0 items-center gap-2">
-                  {canManage && (
-                    <Button variant="secondary" size="sm"
-                      onClick={() => {
-                        setKb(row.kb.id);
-                        navigate({ to: "/kb/$kbId/settings", params: { kbId: row.kb.id } });
-                      }}
-                    >
-                      {S.account.kbSettingsBtn}
-                    </Button>
-                  )}
-                  <Button variant="secondary" size="sm" onClick={() => openKb(row.kb.id)}>
-                    {S.account.openKb}
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+        {/* **一张表，不是一列卡片。**这一页是一份记录清单——每个库的字段都一样，
+            人来这儿是横着比：谁的文档多、我在哪个库是 admin、哪个是受限的。
+            从前把这些堆成「名字 + 三枚胶囊」再加一行点号串起来的小字，同一个事实
+            在不同行落在不同的横向位置，比不了；而且全站别的清单（成员、令牌、
+            文库、规则、本体）早就是 Table / Th / Td，只有这一页是手写的。
+            身份那一列**是一个词，不是一枚填色胶囊**：它在自己那一列里，
+            列头已经说了这是什么，不需要再染一次色。 */}
+        <div className="glass rounded-panel overflow-hidden">
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{S.account.kbNameLabel}</Th>
+                <Th>{S.account.kbRoleLabel}</Th>
+                <Th className="text-right">{S.account.kbDocsLabel}</Th>
+                <Th className="text-right">{S.account.kbMembersLabel}</Th>
+                <Th>{S.account.kbAccessLabel}</Th>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
+              {rows.map((row) => {
+                const canManage =
+                  row.my_role === "admin" || row.my_role === "owner";
+                return (
+                  <Tr key={row.kb.id}>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-body text-ink">
+                          {row.kb.name}
+                        </span>
+                        {/* 这两个是**库自己的性质**，不是一列数据：缺省库只有一个，
+                            受限的也少，单开一列会空掉大半，所以贴在名字旁边 */}
+                        {row.kb.is_default && (
+                          <Chip tone="neutral">{S.settings.kbs.defaultChip}</Chip>
+                        )}
+                        {row.kb.visibility === "restricted" && (
+                          <span
+                            className="flex shrink-0 items-center gap-1 text-fine text-ink-2"
+                            title={S.account.kbRestricted}
+                          >
+                            <Lock size={10} />
+                            {S.account.kbRestricted}
+                          </span>
+                        )}
+                      </div>
+                    </Td>
+                    <Td className="text-ink-2">
+                      {row.my_role
+                        ? (S.account.roleNames[row.my_role] ?? row.my_role)
+                        : "—"}
+                    </Td>
+                    <Td className="u-num text-right text-ink-2">{row.doc_count}</Td>
+                    <Td className="u-num text-right text-ink-2">
+                      {row.member_count}
+                    </Td>
+                    <Td className="text-small text-ink-2">{joinInfo(row)}</Td>
+                    {/* 设置在前、打开在后：不是每一行都有设置（要 admin），把总是在的
+                        那个放右端，一列按钮的右缘才不会一行一个样 */}
+                    <Td className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {canManage && (
+                          <Button variant="secondary" size="sm"
+                            onClick={() => {
+                              setKb(row.kb.id);
+                              navigate({
+                                to: "/kb/$kbId/settings",
+                                params: { kbId: row.kb.id },
+                              });
+                            }}
+                          >
+                            {S.account.kbSettingsBtn}
+                          </Button>
+                        )}
+                        <Button variant="secondary" size="sm"
+                          onClick={() => openKb(row.kb.id)}
+                        >
+                          {S.account.openKb}
+                        </Button>
+                      </div>
+                    </Td>
+                  </Tr>
+                );
+              })}
+            </TBody>
+          </Table>
           {rows.length === 0 && (
             <p className="px-4 py-6 text-body text-ink-2">{S.ui.noMatches}</p>
           )}
