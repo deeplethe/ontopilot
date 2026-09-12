@@ -45,6 +45,36 @@ import {
 export const NODE_TYPE_SHELL = "shell";
 export const NODE_TYPE_SQUARE = "square";
 
+/* ---------- 高亮的边画在最上层 ---------- */
+
+/** 「最上层」那一批的类型名后缀 */
+const TOP = "Top";
+
+/** 一条边高亮时该用的类型名。
+ *
+ * **`zIndex` 在这里不管用。**sigma 一个程序一批绘制，`zIndex` 只在批内排序；
+ * 跨程序谁先谁后，看的是 `edgeProgramClasses` 里键的顺序。于是选中一个节点
+ * 之后，它那几条亮线照样会被别的程序里压暗的边切断——放大看就是白线被一条条
+ * 细黑条切开。
+ *
+ * 解法是把同一个程序**注册两遍**（见 `withTopLayer`），高亮的边整批走后注册的
+ * 那一份，最后画。两页都踩过这个坑：图谱页先解的，本体页后来又踩了一遍——
+ * 所以它收在这里，不在任何一页里。 */
+export function drawLast(type: string): string {
+  return type.endsWith(TOP) ? type : type + TOP;
+}
+
+/** 给一份边程序表配上「最上层」的那一份：同样的程序，键排在后面。
+ *  高亮时把 `res.type` 换成 `drawLast(res.type)` 就落进这一批。 */
+export function withTopLayer<T>(programs: Record<string, T>): Record<string, T> {
+  return {
+    ...programs,
+    ...Object.fromEntries(
+      Object.entries(programs).map(([name, program]) => [drawLast(name), program]),
+    ),
+  };
+}
+
 export const NODE_PROGRAMS = {
   [NODE_TYPE_SHELL]: createNodeBorderProgram({
     borders: [

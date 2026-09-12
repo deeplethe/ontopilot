@@ -55,6 +55,8 @@ import {
   NODE_TYPE_SQUARE,
   selectedNode,
   sigmaOptions,
+  withTopLayer,
+  drawLast,
   softMutedNode,
 } from "./graphCanvas";
 import { EntityHistory } from "./EntityHistory";
@@ -873,15 +875,11 @@ export function Graph() {
         /* 平行边扇成弧（见 `layOutParallelEdges`）。直线那一版把同一对节点
            之间的每条边画在同一条线段上，于是几个标签逐字符叠成乱码——实测
            一对节点之间最多压着六条 */
-        /* **同一个类注册两遍**，后注册的那两个专给高亮的边用（见 `boost()`）。
-           sigma 一个程序一批绘制，批次先后就是这里的键序，`zIndex` 只在批内
-           排——所以一条压暗的直边照样会盖在高亮的弧边上，放大看就是白线被
-           一条条黑细条切断。让高亮的边整批走最后画的程序，才真的在最上层。 */
-        edgeProgramClasses: {
+        // 每个程序配一份「最上层」的（见 `withTopLayer`）：高亮的边整批最后画
+        edgeProgramClasses: withTopLayer({
+          line: EdgeRectangleProgram,
           curved: EdgeCurveProgram,
-          lineTop: EdgeRectangleProgram,
-          curvedTop: EdgeCurveProgram,
-        },
+        }),
         // 边上写的是谓词，近距离下每条画得出来的边都写（见 updateEdgeLabels）
         renderEdgeLabels: true,
         // 上千个节点，得缩得比本体页更远才看得见全貌
@@ -1073,7 +1071,7 @@ export function Graph() {
           res.size = Math.max((attrs.size as number) * 1.42, 1.85);
           res.zIndex = 5;
           // 换到最后画的那批（见 `edgeProgramClasses`）：光有 zIndex 压不住别的程序
-          res.type = res.type === "curved" ? "curvedTop" : "lineTop";
+          res.type = drawLast(String(res.type ?? "line"));
         };
         /* **时间轴停在某一刻时，这条边此刻存不存在**。
            悬停的两条分支都会提前 return，绕过下面那道时间过滤——
