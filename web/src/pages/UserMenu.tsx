@@ -1,4 +1,4 @@
-import { Button, Chip, cn } from "../ui";
+import { Button, Chip, MenuSelect } from "../ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,8 +11,6 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  Check,
-  ChevronRight,
   Languages,
   Layers,
   LogOut,
@@ -52,8 +50,6 @@ const ITEM = "gap-3 rounded-none px-4 py-2 text-body";
 export function UserMenu({ user }: { user: User }) {
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
   const [open, setOpen] = useState(false);
-  // 展开着的那一段（语言 / 主题）；同时只开一段
-  const [section, setSection] = useState<"lang" | "theme" | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -123,72 +119,32 @@ export function UserMenu({ user }: { user: User }) {
           )}
         </div>
 
-        {/* 语言与主题：**点一下在原地展开**，不是往右弹一张子菜单。
-            展开是这套界面处理"一行下面还有几行"的惯例（ExpandCard：柄转 90°，
-            内容缩进到标题那一列）；往右弹的浮层在这儿会盖住旁边的告警面板，
-            而且鼠标要斜着移过去才不关掉。
-            `preventDefault` 是必须的：菜单项默认选中即关闭，而这一下是展开。 */}
+        {/* 语言与主题：**在值那一头弹出来**，不是把选项摊在下面，也不是往右
+            甩一张子菜单。这一行读起来是「语言：English」——要改的是冒号后面
+            那一格，弹层就该出现在那一格上，像填空。
+            用 shadcn 的 Select：它自己带 portal 与层叠，弹出时盖在菜单之上，
+            选完两层一起收。整行都是触发器，点哪儿都能开。 */}
         <div className="border-t border-line py-1">
-          <DropdownMenuItem
-            className={ITEM}
-            onSelect={(e) => {
-              e.preventDefault();
-              setSection((v) => (v === "lang" ? null : "lang"));
+          <MenuSelect
+            icon={<Languages size={13} />}
+            label={S.account.language}
+            value={lang}
+            onChange={(v) => setLang(v as (typeof LANGS)[number])}
+            options={LANGS.map((l) => ({ value: l, label: LANG_NAMES[l] }))}
+          />
+          <MenuSelect
+            icon={<SunMoon size={13} />}
+            label={S.account.theme}
+            value={theme}
+            onChange={(v) => {
+              setTheme(v as Theme);
+              setThemeState(v as Theme);
             }}
-          >
-            <Languages size={13} />
-            {S.account.language}
-            <span className="ml-auto pl-2 text-fine text-ink-2">
-              {LANG_NAMES[lang]}
-            </span>
-            <ChevronRight
-              size={12}
-              className={cn("u-turn shrink-0 text-ink-2", section === "lang" && "rotate-90")}
-            />
-          </DropdownMenuItem>
-          {section === "lang" &&
-            LANGS.map((l) => (
-              <DropdownMenuItem
-                key={l}
-                className={cn(ITEM, "pl-8")}
-                onSelect={() => setLang(l)}
-              >
-                {LANG_NAMES[l]}
-                {l === lang && <Check size={13} className="ml-auto text-ink-2" />}
-              </DropdownMenuItem>
-            ))}
-
-          <DropdownMenuItem
-            className={ITEM}
-            onSelect={(e) => {
-              e.preventDefault();
-              setSection((v) => (v === "theme" ? null : "theme"));
-            }}
-          >
-            <SunMoon size={13} />
-            {S.account.theme}
-            <span className="ml-auto pl-2 text-fine text-ink-2">
-              {S.account.themeNames[theme]}
-            </span>
-            <ChevronRight
-              size={12}
-              className={cn("u-turn shrink-0 text-ink-2", section === "theme" && "rotate-90")}
-            />
-          </DropdownMenuItem>
-          {section === "theme" &&
-            THEMES.map((t) => (
-              <DropdownMenuItem
-                key={t}
-                className={cn(ITEM, "pl-8")}
-                onSelect={() => {
-                  setTheme(t);
-                  setThemeState(t);
-                }}
-              >
-                {S.account.themeNames[t]}
-                {t === theme && <Check size={13} className="ml-auto text-ink-2" />}
-              </DropdownMenuItem>
-            ))}
+            options={THEMES.map((t) => ({
+              value: t,
+              label: S.account.themeNames[t],
+            }))}
+          />
         </div>
 
         <div className="border-t border-line py-1">

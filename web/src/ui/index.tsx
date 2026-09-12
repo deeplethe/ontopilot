@@ -26,6 +26,12 @@ import { Button as ShadButton, buttonVariants } from "@/components/ui/button";
 import { badgeVariants } from "@/components/ui/badge";
 import { Checkbox as ShadCheckbox } from "@/components/ui/checkbox";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+import {
   DropdownMenu as ShadDropdownMenu,
   DropdownMenuContent as ShadDropdownMenuContent,
   DropdownMenuLabel as ShadDropdownMenuLabel,
@@ -887,11 +893,14 @@ export function StatusCell({
    它们是贴在内容上的标签，本来就该有个盒子把自己圈出来。 */
 export function Status({
   tone = "neutral",
+  pulse,
   className,
   title,
   children,
 }: {
   tone?: ChipTone;
+  /** 这件事**正在进行**：点跟着呼吸。给「agent 正在裁这一对」这种活状态用 */
+  pulse?: boolean;
   className?: string;
   title?: string;
   children: ReactNode;
@@ -901,7 +910,13 @@ export function Status({
       className={cn("inline-flex items-center gap-1.5 text-small text-ink-2", className)}
       title={title}
     >
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[tone])} />
+      <span
+        className={cn(
+          "h-1.5 w-1.5 shrink-0 rounded-full",
+          STATUS_DOT[tone],
+          pulse && "animate-pulse",
+        )}
+      />
       {children}
     </span>
   );
@@ -1428,6 +1443,69 @@ export function RailItem({
         {external && <ArrowUpRight size={11} className="shrink-0 opacity-50" />}
       </span>
     </Row>
+  );
+}
+
+/** 菜单里的一行「标签 + 可改的值」。**整行是触发器，弹层落在值那一头**——
+ *  这一行读起来是「语言：English」，要改的是冒号后面那一格，弹层就该出现在
+ *  那一格上，像填空。摊在下面会把菜单越拉越长，甩到右边又会盖住旁边的面板。
+ *  行的节奏与菜单里其余的行一致（px-4 py-2，正文号，图标间距 3）。 */
+const MENU_ROW = "gap-3 rounded-none px-4 py-2 text-body";
+
+export function MenuSelect({
+  icon,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        className={cn(
+          MENU_ROW,
+          // 行的样子归菜单：去掉 Select 自带的框与底，留下"一行"
+          "h-auto w-full border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent",
+          "justify-start text-ink",
+        )}
+      >
+        <span className="text-ink-2">{icon}</span>
+        <span>{label}</span>
+        <span className="ml-auto pl-2 text-fine text-ink-2">
+          {options.find((o) => o.value === value)?.label ?? value}
+        </span>
+      </SelectTrigger>
+      {/* **popper 定位，不是 item-aligned。**Select 缺省是把"选中的那一项"盖在
+          触发器上（一个原生 select 的样子）；在这张菜单里它算出来的位置是
+          (0, 900)——视口外的左下角，于是弹层开了却看不见（`data-state=open`、
+          内容也挂上了，就是不在屏幕上）。item-aligned 那套要量触发器，而触发器
+          在一层 portal 里；popper 走 floating-ui，逐帧跟着触发器，也才认 align。 */}
+      <SelectContent
+        position="popper"
+        side="bottom"
+        align="end"
+        sideOffset={4}
+        /* **弹层按内容宽，不按触发器宽。**触发器是整行，而 shadcn 的 viewport 在
+           popper 模式下写死 `min-w-(--radix-select-trigger-width)`，于是弹层跟着
+           撑满整条菜单，看着像菜单自己长出来两行。它该落在值那一格上，像一个填空。
+           改的是 `--radix-popper-anchor-width` 而不是 `--radix-select-trigger-width`：
+           后者是 Radix 写在内容元素**内联样式**上的（`var(--radix-popper-anchor-width)`），
+           class 压不过内联，只能改它引的那一格。 */
+        className="[--radix-popper-anchor-width:auto]"
+      >
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

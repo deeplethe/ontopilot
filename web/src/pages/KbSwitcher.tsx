@@ -65,7 +65,9 @@ export function KbSwitcher({
           variant="ghost"
           size="sm"
           title={S.nav.kbLabel}
-          className="h-8 max-w-64 border-0 px-2"
+          /* 内距 12，与全站的行、以及顶栏字标的 pl-3 同一个数。
+             从前是 8，图标贴着胶囊的左缘——胶囊一有底（悬停、打开）就看得出来 */
+          className="h-8 max-w-64 border-0 px-3"
           icon={<Layers size={15} strokeWidth={1.8} className="text-ink-2" />}
         >
           <span className="truncate text-body font-medium text-ink">{name}</span>
