@@ -51,3 +51,6 @@ subtle.workspace = true
 
 [dev-dependencies]
 wiremock = "0.6.5"
+# 静态托管那一段的单测：不连库地把请求推进 Router
+tower = { version = "0.5", features = ["util"] }
+tempfile.workspace = true

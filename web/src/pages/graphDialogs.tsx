@@ -7,7 +7,7 @@ import { api, type EntityFact, type GraphNode } from "../api";
 import { S } from "../i18n";
 import { toast } from "../toast";
 import { fmtTime, parseDateInput } from "../time";
-import { Field, FormDialog, Input, Radio, SearchSelect } from "../ui";
+import { Field, FormDialog, Input, RadioGroup, SearchSelect } from "../ui";
 
 /* ---------- 实体：抽取给的是初判，判错此前只能整库重抽 ---------- */
 
@@ -22,8 +22,7 @@ export function EntityDialog({
   entityId: string;
   entity: GraphNode;
   onClose: () => void;
-  /** 保存成功：带回同名的其他实体——改完名可能撞上一批新的同名 */
-  onSaved: (sameName: GraphNode[]) => void;
+  onSaved: () => void;
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState(entity.name);
@@ -54,7 +53,7 @@ export function EntityDialog({
       qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
       qc.invalidateQueries({ queryKey: ["graph", kbId] });
       qc.invalidateQueries({ queryKey: ["ontology", kbId] });
-      onSaved(r.same_name);
+      onSaved();
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -184,22 +183,17 @@ export function FactTimeDialog({
         />
       </Field>
       <Field label={S.graph.timeEnd}>
-        <div className="space-y-2">
-          {(
-            [
-              ["open", S.graph.timeEndOpen],
-              ["unknown", S.graph.timeEndUnknown],
-              ["date", S.graph.timeEndDate],
-            ] as const
-          ).map(([mode, label]) => (
-            <Radio
-              key={mode}
-              name={`end-${fact.id}`}
-              checked={endMode === mode}
-              onChange={() => setEndMode(mode)}
-              label={label}
-            >
-              {mode === "date" && endMode === "date" && (
+        <RadioGroup
+          name={`end-${fact.id}`}
+          value={endMode}
+          onChange={(v) => setEndMode(v)}
+          options={[
+            { value: "open" as const, label: S.graph.timeEndOpen },
+            { value: "unknown" as const, label: S.graph.timeEndUnknown },
+            {
+              value: "date" as const,
+              label: S.graph.timeEndDate,
+              children: (
                 <Input
                   size="sm"
                   value={to}
@@ -207,10 +201,10 @@ export function FactTimeDialog({
                   placeholder={S.graph.timeFormat}
                   className="u-num ml-1 flex-1"
                 />
-              )}
-            </Radio>
-          ))}
-        </div>
+              ),
+            },
+          ]}
+        />
       </Field>
       <Field label={S.graph.timeNote} className="mb-0">
         <Input

@@ -345,7 +345,7 @@ export function KbSettings() {
                       说明里要讲清关掉之后失去的**只是**代劳，不是留意 */}
                   <Checkbox
                     checked={autoExtend}
-                    onChange={(e) => setAutoExtend(e.target.checked)}
+                    onChange={(v) => setAutoExtend(v)}
                     label={S.kbset.autoExtend}
                     hint={S.kbset.autoExtendNote}
                   />
@@ -353,7 +353,7 @@ export function KbSettings() {
                       这个动的是账本——它按公理往图里写事实，而声明可能是错的 */}
                   <Checkbox
                     checked={materialize}
-                    onChange={(e) => setMaterialize(e.target.checked)}
+                    onChange={(v) => setMaterialize(v)}
                     label={S.kbset.materialize}
                     hint={S.kbset.materializeNote}
                   />
@@ -375,7 +375,7 @@ export function KbSettings() {
                       {kb.data.last_inference_at && (
                         <span className="text-fine text-ink-2">
                           {S.kbset.lastInference(
-                            new Date(kb.data.last_inference_at).toLocaleString(),
+                            localDateTime(kb.data.last_inference_at),
                           )}
                         </span>
                       )}
@@ -384,7 +384,7 @@ export function KbSettings() {
                   {/* 类型消解自动跑：抽完排一轮，只自动改子树内精化的那一档，跨轴的仍留给人 */}
                   <Checkbox
                     checked={autoResolve}
-                    onChange={(e) => setAutoResolve(e.target.checked)}
+                    onChange={(v) => setAutoResolve(v)}
                     label={S.kbset.autoResolveTypes}
                     hint={S.kbset.autoResolveTypesNote}
                   />
@@ -393,7 +393,7 @@ export function KbSettings() {
                       关掉队列就停 */}
                   <Checkbox
                     checked={governance}
-                    onChange={(e) => setGovernance(e.target.checked)}
+                    onChange={(v) => setGovernance(v)}
                     label={S.kbset.governance}
                     hint={S.kbset.governanceNote}
                   />
@@ -553,14 +553,16 @@ function KbActivity({ kbId }: { kbId: string }) {
             ...actions.map((a) => ({ value: a, label: a })),
           ]}
         />
-        <Input size="sm" className="u-num"
+        {/* 日期框**要自己说宽度**：`Input` 不给宽度时是 w-full，一行里放两个，
+            每个都占满，于是各自换行——同一行的下拉给了 w-48 才没事。 */}
+        <Input size="sm" className="u-num w-36"
           type="date"
           value={since}
           title={S.kbset.auditSince}
           onChange={(e) => reset(() => setSince(e.target.value))}
         />
         <span className="text-small text-ink-2">→</span>
-        <Input size="sm" className="u-num"
+        <Input size="sm" className="u-num w-36"
           type="date"
           value={until}
           title={S.kbset.auditUntil}

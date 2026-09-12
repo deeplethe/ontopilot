@@ -531,7 +531,7 @@ export function PropertyDialog({
             <Checkbox
               key={i}
               checked={on}
-              onChange={(e) => set(e.target.checked)}
+              onChange={(v) => set(v)}
               label={title}
               hint={hint}
             />
@@ -741,7 +741,7 @@ export function AttributeDialog({
       <div className="mb-4">
         <Checkbox
           checked={single}
-          onChange={(e) => setSingle(e.target.checked)}
+          onChange={(v) => setSingle(v)}
           label={S.ontology.attrSingle}
         />
       </div>

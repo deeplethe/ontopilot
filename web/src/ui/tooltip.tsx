@@ -22,7 +22,7 @@ export function Tooltip({
             side={side}
             sideOffset={6}
             collisionPadding={8}
-            className="u-pop u-pop-in z-[60] max-w-xs rounded-cell px-2 py-1 text-fine text-ink-2 shadow-xl"
+            className="u-pop u-pop-in z-[60] max-w-xs rounded-cell px-2 py-1 text-fine text-ink-2 u-lift"
           >
             {content}
           </RadixTooltip.Content>

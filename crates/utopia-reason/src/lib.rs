@@ -186,7 +186,8 @@ fn asymmetries(edges: &[Edge]) -> Vec<Violation> {
     out
 }
 
-/// 找环。**每个环只报一次**，从环上最小的节点起算。
+/// 找环。**每个环只报一次，而且只以一种形状报**：去重按环上事实的集合，报出来的
+/// 路径转到最小的那条事实起头（见 `walk` 里的注释）。
 ///
 /// 用深度优先而不是半朴素闭包求值：两者都能发现环，但闭包只告诉你「A 推出了
 /// A」，而人要的是**路径**——顺着 `A→B→C→A` 看一遍才知道该撤哪一条。闭包丢掉
@@ -240,6 +241,24 @@ fn walk<'a>(
             let mut key = facts.clone();
             key.sort();
             if reported.insert(key) {
+                // **报之前把环转到规范位置。**环是一个圈，从哪条边开始读都是同一个
+                // 环；可 `left`/`right` 取的是这一次遍历的首尾，而遍历的起点来自
+                // `adj.keys()`——一个 HashMap，顺序每次不同。于是同一个三元环会以
+                // 三种旋转轮流出现，而 `axiom_violations` 是按
+                // `(kind, left_fact, right_fact)` 唯一的：换一种旋转就是换一行。
+                //
+                // 后果不是"多一行"，是**人的裁决会悄悄失效**：重算删掉的是 open 的
+                // 行，裁过的那行留着，同一个环以新键插成 open，而重开那一支按键匹配，
+                // 匹配不上就不会触发（#618）。
+                //
+                // 转到最小的事实 id 起头，键就成了环自己的函数，与从哪儿走进来无关。
+                let at = facts
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, f)| **f)
+                    .map(|(i, _)| i)
+                    .unwrap();
+                facts.rotate_left(at);
                 out.push(Violation {
                     kind: Kind::Cycle,
                     left: facts[0],
@@ -319,6 +338,38 @@ mod tests {
         let mut k: Vec<Kind> = v.iter().map(|x| x.kind).collect();
         k.sort_by_key(|x| x.as_str());
         k
+    }
+
+    /// **同一个环，每次都是同一行。**环的 `left`/`right` 从前取这一次遍历的首尾，
+    /// 而起点来自 HashMap 的迭代顺序——同一份输入跑两次可以给出不同的旋转，而
+    /// `axiom_violations` 按 `(kind, left_fact, right_fact)` 唯一，换个旋转就是换一行，
+    /// 人裁过的那一行于是被绕开（#618）。
+    ///
+    /// 跑一百次而不是一次：顺序是随机的，一次跑不出问题来。
+    #[test]
+    fn a_cycle_is_reported_the_same_way_every_time() {
+        let edges = [e(1, 1, 2), e(2, 2, 3), e(3, 3, 1)];
+        let ax = with(Axioms {
+            transitive: true,
+            ..Default::default()
+        });
+        let shapes: std::collections::HashSet<(Uuid, Uuid, Vec<Uuid>)> = (0..100)
+            .map(|_| {
+                let v: Vec<Violation> = check(&edges, &ax)
+                    .into_iter()
+                    .filter(|v| v.kind == Kind::Cycle)
+                    .collect();
+                assert_eq!(v.len(), 1, "一个环只报一次");
+                (v[0].left, v[0].right, v[0].path.clone())
+            })
+            .collect();
+        assert_eq!(shapes.len(), 1, "同一个环给出了不止一种形状: {shapes:?}");
+        // 规范形状是从最小的事实起头，路径仍然是一圈
+        let (left, right, path) = shapes.into_iter().next().unwrap();
+        assert_eq!(left, *path.iter().min().unwrap());
+        assert_eq!(left, path[0]);
+        assert_eq!(right, *path.last().unwrap());
+        assert_eq!(path.len(), 3);
     }
 
     /// **没声明公理的谓词一条都不查。** 这是整套检查的地基：没有依据就不报矛盾。

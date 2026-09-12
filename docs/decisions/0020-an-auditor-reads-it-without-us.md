@@ -12,6 +12,16 @@ Not another Utopia. A regulator, an auditor, or the team's own graph tooling: so
 
 ## Identity
 
+**Revision 2026-09-11 ([#601](https://github.com/deeplethe/utopia/pull/601),
+[#603](https://github.com/deeplethe/utopia/issues/603)).** This record originally
+described the RDF mapping without explicitly stating its compatibility boundary.
+#601 added that clarification and structured MCP reads sharing the ledger UUIDs,
+restored the premise links already described under Lineage, and documented the
+remaining gaps: conflict/review state, chunk identity behind quotes, and historical
+proof snapshots. The documented MCP field policy is now explicit too: removing or
+renaming a documented `structuredContent` field requires a decision record; clients should
+tolerate additional fields.
+
 The RDF mapping is the supported external machine-readable read contract
 (clarified in [#550](https://github.com/deeplethe/utopia/issues/550)). A breaking
 change needs a decision record explaining why; the internal tables and UI API

@@ -24,7 +24,7 @@ utopia-store = { path = "crates/utopia-store" }
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
-tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs", "set-header"] }
 sqlx = { version = "0.8", default-features = false, features = [
     # mysql 只为问数引擎而开（query_engine::mysql）：一条线协议顺带覆盖
     # TiDB / OceanBase / Doris / StarRocks。本体的库始终是 postgres。

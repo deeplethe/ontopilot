@@ -218,14 +218,21 @@ export interface SourceView {
   last_sync_added: number;
   doc_count: number;
   missing_count: number;
-  rss_full_content_state: "pending" | "active" | "disabled" | null;
-  rss_full_content_generation: number | null;
-  rss_full_content_baseline_count: number | null;
-  rss_full_content_pending_count: number;
-  rss_full_content_queued_count: number;
-  rss_full_content_retrying_count: number;
-  rss_full_content_complete_count: number;
-  rss_full_content_terminal_count: number;
+  /** 全文补全那一块；**不是 RSS 全文来源的就是 null**，不用再拿 kind 与
+   *  content_mode 自己推一遍适不适用（0026 / #417） */
+  rss_full_content: RssFullContentSummary | null;
+}
+
+/** 一个 RSS 来源当前代的全文补全进度。五个计数一起读，所以一起给。 */
+export interface RssFullContentSummary {
+  state: "pending" | "active" | "disabled";
+  pending: number;
+  /** queued 与 hydrating 合成一格 */
+  queued: number;
+  retrying: number;
+  complete: number;
+  /** terminal、deleted、superseded 合成一格 */
+  terminal: number;
 }
 
 export interface SearchResult {

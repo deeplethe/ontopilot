@@ -1,8 +1,10 @@
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
+  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
   plugins: [react(), tailwindcss()],
   server: {
     // 多会话并行开发：PORT 由启动器分配（5173 被占时换口），未设时保持默认

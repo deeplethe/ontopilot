@@ -1,6 +1,6 @@
 # 0033 · RSS summaries are scoped to the source being listed
 
-- **Status**: query implemented for #417; nested public contract pending
+- **Status**: Implemented · the source- and generation-scoped lateral landed in #462; the nested `rss_full_content` contract landed in #417's second cut
 - **Written**: 2026-09-06 (conventions in the [README](README.md))
 - **Related**: [0023](0023-rss-observations-are-not-documents.md) established RSS observations as a separate responsibility from documents; #417 changes the public `SourceView` contract while fixing the scope of its RSS summary.
 
@@ -46,6 +46,8 @@ The query continues to preserve source ordering, document and missing counts, cr
 The Rust API will expose a strongly typed `RssFullContentSummary`, not an arbitrary JSON value. A non-RSS source returns `"rss_full_content": null`. An RSS source always returns an object, including when full-content hydration is disabled. `queued` and `terminal` retain the state unions described above. `generation` and `baseline_count` remain internal state and are removed from the source-list API.
 
 The store will deserialize a private flat `SourceListRow`, then explicitly convert it to `SourceView`. Missing SQL fields or a row that cannot form the required RSS object are storage errors; the conversion will not use `unwrap`, `expect` or silent defaults to hide them.
+
+> **Revised 2026-09-12, in the cut that implemented this.** The mechanism is the one thing here that did not survive contact. The query builds the object with `jsonb_build_object` inside the existing `CASE WHEN kind = 'rss'`, and `SourceView` reads it through `#[sqlx(json(nullable))]`; there is no second flat row struct. What that paragraph was protecting is intact and arguably better served: the type is still `RssFullContentSummary` and not an arbitrary JSON value, a block that cannot be formed is a deserialization error from the driver rather than a default, and there is no `unwrap` or `expect` on the path. What it cost, had it been followed literally, was a private struct restating all fourteen non-RSS columns so that six of them could be moved — a second place to forget a column, to buy a guarantee the typed column already gives. The shape of the contract, which is what this decision is actually about, is unchanged.
 
 The TypeScript contract and Library consumer will use the nested object and first check it for null. No compatibility double-write of the old fields is planned. No UI redesign, new component, visual-style change or new copy is part of this decision.
 

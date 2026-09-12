@@ -333,15 +333,33 @@ pub struct SourceView {
     pub doc_count: i64,
     /// 已标记"不在来源中"的文档数（url 全集对账 / custom 墓碑产生）
     pub missing_count: i64,
-    /// full_new_items 的当前代状态；非 full-content 来源为 NULL
-    pub rss_full_content_state: Option<String>,
-    pub rss_full_content_generation: Option<i32>,
-    pub rss_full_content_baseline_count: Option<i32>,
-    pub rss_full_content_pending_count: i64,
-    pub rss_full_content_queued_count: i64,
-    pub rss_full_content_retrying_count: i64,
-    pub rss_full_content_complete_count: i64,
-    pub rss_full_content_terminal_count: i64,
+    /// 全文补全那一块。**不是 RSS 的来源整块是 NULL**（0033 决定 2 / #417）。
+    /// 从前这里是八个平铺的列，而「不适用」在其中三个上写作 NULL、在另外五个
+    /// 上写作 0——一个文件夹来源会报 `queued_count: 0`，那是在谈一个它根本
+    /// 没有的队列。现在适不适用由这一格在不在说了算
+    #[sqlx(json(nullable))]
+    pub rss_full_content: Option<RssFullContentSummary>,
+}
+
+/// 一个 RSS 来源当前代的全文补全进度。
+///
+/// 五个计数只有凑在一起才有意义（Library 那条状态栏一次读完），所以一起走。
+/// `state` 是服务端算好的那一档，调用方不必拿 kind 与 content_mode 再推一遍。
+///
+/// **`generation` 与 `baseline_count` 不在这里**（0033 决定 2）：代号是内部状态，
+/// 基线那一批也不属于「还有多少活要干」这五个数——它是起点，不是进度。
+/// 要它们的地方读 `rss_full_content::counts`。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RssFullContentSummary {
+    /// `pending`（还没建基线）| `active` | `disabled`（是 RSS，但没开全文）
+    pub state: String,
+    pub pending: i64,
+    /// queued 与 hydrating 合成一格
+    pub queued: i64,
+    pub retrying: i64,
+    pub complete: i64,
+    /// terminal、deleted、superseded 合成一格
+    pub terminal: i64,
 }
 
 /// 审计事件视图（带操作人显示名；删号后为 NULL）。纯审计展示用。
@@ -502,6 +520,11 @@ pub struct RelationTypeView {
     /// 可以当宾语的类。**只对 relation 有意义**——attribute 的值域是字面量类型，
     /// 落在 datatype 上
     pub ranges: Vec<Uuid>,
+    /// 这条关系的边能带哪些属性（0037）：属性定义的 id。
+    /// **本体接口一直没给这一格**——0037 第一刀把它加进了 `graph::relation_types`
+    /// 与前端类型，却漏了这个视图，于是本体页点开一条关系时前端读到 undefined
+    /// 直接抛（`rel.qualifiers.length`）。
+    pub qualifiers: Vec<Uuid>,
     /// attribute 专用：text | number | date | bool
     pub datatype: Option<String>,
     pub unit: Option<String>,
@@ -993,17 +1016,18 @@ pub struct KnowledgeBase {
     /// 内置本体按哪种语言播种，以及新的类/关系描述写成哪种语言（`en` | `zh`）。
     /// **跟语料走，不跟界面走**——description 的读者是正在读这些文档的模型。
     /// 见 docs/decisions/0004。
-    /// 是否把推出来的事实写进账本（R1）。**缺省关**——这一步往图里加东西，
-    /// 而 0001 判据 2 说「本体是引导不是执法」：声明可能是错的，不该在用户
-    /// 没表态时就按它改图
+    /// 是否把推出来的事实写进账本（R1）。**缺省开**（0050）：派生事实带标记、
+    /// 单列一段、随时整片撤得掉，改的不是账本里人写的那部分；而关着的代价是
+    /// 新库的图一直缺传递链和对称对，人得先发现这个开关才看得见该看见的边
     pub materialize_inferences: bool,
     /// 抽取结束自动排一轮类型消解（0016 C2）。**只自动落地在原类子树里精化的那一档**，
     /// 跨轴的改判仍留给人。缺省开：基准上自动那一档的命中 39/41（#297），且每批可撤
     pub auto_type_resolution: bool,
-    /// 治理开关（0025，缺省关）：开着，govern 任务按先进先出过等人的重复对，
-    /// 先读台账里人的先例再裁；关掉，任务在两簇之间看到就停
+    /// 治理开关（0025，**缺省开**，见 0050）：开着，govern 任务按先进先出过等人的
+    /// 重复对，先读台账里人的先例再裁；关掉，任务在两簇之间看到就停
     pub governance: bool,
-    /// 这次打开治理的时刻；保险丝只数它之后的撤回（0025 决定 9）
+    /// 这次打开治理的时刻；保险丝只数它之后的撤回（0025 决定 9）。
+    /// 新库生下来就开着治理，这一格于是等于建库的时刻（0050）
     pub governance_since: Option<DateTime<Utc>>,
     /// 多久重推一次（分钟）。见 `knowledge_bases.inference_interval_minutes`
     pub inference_interval_minutes: i32,

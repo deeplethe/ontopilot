@@ -52,8 +52,8 @@ export function AccountShell() {
     <div className="h-screen flex flex-col overflow-hidden u-arrive">
       {/* 顶栏与 Docs 页同构：分区字标（点击回城）+ 返回 + GitHub·版本 + 用户 */}
       {/* px-8 与 App 顶栏同一个内距：右上那一组换页时不该动 */}
-      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-14 shrink-0 flex items-center px-8">
-        <SectionMark text={S.account.brand} title={S.docs.backTitle} />
+      <header className="glass-strong relative z-40 border-x-0 border-t-0 h-12 shrink-0 flex items-center px-2">
+        <SectionMark className="pl-3" text={S.account.brand} title={S.docs.backTitle} />
         <HeaderActions
           link={{ to: "/", label: S.account.backToApp }}
           version={health.data?.version}
