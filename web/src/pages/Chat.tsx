@@ -602,9 +602,10 @@ export function Chat() {
               )}
             </div>
           ))}
-          {/* 文字从 20 起（盒 12 + 8），与上面每条会话的标题同一条线 */}
+          {/* 文字从 20 起：栏的 px-2（8）加行自己的 px-3（12），与「最近」和
+              上面每条会话的标题同一条线。写成 px-2 就落在 16，差那 4px 一眼看得出 */}
           {convs.data?.conversations.length === 0 && (
-            <p className="px-2 py-2 text-small text-ink-2">{S.ask.noConversations}</p>
+            <p className="px-3 py-2 text-small text-ink-2">{S.ask.noConversations}</p>
           )}
         </div>
         )}
