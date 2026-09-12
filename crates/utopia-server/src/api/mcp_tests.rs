@@ -198,6 +198,42 @@ fn uuid(value: &Value) -> Uuid {
 }
 
 #[tokio::test]
+async fn refused_and_executed_calls_are_each_audited_once() -> anyhow::Result<()> {
+    let Some(f) = Fixture::new().await? else {
+        return Ok(());
+    };
+    let auth = utopia_store::tokens::authenticate(&f.state.pool, &f.token).await?;
+    for (args, is_error, count) in [(json!({}), true, 1), (json!({"query":"orchard"}), false, 2)] {
+        let result = f.call("search_chunks", args).await?;
+        assert_eq!(result["isError"], is_error);
+        if is_error {
+            assert!(result.get("structuredContent").is_none());
+        }
+        let rows: Vec<(Uuid, Uuid, String, Uuid, Value)> = sqlx::query_as(
+            "SELECT kb_id, actor_id, target_kind, target_id, detail FROM audit_events
+             WHERE kb_id=$1 AND action='mcp.tool_called'",
+        )
+        .bind(f.kb)
+        .fetch_all(&f.state.pool)
+        .await?;
+        assert_eq!(rows.len(), count);
+        for row in rows {
+            assert_eq!(
+                row,
+                (
+                    f.kb,
+                    auth.user_id,
+                    "personal_token".into(),
+                    auth.token_id,
+                    json!({"tool":"search_chunks"}),
+                )
+            );
+        }
+    }
+    f.clean().await
+}
+
+#[tokio::test]
 async fn find_entities_returns_ranked_ids_and_keeps_text() -> anyhow::Result<()> {
     let Some(f) = Fixture::new().await? else {
         return Ok(());
@@ -217,6 +253,7 @@ async fn find_entities_returns_ranked_ids_and_keeps_text() -> anyhow::Result<()>
         format!("Best match: {} | Alice | Thing | 2 facts", f.subject)
     );
     let empty = f.call("find_entities", json!({"name":"Nobody"})).await?;
+    assert_eq!(empty["isError"], false);
     assert_eq!(empty["structuredContent"]["entities"], json!([]));
     assert_eq!(empty["content"][0]["text"], "No matching entities.");
     let invalid = f.call("find_entities", json!({})).await?;
@@ -250,6 +287,9 @@ async fn search_chunks_returns_chunk_and_document_ids_with_the_same_excerpt() ->
         return Ok(());
     };
     let result = f.call("search_chunks", json!({"query":"orchard"})).await?;
+    assert_eq!(result["isError"], false);
+    assert_eq!(result["structuredContent"]["limit"], 6);
+    assert_eq!(result["structuredContent"]["limit_reached"], false);
     let chunk = &result["structuredContent"]["chunks"][0];
     assert_eq!(uuid(&chunk["chunk_id"]), f.chunk);
     assert_eq!(uuid(&chunk["document_id"]), f.document);
@@ -270,7 +310,39 @@ async fn search_chunks_returns_chunk_and_document_ids_with_the_same_excerpt() ->
         )
         .await?;
     assert_eq!(empty["structuredContent"]["chunks"], json!([]));
+    assert_eq!(empty["isError"], false);
+    assert_eq!(empty["structuredContent"]["limit_reached"], false);
     assert_eq!(empty["content"][0]["text"], "No results.");
+    let mut indexed = vec![(f.chunk.to_string(), "orchard ".repeat(120))];
+    for seq in 2..8 {
+        let id = Uuid::now_v7();
+        let text = format!("orchard section {seq}");
+        sqlx::query("INSERT INTO chunks(id,kb_id,document_id,seq,text) VALUES ($1,$2,$3,$4,$5)")
+            .bind(id)
+            .bind(f.kb)
+            .bind(f.document)
+            .bind(seq)
+            .bind(&text)
+            .execute(&f.state.pool)
+            .await?;
+        indexed.push((id.to_string(), text));
+    }
+    f.state
+        .search
+        .reindex_document(&f.kb.to_string(), &f.document.to_string(), &indexed)?;
+    let capped = f.call("search_chunks", json!({"query":"orchard"})).await?;
+    assert_eq!(capped["isError"], false);
+    assert_eq!(capped["structuredContent"]["limit"], 6);
+    assert_eq!(capped["structuredContent"]["limit_reached"], true);
+    let chunks = capped["structuredContent"]["chunks"].as_array().unwrap();
+    assert_eq!(chunks.len(), 6);
+    let ids: std::collections::HashSet<Uuid> =
+        chunks.iter().map(|c| uuid(&c["chunk_id"])).collect();
+    assert_eq!(ids.len(), 6);
+    for chunk in chunks {
+        assert_eq!(uuid(&chunk["document_id"]), f.document);
+        assert!(indexed.iter().any(|(id, _)| chunk["chunk_id"] == *id));
+    }
     f.clean().await
 }
 
@@ -279,6 +351,24 @@ async fn entity_facts_keeps_identity_values_filters_and_both_clocks() -> anyhow:
     let Some(f) = Fixture::new().await? else {
         return Ok(());
     };
+    let broker = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO relation_types(id,kb_id,key,label,kind)
+         VALUES ($1,$2,'broker','Broker','relation')",
+    )
+    .bind(broker)
+    .bind(f.kb)
+    .execute(&f.state.pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO fact_qualifiers(fact_id,qualifier_type_id,entity_id)
+         VALUES ($1,$2,$3)",
+    )
+    .bind(f.corrected)
+    .bind(broker)
+    .bind(f.object)
+    .execute(&f.state.pool)
+    .await?;
     let result = f
         .call("entity_facts", json!({"entity_id":f.subject}))
         .await?;
@@ -290,10 +380,22 @@ async fn entity_facts_keeps_identity_values_filters_and_both_clocks() -> anyhow:
         .find(|r| uuid(&r["id"]) == f.corrected)
         .unwrap();
     assert_eq!(corrected["recorded_at"], CORRECTION);
+    let qualifiers = corrected["qualifiers"].as_array().unwrap();
+    let weight = qualifiers.iter().find(|q| q["key"] == "weight").unwrap();
+    assert_eq!(weight["value"], json!({"value":3,"unit":"kg"}));
+    assert!(weight["entity_id"].is_null());
+    assert!(weight["entity_name"].is_null());
     assert_eq!(
-        corrected["qualifiers"][0]["value"],
-        json!({"value":3,"unit":"kg"})
+        qualifiers.iter().find(|q| q["key"] == "broker").unwrap(),
+        &json!({
+            "qualifier_type_id":broker,"key":"broker","label":"Broker",
+            "value":null,"entity_id":f.object,"entity_name":"Acme",
+        })
     );
+    assert!(result["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("broker: Acme"));
     assert_eq!(uuid(&corrected["supersedes"]), f.fact);
     assert_eq!(
         corrected["document_ids"],
@@ -361,6 +463,7 @@ async fn entity_facts_keeps_identity_values_filters_and_both_clocks() -> anyhow:
         .await?;
     assert_eq!(empty["structuredContent"]["facts"], json!([]));
     assert_eq!(empty["structuredContent"]["derived_facts"], json!([]));
+    assert_eq!(empty["isError"], false);
     let history = f
         .call(
             "entity_facts",
@@ -437,6 +540,25 @@ async fn changes_returns_fact_ids_and_a_reusable_correction_timestamp() -> anyho
         .await?;
     assert_eq!(empty["structuredContent"]["changes"], json!([]));
     assert_eq!(empty["structuredContent"]["limit_reached"], false);
+    assert_eq!(empty["isError"], false);
+    let started = chrono::Utc::now();
+    let open = f.call("changes", json!({"since":"2026-03-20"})).await?;
+    let finished = chrono::Utc::now();
+    let data = &open["structuredContent"];
+    let until: chrono::DateTime<chrono::Utc> = data["until"].as_str().unwrap().parse()?;
+    let since: chrono::DateTime<chrono::Utc> = data["since"].as_str().unwrap().parse()?;
+    assert_eq!(open["isError"], false);
+    assert_eq!(data["since"], "2026-03-20T00:00:00Z");
+    assert!(started <= until && until <= finished);
+    assert_eq!(data["limit_reached"], false);
+    let changes = data["changes"].as_array().unwrap();
+    assert!(changes
+        .iter()
+        .any(|c| uuid(&c["fact_id"]) == f.corrected && c["at"] == CORRECTION));
+    for change in changes {
+        let at: chrono::DateTime<chrono::Utc> = change["at"].as_str().unwrap().parse()?;
+        assert!(since <= at && at < until);
+    }
     sqlx::query(
         "INSERT INTO facts(id,kb_id,subject_id,predicate_id,object_value,recorded_at)
                  SELECT gen_random_uuid(),kb_id,subject_id,predicate_id,
@@ -464,6 +586,80 @@ async fn changes_returns_fact_ids_and_a_reusable_correction_timestamp() -> anyho
 }
 
 #[tokio::test]
+async fn missing_entities_and_empty_graph_reads_keep_their_results() -> anyhow::Result<()> {
+    let Some(f) = Fixture::new().await? else {
+        return Ok(());
+    };
+    let isolated = Uuid::now_v7();
+    sqlx::query("INSERT INTO entities(id,kb_id,canonical_name) VALUES ($1,$2,'Isolated')")
+        .bind(isolated)
+        .bind(f.kb)
+        .execute(&f.state.pool)
+        .await?;
+    for (name, args, is_error, text) in [
+        (
+            "entity_facts",
+            json!({"entity_id":"Nobody"}),
+            true,
+            "Invalid entity: no entity named \"Nobody\" in this base (expected a name, or the uuid returned by find_entities).",
+        ),
+        (
+            "neighbors",
+            json!({"entity":"Nobody"}),
+            false,
+            "Unknown entity: no entity named \"Nobody\" in this base.",
+        ),
+        (
+            "timeline",
+            json!({"entity":"Nobody"}),
+            false,
+            "Unknown entity: no entity named \"Nobody\" in this base.",
+        ),
+        (
+            "paths_between",
+            json!({"from":"Nobody","to":f.object}),
+            false,
+            "Unknown `from`: no entity named \"Nobody\" in this base.",
+        ),
+        (
+            "paths_between",
+            json!({"from":f.subject,"to":"Nobody"}),
+            false,
+            "Unknown `to`: no entity named \"Nobody\" in this base.",
+        ),
+        ("neighbors", json!({"entity":f.other_kb}), false, "Entity not found."),
+        ("timeline", json!({"entity":f.other_kb}), false, "Entity not found."),
+        (
+            "neighbors",
+            json!({"entity":isolated}),
+            false,
+            "Isolated (untyped): no linked entities.",
+        ),
+        (
+            "timeline",
+            json!({"entity":isolated}),
+            false,
+            "Isolated (untyped): no dated facts; 0 facts carry no date (entity_facts lists them).",
+        ),
+    ] {
+        let result = f.call(name, args).await?;
+        assert_eq!(result["isError"], is_error, "{name}: {result}");
+        assert_eq!(result["content"][0]["text"], text, "{name}");
+        assert!(result.get("structuredContent").is_none());
+    }
+    let empty = f
+        .call("paths_between", json!({"from":f.subject,"to":isolated}))
+        .await?;
+    assert_eq!(empty["isError"], false);
+    assert!(empty["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .starts_with("No path of up to 3 hops between "));
+    assert!(empty.get("structuredContent").is_none());
+    f.clean().await
+}
+
+#[tokio::test]
 async fn failed_reads_do_not_become_successful_empty_results() -> anyhow::Result<()> {
     let Some(f) = Fixture::new().await? else {
         return Ok(());
@@ -479,15 +675,73 @@ async fn failed_reads_do_not_become_successful_empty_results() -> anyhow::Result
         via_token: None,
         question: None,
     };
-    for (name, args) in [
-        ("find_entities", json!({"name":"Alice"})),
-        ("search_chunks", json!({"query":"orchard"})),
-        ("entity_facts", json!({"entity_id":f.subject})),
-        ("changes", json!({"since":"2026"})),
+    for (name, args, text) in [
+        (
+            "find_entities",
+            json!({"name":"Alice"}),
+            "Could not look up entities.",
+        ),
+        (
+            "search_chunks",
+            json!({"query":"orchard"}),
+            "Could not search the documents.",
+        ),
+        (
+            "entity_facts",
+            json!({"entity_id":f.subject}),
+            "Could not read the entity facts.",
+        ),
+        (
+            "entity_facts",
+            json!({"entity_id":"Alice"}),
+            "Could not look up entities.",
+        ),
+        (
+            "neighbors",
+            json!({"entity":"Alice"}),
+            "Could not look up entities.",
+        ),
+        (
+            "timeline",
+            json!({"entity":"Alice"}),
+            "Could not look up entities.",
+        ),
+        (
+            "neighbors",
+            json!({"entity":f.subject}),
+            "Could not read the entity facts.",
+        ),
+        (
+            "timeline",
+            json!({"entity":f.subject}),
+            "Could not read the entity facts.",
+        ),
+        (
+            "paths_between",
+            json!({"from":"Alice","to":f.object}),
+            "Could not look up entities.",
+        ),
+        (
+            "paths_between",
+            json!({"from":f.subject,"to":"Acme"}),
+            "Could not look up entities.",
+        ),
+        // Equal UUIDs return before reading the database; these must be different.
+        (
+            "paths_between",
+            json!({"from":f.subject,"to":f.object}),
+            "Could not search paths.",
+        ),
+        (
+            "changes",
+            json!({"since":"2026"}),
+            "Could not read the graph changes.",
+        ),
     ] {
         let result =
             tool_result(tools::dispatch(&ctx, &mut ToolSink::default(), name, &args).await);
         assert_eq!(result["isError"], true, "{name}: {result}");
+        assert_eq!(result["content"][0]["text"], text, "{name}: {args}");
         assert!(result.get("structuredContent").is_none());
     }
     // Reconnect only for fixture cleanup.

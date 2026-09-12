@@ -89,6 +89,8 @@ Read the JSON field directly; the text is presentation, not a format to parse.
 Every structured result includes `kb_id`. IDs are opaque UUID strings, timestamps
 are RFC3339 with fractional seconds preserved, unknown optional values are `null`,
 and empty collections are `[]`. Clients should tolerate additional fields.
+Removing or renaming a documented `structuredContent` field is a breaking change
+and requires a decision record explaining why.
 Failures have `isError: true` and no structured success payload; an empty result
 is a successful read, not an error.
 
