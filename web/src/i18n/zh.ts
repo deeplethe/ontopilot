@@ -556,8 +556,8 @@ export const zh: Strings = {
     rssFullModeHint:
       "第一次同步只记下订阅当前有哪些条目，不导入。之后新出现的条目，订阅自带的正文够长就用它，不够就去抓链接的文章；两者都没有的条目记为跳过。",
     rssFeedModeHint: "只存订阅自带的内容——正文或摘要——不去打开链接的文章。",
-    rssHydrationCounts: (pending: number, queued: number, retrying: number, complete: number, terminal: number) =>
-      `待处理 ${pending} · 排队 ${queued} · 重试 ${retrying} · 完成 ${complete} · 终止 ${terminal}`,
+    rssHydrationCounts: (c: { pending: number; queued: number; retrying: number; complete: number; terminal: number }) =>
+      `待处理 ${c.pending} · 排队 ${c.queued} · 重试 ${c.retrying} · 完成 ${c.complete} · 终止 ${c.terminal}`,
     repoField: "仓库（owner/name）",
     jiraUrlField: "Jira 地址",
     jiraProjectField: "项目 key",

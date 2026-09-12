@@ -610,8 +610,9 @@ export const en = {
       "The first sync records what the feed holds now and imports nothing. Each item that appears after that is stored from the feed's own text when there is enough of it, otherwise from the linked article; an item with neither is listed as skipped.",
     rssFeedModeHint:
       "Stores what the feed itself carries — the entry text or its summary — and never opens the linked article.",
-    rssHydrationCounts: (pending: number, queued: number, retrying: number, complete: number, terminal: number) =>
-      `pending ${pending} · queued ${queued} · retrying ${retrying} · complete ${complete} · terminal ${terminal}`,
+    // 五个数一起读，所以收一个对象：分开传五个位置参数，调换两个不会有人发现
+    rssHydrationCounts: (c: { pending: number; queued: number; retrying: number; complete: number; terminal: number }) =>
+      `pending ${c.pending} · queued ${c.queued} · retrying ${c.retrying} · complete ${c.complete} · terminal ${c.terminal}`,
     repoField: "Repository (owner/name)",
     jiraUrlField: "Jira site URL",
     jiraProjectField: "Project key",

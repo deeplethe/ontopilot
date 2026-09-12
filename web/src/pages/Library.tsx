@@ -973,18 +973,13 @@ function SourceBar({
                         ? S.library.rssModeFullShort
                         : S.library.rssModeFeedShort}
                     </span>
-                    {rssMode === "full_new_items" && (
-                      <>
-                        <span className="text-ink-2 shrink-0 u-num">
-                          {S.library.rssHydrationCounts(
-                            source.rss_full_content_pending_count,
-                            source.rss_full_content_queued_count,
-                            source.rss_full_content_retrying_count,
-                            source.rss_full_content_complete_count,
-                            source.rss_full_content_terminal_count,
-                          )}
-                        </span>
-                      </>
+                    {/* **「有没有这一块」由服务端说。**从前这里是
+                        `rssMode === "full_new_items"`——把服务端算 state 的那条
+                        CASE 在前端又推了一遍，同一条规矩两份，改一处就会分叉。 */}
+                    {source.rss_full_content && (
+                      <span className="text-ink-2 shrink-0 u-num">
+                        {S.library.rssHydrationCounts(source.rss_full_content)}
+                      </span>
                     )}
                   </>
                 )}
