@@ -7,14 +7,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 /* 用户菜单：顶栏右侧的头像胶囊 + 弹出面板（个人信息 / 系统管理 / 登出）。
    Shell（KB 工作区）与 AccountShell（账户层）共用。 */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Languages,
   Layers,
+  Monitor,
+  Moon,
   LogOut,
   ShieldCheck,
+  Sun,
   UserRound,
   SunMoon,
 } from "lucide-react";
@@ -43,6 +46,12 @@ import { getTheme, setTheme, type Theme } from "../theme";
 
 // 三档的顺序就是菜单里的顺序：本色在前，跟系统在最后
 const THEMES: Theme[] = ["dark", "light", "system"];
+/** 三档主题各自的符号：月亮 / 太阳 / 一块屏（跟着系统走的那一档，说的是"这台机器"） */
+const THEME_ICONS: Record<Theme, ReactNode> = {
+  dark: <Moon size={13} />,
+  light: <Sun size={13} />,
+  system: <Monitor size={13} />,
+};
 
 /** 菜单里的一行：与顶栏另外两个面板的行同一副（px-4 py-2，正文号，图标 gap 3） */
 const ITEM = "gap-3 rounded-none px-4 py-2 text-body";
@@ -143,6 +152,7 @@ export function UserMenu({ user }: { user: User }) {
             options={THEMES.map((t) => ({
               value: t,
               label: S.account.themeNames[t],
+              icon: THEME_ICONS[t],
             }))}
           />
         </div>

@@ -1463,7 +1463,10 @@ export function MenuSelect({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  /** 选项自己的图标是**可选的**：主题那三档各有公认的符号（月亮 / 太阳 /
+   *  一块屏），图标一眼就把三个选项分开了。语言没有这种符号——国旗不是语言，
+   *  说中文的不止一个地方——那一档就只有字，对勾负责说选中的是哪个。 */
+  options: { value: string; label: string; icon?: ReactNode }[];
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
@@ -1501,6 +1504,7 @@ export function MenuSelect({
       >
         {options.map((o) => (
           <SelectItem key={o.value} value={o.value}>
+            {o.icon && <span className="text-ink-2">{o.icon}</span>}
             {o.label}
           </SelectItem>
         ))}
