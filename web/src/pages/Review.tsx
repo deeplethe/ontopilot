@@ -39,7 +39,9 @@ import {
   Segmented,
   GroupLabel,
   PageHeader,
-  chipLike,} from "../ui";
+  Status,
+  chipLike,
+} from "../ui";
 
 const DUP_PAGE = 6;
 const FACT_PAGE = 10;
@@ -532,16 +534,16 @@ function AgentRow({
   return (
     <div className="glass rounded-panel px-4 py-3">
       <div className="flex items-center gap-3">
-        <Chip tone={AGENT_ACTION_TONE[d.action]}>{S.review.agentActions[d.action]}</Chip>
+        <Status tone={AGENT_ACTION_TONE[d.action]}>{S.review.agentActions[d.action]}</Status>
         <span className="text-body text-ink-2 truncate min-w-0">
           {d.left ?? "?"} ≟ {d.right ?? "?"}
         </span>
         <span className="u-num text-small text-ink-2 shrink-0">
           {Math.round(d.confidence * 100)}%
         </span>
-        <Chip tone={AGENT_STATUS_TONE[d.status]} className="ml-auto shrink-0">
+        <Status tone={AGENT_STATUS_TONE[d.status]} className="ml-auto shrink-0">
           {S.review.agentStatus[d.status]}
-        </Chip>
+        </Status>
       </div>
       {/* defer 留下的问题（第二刀）：这是给人看的正文，不是注脚 */}
       {d.question && (

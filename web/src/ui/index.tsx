@@ -877,6 +877,46 @@ export function StatusCell({
   );
 }
 
+/* ---------- Status（一个状态） ----------
+   **颜色只上那个点，字不上色。**从前状态是一枚填色的胶囊（绿底绿字的
+   "Confirmed"、琥珀底琥珀字的 "Pending"），一列表格里十几个填色块，
+   眼睛先看见的是一片颜色，而不是那一列在说什么。点只占它该占的那一点地方，
+   颜色仍然分得出成没成、等不等人，字回到正文的灰。
+
+   `Chip` 留给**不是状态**的东西：计数、库名、公理名、"派生"这类标记——
+   它们是贴在内容上的标签，本来就该有个盒子把自己圈出来。 */
+export function Status({
+  tone = "neutral",
+  className,
+  title,
+  children,
+}: {
+  tone?: ChipTone;
+  className?: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1.5 text-small text-ink-2", className)}
+      title={title}
+    >
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[tone])} />
+      {children}
+    </span>
+  );
+}
+
+const STATUS_DOT: Record<ChipTone, string> = {
+  neutral: "bg-ink-2",
+  success: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  info: "bg-violet",
+  violet: "bg-violet",
+  contest: "bg-contest",
+};
+
 /* ---------- Chip（状态胶囊） ---------- */
 export type ChipTone =
   "neutral" | "info" | "success" | "warn" | "danger" | "violet" | "contest";

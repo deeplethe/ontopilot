@@ -29,6 +29,7 @@ import {
   RAIL_CLS,
   Row,
   SearchSelect,
+  Status,
   cn,
   type ChipTone,
 } from "../ui";
@@ -368,9 +369,9 @@ function MappingRow({
           </Chip>
         )}
         <span className="flex-1" />
-        <Chip tone={TONE[m.status]} className="text-fine">
+        <Status tone={TONE[m.status]} className="text-fine">
           {statusLabel(m.status)}
-        </Chip>
+        </Status>
       </div>
 
       <div
