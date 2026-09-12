@@ -18,6 +18,8 @@ pub(crate) mod rule_routes;
 mod search_routes;
 mod settings_routes;
 mod sources_routes;
+#[cfg(test)]
+mod static_files_tests;
 mod token_routes;
 mod tools;
 mod tools_graph;
@@ -40,6 +42,54 @@ use crate::error::ApiErr;
 use crate::state::AppState;
 
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
+
+/// 把构建产物挂上去。**单独一段、而且不带 state**，所以它可以脱开数据库单测：
+/// 这一段的契约（哪条路 404、哪条路回首页、各自的缓存指示）已经破过两次，
+/// 一次是升级白屏（#616），一次是把 404 也存一年。
+fn with_static_files(mut app: Router, web_dist: &str) -> Router {
+    /* SPA 托管。**分两条路，因为它们的失败方式不一样**：
+
+    `/assets` 下面是构建产物，文件名带内容哈希。这里的 ServeDir **不带兜底**，
+    所以缺文件就是 404。从前它和页面共用一个带 history fallback 的服务，于是
+    升级之后旧哈希的请求拿到的是 `200 text/html` 的首页——浏览器按模块脚本
+    解析一张网页，光凭 MIME 就拒绝执行，界面白屏（#616）。
+
+    缓存指示按文件名本来的含义给：带哈希的产物换了内容就换名字，可以
+    `immutable` 存一年；`index.html` 每次都要回源确认，否则它会指着一批
+    已经不存在的哈希。少了这一条，升级要等浏览器的启发式缓存自己过期。 */
+    let index = std::path::Path::new(web_dist).join("index.html");
+    if index.exists() {
+        /* 每条路各自套自己的头。**层要挂在这一段的 Router 上，不能挂在整个
+        app 上**——挂在 app 上，API 的响应也会跟着被扣上 `immutable`。 */
+        let assets = Router::new()
+            .fallback_service(ServeDir::new(std::path::Path::new(web_dist).join("assets")))
+            /* **只有拿到东西的那一次才 `immutable`。**这个头从前是无条件套的，
+            于是 `/assets/<不存在的文件>` 的 404 也带着「存一年」——浏览器（和
+            中间的缓存）会把「这个文件不存在」记一年。而资源文件名带哈希，
+            一次部署之后请求的正是新名字：上一秒刚缓存下来的那条 404 会让
+            新版本的 js 在那台机器上整整一年拿不到。这正是 #616 要防的那条链，
+            只是发生在另一头。拿不到的那一次给 `no-cache`，下一次照常回源。 */
+            .layer(SetResponseHeaderLayer::overriding(
+                header::CACHE_CONTROL,
+                |res: &axum::response::Response| {
+                    Some(if res.status().is_success() {
+                        HeaderValue::from_static("public, max-age=31536000, immutable")
+                    } else {
+                        HeaderValue::from_static("no-cache")
+                    })
+                },
+            ));
+        let spa = Router::new()
+            .fallback_service(ServeDir::new(web_dist).fallback(ServeFile::new(index)))
+            .layer(SetResponseHeaderLayer::overriding(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("no-cache"),
+            ));
+        app = app.nest("/assets", assets).fallback_service(spa);
+        tracing::info!("已托管前端产物: {}", web_dist);
+    }
+    app
+}
 
 pub fn router(state: AppState, cfg: &AppConfig) -> Router {
     let api = Router::new()
@@ -505,37 +555,7 @@ pub fn router(state: AppState, cfg: &AppConfig) -> Router {
         .route("/api/{*rest}", any(|| async { ApiErr(AppError::NotFound) }))
         .layer(cors);
 
-    /* SPA 托管。**分两条路，因为它们的失败方式不一样**：
-
-    `/assets` 下面是构建产物，文件名带内容哈希。这里的 ServeDir **不带兜底**，
-    所以缺文件就是 404。从前它和页面共用一个带 history fallback 的服务，于是
-    升级之后旧哈希的请求拿到的是 `200 text/html` 的首页——浏览器按模块脚本
-    解析一张网页，光凭 MIME 就拒绝执行，界面白屏（#616）。
-
-    缓存指示按文件名本来的含义给：带哈希的产物换了内容就换名字，可以
-    `immutable` 存一年；`index.html` 每次都要回源确认，否则它会指着一批
-    已经不存在的哈希。少了这一条，升级要等浏览器的启发式缓存自己过期。 */
-    let index = std::path::Path::new(&cfg.web_dist).join("index.html");
-    if index.exists() {
-        /* 每条路各自套自己的头。**层要挂在这一段的 Router 上，不能挂在整个
-        app 上**——挂在 app 上，API 的响应也会跟着被扣上 `immutable`。 */
-        let assets = Router::new()
-            .fallback_service(ServeDir::new(
-                std::path::Path::new(&cfg.web_dist).join("assets"),
-            ))
-            .layer(SetResponseHeaderLayer::overriding(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=31536000, immutable"),
-            ));
-        let spa = Router::new()
-            .fallback_service(ServeDir::new(&cfg.web_dist).fallback(ServeFile::new(index)))
-            .layer(SetResponseHeaderLayer::overriding(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("no-cache"),
-            ));
-        app = app.nest("/assets", assets).fallback_service(spa);
-        tracing::info!("已托管前端产物: {}", cfg.web_dist);
-    }
+    app = with_static_files(app, &cfg.web_dist);
 
     // 最外层：先把请求来源放进 task-local，之后任何一层写审计都读得到
     app.layer(TraceLayer::new_for_http())
