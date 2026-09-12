@@ -1,14 +1,8 @@
-import { Button, Chip } from "../ui";
+import { Button, Chip, cn } from "../ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 /* 用户菜单：顶栏右侧的头像胶囊 + 弹出面板（个人信息 / 系统管理 / 登出）。
@@ -17,6 +11,8 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  Check,
+  ChevronRight,
   Languages,
   Layers,
   LogOut,
@@ -50,9 +46,14 @@ import { getTheme, setTheme, type Theme } from "../theme";
 // 三档的顺序就是菜单里的顺序：本色在前，跟系统在最后
 const THEMES: Theme[] = ["dark", "light", "system"];
 
+/** 菜单里的一行：与顶栏另外两个面板的行同一副（px-4 py-2，正文号，图标 gap 3） */
+const ITEM = "gap-3 rounded-none px-4 py-2 text-body";
+
 export function UserMenu({ user }: { user: User }) {
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
   const [open, setOpen] = useState(false);
+  // 展开着的那一段（语言 / 主题）；同时只开一段
+  const [section, setSection] = useState<"lang" | "theme" | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -82,9 +83,12 @@ export function UserMenu({ user }: { user: User }) {
           <span className="text-body text-ink-2">{user.display_name}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
+      {/* **行的节奏跟顶栏另外两个面板一样**（px-4 py-2 text-body，整行出血）：
+          shadcn 菜单项默认是 px-2 py-1.5，挨着库切换器和告警面板一看就更挤。
+          容器去掉 p-1，让行顶到边——悬停归行，与全站一致。 */}
+      <DropdownMenuContent align="end" className="w-64 p-0">
         {/* 身份头：不是一个可点的项，只说"你是谁" */}
-        <div className="flex items-center gap-3 px-2 py-2">
+        <div className="flex items-center gap-3 border-b border-line px-4 py-3">
           <Avatar name={user.display_name} size={32} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -100,82 +104,99 @@ export function UserMenu({ user }: { user: User }) {
             <div className="truncate text-fine text-ink-2">{user.email}</div>
           </div>
         </div>
-        <DropdownMenuSeparator />
 
-        <DropdownMenuItem onSelect={() => go("/account")}>
-          <UserRound size={13} />
-          {S.account.profile}
-        </DropdownMenuItem>
-        {/* 人人可看：全部可见库 + 我在每个库的身份 */}
-        <DropdownMenuItem onSelect={() => go("/account/kbs")}>
-          <Layers size={13} />
-          {S.account.kbsNav}
-        </DropdownMenuItem>
-        {user.is_admin && (
-          <DropdownMenuItem onSelect={() => go("/admin")}>
-            <ShieldCheck size={13} />
-            {S.account.administration}
+        <div className="py-1">
+          <DropdownMenuItem className={ITEM} onSelect={() => go("/account")}>
+            <UserRound size={13} />
+            {S.account.profile}
           </DropdownMenuItem>
-        )}
+          {/* 人人可看：全部可见库 + 我在每个库的身份 */}
+          <DropdownMenuItem className={ITEM} onSelect={() => go("/account/kbs")}>
+            <Layers size={13} />
+            {S.account.kbsNav}
+          </DropdownMenuItem>
+          {user.is_admin && (
+            <DropdownMenuItem className={ITEM} onSelect={() => go("/admin")}>
+              <ShieldCheck size={13} />
+              {S.account.administration}
+            </DropdownMenuItem>
+          )}
+        </div>
 
-        <DropdownMenuSeparator />
-
-        {/* 界面语言：看的人自己定，不经过后端（docs/decisions/0004）。
-            每个选项用**它自己的语言**写——看不懂英文的人才认得出"中文" */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+        {/* 语言与主题：**点一下在原地展开**，不是往右弹一张子菜单。
+            展开是这套界面处理"一行下面还有几行"的惯例（ExpandCard：柄转 90°，
+            内容缩进到标题那一列）；往右弹的浮层在这儿会盖住旁边的告警面板，
+            而且鼠标要斜着移过去才不关掉。
+            `preventDefault` 是必须的：菜单项默认选中即关闭，而这一下是展开。 */}
+        <div className="border-t border-line py-1">
+          <DropdownMenuItem
+            className={ITEM}
+            onSelect={(e) => {
+              e.preventDefault();
+              setSection((v) => (v === "lang" ? null : "lang"));
+            }}
+          >
             <Languages size={13} />
             {S.account.language}
             <span className="ml-auto pl-2 text-fine text-ink-2">
               {LANG_NAMES[lang]}
             </span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={lang}
-              onValueChange={(v) => setLang(v as (typeof LANGS)[number])}
-            >
-              {LANGS.map((l) => (
-                <DropdownMenuRadioItem key={l} value={l}>
-                  {LANG_NAMES[l]}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+            <ChevronRight
+              size={12}
+              className={cn("u-turn shrink-0 text-ink-2", section === "lang" && "rotate-90")}
+            />
+          </DropdownMenuItem>
+          {section === "lang" &&
+            LANGS.map((l) => (
+              <DropdownMenuItem
+                key={l}
+                className={cn(ITEM, "pl-8")}
+                onSelect={() => setLang(l)}
+              >
+                {LANG_NAMES[l]}
+                {l === lang && <Check size={13} className="ml-auto text-ink-2" />}
+              </DropdownMenuItem>
+            ))}
 
-        {/* 主题（0038）：暗是本色，浅色给白天对着它八小时的人；跟系统是第三档 */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuItem
+            className={ITEM}
+            onSelect={(e) => {
+              e.preventDefault();
+              setSection((v) => (v === "theme" ? null : "theme"));
+            }}
+          >
             <SunMoon size={13} />
             {S.account.theme}
             <span className="ml-auto pl-2 text-fine text-ink-2">
               {S.account.themeNames[theme]}
             </span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={theme}
-              onValueChange={(v) => {
-                setTheme(v as Theme);
-                setThemeState(v as Theme);
-              }}
-            >
-              {THEMES.map((t) => (
-                <DropdownMenuRadioItem key={t} value={t}>
-                  {S.account.themeNames[t]}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+            <ChevronRight
+              size={12}
+              className={cn("u-turn shrink-0 text-ink-2", section === "theme" && "rotate-90")}
+            />
+          </DropdownMenuItem>
+          {section === "theme" &&
+            THEMES.map((t) => (
+              <DropdownMenuItem
+                key={t}
+                className={cn(ITEM, "pl-8")}
+                onSelect={() => {
+                  setTheme(t);
+                  setThemeState(t);
+                }}
+              >
+                {S.account.themeNames[t]}
+                {t === theme && <Check size={13} className="ml-auto text-ink-2" />}
+              </DropdownMenuItem>
+            ))}
+        </div>
 
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem variant="destructive" onSelect={logout}>
-          <LogOut size={13} />
-          {S.nav.signOut}
-        </DropdownMenuItem>
+        <div className="border-t border-line py-1">
+          <DropdownMenuItem className={ITEM} variant="destructive" onSelect={logout}>
+            <LogOut size={13} />
+            {S.nav.signOut}
+          </DropdownMenuItem>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
