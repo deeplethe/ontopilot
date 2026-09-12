@@ -86,8 +86,8 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<SourceView>> {
     // 的密钥就这么漏出去的（#246）
     // 外层别名不能与 ENTRY_SELECT 的来源别名重名；来源和当前代谓词必须留在投影内部，
     // 否则 PostgreSQL 会先计算部署中的全部 observation，再丢弃与当前来源无关的行。
-    let rows: Vec<SourceView> = sqlx::query_as(
-        &format!("SELECT listed_source.id, listed_source.kind, listed_source.name,
+    let rows: Vec<SourceView> = sqlx::query_as(&format!(
+        "SELECT listed_source.id, listed_source.kind, listed_source.name,
                 listed_source.config - $2::text[] AS config, listed_source.icon,
                 listed_source.sync_interval_minutes, listed_source.sync_cron,
                 listed_source.last_sync_at, listed_source.last_sync_status,
@@ -97,16 +97,23 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<SourceView>> {
                 (SELECT count(*) FROM documents d
                  WHERE d.source_id = listed_source.id AND d.missing_since IS NOT NULL
                    AND d.deleted_at IS NULL) AS missing_count,
-                CASE WHEN listed_source.kind <> 'rss' THEN NULL
-                  WHEN listed_source.config->>'content_mode' IS DISTINCT FROM 'full_new_items' THEN 'disabled'
-                  WHEN listed_source.rss_baselined_at IS NULL THEN 'pending' ELSE 'active' END AS rss_full_content_state,
-                CASE WHEN listed_source.kind='rss' THEN listed_source.rss_generation END AS rss_full_content_generation,
-                COALESCE(hydration.baseline_count, 0) AS rss_full_content_baseline_count,
-                COALESCE(hydration.pending, 0) AS rss_full_content_pending_count,
-                COALESCE(hydration.queued, 0) AS rss_full_content_queued_count,
-                COALESCE(hydration.retrying, 0) AS rss_full_content_retrying_count,
-                COALESCE(hydration.complete, 0) AS rss_full_content_complete_count,
-                COALESCE(hydration.terminal, 0) AS rss_full_content_terminal_count
+                -- 整块出去，不是八个平铺的列（0026 / #417）。**不是 RSS 的来源
+                -- 这一格就是 NULL**：从前「不适用」在 state 上写作 NULL、在五个
+                -- 计数上写作 0，同一件事两套说法，而 `queued_count: 0` 读起来
+                -- 像「队列空着」。计数在块里仍然 COALESCE 成 0——这时候它真是
+                -- 「这一档现在没有」，不是「不适用」。
+                CASE WHEN listed_source.kind = 'rss' THEN jsonb_build_object(
+                    'state', CASE
+                        WHEN listed_source.config->>'content_mode' IS DISTINCT FROM 'full_new_items'
+                            THEN 'disabled'
+                        WHEN listed_source.rss_baselined_at IS NULL THEN 'pending'
+                        ELSE 'active' END,
+                    'pending', COALESCE(hydration.pending, 0),
+                    'queued', COALESCE(hydration.queued, 0),
+                    'retrying', COALESCE(hydration.retrying, 0),
+                    'complete', COALESCE(hydration.complete, 0),
+                    'terminal', COALESCE(hydration.terminal, 0)
+                ) END AS rss_full_content
          FROM sources listed_source
          LEFT JOIN LATERAL (
              SELECT
@@ -126,9 +133,8 @@ pub async fn list(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<SourceView>> {
              ) projected
          ) hydration ON listed_source.kind = 'rss'
          WHERE listed_source.kb_id = $1 ORDER BY listed_source.created_at",
-            crate::rss_full_content::ENTRY_SELECT
-        ),
-    )
+        crate::rss_full_content::ENTRY_SELECT
+    ))
     .bind(kb_id)
     .bind(SOURCE_SECRET_KEYS)
     .fetch_all(pool)

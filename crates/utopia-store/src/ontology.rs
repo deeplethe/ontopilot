@@ -82,6 +82,8 @@ pub async fn relation_type_views(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Re
                       WHERE d.relation_type_id = r.id) AS domains,
                 ARRAY(SELECT g.entity_type_id FROM relation_type_ranges g
                       WHERE g.relation_type_id = r.id) AS ranges,
+                ARRAY(SELECT q.qualifier_type_id FROM relation_type_qualifiers q
+                      WHERE q.relation_type_id = r.id) AS qualifiers,
                 (SELECT count(*) FROM facts f
                  WHERE f.predicate_id = r.id AND f.invalidated_at IS NULL) AS usage
          FROM relation_types r WHERE r.kb_id = $1 ORDER BY lower(r.label)",

@@ -2,7 +2,7 @@
 
 - **Status**: R0 built: six fact-level violation kinds in `axiom_violations` (five checks plus
   `derived_contradiction`, 0017), eight ontology defect kinds in `ontology_defects`, two Review tabs. R1 built behind the KB switch `materialize_inferences`
-  (default off), rules from four axiom kinds (#132, #177, #179). R2 built as a proof chain
+  (default on since 0050; off when this was written), rules from four axiom kinds (#132, #177, #179). R2 built as a proof chain
   (`GET /kbs/{id}/derived/{id}/proof`, 0016 B1). Contradiction signals for derivations built per
   [0017](0017-a-contradiction-points-upstream.md). R3 not built: every run recomputes the whole KB,
   on `inference_interval_minutes` (default 60).
@@ -51,7 +51,17 @@ corpus is cleaned, then materialization is switched on.
    normalization at axiom load fills gaps only; a mismatched pair goes to `inverse_not_mutual`.
    Cold-start bootstrap declares no axiom (`Axioms::default()`): the reasoner's criteria are
    written by people.
-6. **Materialization is a KB switch, default off.** The job records its run time before deriving so
+6. **Materialization is a KB switch.**
+
+   > **Revised 2026-09-12 (0050).** The default is now on. Off was chosen because a declaration can
+   > be wrong and this step changes the graph; what that reasoning missed is that derived facts never
+   > enter the part of the ledger people write. They carry a `derived` mark, sit in their own section,
+   > and come off in one piece the moment the switch goes off. The cost of off was paid on every new
+   > base: transitive chains and symmetric pairs were simply absent until someone found the switch.
+
+   The text below is the original and stays as written.
+
+   The job records its run time before deriving so
    a failure cannot loop; endpoints return an explicit error while off. `MAX_DERIVED_PER_PREDICATE` =
    20,000, truncation reported as `capped`; an `unruled` counter that should stay zero records a
    real bug (rule lookup by predicate instead of `via` dropped cross-predicate rules silently).

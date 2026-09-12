@@ -67,12 +67,14 @@ import {
   neighborNode,
   nodeInView,
   NODE_TYPE_SHELL,
+  drawLast,
   NODE_TYPE_SQUARE,
   ownColorOf,
   selectedNode,
   sigmaOptions,
+  withTopLayer,
 } from "./graphCanvas";
-import { ChevronDown, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
 import { S } from "../i18n";
 import {
@@ -85,7 +87,11 @@ import {
   ToolTower,
   Tooltip,
 } from "../ui";
-import { usePopoverFlip } from "../ui/popoverFlip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 /* ============ 边的三种语义，与三种视觉语汇的映射 ============
    关系边与 /graph 的边同一个灰（那边是应用户要求改成纯灰的，这边不另起
@@ -114,6 +120,7 @@ const EDGE_TYPE_ARROW = "arrow"; // 直线 + 箭头（EdgeArrowProgram）
 const EDGE_TYPE_CURVED_ARROW = "curvedArrow"; // 弧线 + 箭头（EdgeCurvedArrowProgram）
 const EDGE_TYPE_LINE = "line"; // 直线，无箭头（EdgeLineProgram）——互斥专用
 const EDGE_TYPE_CURVED_LINE = "curvedLine"; // 弧线，无箭头（EdgeCurveProgram）——互斥与别的边共用一对时
+
 
 /** 结构边细、关系边粗一档——「语义关系比结构性信息更显眼」不能只靠颜色说,
  *  粗细上也要有一档差。这个粗细同时也是点选判定的命中带宽——sigma 的边拾取
@@ -786,12 +793,13 @@ export function OntologySchemaGraph({
     const sigma = new Sigma(g, containerRef.current, {
       ...sigmaOptions({
         defaultEdgeType: EDGE_TYPE_ARROW,
-        edgeProgramClasses: {
+        // 每个程序配一份「最上层」的（见 `withTopLayer`）：高亮的边整批最后画
+        edgeProgramClasses: withTopLayer({
           [EDGE_TYPE_ARROW]: EdgeArrowProgram,
           [EDGE_TYPE_LINE]: EdgeLineProgram,
           [EDGE_TYPE_CURVED_ARROW]: EdgeCurvedArrowProgram,
           [EDGE_TYPE_CURVED_LINE]: EdgeCurveProgram,
-        },
+        }),
         minEdgeThickness: MIN_EDGE_THICKNESS,
         // 几十上百个类，缩到 0.05 就看得见全貌；实例图动辄上千，那边缩得更远
         minCameraRatio: 0.05,
@@ -881,6 +889,8 @@ export function OntologySchemaGraph({
           res.color = focus;
           res.size = Math.max((attrs.size as number) ?? 1, 1) * 1.5;
           res.zIndex = 3;
+          // 换到最后画的那一批：光有 zIndex 压不住别的程序里的边
+          res.type = drawLast(String(res.type ?? EDGE_TYPE_ARROW));
           return res;
         }
         if (
@@ -992,7 +1002,7 @@ export function OntologySchemaGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const unscopedPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>("top left");
+  const [unscopedOpen, setUnscopedOpen] = useState(false);
   const empty = entityTypes.length === 0;
 
   return (
@@ -1055,37 +1065,18 @@ export function OntologySchemaGraph({
           )}
 
           {schema.unscoped.length > 0 && (
-            <div className="relative" ref={unscopedPop.rootRef}>
-              <Pill
-                ref={unscopedPop.anchorRef}
-                active={unscopedPop.open}
-                aria-expanded={unscopedPop.open}
-                onClick={() =>
-                  unscopedPop.open ? unscopedPop.close() : unscopedPop.setOpen(true)
-                }
-              >
-                {S.ontology.schemaUnscoped(schema.unscoped.length)}
-              </Pill>
-              {unscopedPop.open && (
-                <div
-                  ref={unscopedPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay shadow-2xl"
-                >
-                  {/* 与库切换器、告警面板、图谱页的类图例同一副解剖：第一行就是
-                      触发它的那个胶囊自己，三角翻上去，点它收回；**没有浮在角上的
-                      关闭叉**——「哪儿展开的就从哪儿收回去」。
-                      从前这里是一枚带 × 的胶囊，跟同一个产品里其余弹层都不像 */}
-                  <div
-                    onClick={() => unscopedPop.close()}
-                    className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
-                  >
+            <Popover open={unscopedOpen} onOpenChange={setUnscopedOpen}>
+              <PopoverTrigger asChild>
+                <Pill active={unscopedOpen}>
+                  {S.ontology.schemaUnscoped(schema.unscoped.length)}
+                </Pill>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 overflow-hidden p-0">
+                  {/* 标题行只说这是什么；关闭归 Esc、外点与胶囊本身 */}
+                  <div className="flex items-center gap-3 border-b border-line px-4 py-3">
                     <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
                       {S.ontology.schemaUnscoped(schema.unscoped.length)}
                     </span>
-                    <ChevronDown
-                      size={12}
-                      className="shrink-0 rotate-180 text-ink-2"
-                    />
                   </div>
                   <p className="border-b border-line px-4 py-2 text-fine leading-relaxed text-ink-2">
                     {S.ontology.schemaUnscopedHint}
@@ -1097,16 +1088,15 @@ export function OntologySchemaGraph({
                         className="text-small"
                         onClick={() => {
                           onSelect({ kind: "relation", id: r.id });
-                          unscopedPop.close();
+                          setUnscopedOpen(false);
                         }}
                       >
                         {r.label}
                       </Row>
                     ))}
                   </div>
-                </div>
-              )}
-            </div>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
       </div>

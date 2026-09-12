@@ -18,7 +18,16 @@ The people using a base have meanwhile written every decision they made into `au
 
 For a pair the governor asks the ledger four questions: what people decided on these two names (either order), what people decided about either name against other names, how this base decides pairs of this type pair (merged, kept, later reverted), and whether a merge involving either name was reverted. Only rows with an actor count. The agent's own rows never count, or it would cite itself and grow more confident with every round. A proposal a person accepted counts, because the acceptance goes through the person's decide path and is recorded as that person's decision (decision 6). The retrieved precedents go into the adjudication prompt as lines in plain English, and the model is asked to say in one sentence which one it relied on.
 
-### 2. A switch per base, off by default; on starts the queue, off stops it
+### 2. A switch per base, on by default; on starts the queue, off stops it
+
+> **Revised 2026-09-12 (0050).** The default is now on. Off rested on one sentence below — that this
+> step "has not been measured on any base yet" — and the revision to decision 4 measured it: on the
+> labeled base the agent decided 97.7% on its own, agreed with people on 96.7%, merged 6 pairs wrongly
+> (4 of them one pair the model flips on) and left 12 for people (#458). The gate still turns
+> everything it cannot clear into a proposal, every decision is listed under Agent and revertible, and
+> the fuse of decision 9 counts from the moment the switch went on — which, for a base created from
+> here on, is the moment the base was created. The paragraphs below are the original.
+
 
 `knowledge_bases.governance`, a boolean, next to `auto_type_resolution`. Turning it on enqueues a `govern` job at once; an extraction that leaves pairs behind enqueues one; a person's decision enqueues one; an hourly sweep enqueues one for every base whose queue holds pairs the agent has not looked at. All four go through `enqueue_unless_queued`, so a base has at most one job waiting. The job re-reads the switch before every cluster and returns when it is off: turning the switch off ends the queue at the next cluster boundary, and nothing already decided is undone.
 

@@ -14,8 +14,12 @@ import type Sigma from "sigma";
 export let NODE_SHELL_BASE = "#121212"; // 节点外壳深底（原 #0B1320 的中性化）
 export let NODE_CORE_BASE = "#767676"; // 节点核心灰（原 #5A7A9E 的中性化）
 export let NODE_BORDER_BASE = "#909090"; // 节点描边（原 #7A92AE 的中性化）
-export const NODE_TINT_MIX = 0.14; // 类型色只按 14% 混入外壳（高级感的关键）
-export const NODE_CORE_MIX = 0.5; // 核心向类型色的混入比例
+/* 配方的**比例两个主题共用**，随主题变的只有上面那三个底色。节点永远是
+   「壳 + 彩心」：壳跟着纸走（深色 #121212，浅色 #ffffff），类型色只按 14%
+   渗进壳里，核心收 50% ——于是两个主题里中间那一点都是这个类自己的颜色，
+   变的只是它坐在黑底上还是白底上。 */
+export const NODE_TINT_MIX = 0.14; // 类型色混入外壳的比例
+export const NODE_CORE_MIX = 0.5; // 类型色混入核心的比例
 /* 状态环取**节点自己的类型色**，不是写死的色相。往白里混而不是直接用原色：
    环画在节点自己身上，同色同亮度就看不出是个环。**悬停混得更白、选中混得
    更少**——悬停时全图不压暗，环要在一片乱线里立刻跳出来；选中时其余都
@@ -29,6 +33,10 @@ export let MUTED_SHELL = "#151515";
    每划过一个节点就换一次，压到底会让整张画布不停明灭 */
 export const HOVER_MUTE = 0.78;
 export let PILL_BG = "rgba(12,12,12,0.9)";
+/** 指到的那一块底。静止那档是 `PILL_BG`，选中那档反色，见 `drawNodeLabel` */
+export let PILL_BG_HOVER = "rgba(42,42,42,0.96)";
+/** 选中那一档的底（反色）。**不等于 `PILL_TEXT`**：纸底上的墨是近黑的 */
+export let PILL_INVERT = "#ededed";
 export let PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
 export let PILL_TEXT = "#ededed"; // --u-text
 /* 裸字的光晕：与画布同色（--u-ground）的一圈描边，只为把从字底下穿过的
@@ -53,17 +61,40 @@ export const CANVAS_LABEL_SIZE = 11;
 export const CANVAS_TITLE_SIZE = 14; // --text-body
 export const CANVAS_META_SIZE = 12; // --text-fine
 
+/** `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` 都收。
+ *
+ * **短写法是必须收的，不是顺手**：这些值是从 CSS 令牌读回来的，而构建时
+ * Lightning CSS 会把 `#ffffff` 压成 `#fff`。从前这里只认六位，于是浅色主题
+ * 的白色令牌全部落到下面那句兜底上——静静地变成中灰 128,128,128。画布上
+ * 看到的就是「浅色下每个节点都是一块灰疙瘩」：节点外壳的底色本该是纸白，
+ * 读成了中灰，四层配方一层塌了。dev 下 CSS 不压缩，所以只有打包产物发作。 */
 export function hexToRgb(hex: string): [number, number, number] {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return [128, 128, 128];
-  const v = parseInt(m[1], 16);
-  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  const [r, g, b] = hexToRgba(hex);
+  return [r, g, b];
+}
+
+/** 同上，连 alpha 一起。八位写法的最后两位是 alpha；没写就是 1 */
+export function hexToRgba(hex: string): [number, number, number, number] {
+  const m = /^#?([0-9a-f]{3,8})$/i.exec(hex.trim());
+  if (!m) return [128, 128, 128, 1];
+  let h = m[1];
+  // 短写法每一位翻倍：#1a2 → #11aa22，#1a2f → #11aa22ff
+  if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join("");
+  if (h.length !== 6 && h.length !== 8) return [128, 128, 128, 1];
+  const v = parseInt(h.slice(0, 6), 16);
+  const a = h.length === 8 ? parseInt(h.slice(6), 16) / 255 : 1;
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255, a];
 }
 
 /** c1 向 c2 按 t 比例混色 */
+/** 两色按比例混。**两端都走 `parseRgba`，不是 `hexToRgb`**：令牌读回来的值
+ *  是 `rgb(23,23,23)` 这种写法，用只认 `#rrggbb` 的解析器会静静地退回中灰
+ *  （`hexToRgb` 认不出就返回 128,128,128），于是 `mix(类型色, INK, t)` 混的
+ *  不是墨色而是一团灰——选中与悬停的那圈环因此在两个主题里都发闷。
+ *  从前 `INK` 是字面量 "#ffffff" 才没露馅，0038 把它改成从令牌读之后才显出来。 */
 export function mix(c1: string, c2: string, t: number): string {
-  const [r1, g1, b1] = hexToRgb(c1);
-  const [r2, g2, b2] = hexToRgb(c2);
+  const [r1, g1, b1] = parseRgba(c1);
+  const [r2, g2, b2] = parseRgba(c2);
   const f = (a: number, b: number) => Math.round(a + (b - a) * t);
   return `rgb(${f(r1, r2)},${f(g1, g2)},${f(b1, b2)})`;
 }
@@ -73,10 +104,7 @@ export function mix(c1: string, c2: string, t: number): string {
  * 与 `mix` 分工：那个只吃 hex、只管把类型色按比例调进壳色（节点的配方）；
  * 这个要处理边的 `rgba(...)` 与淡入淡出，两边都得能解析、alpha 不能丢 */
 function parseRgba(c: string): [number, number, number, number] {
-  if (c.startsWith("#")) {
-    const [r, g, b] = hexToRgb(c);
-    return [r, g, b, 1];
-  }
+  if (c.startsWith("#")) return hexToRgba(c);
   const m = c.match(
     /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/,
   );
@@ -132,26 +160,35 @@ export function drawNodeLabel(
   const x = data.x + dx + w + padX > vw ? data.x - dx - w : data.x + dx;
   const y = data.y - dy - size / 2 < 0 ? data.y + dy : data.y - dy;
   ctx.save();
-  if (data.labelSlab) {
-    /* 一块底，圆角 cell（4）、无描边——底已经把它托起来了。
-       **两档**：指到的是深底浅字，选中的反过来，浅底深字。同一副形状、同一个
-       位置，只有明暗调个个儿——"指着"与"选中"是同一件事的两个程度，从前一个是
-       浮起来的两行卡片、一个是这块底牌，看着像两种不同的东西 */
-    const h = size + padY * 2;
+  /* **名字总是一块牌子**：一块底 + 一圈细边，圆角 cell（4）。三档只换颜色，
+     形状与位置一动不动——
+       静止   `--u-pill-bg` + `--u-line-strong` 的边
+       指到的 `--u-pill-bg-hover`，底亮一档，并浮起来（投影）
+       选中的 反色（浅底深字），加粗一档，也浮起来
+     从前静止那档是裸字加一圈画布色描边，只有指到/选中的才有底。裸字在一片
+     连线和节点之间读起来费劲——描边压住的是线，压不住线背后深浅不一的底，
+     而一块牌子自带一个稳定的底。代价是画面更满，所以牌子的边只有一档细线、
+     静止那档不带投影：一屏几十块牌子，每块都浮着就糊成一片。 */
+  const h = size + padY * 2;
+  if (data.labelLift) {
     ctx.shadowColor = token("--u-shadow", "rgba(0,0,0,0.6)");
     ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
-    ctx.fillStyle = data.labelInvert ? PILL_TEXT : PILL_BG;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  } else {
-    /* 裸字：先描一圈画布色再填字（canvas 版的 paint-order: stroke fill），
-       连线从字底下穿过时不至于糊在一起 */
-    ctx.lineWidth = 3.5;
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = LABEL_HALO;
-    ctx.strokeText(data.label, x, y);
+  }
+  ctx.beginPath();
+  ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
+  ctx.fillStyle = data.labelInvert
+    ? PILL_INVERT
+    : data.labelLift
+      ? PILL_BG_HOVER
+      : PILL_BG;
+  ctx.fill();
+  // 投影只跟着底走：描边再来一次会把那圈黑描重一倍
+  ctx.shadowBlur = 0;
+  /* 反色那一档不描边：浅底自己就与画布分得开，再描一圈看着像两层皮 */
+  if (!data.labelInvert) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = PILL_BORDER;
+    ctx.stroke();
   }
   ctx.fillStyle = data.labelInvert ? LABEL_HALO : PILL_TEXT;
   ctx.fillText(data.label, x, y);
@@ -295,16 +332,24 @@ export function inkAt(alpha: number): string {
  * 纸底上同一个 rgba(90,90,90,0.25) 加上去就溢出成白——「没选中时所有线都是白的」
  * 就是这么来的。暗度必须编码进 RGB（Graph.tsx 里 EDGE_DIM 那条注释说的同一件事）。
  * 暗色那一套是加法下调出来的，不动；浅色把 α 在这里就混掉。 */
-function flattenOnLight(color: string): string {
+export function flattenOnLight(color: string): string {
   if (typeof document === "undefined" || document.documentElement.dataset.theme !== "light") {
     return color;
   }
-  const m = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/.exec(color);
-  if (!m) return color;
-  const a = Number(m[4]);
-  const ground = token("--u-ground-rgb", "250,250,250").split(",").map((v) => Number(v.trim()));
-  const ch = (i: number) => Math.round(Number(m[i]) * a + ground[i - 1] * (1 - a));
-  return `rgb(${ch(1)},${ch(2)},${ch(3)})`;
+  /* **两种写法都要认。**令牌里写的是 `rgba(176,120,20,0.6)`，打包时 Lightning CSS
+     把它压成 `#b0781499` —— 同一个颜色，十六进制带 alpha。从前这里只有一条
+     `rgba(...)` 的正则，压缩之后的写法整个漏过去，半透明没摊平就交给了 sigma，
+     于是那条派生边在纸底上被**加**成一道亮黄。（它没早点炸，是因为另一个 bug
+     兜住了：只认六位的 `hexToRgb` 把 `#b0781499` 读成不透明的中灰，线画成了灰的。
+     两个错凑成一个看着还行的结果，修好一个另一个就露出来。）
+     走 `parseRgba` 就不用管写法；alpha 已经是 1 的原样退回，省一次无谓的改写。 */
+  const [r, g, b, a] = parseRgba(color);
+  if (a >= 1) return color;
+  const ground = token("--u-ground-rgb", "250,250,250")
+    .split(",")
+    .map((v) => Number(v.trim()));
+  const ch = (v: number, i: number) => Math.round(v * a + ground[i] * (1 - a));
+  return `rgb(${ch(r, 0)},${ch(g, 1)},${ch(b, 2)})`;
 }
 
 /** 启动时和切主题后调一次，然后 `sigma.refresh()`。 */
@@ -314,6 +359,8 @@ export function refreshPalette() {
   NODE_BORDER_BASE = token("--u-node-border", NODE_BORDER_BASE);
   MUTED_SHELL = token("--u-node-muted", MUTED_SHELL);
   PILL_BG = token("--u-pill-bg", PILL_BG);
+  PILL_BG_HOVER = token("--u-pill-bg-hover", PILL_BG_HOVER);
+  PILL_INVERT = token("--u-pill-invert", PILL_INVERT);
   PILL_BORDER = token("--u-line-strong", PILL_BORDER);
   PILL_TEXT = token("--u-text", PILL_TEXT);
   LABEL_HALO = token("--u-halo", LABEL_HALO);

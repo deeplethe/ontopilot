@@ -27,7 +27,7 @@ import {
   THead,
   Tr,
   PageHeader,
-} from "../ui";
+  chipLike,} from "../ui";
 import { Members } from "./Members";
 
 /** 管理页的五节。**它们是左栏的第二层，不是正文顶上的一条 tab 带**——
@@ -106,7 +106,7 @@ function SourceGrants({ sourceId }: { sourceId: string }) {
             {granted.map((w) => (
               <span
                 key={w.id}
-                className="u-chip u-chip-neutral text-fine flex items-center gap-1"
+                className={chipLike("neutral", "text-fine flex items-center gap-1")}
               >
                 {w.name}
                 <IconButton size="sm" label={S.settings.datasources.grantRevoke}
@@ -187,7 +187,7 @@ function DeploymentAdmin() {
         <Checkbox
           checked={open}
           disabled={dep.isPending || save.isPending}
-          onChange={(e) => save.mutate({ open: e.target.checked })}
+          onChange={(v) => save.mutate({ open: v })}
           label={S.settings.deployment.openReg}
           hint={S.settings.deployment.openRegHint}
         />
@@ -289,7 +289,7 @@ function DeploymentAdmin() {
                   key={key}
                   className="flex items-center gap-2 py-3 text-small first:pt-0"
                 >
-                  <span className="u-chip u-chip-neutral !text-fine !px-2 shrink-0">
+                  <span className={chipLike("neutral", "text-fine px-2 shrink-0")}>
                     {m.kind}
                   </span>
                   <span className="font-mono text-ink-2 truncate">{m.model}</span>

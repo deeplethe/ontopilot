@@ -513,17 +513,10 @@ pub async fn list_conflicts(
     limit: i64,
     offset: i64,
 ) -> AppResult<Vec<ConflictView>> {
-    sqlx::query(
-        "UPDATE fact_conflicts c
-         SET status = 'resolved', resolution = 'stale', resolved_at = now()
-         WHERE c.kb_id = $1 AND c.status = 'open'
-           AND EXISTS (SELECT 1 FROM facts f
-                       WHERE f.id IN (c.old_fact_id, c.new_fact_id)
-                         AND f.invalidated_at IS NOT NULL)",
-    )
-    .bind(kb_id)
-    .execute(pool)
-    .await?;
+    // **这里从前有一条 UPDATE。**读之前先把「有一边已经作废」的冲突改成
+    // resolved / stale / now()——清理是对的，位置是错的：`resolved_at` 于是记的是
+    // 有人打开这一页的时刻，而没人打开的库里陈冲突永远开着。退场现在钉在作废
+    // 发生的地方（0051 的触发器），这里只读
     let rows: Vec<ConflictView> = sqlx::query_as(
         "SELECT c.id, c.reason, c.created_at, r.label AS predicate_label,
                 c.old_fact_id, os.canonical_name AS old_subject,
