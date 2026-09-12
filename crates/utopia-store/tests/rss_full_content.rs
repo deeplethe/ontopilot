@@ -162,7 +162,14 @@ async fn delayed_observation_cannot_cross_purge_and_diagnostics_hide_job_errors(
         .unwrap();
     assert_eq!(counts.terminal_count, 1);
     let sources = utopia_store::sources::list(&pool, kb).await?;
-    assert_eq!(sources[0].rss_full_content_terminal_count, 1);
+    assert_eq!(
+        sources[0]
+            .rss_full_content
+            .as_ref()
+            .expect("RSS 全文来源有这一块")
+            .terminal,
+        1
+    );
     // A live document is the accepted-content authority even if an older job failed.
     utopia_store::documents::create_with_version_and_processing(
         &pool,
@@ -380,27 +387,26 @@ async fn source_list_exposes_scoped_rss_summary() -> anyhow::Result<()> {
             .iter()
             .find(|source| source.id == id)
             .ok_or_else(|| anyhow::anyhow!("{kind} source is missing"))?;
-        assert!(source.rss_full_content_state.is_none());
-        assert!(source.rss_full_content_generation.is_none());
-        assert_eq!(source.rss_full_content_baseline_count, Some(0));
-        assert_eq!(source.rss_full_content_pending_count, 0);
-        assert_eq!(source.rss_full_content_queued_count, 0);
-        assert_eq!(source.rss_full_content_retrying_count, 0);
-        assert_eq!(source.rss_full_content_complete_count, 0);
-        assert_eq!(source.rss_full_content_terminal_count, 0);
+        // **不是 RSS 的来源整块都不在。**从前这八列里三列是 NULL、五列是 0，
+        // 于是一个文件夹来源会报 `queued_count: 0`——在谈一个它没有的队列
+        assert!(
+            source.rss_full_content.is_none(),
+            "{kind} 不是 RSS 全文来源，不该有这一块"
+        );
     }
     let rss = listed
         .iter()
         .find(|source| source.id == source_id)
         .ok_or_else(|| anyhow::anyhow!("RSS source is missing"))?;
-    assert_eq!(rss.rss_full_content_state.as_deref(), Some("pending"));
+    let block = rss.rss_full_content.as_ref().expect("RSS 全文来源有这一块");
+    assert_eq!(block.state, "pending");
     assert_eq!(
         (
-            rss.rss_full_content_pending_count,
-            rss.rss_full_content_queued_count,
-            rss.rss_full_content_retrying_count,
-            rss.rss_full_content_complete_count,
-            rss.rss_full_content_terminal_count
+            block.pending,
+            block.queued,
+            block.retrying,
+            block.complete,
+            block.terminal
         ),
         (0, 0, 0, 0, 0)
     );
@@ -474,16 +480,14 @@ async fn source_list_exposes_scoped_rss_summary() -> anyhow::Result<()> {
         .iter()
         .find(|source| source.id == source_id)
         .ok_or_else(|| anyhow::anyhow!("RSS source is missing after discovery"))?;
-    assert_eq!(rss.rss_full_content_state.as_deref(), Some("active"));
-    assert_eq!(rss.rss_full_content_pending_count, 1);
+    let block = rss.rss_full_content.as_ref().expect("RSS 全文来源有这一块");
+    assert_eq!(block.state, "active");
+    assert_eq!(block.pending, 1);
+    assert_eq!(block.queued, 2, "queued and hydrating share one bucket");
+    assert_eq!(block.retrying, 1);
+    assert_eq!(block.complete, 1);
     assert_eq!(
-        rss.rss_full_content_queued_count, 2,
-        "queued and hydrating share one bucket"
-    );
-    assert_eq!(rss.rss_full_content_retrying_count, 1);
-    assert_eq!(rss.rss_full_content_complete_count, 1);
-    assert_eq!(
-        rss.rss_full_content_terminal_count, 3,
+        block.terminal, 3,
         "terminal, deleted and superseded share one bucket"
     );
     assert_eq!(
@@ -503,12 +507,10 @@ async fn source_list_exposes_scoped_rss_summary() -> anyhow::Result<()> {
         .iter()
         .find(|source| source.id == source_id)
         .ok_or_else(|| anyhow::anyhow!("RSS source is missing after generation change"))?;
-    assert_eq!(rss.rss_full_content_state.as_deref(), Some("active"));
-    assert_eq!(
-        rss.rss_full_content_pending_count, 1,
-        "old-generation observations are excluded"
-    );
-    assert_eq!(rss.rss_full_content_terminal_count, 0);
+    let block = rss.rss_full_content.as_ref().expect("RSS 全文来源有这一块");
+    assert_eq!(block.state, "active");
+    assert_eq!(block.pending, 1, "old-generation observations are excluded");
+    assert_eq!(block.terminal, 0);
 
     sqlx::query(
         "UPDATE sources
@@ -523,11 +525,11 @@ async fn source_list_exposes_scoped_rss_summary() -> anyhow::Result<()> {
         .iter()
         .find(|source| source.id == source_id)
         .ok_or_else(|| anyhow::anyhow!("RSS source is missing after disabling"))?;
-    assert_eq!(rss.rss_full_content_state.as_deref(), Some("disabled"));
-    assert_eq!(
-        rss.rss_full_content_terminal_count, 1,
-        "disabled current rows are superseded"
-    );
+    // 关掉全文的 RSS 来源**这一块仍然在**：它还是 RSS，只是这一档关着，
+    // 而那些观察还在库里。不适用的是"根本不是 RSS"，不是"没开全文"
+    let block = rss.rss_full_content.as_ref().expect("还是 RSS，块还在");
+    assert_eq!(block.state, "disabled");
+    assert_eq!(block.terminal, 1, "disabled current rows are superseded");
 
     cleanup(&pool, org_id).await?;
     Ok(())
@@ -578,7 +580,7 @@ async fn source_list_counts_only_the_listed_source() -> anyhow::Result<()> {
         listed
             .iter()
             .find(|source| source.id == id)
-            .map(|source| source.rss_full_content_pending_count)
+            .map(|source| source.rss_full_content.as_ref().map_or(0, |b| b.pending))
             .ok_or_else(|| anyhow::anyhow!("source {id} is missing from its base's list"))
     }
 
@@ -595,8 +597,9 @@ async fn source_list_counts_only_the_listed_source() -> anyhow::Result<()> {
         "a second source in the same base does not inherit the first's rows"
     );
     for source in &listed {
-        assert_eq!(source.rss_full_content_complete_count, 0);
-        assert_eq!(source.rss_full_content_terminal_count, 0);
+        let counts = source.rss_full_content.as_ref();
+        assert_eq!(counts.map_or(0, |b| b.complete), 0);
+        assert_eq!(counts.map_or(0, |b| b.terminal), 0);
     }
 
     let listed = utopia_store::sources::list(&pool, other_kb_id).await?;

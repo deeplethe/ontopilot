@@ -55,13 +55,15 @@ https://github.com/user-attachments/assets/aa226443-75de-437e-bd80-88e592ed8457
 | **完整应用** | 系统控制台 · 图谱浏览器 · 在线本体工作台 · 开箱即用 |
 | **文档接入** | 支持多种文档（pdf、md、html、ppt、word、excel）· 网页、RSS、GitHub、Jira、Notion、WebDAV、S3 兼容存储定时同步 |
 | **混合检索** | Tantivy · pgvector 向量 · RRF 融合 · chunk 溯源 |
-| **双时态图谱** | 知识时态+溯源时态 · 支持任意时刻图谱 · 知识变更链 |
+| **双时态图谱** | 知识时态+溯源时态 · 支持任意时刻图谱 · 知识变更链 · 边节点化 |
 | **AgentHarness · AgenticRAG** | 应用本身具备 harness 能力，可通过对话调用系统完整功能 · 内置智能体包含多种工具，支持多轮工具调用与对话 |
+| **MCP 接入** | 提供 MCP server，允许 Claude Desktop、Cursor、Workbuddy 等 agent 框架接入，支持细粒度权限控制 |
 | **内置本体包** | 内置 schema.org · W3C Org · PROV-O · FOAF · IOF Core · 不断扩展中 · [我想申请对自己的行业进行额外支持](https://github.com/deeplethe/utopia/issues/new?labels=enhancement&title=Ontology%20pack%20request) |
 | **语义抽取** | 实体、关系与时间归一化 · 事实强制带证据引句 · 向量与本体召回加 LLM 裁决自动消歧，可追溯可撤销 · 随文本自动提出本体修订方案 |
 | **知识派生与推理** | 时态 Datalog · 前向链 · 本体公理编译 · 派生路径追溯 · 基于 Rust 自建轻量推理引擎 |
 | **冲突检测** | 时态冲突 · 自反、反对称、传递环、基数违规 · 本体自身缺陷 · 可撤事实、可改公理、可认可并存 |
 | **人工审核与审计台账** | 低置信抽取、待合并候选自动进入审核队列 · 记录每一次操作的用户、时间、变更快照，用于合规审计 |
+| **Agent 自动裁决** | Agent 基于常识和业务文档自动进行裁决，低置信裁决会进入人工审核队列，人的决策会被记录，用于调优 Agent，形成反馈进化 |
 | **智能映射与问数** | 选定数据库和知识库，智能体自动探索并建立映射关系 · 基于 Ontology2SQL 的问数 · [在 BIRD Mini-Dev 上取得 SOTA（最佳成绩）](https://github.com/bird-bench/bird-bench.github.io/pull/218) |
 | **模型接入** | 任何 OpenAI 兼容端点 · 支持本地部署模型 |
 | **多用户多知识库** | 以知识库为单位的角色与权限设计，支持系统管理员、用户，知识库管理、编辑、访问权限分级 |
