@@ -567,11 +567,13 @@ export function Library() {
               <>
               {/* 历史视图下过滤框只藏不撤（invisible 保留占位），标题行高度不塌、不抖 */}
               <div className={`relative ${showHistory ? "invisible" : ""}`}>
+                {/* 中号带放大镜，与图谱、本体、成员那几页的筛选条同一副身材。
+                    从前这里是小号，挨着看就比别处矮一档 */}
                 <Search
                   size={13}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
                 />
-                <Input size="sm" className="w-52 pl-8 pr-8"
+                <Input className="w-52 pl-[34px] pr-8"
                   placeholder={S.library.filterPlaceholder}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}

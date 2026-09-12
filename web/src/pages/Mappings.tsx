@@ -178,7 +178,6 @@ export function Mappings() {
               筛选同一副控件（Dropdown），计数跟在标签里 */}
           <div className="flex items-center gap-2 flex-wrap">
             <Dropdown
-              size="sm"
               className="w-40"
               value={status}
               onChange={(v) => {
@@ -191,7 +190,6 @@ export function Mappings() {
               }))}
             />
             <Input
-              size="sm"
               className="flex-1 min-w-40"
               placeholder={S.mapping.searchPlaceholder}
               value={q}
