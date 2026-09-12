@@ -292,6 +292,10 @@ pub async fn resolve_mention(
         });
     };
 
+    // 这一轮**看过**的同名候选。下面无论走哪条分支决定新建，都要把它们递给
+    // `create_entity`：它们是已经被判过「不是同一个」的，锁不该再把它们捞回来
+    let weighed: Vec<Uuid> = candidates.iter().map(|c| c.id).collect();
+
     // 有画像的候选算相似度；无画像（历史数据/无 embedding 期创建）单独归类
     let mut scored: Vec<(&Candidate, f32)> = Vec::new();
     let mut unprofiled: Option<&Candidate> = None;
@@ -347,7 +351,8 @@ pub async fn resolve_mention(
                         });
                     }
                 }
-                let (id, created) = create_entity(pool, kb_id, type_id, &name, context).await?;
+                let (id, created) =
+                    create_entity(pool, kb_id, type_id, &name, context, &weighed).await?;
                 if !created {
                     // 并行的另一份文档刚建好它：用它的，审核对也是它排的
                     return Ok(Resolution {
@@ -411,7 +416,7 @@ pub async fn resolve_mention(
             });
         }
     }
-    let (id, created) = create_entity(pool, kb_id, type_id, &name, context).await?;
+    let (id, created) = create_entity(pool, kb_id, type_id, &name, context, &weighed).await?;
     if !created {
         // 并行的另一份文档刚建好它：用它的，审核对也是它排的
         return Ok(Resolution {
@@ -893,7 +898,9 @@ async fn resolve_type_drift(
         }
     }
 
-    let (id, created) = create_entity(pool, kb_id, type_id, name, context).await?;
+    // 跨类型同名的候选也都掂量过了（见 resolve_type_drift 上面那一段）
+    let weighed: Vec<Uuid> = cross.iter().map(|c| c.id).collect();
+    let (id, created) = create_entity(pool, kb_id, type_id, name, context, &weighed).await?;
     if !created {
         // 并行的另一份文档刚建好它：用它的，审核对也是它排的
         return Ok(Resolution {
@@ -949,6 +956,14 @@ async fn create_entity(
     type_id: Option<Uuid>,
     name: &str,
     context: Option<&[f32]>,
+    // 调用方**刚刚掂量过、并且决定不并**的那些同名实体。
+    //
+    // 锁里那条回捞不加这个就分不清两件事：一件是「并行的另一份文档一毫秒前
+    // 建好了同名的它」——该用它的；另一件是「这个名字本来就有人，而调用方看过
+    // 之后决定另建一个」——这时回捞只会捞回它刚拒绝的那个候选，等于让一把锁
+    // 替人把 mention 归到其中一个身上。同名并列那条路上这正是 #270 禁的事：
+    // 分不开就别硬分，谁也不归，两个都送审。
+    weighed: &[Uuid],
 ) -> AppResult<(Uuid, bool)> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))")
@@ -959,12 +974,13 @@ async fn create_entity(
     let existing: Option<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM entities
          WHERE kb_id = $1 AND canonical_name = $2 AND type_id IS NOT DISTINCT FROM $3
-           AND merged_into IS NULL
+           AND merged_into IS NULL AND id <> ALL($4)
          ORDER BY id LIMIT 1",
     )
     .bind(kb_id)
     .bind(name)
     .bind(type_id)
+    .bind(weighed)
     .fetch_optional(&mut *tx)
     .await?;
     if let Some((id,)) = existing {
