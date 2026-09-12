@@ -93,10 +93,21 @@ struct Resolved {
     note: Option<String>,
 }
 
-async fn resolve(ctx: &ToolCtx<'_>, sink: &mut ToolSink, raw: &str) -> Result<Resolved, String> {
+enum ResolveError {
+    Unresolved(String),
+    ReadFailed,
+}
+
+async fn resolve(
+    ctx: &ToolCtx<'_>,
+    sink: &mut ToolSink,
+    raw: &str,
+) -> Result<Resolved, ResolveError> {
     let raw = raw.trim();
     if raw.is_empty() {
-        return Err("an entity name or id is required".to_string());
+        return Err(ResolveError::Unresolved(
+            "an entity name or id is required".to_string(),
+        ));
     }
     if let Ok(id) = raw.parse::<Uuid>() {
         return Ok(Resolved {
@@ -107,11 +118,13 @@ async fn resolve(ctx: &ToolCtx<'_>, sink: &mut ToolSink, raw: &str) -> Result<Re
     }
     let hits = lookup(ctx, raw).await.map_err(|e| {
         tracing::warn!(error = %e, "Entity lookup failed");
-        "could not look up entities".to_string()
+        ResolveError::ReadFailed
     })?;
     let (ranked, by_question) = rank_by_question(ctx, rank(hits, raw), raw).await;
     let Some(first) = ranked.first() else {
-        return Err(format!("no entity named \"{raw}\" in this base"));
+        return Err(ResolveError::Unresolved(format!(
+            "no entity named \"{raw}\" in this base"
+        )));
     };
     remember(sink, first);
     let others: Vec<String> = ranked
@@ -546,7 +559,14 @@ pub async fn entity_facts(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) 
         .unwrap_or("");
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
-        Err(e) => {
+        Err(ResolveError::ReadFailed) => {
+            return ToolResult::new(
+                "Could not look up entities.".into(),
+                json!({ "kind": "facts", "label": "?", "detail": "failed" }),
+            )
+            .error();
+        }
+        Err(ResolveError::Unresolved(e)) => {
             return ToolResult::new(
                 format!(
                     "Invalid entity: {e} (expected a name, or the uuid returned by find_entities)."
@@ -716,7 +736,14 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
         .unwrap_or("");
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
-        Err(e) => {
+        Err(ResolveError::ReadFailed) => {
+            return ToolResult::new(
+                "Could not look up entities.".into(),
+                json!({ "kind": "neighbors", "label": "?", "detail": "failed" }),
+            )
+            .error();
+        }
+        Err(ResolveError::Unresolved(e)) => {
             return ToolResult::new(
                 format!("Unknown entity: {e}."),
                 json!({ "kind": "neighbors", "label": "?", "detail": "unknown entity" }),
@@ -726,14 +753,26 @@ pub async fn neighbors(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> 
     let m = moments(args);
     let filter = FactFilter::from_args(args);
     let limit = limit_of(args, NEIGHBORS_DEFAULT);
-    let Ok((node, facts)) =
-        utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, m.at, m.as_of).await
-    else {
-        return ToolResult::new(
-            "Entity not found.".to_string(),
-            json!({ "kind": "neighbors", "label": "?", "detail": "not found" }),
-        );
-    };
+    let (node, facts) =
+        match utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, m.at, m.as_of)
+            .await
+        {
+            Ok(detail) => detail,
+            Err(utopia_core::AppError::NotFound) => {
+                return ToolResult::new(
+                    "Entity not found.".to_string(),
+                    json!({ "kind": "neighbors", "label": "?", "detail": "not found" }),
+                );
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Entity neighbors lookup failed");
+                return ToolResult::new(
+                    "Could not read the entity facts.".into(),
+                    json!({ "kind": "neighbors", "label": "?", "detail": "failed" }),
+                )
+                .error();
+            }
+        };
     // 邻居是对端**实体**；属性值不算邻居，entity_facts 里有
     let (matched, aligned) = filtered(ctx, &facts, &filter).await;
     let linked: Vec<&EntityFact> = matched
@@ -823,7 +862,14 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
         .unwrap_or("");
     let who = match resolve(ctx, sink, raw).await {
         Ok(r) => r,
-        Err(e) => {
+        Err(ResolveError::ReadFailed) => {
+            return ToolResult::new(
+                "Could not look up entities.".into(),
+                json!({ "kind": "timeline", "label": "?", "detail": "failed" }),
+            )
+            .error();
+        }
+        Err(ResolveError::Unresolved(e)) => {
             return ToolResult::new(
                 format!("Unknown entity: {e}."),
                 json!({ "kind": "timeline", "label": "?", "detail": "unknown entity" }),
@@ -833,14 +879,26 @@ pub async fn timeline(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value) -> T
     let m = moments(args);
     let filter = FactFilter::from_args(args);
     let limit = limit_of(args, TIMELINE_DEFAULT);
-    let Ok((node, facts)) =
-        utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, None, m.as_of).await
-    else {
-        return ToolResult::new(
-            "Entity not found.".to_string(),
-            json!({ "kind": "timeline", "label": "?", "detail": "not found" }),
-        );
-    };
+    let (node, facts) =
+        match utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, who.id, None, m.as_of)
+            .await
+        {
+            Ok(detail) => detail,
+            Err(utopia_core::AppError::NotFound) => {
+                return ToolResult::new(
+                    "Entity not found.".to_string(),
+                    json!({ "kind": "timeline", "label": "?", "detail": "not found" }),
+                );
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Entity timeline lookup failed");
+                return ToolResult::new(
+                    "Could not read the entity facts.".into(),
+                    json!({ "kind": "timeline", "label": "?", "detail": "failed" }),
+                )
+                .error();
+            }
+        };
     // 只要**说出了世界时间**的事实。没日期的那些起点是摄取时刻，排进时间线只会
     // 把一篇文章的日期当成事件的日期
     let (matched, aligned) = filtered(ctx, &facts, &filter).await;
@@ -952,7 +1010,14 @@ pub async fn paths_between(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
                 }
                 ends.push(r);
             }
-            Err(e) => {
+            Err(ResolveError::ReadFailed) => {
+                return ToolResult::new(
+                    "Could not look up entities.".into(),
+                    json!({ "kind": "path", "label": "?", "detail": "failed" }),
+                )
+                .error();
+            }
+            Err(ResolveError::Unresolved(e)) => {
                 return ToolResult::new(
                     format!("Unknown `{key}`: {e}."),
                     json!({ "kind": "path", "label": "?", "detail": "unknown entity" }),
@@ -984,10 +1049,12 @@ pub async fn paths_between(ctx: &ToolCtx<'_>, sink: &mut ToolSink, args: &Value)
     {
         Ok(p) => p,
         Err(e) => {
+            tracing::warn!(error = %e, "Path search failed");
             return ToolResult::new(
-                format!("Path search failed: {e}"),
+                "Could not search paths.".into(),
                 json!({ "kind": "path", "label": "?", "detail": "failed" }),
             )
+            .error();
         }
     };
     let label = format!("{} ↔ {}", from.name, to.name);
