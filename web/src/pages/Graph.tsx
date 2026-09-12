@@ -2694,9 +2694,10 @@ function EntityPanel({
         <div>
           {e && (
             <>
-              <div className="flex items-center gap-2">
+              {/* 色点挂在左槽里，名字回到内容列——与本体页那块面板同一副头 */}
+              <div className="-ml-3 flex items-center gap-1">
                 <span
-                  className="h-2.5 w-2.5 rounded-full shrink-0"
+                  className="h-2 w-2 rounded-full shrink-0"
                   style={{
                     background: e.color,
                     boxShadow: `0 0 8px ${e.color}55`,
@@ -2744,14 +2745,13 @@ function EntityPanel({
 
 
       {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}
-      {/* **左边比头部多一档**（24 而不是 16）。两个盒子本来都从 px-4 起，可
-          分段控件自己还有一圈内距（p-1 加按钮的 px-2），于是「Relations」四个字
-          落在 29，而标题「OpenAI」落在 35——标题前面是色点加 gap，正好差 6px，
-          看着就是这一排比标题往左漏出去一截。加一档之后字落在 37，压回标题上。
-          这一条只给这里：本体页那条是 `fill` 的整条，与下面正文同宽，
-          它的左缘该跟正文对齐，不跟标题对齐 */}
-      <div className="pl-6 pr-4 pt-3">
+      {/* **标签的字落在内容列上。**分段控件自己带一圈内距（托盘 p-1 加药丸
+          px-2 = 12），所以托盘整条挂进左槽，字才压回副标题、正文那条线。
+          从前这里是反过来的：把整排往右推一档去够标题——而标题当时被色点
+          顶着右缩。现在色点挂出去了，一块面板只剩一条左边线。 */}
+      <div className="px-4 pt-3">
         <Segmented
+          className="-ml-3"
           size="sm"
           value={view}
           onChange={setView}
