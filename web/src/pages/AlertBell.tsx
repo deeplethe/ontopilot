@@ -48,12 +48,6 @@ const SEVERITY_TONE: Record<string, ChipTone> = {
   warning: "warn",
   info: "info",
 };
-/** 未读的那个点：**有没有点说的是读没读过，什么颜色说的是多重** */
-const SEVERITY_DOT: Record<string, string> = {
-  error: "bg-danger",
-  warning: "bg-warn",
-  info: "bg-accent",
-};
 
 function AlertRow({
   g,
@@ -90,24 +84,25 @@ function AlertRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" && g.unread > 0) onRead(g);
       }}
-      className="u-row-shell relative w-full cursor-pointer border-b border-line px-4 py-3 text-left last:border-b-0"
+      className={cn(
+        "u-row-shell relative w-full cursor-pointer border-b border-line px-4 py-3 text-left last:border-b-0",
+        // 读过的整条退一档：标题、库名、时间、明细一起暗下去，扫一眼就知道
+        // 哪几条还没看。悬停照常
+        g.unread === 0 && "opacity-65",
+      )}
     >
-      {/* 未读就是一个红点。整行描边或底色会让面板在告警多时变成一片红，
-          而红点只占它该占的那一点地方，读过就没了。
-          **点在内距里，不占文字那一列**：排在文字左边的话，每条告警的正文
-          就比面板标题和上面那道查找往右缩 18px，一张面板里三种左缘 */}
-      <span
-        className={cn(
-          "absolute left-1.5 top-5 h-1.5 w-1.5 rounded-full",
-          g.unread > 0 ? (SEVERITY_DOT[g.severity] ?? "bg-danger") : "bg-transparent",
-        )}
-      />
+      {/* **读没读过靠整条的明暗，不靠一个点。**从前未读是左边一颗色点，它只能
+          塞进内距里（排进文字那一列的话，正文会比面板标题和查找框往右缩 18px，
+          一张面板三种左缘），结果是紧贴着左边框，看着像掉在外面。
+          现在未读的标题是正文色加中等字重，读过的整条退到次级色——一眼扫下去，
+          亮的是还没看的。严重程度由右边那个计数 chip 的颜色说，不必再来一个点。 */}
       <div className="min-w-0">
-        {/* 标题行只放标题和次数。标题一直是正文色：读过只是不再加粗——
-            淡下去那一档现在与提示、明细同色，一条读过的告警整条糊成一片 */}
         <div className="flex items-center gap-2">
           <span
-            className={cn("min-w-0 flex-1 text-body text-ink", g.unread > 0 && "font-medium")}
+            className={cn(
+              "min-w-0 flex-1 text-body",
+              g.unread > 0 ? "font-medium text-ink" : "text-ink-2",
+            )}
           >
             {worded?.title ?? S.alerts.unknownKind(g.kind)}
           </span>
