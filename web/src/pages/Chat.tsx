@@ -401,12 +401,15 @@ export function Chat() {
         <div className="flex items-center gap-3 min-w-0">
           {/* 作用域 chip：提问点位可见"在问哪个库"，切库沿用现有语义（开新会话） */}
           <div ref={scopeRef} className="relative shrink-0">
-            {/* 左内距去掉：图标的左缘落在上面占位符的起点上，与顶栏切换器同一个
-                图标——两处都是「在哪个库」 */}
+            {/* 图标的左缘要落在上面占位符的起点上（与顶栏切换器同一个图标——
+                两处都是「在哪个库」）。**做法是整颗按钮左挂一档，不是把内距抹掉**：
+                抹掉内距，图标就贴死在按钮的边上，指针一停，底色紧紧箍着图标，
+                左边没有一点余地。挂出去则内距照留——图标落在同一个位置，
+                而那块底色在它四周是匀的。挂多少就给多少内距（都是 8）。 */}
             <Button
               variant="ghost"
               size="sm"
-              className="max-w-52 border-0 pl-0"
+              className="max-w-52 border-0 px-2 -ml-2"
               title={S.ask.scopeLabel}
               onClick={() => setScopeOpen((v) => !v)}
             >
