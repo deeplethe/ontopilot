@@ -502,6 +502,11 @@ pub struct RelationTypeView {
     /// 可以当宾语的类。**只对 relation 有意义**——attribute 的值域是字面量类型，
     /// 落在 datatype 上
     pub ranges: Vec<Uuid>,
+    /// 这条关系的边能带哪些属性（0037）：属性定义的 id。
+    /// **本体接口一直没给这一格**——0037 第一刀把它加进了 `graph::relation_types`
+    /// 与前端类型，却漏了这个视图，于是本体页点开一条关系时前端读到 undefined
+    /// 直接抛（`rel.qualifiers.length`）。
+    pub qualifiers: Vec<Uuid>,
     /// attribute 专用：text | number | date | bool
     pub datatype: Option<String>,
     pub unit: Option<String>,
