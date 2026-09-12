@@ -8,7 +8,7 @@
 // 搬的是界面不是逻辑：判断一条口径对不对要看得见表结构，而那在这一页。
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Plug, Plus } from "lucide-react";
+import { Database, Plug, Plus, Search } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { api, type ConceptMapping } from "../api";
 import { S } from "../i18n";
@@ -177,6 +177,19 @@ export function Mappings() {
           {/* 筛选是下拉，不是一排按钮：四档状态是"挑一个看"，与全站其它页面的
               筛选同一副控件（Dropdown），计数跟在标签里 */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* 筛选条与 Members、文库、图谱同一副身材：**带放大镜的 w-64 输入框在前**，
+                下拉跟在后面。这里从前是下拉在前、输入框 flex-1——一个人从一页走到
+                另一页，同样的一条工具行，控件换了顺序、搜索框还横跨整屏。 */}
+            <Input
+              icon={<Search size={13} />}
+              className="w-64"
+              placeholder={S.mapping.searchPlaceholder}
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(0);
+              }}
+            />
             <Dropdown
               className="w-40"
               value={status}
@@ -188,15 +201,6 @@ export function Mappings() {
                 value: f.key,
                 label: f.n != null ? `${f.label} · ${f.n}` : f.label,
               }))}
-            />
-            <Input
-              className="flex-1 min-w-40"
-              placeholder={S.mapping.searchPlaceholder}
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setPage(0);
-              }}
             />
             {/* **一条工具行**：筛选、搜索、全选、批量动作排在一起。
                 从前它们各占一行，三行控件压在内容上面，读到列表要先翻过一块 */}

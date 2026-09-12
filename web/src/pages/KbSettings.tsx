@@ -553,14 +553,16 @@ function KbActivity({ kbId }: { kbId: string }) {
             ...actions.map((a) => ({ value: a, label: a })),
           ]}
         />
-        <Input size="sm" className="u-num"
+        {/* 日期框**要自己说宽度**：`Input` 不给宽度时是 w-full，一行里放两个，
+            每个都占满，于是各自换行——同一行的下拉给了 w-48 才没事。 */}
+        <Input size="sm" className="u-num w-36"
           type="date"
           value={since}
           title={S.kbset.auditSince}
           onChange={(e) => reset(() => setSince(e.target.value))}
         />
         <span className="text-small text-ink-2">→</span>
-        <Input size="sm" className="u-num"
+        <Input size="sm" className="u-num w-36"
           type="date"
           value={until}
           title={S.kbset.auditUntil}
