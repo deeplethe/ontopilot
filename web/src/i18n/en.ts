@@ -1927,7 +1927,9 @@ export const en = {
       "just wait for you to approve them.",
     materialize: "Materialize inferences",
     materializeNote:
-      "Write facts the ontology entails into the ledger — transitive chains and symmetric pairs. Off by default: a declaration can be wrong, and this one changes the graph. Derived facts are marked and can be taken back.",
+      "Write facts the ontology entails into the ledger — transitive chains and symmetric pairs. " +
+      "They are marked as derived and kept in their own section, so if the declaration behind " +
+      "them turns out to be wrong, taking them back takes one click.",
     autoResolveTypes: "Resolve entity types after extraction",
     autoResolveTypesNote:
       "After each document is extracted, run a round of type resolution on entities the engine has not looked at yet. Only refinements within the current class are applied on their own — a re-classification across the tree still waits for you on the Ontology page. Every batch is listed there and can be undone.",
