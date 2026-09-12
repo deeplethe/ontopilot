@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search } from "lucide-react";
+import { MoreHorizontal, Plus, Search, UserRound } from "lucide-react";
 import { api } from "../api";
 import { S } from "../i18n";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Button,
   Chip,
@@ -10,17 +16,20 @@ import {
   Dialog,
   Dropdown,
   Field,
+  IconButton,
   Input,
-  LinkButton,
+  MenuSelect,
   Pager,
-  pageSlice,
+  REVEAL,
   SearchSelect,
-  Table,
   TBody,
+  THead,
+  Table,
   Td,
   Th,
-  THead,
   Tr,
+  cn,
+  pageSlice,
 } from "../ui";
 
 const ROLES = ["owner", "admin", "editor", "viewer"] as const;
@@ -48,7 +57,6 @@ export function Members({ workspaceId }: { workspaceId: string }) {
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
   // 角色平时是一行字，点了才变成下拉——同时只有一行在编辑
-  const [editingRole, setEditingRole] = useState<string | null>(null);
   // 按角色筛
   const [role, setRole] = useState("all");
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
@@ -204,7 +212,11 @@ export function Members({ workspaceId }: { workspaceId: string }) {
           </THead>
           <TBody>
             {pagedMembers.map((m) => (
-              <Tr key={m.user_id} className={m.deactivated ? "opacity-55" : undefined}>
+              <Tr
+                key={m.user_id}
+                // group：行尾那个 ⋯ 靠它认出「指针停在这一行」（见 REVEAL）
+                className={cn("group", m.deactivated && "opacity-55")}
+              >
                 <Td>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-body text-ink">{m.display_name}</span>
@@ -212,27 +224,13 @@ export function Members({ workspaceId }: { workspaceId: string }) {
                   </div>
                   <div className="truncate text-small text-ink-2">{m.email}</div>
                 </Td>
-                <Td>
-                  {/* 静态文字，点一下才变成下拉：一列下拉框会把一张只读的名单
-                      看成一张待填的表，而改角色是偶尔为之 */}
-                  {m.deactivated ? (
-                    <span className="text-small text-ink-2">—</span>
-                  ) : editingRole === m.user_id ? (
-                    <Dropdown
-                      size="sm"
-                      className="w-24"
-                      value={m.role}
-                      onChange={(r) => {
-                        setEditingRole(null);
-                        if (r !== m.role) setRole_.mutate({ userId: m.user_id, role: r });
-                      }}
-                      options={ROLE_OPTIONS}
-                    />
-                  ) : (
-                    <LinkButton onClick={() => setEditingRole(m.user_id)}>
-                      {S.members.roles[m.role as keyof typeof S.members.roles] ?? m.role}
-                    </LinkButton>
-                  )}
+                <Td className="text-ink-2">
+                  {/* **就是一个词。**改角色搬进行尾那个菜单了——这一列是名单在
+                      陈述事实，不是一排等着填的控件 */}
+                  {m.deactivated
+                    ? "—"
+                    : (S.members.roles[m.role as keyof typeof S.members.roles] ??
+                      m.role)}
                 </Td>
                 <Td>
                   {m.deactivated ? (
@@ -241,35 +239,66 @@ export function Members({ workspaceId }: { workspaceId: string }) {
                     <span className="text-small text-ink-2">{S.members.filterActive}</span>
                   )}
                 </Td>
-                <Td className="text-right whitespace-nowrap">
-                  {m.deactivated ? (
-                    <Button variant="secondary" size="sm"
-                      disabled={revive.isPending}
-                      onClick={() => revive.mutate(m.user_id)}
-                    >
-                      {S.members.reactivate}
-                    </Button>
-                  ) : (
-                    <span className="flex items-center justify-end gap-3">
-                      <LinkButton tone="danger" onClick={() => remove.mutate(m.user_id)}>
-                        {S.members.remove}
-                      </LinkButton>
-                      {/* 停用账号跟「移出工作区」是两件事：前者断掉整个系统的访问，
-                          后者只是这个工作区不再有他。所以分开两个按钮，而且停用
-                          只给管理员看——它的影响面大得多 */}
-                      {me.data?.is_admin && me.data.id !== m.user_id && (
-                        <LinkButton
-                          tone="danger"
-                          onClick={() =>
-                            setDeactivating({ id: m.user_id, name: m.display_name })
-                          }
-                          title={S.members.deactivateHint}
+                {/* **一行的动作收进行尾那个 `⋯`**，与会话列表同一副（Chat.tsx）：
+                    指针停在这一行才现身（`REVEAL`），菜单开着时不隐身。
+                    从前是两三个常驻的文字按钮摊在行尾，十行就是二十个红字，
+                    一屏最扎眼的东西成了「移出」和「停用」——而人来这一页
+                    十次有九次只是看看谁在里面。 */}
+                <Td className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <IconButton size="sm" label={S.members.rowActions} className={REVEAL}>
+                        <MoreHorizontal size={14} />
+                      </IconButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      {m.deactivated ? (
+                        <DropdownMenuItem
+                          disabled={revive.isPending}
+                          onSelect={() => revive.mutate(m.user_id)}
                         >
-                          {S.members.deactivate}
-                        </LinkButton>
+                          {S.members.reactivate}
+                        </DropdownMenuItem>
+                      ) : (
+                        <>
+                          {/* 改角色：与用户菜单里的语言/主题同一副——一行「标签：值」，
+                              弹层落在值那一头 */}
+                          <MenuSelect
+                            icon={<UserRound size={13} />}
+                            label={S.members.roleLabel}
+                            value={m.role}
+                            onChange={(r) => {
+                              if (r !== m.role)
+                                setRole_.mutate({ userId: m.user_id, role: r });
+                            }}
+                            options={ROLE_OPTIONS}
+                          />
+                          {/* 停用账号跟「移出工作区」是两件事：前者断掉整个系统的
+                              访问，后者只是这个工作区不再有他。所以是两项，而且
+                              停用只给管理员看——它的影响面大得多 */}
+                          {me.data?.is_admin && me.data.id !== m.user_id && (
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() =>
+                                setDeactivating({
+                                  id: m.user_id,
+                                  name: m.display_name,
+                                })
+                              }
+                            >
+                              {S.members.deactivate}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => remove.mutate(m.user_id)}
+                          >
+                            {S.members.remove}
+                          </DropdownMenuItem>
+                        </>
                       )}
-                    </span>
-                  )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </Td>
               </Tr>
             ))}

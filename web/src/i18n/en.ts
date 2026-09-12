@@ -2052,6 +2052,7 @@ export const en = {
     deactivatedHint:
       "They cannot sign in and do not appear in any member list. What they did is still attributed to them — that is why the account is kept rather than deleted.",
     reactivate: "Restore",
+    rowActions: "More actions",
     roleLabel: "Role",
     filterAll: "All users",
     filterAllRoles: "All roles",
