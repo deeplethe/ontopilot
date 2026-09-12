@@ -14,15 +14,12 @@ import type Sigma from "sigma";
 export let NODE_SHELL_BASE = "#121212"; // 节点外壳深底（原 #0B1320 的中性化）
 export let NODE_CORE_BASE = "#767676"; // 节点核心灰（原 #5A7A9E 的中性化）
 export let NODE_BORDER_BASE = "#909090"; // 节点描边（原 #7A92AE 的中性化）
-/* 配方的**比例也随主题变**，不只是那三个底色。
-   深色下节点是「深壳里嵌一颗亮核」：壳只收 14% 类型色（一大片深底上颜色多了就吵），
-   核心收 50%，于是在黑底上读出来是一个发着色光的点。
-   浅色下这套翻过来读就不对了——纸底上"一颗深核"是一块脏斑。浅色走的是
-   **白心 + 彩圈**：核心几乎不收类型色（填充就是白），颜色全部让给外面那圈壳，
-   描边收得更满，把白心圈出来。同一套四层结构，两种读法。 */
-export let NODE_TINT_MIX = 0.14; // 类型色混入外壳的比例
-export let NODE_CORE_MIX = 0.5; // 类型色混入核心（填充）的比例
-export let NODE_BORDER_MIX = 0.3; // 类型色混入描边的比例
+/* 配方的**比例两个主题共用**，随主题变的只有上面那三个底色。节点永远是
+   「壳 + 彩心」：壳跟着纸走（深色 #121212，浅色 #ffffff），类型色只按 14%
+   渗进壳里，核心收 50% ——于是两个主题里中间那一点都是这个类自己的颜色，
+   变的只是它坐在黑底上还是白底上。 */
+export const NODE_TINT_MIX = 0.14; // 类型色混入外壳的比例
+export const NODE_CORE_MIX = 0.5; // 类型色混入核心的比例
 /* 状态环取**节点自己的类型色**，不是写死的色相。往白里混而不是直接用原色：
    环画在节点自己身上，同色同亮度就看不出是个环。**悬停混得更白、选中混得
    更少**——悬停时全图不压暗，环要在一片乱线里立刻跳出来；选中时其余都
@@ -319,11 +316,6 @@ function token(name: string, fallback: string): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
 }
-/** 读一个数值令牌（配方里的混色比例）。读不出或不是数就用原值 */
-function num(name: string, fallback: number): number {
-  const v = Number(token(name, ""));
-  return Number.isFinite(v) ? v : fallback;
-}
 function rgbOf(triplet: string, alpha: number): string {
   return `rgba(${triplet.replace(/\s+/g, "")},${alpha})`;
 }
@@ -357,9 +349,6 @@ export function refreshPalette() {
   NODE_SHELL_BASE = token("--u-node-shell", NODE_SHELL_BASE);
   NODE_CORE_BASE = token("--u-node-core", NODE_CORE_BASE);
   NODE_BORDER_BASE = token("--u-node-border", NODE_BORDER_BASE);
-  NODE_TINT_MIX = num("--u-node-tint-mix", NODE_TINT_MIX);
-  NODE_CORE_MIX = num("--u-node-core-mix", NODE_CORE_MIX);
-  NODE_BORDER_MIX = num("--u-node-border-mix", NODE_BORDER_MIX);
   MUTED_SHELL = token("--u-node-muted", MUTED_SHELL);
   PILL_BG = token("--u-pill-bg", PILL_BG);
   PILL_BG_HOVER = token("--u-pill-bg-hover", PILL_BG_HOVER);

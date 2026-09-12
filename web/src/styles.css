@@ -184,10 +184,6 @@
   --u-node-shell: #121212;
   --u-node-core: #767676;
   --u-node-border: #909090;
-  /* 深色：深壳里嵌一颗亮核（见 graphVisuals 的配方注释） */
-  --u-node-tint-mix: 0.14;
-  --u-node-core-mix: 0.5;
-  --u-node-border-mix: 0.3;
   --u-node-muted: #151515;
   --u-edge: rgba(163, 163, 163, 0.2);
   --u-edge-inferred: rgba(163, 163, 163, 0.1);
@@ -339,16 +335,9 @@
   --u-danger-rgb: 192, 40, 79;
   --u-violet-rgb: 109, 79, 214;
   --u-derived-rgb: 176, 120, 20;
-  /* 浅色：**白心 + 彩圈**。核心基色是白且几乎不收类型色，节点中间就是一块白；
-     颜色全走外面那圈壳（0.55），描边收到 0.75 把白心圈出来。
-     从前这里 core 是 #8a8a8a、按 0.5 收类型色，于是纸底上每个节点都是一块
-     中灰偏色的实心斑——深色那套配方直接搬过来的结果。 */
   --u-node-shell: #ffffff;
-  --u-node-core: #ffffff;
-  --u-node-border: #5f5f5f;
-  --u-node-tint-mix: 0.55;
-  --u-node-core-mix: 0.06;
-  --u-node-border-mix: 0.75;
+  --u-node-core: #8a8a8a;
+  --u-node-border: #6f6f6f;
   --u-node-muted: #ececec;
   /* 画布上的边在浅色下会被 graphVisuals 按底色摊平成不透明色（WebGL 那边透明度
      压不暗线，只会加亮）；这里的 α 因此是「摊平后多深」，不是屏幕上的透明度 */
