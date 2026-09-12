@@ -1,14 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal, Plus, Search, UserRound } from "lucide-react";
+import { Pencil, Plus, Search } from "lucide-react";
 import { api } from "../api";
 import { S } from "../i18n";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Button,
   Chip,
@@ -16,9 +10,9 @@ import {
   Dialog,
   Dropdown,
   Field,
+  FormDialog,
   IconButton,
   Input,
-  MenuSelect,
   Pager,
   REVEAL,
   SearchSelect,
@@ -45,6 +39,66 @@ type Person = {
   is_admin: boolean;
   deactivated: boolean;
 };
+
+/** 一个成员的弹窗：改身份在正文，停用与移出在左下角。
+ *
+ *  **停用和移出是两件事**，所以是两个按钮而不是一个：前者断掉这个人在整个
+ *  部署里的访问（只有管理员做得了，影响面大得多，还要再过一道确认），
+ *  后者只是这个工作区不再有他。挤成一个按钮就得让人自己猜点下去会发生什么。 */
+function MemberDialog({
+  member,
+  canDeactivate,
+  busy,
+  onSaveRole,
+  onDeactivate,
+  onRemove,
+  onClose,
+}: {
+  member: Person;
+  canDeactivate: boolean;
+  busy: boolean;
+  onSaveRole: (role: string) => void;
+  onDeactivate: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const [role, setRole] = useState(member.role);
+  return (
+    <FormDialog
+      title={member.display_name}
+      description={member.email}
+      width="sm"
+      closeLabel={S.members.close}
+      saveLabel={S.members.save}
+      cancelLabel={S.members.cancel}
+      canSave={role !== member.role}
+      busy={busy}
+      onSave={() => onSaveRole(role)}
+      onCancel={onClose}
+      danger={[
+        ...(canDeactivate
+          ? [
+              {
+                label: S.members.deactivate,
+                title: S.members.deactivateHint,
+                onClick: onDeactivate,
+              },
+            ]
+          : []),
+        { label: S.members.remove, onClick: onRemove },
+      ]}
+    >
+      <Field label={S.members.roleLabel}>
+        <Dropdown
+          className="w-full"
+          value={role}
+          onChange={setRole}
+          options={ROLE_OPTIONS}
+        />
+      </Field>
+    </FormDialog>
+  );
+}
 
 export function Members({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
@@ -94,6 +148,8 @@ export function Members({ workspaceId }: { workspaceId: string }) {
     onError,
   });
   // 停用先问一句——用全站的对话框而不是浏览器原生 confirm()
+  // 正在编辑的那个成员（行尾的铅笔打开它）
+  const [editing, setEditing] = useState<Person | null>(null);
   const [deactivating, setDeactivating] = useState<{ id: string; name: string } | null>(
     null,
   );
@@ -239,66 +295,31 @@ export function Members({ workspaceId }: { workspaceId: string }) {
                     <span className="text-small text-ink-2">{S.members.filterActive}</span>
                   )}
                 </Td>
-                {/* **一行的动作收进行尾那个 `⋯`**，与会话列表同一副（Chat.tsx）：
-                    指针停在这一行才现身（`REVEAL`），菜单开着时不隐身。
-                    从前是两三个常驻的文字按钮摊在行尾，十行就是二十个红字，
-                    一屏最扎眼的东西成了「移出」和「停用」——而人来这一页
-                    十次有九次只是看看谁在里面。 */}
+                {/* **一行的动作收进行尾那支铅笔**：指针停在这一行才现身
+                    （`REVEAL`），点开是一张居中的弹窗，改角色、停用、移出都在
+                    那里面。从前是两三个常驻的红字摊在行尾，十行就是二十个，
+                    一屏最扎眼的成了「移出」和「停用」——而人来这一页十次有九次
+                    只是看看谁在里面。 */}
                 <Td className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <IconButton size="sm" label={S.members.rowActions} className={REVEAL}>
-                        <MoreHorizontal size={14} />
-                      </IconButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      {m.deactivated ? (
-                        <DropdownMenuItem
-                          disabled={revive.isPending}
-                          onSelect={() => revive.mutate(m.user_id)}
-                        >
-                          {S.members.reactivate}
-                        </DropdownMenuItem>
-                      ) : (
-                        <>
-                          {/* 改角色：与用户菜单里的语言/主题同一副——一行「标签：值」，
-                              弹层落在值那一头 */}
-                          <MenuSelect
-                            icon={<UserRound size={13} />}
-                            label={S.members.roleLabel}
-                            value={m.role}
-                            onChange={(r) => {
-                              if (r !== m.role)
-                                setRole_.mutate({ userId: m.user_id, role: r });
-                            }}
-                            options={ROLE_OPTIONS}
-                          />
-                          {/* 停用账号跟「移出工作区」是两件事：前者断掉整个系统的
-                              访问，后者只是这个工作区不再有他。所以是两项，而且
-                              停用只给管理员看——它的影响面大得多 */}
-                          {me.data?.is_admin && me.data.id !== m.user_id && (
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onSelect={() =>
-                                setDeactivating({
-                                  id: m.user_id,
-                                  name: m.display_name,
-                                })
-                              }
-                            >
-                              {S.members.deactivate}
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onSelect={() => remove.mutate(m.user_id)}
-                          >
-                            {S.members.remove}
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* 停用的账号没有工作区角色，也就没什么可编辑的：它这一行
+                      只有一件事可做，那就直接摆出来，不必藏进弹窗 */}
+                  {m.deactivated ? (
+                    <Button variant="secondary" size="sm"
+                      disabled={revive.isPending}
+                      onClick={() => revive.mutate(m.user_id)}
+                    >
+                      {S.members.reactivate}
+                    </Button>
+                  ) : (
+                    <IconButton
+                      size="sm"
+                      label={S.members.editMember}
+                      className={REVEAL}
+                      onClick={() => setEditing(m)}
+                    >
+                      <Pencil size={13} />
+                    </IconButton>
+                  )}
                 </Td>
               </Tr>
             ))}
@@ -375,6 +396,28 @@ export function Members({ workspaceId }: { workspaceId: string }) {
           }}
         />
       )}
+      {editing && (
+        <MemberDialog
+          member={editing}
+          canDeactivate={!!me.data?.is_admin && me.data.id !== editing.user_id}
+          busy={setRole_.isPending || remove.isPending}
+          onSaveRole={(role) => {
+            if (role !== editing.role)
+              setRole_.mutate({ userId: editing.user_id, role });
+            setEditing(null);
+          }}
+          onDeactivate={() => {
+            setDeactivating({ id: editing.user_id, name: editing.display_name });
+            setEditing(null);
+          }}
+          onRemove={() => {
+            remove.mutate(editing.user_id);
+            setEditing(null);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
       {deactivating && (
         <DangerConfirm
           title={S.members.deactivate}

@@ -1790,8 +1790,10 @@ export const zh: Strings = {
     deactivatedTitle: "已停用的账号",
     deactivatedHint:
       "他们登不进来，也不出现在任何成员列表里。做过的事仍然算在他们名下——账号被保留而不是删除，正是为了这个。",
+    editMember: "编辑成员",
+    close: "关闭",
+    save: "保存",
     reactivate: "恢复",
-    rowActions: "更多操作",
     roleLabel: "角色",
     filterAll: "全部用户",
     filterAllRoles: "全部角色",

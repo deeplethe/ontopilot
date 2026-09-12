@@ -146,6 +146,13 @@ export function DangerConfirm({
    正文包在 <form> 里——输入框里按 Enter 就是保存；页脚在表单之外，取消与删除
    不会被当成提交。与 DangerConfirm 一样**总是挂载着**（open 恒真）：调用方条件渲染。
    删除放在左下角、次要样式：它和保存不是一对，隔开才不会顺手点到 */
+type DangerAction = {
+  label: string;
+  disabled?: boolean;
+  title?: string;
+  onClick: () => void;
+};
+
 export function FormDialog({
   title,
   description,
@@ -171,13 +178,10 @@ export function FormDialog({
   busy?: boolean;
   onSave: () => void;
   onCancel: () => void;
-  /** 左下角的破坏性动作（删除）；缺省没有 */
-  danger?: {
-    label: string;
-    disabled?: boolean;
-    title?: string;
-    onClick: () => void;
-  };
+  /** 左下角的破坏性动作；缺省没有。**可以给一个，也可以给几个**——
+   *  一个成员既能停用又能移出，两件事影响面不同，不该挤成一个按钮，
+   *  也不该把其中一个赶到弹窗正文里去装成一个字段。 */
+  danger?: DangerAction | DangerAction[];
   children: ReactNode;
 }) {
   return (
@@ -193,16 +197,20 @@ export function FormDialog({
       footer={
         <>
           {danger && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mr-auto"
-              disabled={danger.disabled || busy}
-              title={danger.title}
-              onClick={danger.onClick}
-            >
-              {danger.label}
-            </Button>
+            <div className="mr-auto flex items-center gap-2">
+              {(Array.isArray(danger) ? danger : [danger]).map((d) => (
+                <Button
+                  key={d.label}
+                  variant="secondary"
+                  size="sm"
+                  disabled={d.disabled || busy}
+                  title={d.title}
+                  onClick={d.onClick}
+                >
+                  {d.label}
+                </Button>
+              ))}
+            </div>
           )}
           <Button variant="secondary" size="sm" onClick={onCancel}>
             {cancelLabel}
