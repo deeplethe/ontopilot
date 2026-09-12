@@ -613,12 +613,8 @@ export function Ontology() {
                 />
               }
               tabs={
-                /* **标签落在内容列上。**从前是 fill：四格等宽、文字居中，于是
-                   「Definition」比它底下每一行都往右 12px，一块面板读出两条左边线。
-                   改成按文字宽度排，再把托盘整条挂进左槽（-ml-3 = 托盘内距 4 +
-                   药丸内距 8），标签的字就跟副标题、正文、空态同一条线。 */
                 <Segmented
-                  className="-ml-3"
+                  fill
                   size="sm"
                   value={panelTab}
                   onChange={setPanelTab}
@@ -868,13 +864,10 @@ function PanelHeader({
 }) {
   return (
     <>
-      {/* **色点挂在左槽里，名字回到内容列。**点是这个类的标记，不是名字的一部分；
-          让它占内容列的头 18px，名字就比底下每一行都往右缩一截。整行左挂 12
-          （点 8 + 间距 4），点落在与 tab 托盘同一条槽线上。 */}
-      <div className="-ml-3 flex items-center gap-1">
+      <div className="flex items-center gap-2">
         {color && (
           <span
-            className={`h-2 w-2 shrink-0 ${square ? "scale-90" : "rounded-full"}`}
+            className={`h-2.5 w-2.5 shrink-0 ${square ? "scale-90" : "rounded-full"}`}
             style={{ background: color, boxShadow: `0 0 8px ${color}55` }}
           />
         )}
