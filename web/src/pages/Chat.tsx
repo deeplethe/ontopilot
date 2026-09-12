@@ -53,7 +53,6 @@ import {
   REVEAL,
   Row,
   ROW_HOVER,
-  Spinner,
   Textarea,
 } from "../ui";
 import { liveAnswer, type LiveHandle, type Turn } from "../liveAnswer";
@@ -735,24 +734,20 @@ const Segment = memo(function Segment({ text }: { text: string }) {
   );
 });
 
-/** 思考指示：一个转圈 + 当前在做什么。
+/** 思考指示：**正在做的那句话自己在发光**。
  *
- * **从前这里是 `thinking-orbs` 的球体**，五种状态对五种动画。换掉有两个原因：
- * 一是它跟这套界面不是一路——chrome 是零色偏的中性灰，花样留给画布，
- * 而那颗球自带一套发光点阵；二是它的 `theme` 写死成 `dark`，浅色模式下
- * 照样按暗底渲染。
+ * 这里换过两轮。最早是 `thinking-orbs` 的球体，跟这套界面不是一路——chrome 是
+ * 零色偏的中性灰，花样留给画布，而那颗球自带一套发光点阵，`theme` 还写死成暗色。
+ * 换成房里的转圈之后问题只剩一半：在做什么本来就由那行字说了
+ * （「检索文档 · 3 篇」），旁边再转一个零件，等于同一件事说两遍，而且转圈说的是
+ * 「有个东西在忙」，跟屏幕上这句话没关系。
  *
- * 在做什么本来就由右边那行字说了（「检索文档 · 3 篇」），球是重复一遍；
- * 转圈只负责说明「还在动」。 */
+ * 现在没有零件：亮带横扫过那行字。它既是「还在动」，也是「动的是这句话」。
+ * 还没有步骤可说的时候就扫「Thinking…」——那也是一句话，不是一个图标。 */
 function Thinking({ step }: { step?: ChatStep }) {
   return (
-    <span className="inline-flex items-center gap-2 text-ink-2">
-      <Spinner size={13} />
-      {step && (
-        <span className="text-small truncate">
-          {step.label} · {step.detail}
-        </span>
-      )}
+    <span className="u-thinking text-small truncate">
+      {step ? `${step.label} · ${step.detail}` : S.ask.thinking}
     </span>
   );
 }

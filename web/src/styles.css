@@ -1310,6 +1310,34 @@ a:hover > .u-mark-arrow {
 
    底取 surface-2（4.5% 白）——比 surface 重一档，因为它此刻是画面上唯一
    有内容的东西；扫光只有 5%，它是"还在动"的信号，不是要人去看的东西。 */
+/* 还在想：**这句话自己在发光**，旁边不另立一个转动的零件。
+   一道亮带横扫过文字（background-clip: text 把渐变落在字身上），说的正是
+   "这行字正在被写出来"——而转圈说的是"有个东西在忙"，跟屏幕上其余的话没关系。
+   这也是骨架条那一套语言：亮带扫过占位的地方，表示内容在路上。 */
+.u-thinking {
+  background-image: linear-gradient(
+    90deg,
+    rgba(var(--u-ink-rgb), 0.4) 35%,
+    rgba(var(--u-ink-rgb), 0.95) 50%,
+    rgba(var(--u-ink-rgb), 0.4) 65%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: u-thinking-kf 1.8s linear infinite;
+}
+/* 亮带**从左往右**扫：字是从左往右写的，光跟着写的方向走才像"这句话正在长出来"。
+   反过来扫会读成倒带。 */
+@keyframes u-thinking-kf {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+
 .u-skel {
   position: relative;
   overflow: hidden;
@@ -1336,6 +1364,11 @@ a:hover > .u-mark-arrow {
 @media (prefers-reduced-motion: reduce) {
   .u-skel::after {
     animation: none;
+  }
+  /* 不扫了就得把字还回来：透明的字配一张不动的渐变是读不出来的 */
+  .u-thinking {
+    background-image: none;
+    color: var(--u-ink-2);
   }
 }
 
