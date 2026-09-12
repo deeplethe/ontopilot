@@ -490,9 +490,11 @@ export function Chat() {
             onKeyDown={(e) => e.key === "Escape" && setConvSearch("")}
           />
         </div>
-        {/* 左栏里的一切都从 12 起：输入框的盒、行的盒。新对话是个动作，带图标；
-            下面的会话是一组标题，不带——一列重复的气泡图标只是把每个标题往右
-            推 22px，而它们对齐的对象是彼此，不是上面这一行 */}
+        {/* 左栏的节奏（DESIGN 规矩 2 的左栏基线）：**盒 8 / 图标 20 / 文字 42**。
+            栏的横内距 8，行的横内距 12，图标 14，图标到字 8——所以这一栏里
+            每一行的字都从 42 起，搜索框的占位字也是（它的图标槽正好 left-3
+            + pl-[34px]）。不带图标的行**留着那一格**（Row 自动补），字才落在
+            同一条竖线上；`flush` 是给整组都没有图标的栏用的，不是给这一栏用的 */}
         <div className="px-2 pb-1">
           <Row density="nav" icon={<SquarePen size={14} />} onClick={newChat}>
             {S.ask.newChat}
@@ -504,7 +506,6 @@ export function Chat() {
         <div className="px-2">
           <Row
             density="nav"
-            flush
             aria-expanded={recentOpen}
             onClick={() => setRecentOpen((v) => !v)}
             trailing={
@@ -541,7 +542,6 @@ export function Chat() {
               ) : (
                 <Row
                   density="nav"
-                  flush
                   active={c.id === activeId}
                   className="pr-8"
                   onClick={() => openConversation(c.id)}
@@ -612,7 +612,11 @@ export function Chat() {
           ))}
           {/* 文字从 20 起（盒 12 + 8），与上面每条会话的标题同一条线 */}
           {convs.data?.conversations.length === 0 && (
-            <p className="px-2 py-2 text-small text-ink-2">{S.ask.noConversations}</p>
+            /* 34 = 行内距 12 + 图标 14 + 间距 8：这句话与上面每一条会话的
+               标题同一条竖线，而不是自己另起一列 */
+            <p className="py-2 pl-[34px] pr-3 text-small text-ink-2">
+              {S.ask.noConversations}
+            </p>
           )}
         </div>
         )}
