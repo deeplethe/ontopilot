@@ -49,9 +49,37 @@ const listeners = new Set<() => void>();
 // 变更都不该改变这一场的画面**，这条旧注释在键控之后才字面成立。
 let snapshot: readonly Live[] = [];
 
-function emit() {
+/* 通知**按帧合并**。一次生成里词元是一个一个来的，每个都通知一次，React 就
+   一个词元渲染一遍；答案长到几千字之后，渲染跟不上词元，画面看着是一顿一顿地
+   往外蹦字。33ms 一次（30 次/秒）对读字来说绰绰有余，而渲染次数降了一个量级。
+
+   用 setTimeout 不用 requestAnimationFrame：标签页切到后台时 rAF 会停，
+   而这个 store 明确支持"切走再切回来"——停了就得等回到前台才结算。
+
+   结构性的改动（开始、结束、认领到真 id）走 `flush`，立刻通知：它们不是
+   连续来的，也不该等下一帧。 */
+const NOTIFY_MS = 33;
+let pending: ReturnType<typeof setTimeout> | null = null;
+
+function notify() {
   snapshot = [...lives.values()].map((s) => s.live);
   listeners.forEach((l) => l());
+}
+
+function emit() {
+  if (pending) return;
+  pending = setTimeout(() => {
+    pending = null;
+    notify();
+  }, NOTIFY_MS);
+}
+
+function flush() {
+  if (pending) {
+    clearTimeout(pending);
+    pending = null;
+  }
+  notify();
 }
 
 // 还没拿到 id 的新会话用内部 token 占位；identify 到真 id 时重映射
@@ -105,7 +133,7 @@ export const liveAnswer = {
     let key = conversationId ?? `__pending__${++pendingSeq}`;
     const slot: Slot = { live: { kbId, conversationId, turns, streaming: true }, abort };
     lives.set(key, slot);
-    emit();
+    flush();
     return {
       identify: (id: string) => {
         const current = lives.get(key);
@@ -114,7 +142,7 @@ export const liveAnswer = {
         key = id;
         current.live = { ...current.live, conversationId: id };
         lives.set(key, current);
-        emit();
+        flush();
       },
       patchLast: (f) => {
         const current = lives.get(key);
@@ -128,7 +156,7 @@ export const liveAnswer = {
         const current = lives.get(key);
         if (!current || !current.live.streaming) return;
         current.live = { ...current.live, streaming: false };
-        emit();
+        flush();
       },
       setAbort: (a) => {
         const current = lives.get(key);
@@ -142,7 +170,7 @@ export const liveAnswer = {
       if (s.live.kbId === kbId && s.live.conversationId === conversationId) {
         s.abort();
         s.live = { ...s.live, streaming: false };
-        emit();
+        flush();
         return;
       }
     }

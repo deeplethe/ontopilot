@@ -1,7 +1,7 @@
 /* Chat：agentic 对话（检索/图谱工具 + remember 记忆）。
    会话持久化：左栏会话列表;上下文由服务端拼,前端只发 conversation_id + 新消息;
    行动轨迹(steps)与引用(sources)随消息落库,历史回放与实时流共用渲染。 */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import Markdown from "react-markdown";
@@ -26,7 +26,6 @@ import {
   Waypoints,
   Wrench,
 } from "lucide-react";
-import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import {
   api,
   conversationsApi,
@@ -54,6 +53,7 @@ import {
   REVEAL,
   Row,
   ROW_HOVER,
+  Spinner,
   Textarea,
 } from "../ui";
 import { liveAnswer, type LiveHandle, type Turn } from "../liveAnswer";
@@ -720,21 +720,33 @@ function stepIcon(kind: ChatStep["kind"]) {
 }
 
 /** 工具步骤 → 球体状态：思考球讲当前动作的语言 */
-function orbState(kind?: ChatStep["kind"]): OrbState {
-  if (kind === "search" || kind === "docs") return "searching";
-  if (kind === "entity" || kind === "neighbors" || kind === "path")
-    return "connecting";
-  if (kind === "facts" || kind === "timeline" || kind === "changes")
-    return "solving";
-  if (kind === "query" || kind === "tool") return "working";
-  return "listening"; // 尚无步骤：刚接到消息
-}
+/** 一段 markdown。**按文本记忆化**：一次生成里每来一个词元，整条消息都要重渲染，
+ *  而 react-markdown 每次都把那一段从头解析一遍——答案越长每个词元越贵，读起来
+ *  就是越写越顿。收了尾的段落文本不再变，`memo` 让它们一次也不重解析；
+ *  还在长的那一段照旧，它本来就得重解析。 */
+const Segment = memo(function Segment({ text }: { text: string }) {
+  return (
+    <div className="u-chat-prose">
+      <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {text}
+      </Markdown>
+    </div>
+  );
+});
 
-/** 思考指示：thinking-orbs 球体 + 当前动作（应用是深色定妆，theme 钉死 dark）。 */
+/** 思考指示：一个转圈 + 当前在做什么。
+ *
+ * **从前这里是 `thinking-orbs` 的球体**，五种状态对五种动画。换掉有两个原因：
+ * 一是它跟这套界面不是一路——chrome 是零色偏的中性灰，花样留给画布，
+ * 而那颗球自带一套发光点阵；二是它的 `theme` 写死成 `dark`，浅色模式下
+ * 照样按暗底渲染。
+ *
+ * 在做什么本来就由右边那行字说了（「检索文档 · 3 篇」），球是重复一遍；
+ * 转圈只负责说明「还在动」。 */
 function Thinking({ step }: { step?: ChatStep }) {
   return (
-    <span className="inline-flex items-center gap-3 text-ink-2">
-      <ThinkingOrb state={orbState(step?.kind)} size={20} theme="dark" />
+    <span className="inline-flex items-center gap-2 text-ink-2">
+      <Spinner size={13} />
       {step && (
         <span className="text-small truncate">
           {step.label} · {step.detail}
@@ -795,11 +807,10 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
                流式中经 remend 修补未闭合语法（粗体/围栏/链接），
                rehype-highlight 做代码高亮——成熟件组装，观感自持。
                **只有还在长的那一段需要 remend**：先前的段落已经收尾了 */
-            <div key={i} className="u-chat-prose">
-              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                {live && seg.last ? remend(seg.text) : seg.text}
-              </Markdown>
-            </div>
+            <Segment
+              key={i}
+              text={live && seg.last ? remend(seg.text) : seg.text}
+            />
           ),
         )}
         {thinking && <Thinking step={lastStep} />}
