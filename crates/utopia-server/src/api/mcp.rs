@@ -219,32 +219,31 @@ pub async fn handle(
                 return Ok(rpc_err(id, -32601, &message));
             }
             // 与聊天共用参数守卫：缺少 query 不能变成一次成功的空搜索。
-            if let Err((text, step)) = super::chat::check_call(
+            let result = match super::chat::check_call(
                 &super::chat::tools_schema(can_write, &[]),
                 name,
                 &args.to_string(),
             ) {
-                return Ok(ok(
-                    id,
-                    tool_result(tools::ToolResult::new(text, step).error()),
-                ));
-            }
-            // `mounted_sources` 仍旧空着：`query_data` 没放出来，给了也没人用。
-            // `can_write` 不再写死 false——它现在是令牌与角色一起算出来的
-            let ctx = ToolCtx {
-                state: &state,
-                kb_id,
-                workspace_id: kb.workspace_id,
-                mounted_sources: &[],
-                can_write,
-                actor: Some(user.id),
-                // 「谁说的」要答到 agent 这一层：一个人可以同时挂三个客户端
-                via_token: Some(auth.token_id),
-                // agent 的意图不在请求里；同名按事实数排
-                question: None,
+                Err((text, step)) => tools::ToolResult::new(text, step).error(),
+                Ok(args) => {
+                    // `mounted_sources` 仍旧空着：`query_data` 没放出来，给了也没人用。
+                    // `can_write` 不再写死 false——它现在是令牌与角色一起算出来的
+                    let ctx = ToolCtx {
+                        state: &state,
+                        kb_id,
+                        workspace_id: kb.workspace_id,
+                        mounted_sources: &[],
+                        can_write,
+                        actor: Some(user.id),
+                        // 「谁说的」要答到 agent 这一层：一个人可以同时挂三个客户端
+                        via_token: Some(auth.token_id),
+                        // agent 的意图不在请求里；同名按事实数排
+                        question: None,
+                    };
+                    let mut sink = ToolSink::default();
+                    tools::dispatch(&ctx, &mut sink, name, &args).await
+                }
             };
-            let mut sink = ToolSink::default();
-            let result = tools::dispatch(&ctx, &mut sink, name, &args).await;
             let _ = utopia_store::audit::record(
                 &state.pool,
                 Some(kb_id),
