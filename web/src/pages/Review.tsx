@@ -27,6 +27,7 @@ import { useKb, useKbId } from "../kb";
 import { toast } from "../toast";
 import {
   Button,
+  CARD_ACTIONS,
   Checkbox,
   Chip,
   GroupLabel,
@@ -149,67 +150,70 @@ function DuplicateCard({
         <div className="self-center text-ink-2 text-body shrink-0">≟</div>
         <SideCard side={item.right} />
       </div>
-      <div className="mt-3 pt-3 flex items-center gap-3 border-t border-line">
-        {locked ? (
-          <Status tone="warn" pulse>
-            {S.review.agentDeciding}
-          </Status>
-        ) : (
-          <Status tone={item.stage === "human" ? "warn" : "neutral"}>
-            {item.stage === "human"
-              ? S.review.stageHuman
-              : S.review.stageAdjudicating}
-          </Status>
-        )}
-        {typesDiffer(item) && (
-          <Chip tone="warn" title={S.review.typesDifferHint}>
-            {S.review.typesDiffer(
-              item.left.type_label ?? "",
-              item.right.type_label ?? "",
-            )}
-          </Chip>
-        )}
-        {/* agent 的建议（0025）：这里的 Merge / Keep 就是对它的回答 */}
-        {item.proposal && (
-          <Chip tone="info" title={item.proposal.reason ?? undefined}>
-            {S.review.agentSuggests(
-              S.review.agentActions[item.proposal.action],
-              Math.round(item.proposal.confidence * 100),
-            )}
-          </Chip>
-        )}
-        {reasonCode !== "namesake" && (
-          <span className="text-small text-ink-2">
-            {S.review.similarity(Math.round(item.score * 100))}
-          </span>
-        )}
-        {item.reason && (
-          <span className="text-small text-ink-2 truncate min-w-0">
-            {escalationText(item.reason)}
-          </span>
-        )}
+      {/* 这张卡的页脚与别的卡同一副（CARD_ACTIONS）：**动作在左**，说清楚
+          「这一对是怎么回事」的那些东西推到右边。只用一行——队列里一屏要放下
+          好几对，再多一行就少看一对。 */}
+      <div className={cn(CARD_ACTIONS, "pt-3 border-t border-line")}>
         {/* 理由框（0026）：可不写；写了就跟着决定进台账，下一次先例带着它 */}
-        <div className="ml-auto flex items-center gap-2 shrink-0">
-          <Input
-            size="sm"
-            className="w-56"
-            placeholder={S.review.rationalePlaceholder}
-            value={why}
-            disabled={busy || locked}
-            onChange={(e) => setWhy(e.target.value)}
-          />
-          <Button variant="secondary" size="sm"
-            disabled={busy || locked}
-            onClick={() => onDecide("keep", why)}
-          >
-            {S.review.keep}
-          </Button>
-          <Button variant="primary" size="sm"
-            disabled={busy || locked}
-            onClick={() => onDecide("merge", why)}
-          >
-            {S.review.merge}
-          </Button>
+        <Input
+          size="sm"
+          className="w-56"
+          placeholder={S.review.rationalePlaceholder}
+          value={why}
+          disabled={busy || locked}
+          onChange={(e) => setWhy(e.target.value)}
+        />
+        <Button variant="primary" size="sm"
+          disabled={busy || locked}
+          onClick={() => onDecide("merge", why)}
+        >
+          {S.review.merge}
+        </Button>
+        <Button variant="secondary" size="sm"
+          disabled={busy || locked}
+          onClick={() => onDecide("keep", why)}
+        >
+          {S.review.keep}
+        </Button>
+        <div className="ml-auto flex min-w-0 items-center gap-3">
+          {locked ? (
+            <Status tone="warn" pulse>
+              {S.review.agentDeciding}
+            </Status>
+          ) : (
+            <Status tone={item.stage === "human" ? "warn" : "neutral"}>
+              {item.stage === "human"
+                ? S.review.stageHuman
+                : S.review.stageAdjudicating}
+            </Status>
+          )}
+          {typesDiffer(item) && (
+            <Chip tone="warn" title={S.review.typesDifferHint}>
+              {S.review.typesDiffer(
+                item.left.type_label ?? "",
+                item.right.type_label ?? "",
+              )}
+            </Chip>
+          )}
+          {/* agent 的建议（0025）：左边的 Merge / Keep 就是对它的回答 */}
+          {item.proposal && (
+            <Chip tone="info" title={item.proposal.reason ?? undefined}>
+              {S.review.agentSuggests(
+                S.review.agentActions[item.proposal.action],
+                Math.round(item.proposal.confidence * 100),
+              )}
+            </Chip>
+          )}
+          {reasonCode !== "namesake" && (
+            <span className="text-small text-ink-2">
+              {S.review.similarity(Math.round(item.score * 100))}
+            </span>
+          )}
+          {item.reason && (
+            <span className="truncate text-small text-ink-2">
+              {escalationText(item.reason)}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -262,18 +266,18 @@ function FactRow({
           “{fact.quote}”
         </p>
       )}
-      <div className="mt-3 flex gap-2 justify-end">
-        <Button variant="danger" size="sm"
-          disabled={busy}
-          onClick={onReject}
-        >
-          {S.review.reject}
-        </Button>
+      <div className={CARD_ACTIONS}>
         <Button variant="secondary" size="sm"
           disabled={busy}
           onClick={onConfirm}
         >
           {S.review.confirm}
+        </Button>
+        <Button variant="danger" size="sm"
+          disabled={busy}
+          onClick={onReject}
+        >
+          {S.review.reject}
         </Button>
       </div>
     </div>
@@ -333,13 +337,7 @@ function ConflictRow({
           {S.review.conflictReason[c.reason] ?? c.reason}
         </Status>
       </div>
-      <div className="mt-3 flex items-center gap-2 justify-end">
-        <Button variant="danger" size="sm"
-          disabled={busy}
-          onClick={() => onResolve("reject_new")}
-        >
-          {S.review.rejectNew}
-        </Button>
+      <div className={CARD_ACTIONS}>
         <Button variant="secondary" size="sm"
           disabled={busy}
           onClick={() => onResolve("keep")}
@@ -360,6 +358,12 @@ function ConflictRow({
           {c.new_valid_from
             ? S.review.closeOldAt(c.new_valid_from.slice(0, 10))
             : S.review.closeOld}
+        </Button>
+        <Button variant="danger" size="sm"
+          disabled={busy}
+          onClick={() => onResolve("reject_new")}
+        >
+          {S.review.rejectNew}
         </Button>
       </div>
     </div>
@@ -414,13 +418,7 @@ function UnconfirmedRow({
           “{fact.quote}”
         </p>
       )}
-      <div className="mt-3 flex items-center gap-2 justify-end">
-        <Button variant="danger" size="sm"
-          disabled={busy}
-          onClick={onReject}
-        >
-          {S.review.reject}
-        </Button>
+      <div className={CARD_ACTIONS}>
         <Input size="sm" className="u-num w-28 text-center"
           placeholder={S.review.closeAtPlaceholder}
           value={closeAt}
@@ -435,6 +433,12 @@ function UnconfirmedRow({
           {closeAt.trim()
             ? S.review.closeFactAt(closeAt.trim())
             : S.review.closeFact}
+        </Button>
+        <Button variant="danger" size="sm"
+          disabled={busy}
+          onClick={onReject}
+        >
+          {S.review.reject}
         </Button>
       </div>
     </div>
@@ -750,7 +754,7 @@ function DefectRow({
           ))}
         </div>
       )}
-      <div className="mt-2 flex gap-2">
+      <div className={CARD_ACTIONS}>
         <Button variant="secondary" size="sm"
           disabled={busy}
           onClick={() => onDecide("accepted")}
@@ -841,7 +845,7 @@ function ViolationRow({
           </div>
         ))}
       </div>
-      <div className="mt-2 flex gap-2 flex-wrap">
+      <div className={CARD_ACTIONS}>
         <Button variant="secondary" size="sm"
           disabled={busy}
           onClick={() => onDecide("accepted")}
@@ -920,7 +924,7 @@ function ContradictionRow({
         </div>
       </div>
       <p className="mt-2 text-small text-ink-2">{hint}</p>
-      <div className="mt-2 flex gap-2 flex-wrap items-center">
+      <div className={CARD_ACTIONS}>
         {/* 不用日期选择器：它逼人给出一个日，而「那年结束的」正是这里常见的答案。
             写多少位就是多少精度（time.ts） */}
         <Input size="sm" className="u-num w-28 text-center"
