@@ -235,7 +235,13 @@ export const Input = forwardRef<
     <ShadInput
       ref={ref}
       className={cn(
-        bare ? BARE : cn(FILLED, size === "sm" ? "h-7" : "h-8"),
+        /* bare 的输入框**连控件的高度也不要**。`bare` 说的是「它是面板的一段，
+           不是面板里摆的一个控件」，可它还顶着 h-8 + py-1：32 高的盒子里装一行
+           20 的字，剩下那 12px 不是对半分的，字就往下坐了一点，看着是上面的留白
+           比下面大。高度交还给行高，竖向留白交还给外面那块面（告警面板、库切换器
+           都是 py-3），上下就真的一样了。
+           textarea 那一档不动：它的高度本来就是 rows 给的，不是控件档位。 */
+        bare ? cn(BARE, "h-auto py-0") : cn(FILLED, size === "sm" ? "h-7" : "h-8"),
         // 图标槽：中号图标离左内缘 12px、文字从 34px 起；小号窄一档（8 / 28）
         icon ? (size === "sm" ? "pl-7" : "pl-[34px]") : null,
         icon ? "w-full" : className,
