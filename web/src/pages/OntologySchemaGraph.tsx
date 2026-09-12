@@ -67,10 +67,12 @@ import {
   neighborNode,
   nodeInView,
   NODE_TYPE_SHELL,
+  drawLast,
   NODE_TYPE_SQUARE,
   ownColorOf,
   selectedNode,
   sigmaOptions,
+  withTopLayer,
 } from "./graphCanvas";
 import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import type { BusinessRule, EntityTypeView, RelationTypeView } from "../api";
@@ -118,6 +120,7 @@ const EDGE_TYPE_ARROW = "arrow"; // 直线 + 箭头（EdgeArrowProgram）
 const EDGE_TYPE_CURVED_ARROW = "curvedArrow"; // 弧线 + 箭头（EdgeCurvedArrowProgram）
 const EDGE_TYPE_LINE = "line"; // 直线，无箭头（EdgeLineProgram）——互斥专用
 const EDGE_TYPE_CURVED_LINE = "curvedLine"; // 弧线，无箭头（EdgeCurveProgram）——互斥与别的边共用一对时
+
 
 /** 结构边细、关系边粗一档——「语义关系比结构性信息更显眼」不能只靠颜色说,
  *  粗细上也要有一档差。这个粗细同时也是点选判定的命中带宽——sigma 的边拾取
@@ -790,12 +793,13 @@ export function OntologySchemaGraph({
     const sigma = new Sigma(g, containerRef.current, {
       ...sigmaOptions({
         defaultEdgeType: EDGE_TYPE_ARROW,
-        edgeProgramClasses: {
+        // 每个程序配一份「最上层」的（见 `withTopLayer`）：高亮的边整批最后画
+        edgeProgramClasses: withTopLayer({
           [EDGE_TYPE_ARROW]: EdgeArrowProgram,
           [EDGE_TYPE_LINE]: EdgeLineProgram,
           [EDGE_TYPE_CURVED_ARROW]: EdgeCurvedArrowProgram,
           [EDGE_TYPE_CURVED_LINE]: EdgeCurveProgram,
-        },
+        }),
         minEdgeThickness: MIN_EDGE_THICKNESS,
         // 几十上百个类，缩到 0.05 就看得见全貌；实例图动辄上千，那边缩得更远
         minCameraRatio: 0.05,
@@ -885,6 +889,8 @@ export function OntologySchemaGraph({
           res.color = focus;
           res.size = Math.max((attrs.size as number) ?? 1, 1) * 1.5;
           res.zIndex = 3;
+          // 换到最后画的那一批：光有 zIndex 压不住别的程序里的边
+          res.type = drawLast(String(res.type ?? EDGE_TYPE_ARROW));
           return res;
         }
         if (
