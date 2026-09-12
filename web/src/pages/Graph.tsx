@@ -30,6 +30,7 @@ import {
   HOVER_MUTE,
   MUTED_SHELL,
   NODE_BORDER_BASE,
+  NODE_BORDER_MIX,
   NODE_CORE_BASE,
   NODE_CORE_MIX,
   NODE_SHELL_BASE,
@@ -683,7 +684,7 @@ export function Graph() {
           // Semantica 配方：深壳 + 14% 类型 tint，核心 50% tint，钢灰描边微 tint
           color: mix(NODE_CORE_BASE, n.color, NODE_CORE_MIX),
           shellColor: mix(NODE_SHELL_BASE, n.color, NODE_TINT_MIX),
-          borderColor: mix(NODE_BORDER_BASE, n.color, 0.3),
+          borderColor: mix(NODE_BORDER_BASE, n.color, NODE_BORDER_MIX),
           ringColor: TRANSPARENT,
           typeColor: n.color,
           typeLabel: n.type_label ?? S.graph.untyped,

@@ -14,8 +14,15 @@ import type Sigma from "sigma";
 export let NODE_SHELL_BASE = "#121212"; // 节点外壳深底（原 #0B1320 的中性化）
 export let NODE_CORE_BASE = "#767676"; // 节点核心灰（原 #5A7A9E 的中性化）
 export let NODE_BORDER_BASE = "#909090"; // 节点描边（原 #7A92AE 的中性化）
-export const NODE_TINT_MIX = 0.14; // 类型色只按 14% 混入外壳（高级感的关键）
-export const NODE_CORE_MIX = 0.5; // 核心向类型色的混入比例
+/* 配方的**比例也随主题变**，不只是那三个底色。
+   深色下节点是「深壳里嵌一颗亮核」：壳只收 14% 类型色（一大片深底上颜色多了就吵），
+   核心收 50%，于是在黑底上读出来是一个发着色光的点。
+   浅色下这套翻过来读就不对了——纸底上"一颗深核"是一块脏斑。浅色走的是
+   **白心 + 彩圈**：核心几乎不收类型色（填充就是白），颜色全部让给外面那圈壳，
+   描边收得更满，把白心圈出来。同一套四层结构，两种读法。 */
+export let NODE_TINT_MIX = 0.14; // 类型色混入外壳的比例
+export let NODE_CORE_MIX = 0.5; // 类型色混入核心（填充）的比例
+export let NODE_BORDER_MIX = 0.3; // 类型色混入描边的比例
 /* 状态环取**节点自己的类型色**，不是写死的色相。往白里混而不是直接用原色：
    环画在节点自己身上，同色同亮度就看不出是个环。**悬停混得更白、选中混得
    更少**——悬停时全图不压暗，环要在一片乱线里立刻跳出来；选中时其余都
@@ -57,11 +64,29 @@ export const CANVAS_LABEL_SIZE = 11;
 export const CANVAS_TITLE_SIZE = 14; // --text-body
 export const CANVAS_META_SIZE = 12; // --text-fine
 
+/** `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` 都收。
+ *
+ * **短写法是必须收的，不是顺手**：这些值是从 CSS 令牌读回来的，而构建时
+ * Lightning CSS 会把 `#ffffff` 压成 `#fff`。从前这里只认六位，于是浅色主题
+ * 的白色令牌全部落到下面那句兜底上——静静地变成中灰 128,128,128。画布上
+ * 看到的就是「浅色下每个节点都是一块灰疙瘩」：节点外壳的底色本该是纸白，
+ * 读成了中灰，四层配方一层塌了。dev 下 CSS 不压缩，所以只有打包产物发作。 */
 export function hexToRgb(hex: string): [number, number, number] {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return [128, 128, 128];
-  const v = parseInt(m[1], 16);
-  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  const [r, g, b] = hexToRgba(hex);
+  return [r, g, b];
+}
+
+/** 同上，连 alpha 一起。八位写法的最后两位是 alpha；没写就是 1 */
+export function hexToRgba(hex: string): [number, number, number, number] {
+  const m = /^#?([0-9a-f]{3,8})$/i.exec(hex.trim());
+  if (!m) return [128, 128, 128, 1];
+  let h = m[1];
+  // 短写法每一位翻倍：#1a2 → #11aa22，#1a2f → #11aa22ff
+  if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join("");
+  if (h.length !== 6 && h.length !== 8) return [128, 128, 128, 1];
+  const v = parseInt(h.slice(0, 6), 16);
+  const a = h.length === 8 ? parseInt(h.slice(6), 16) / 255 : 1;
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255, a];
 }
 
 /** c1 向 c2 按 t 比例混色 */
@@ -82,10 +107,7 @@ export function mix(c1: string, c2: string, t: number): string {
  * 与 `mix` 分工：那个只吃 hex、只管把类型色按比例调进壳色（节点的配方）；
  * 这个要处理边的 `rgba(...)` 与淡入淡出，两边都得能解析、alpha 不能丢 */
 function parseRgba(c: string): [number, number, number, number] {
-  if (c.startsWith("#")) {
-    const [r, g, b] = hexToRgb(c);
-    return [r, g, b, 1];
-  }
+  if (c.startsWith("#")) return hexToRgba(c);
   const m = c.match(
     /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/,
   );
@@ -297,6 +319,11 @@ function token(name: string, fallback: string): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
 }
+/** 读一个数值令牌（配方里的混色比例）。读不出或不是数就用原值 */
+function num(name: string, fallback: number): number {
+  const v = Number(token(name, ""));
+  return Number.isFinite(v) ? v : fallback;
+}
 function rgbOf(triplet: string, alpha: number): string {
   return `rgba(${triplet.replace(/\s+/g, "")},${alpha})`;
 }
@@ -330,6 +357,9 @@ export function refreshPalette() {
   NODE_SHELL_BASE = token("--u-node-shell", NODE_SHELL_BASE);
   NODE_CORE_BASE = token("--u-node-core", NODE_CORE_BASE);
   NODE_BORDER_BASE = token("--u-node-border", NODE_BORDER_BASE);
+  NODE_TINT_MIX = num("--u-node-tint-mix", NODE_TINT_MIX);
+  NODE_CORE_MIX = num("--u-node-core-mix", NODE_CORE_MIX);
+  NODE_BORDER_MIX = num("--u-node-border-mix", NODE_BORDER_MIX);
   MUTED_SHELL = token("--u-node-muted", MUTED_SHELL);
   PILL_BG = token("--u-pill-bg", PILL_BG);
   PILL_BG_HOVER = token("--u-pill-bg-hover", PILL_BG_HOVER);

@@ -31,6 +31,7 @@ import {
   drawWorldGrid,
   mix,
   NODE_BORDER_BASE,
+  NODE_BORDER_MIX,
   NODE_CORE_BASE,
   NODE_CORE_MIX,
   NODE_SHELL_BASE,
@@ -292,7 +293,7 @@ export function buildSchemaGraph(
       // 钢灰描边微 tint）——模式图与实例图看着是同一个引擎画的
       color: mix(NODE_CORE_BASE, t.color, NODE_CORE_MIX),
       shellColor: mix(NODE_SHELL_BASE, t.color, NODE_TINT_MIX),
-      borderColor: mix(NODE_BORDER_BASE, t.color, 0.3),
+      borderColor: mix(NODE_BORDER_BASE, t.color, NODE_BORDER_MIX),
       ringColor: TRANSPARENT,
       typeColor: t.color,
       typeLabel: t.key,
