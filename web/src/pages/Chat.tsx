@@ -59,6 +59,7 @@ import {
 import { convMarks, useLive, useUnread } from "../unread";
 import {
   answeredWithoutSources,
+  citedSources,
   liveAnswer,
   type LiveHandle,
   type Turn,
@@ -806,6 +807,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   }
 
   const thinking = live && !turn.content && !turn.error;
+  const cited = citedSources(turn);
   const lastStep = turn.steps?.[turn.steps.length - 1];
 
   return (
@@ -854,10 +856,11 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
           `sources` 是随检索一次次增量发来的，跟着渲染的话，一份还在生长的清单
           就挂在一段还没写完的话下面，一边长一边把正文往上推。它是答案的落款，
           不是过程的一部分——过程已经由上面的轨迹交代了 */}
-      {/* 一个面板装多行（DESIGN.md 6）：引用是同构的一组，悬停归行 */}
-      {!live && turn.sources && turn.sources.length > 0 && (
+      {/* 一个面板装多行（DESIGN.md 6）：引用是同构的一组，悬停归行。
+          只列正文引到的那几条（见 citedSources）：检索到的不等于用到的 */}
+      {!live && cited.length > 0 && (
         <div className="mt-2 glass rounded-panel divide-y divide-line">
-          {turn.sources.map((s) =>
+          {cited.map((s) =>
             s.kind === "charter" ? (
               /* 手册引用：视觉上与数据引用隔离（BookOpen），跳排版好的 /docs 小节 */
               <Link
