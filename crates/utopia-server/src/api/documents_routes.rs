@@ -57,12 +57,10 @@ pub async fn upload(
         // 文件字段之间没有 doc_time 就一直沿用上一次的（直到出现新的或上传结束）。
         if field.name() == Some("doc_time") {
             match field.text().await {
-                Ok(s) => {
-                    match chrono::DateTime::parse_from_rfc3339(s.trim()) {
-                        Ok(dt) => pending_doc_time = Some(dt.with_timezone(&chrono::Utc)),
-                        Err(_) => pending_doc_time = None,
-                    }
-                }
+                Ok(s) => match chrono::DateTime::parse_from_rfc3339(s.trim()) {
+                    Ok(dt) => pending_doc_time = Some(dt.with_timezone(&chrono::Utc)),
+                    Err(_) => pending_doc_time = None,
+                },
                 Err(_) => pending_doc_time = None,
             }
             continue;
