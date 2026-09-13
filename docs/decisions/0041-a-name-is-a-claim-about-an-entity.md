@@ -1,6 +1,6 @@
 # 0041 · A name is a claim about an entity
 
-- **Status**: proposed · nothing implemented · cut 0 (the identity bench) goes first
+- **Status**: proposed · decision 1 settled 2026-09-13 (names are facts) · nothing implemented · cut 0 (the identity bench) goes first
 - **Written**: 2026-09-13 (conventions in the [README](README.md))
 - **Related**: [0009](0009-no-type-is-a-type.md) made an undecided type an honest state, and [0016](0016-close-the-open-seams-before-cutting-new-ones.md) B3 let a declared `disjointWith` keep names apart; #270 stopped a namesake tie from being settled by candidate order and #331 let facts break it; #428 and [0025](0025-governance-reads-the-ledger-before-it-decides.md) moved duplicates through a queue an agent works; #582 and #583 made the extractor copy the words that name each side of a fact; [0037](0037-a-relation-carries-its-own-attributes.md) put attributes on edges.
 
@@ -32,7 +32,13 @@ All of it comes from one choice: **identity is keyed on the surface string, and 
 
 Every name a text uses for an entity is recorded as a fact on a system attribute `name`, with the quote it came from, the document's times, and a world validity when the text gives one ("renamed in 2021" closes the old name). `entities.canonical_name` stays as the label the interface shows, and it is also one of the entity's name facts. `entities.aliases` is retired: the migration turns each existing alias into a name fact attributed to the merge that put it there.
 
-A fact, because a name can be wrong, corrected, superseded and taken back, which is what the ledger already does for everything else it holds. As facts, names get both clocks ("what was it called in 2019", "when did we learn that 海探1 is 海洋探测器1号"), provenance, revert, and a place in the export as `skos:altLabel`. The price is that conflict detection and reasoning have to leave the `name` attribute alone: two names on one entity are not a functional violation.
+A fact, because a name can be wrong, corrected, superseded and taken back, which is what the ledger already does for everything else it holds. As facts, names get both clocks ("what was it called in 2019", "when did we learn that 海探1 is 海洋探测器1号"), provenance, revert, and a place in the export as `skos:altLabel`.
+
+**A name is a value, never a node.** A name fact keeps the string in `facts.object_value` and leaves `object_id` empty, the same channel a quantity uses since #586 and #587. The canvas draws only facts with an `object_id`, and the graph's fact count counts only those, so names add no node, no edge and no count there.
+
+**The temporal engine leaves it alone by construction.** `temporal` closes an old value and records a conflict only for state relations declared functional or inverse-functional. `name` is declared neither, because namesakes exist, so a second name never closes the first or opens a conflict.
+
+**The price** is every reader that lists an entity's facts: the entity panel shows names in their own list, beside the facts; `entity_fact_lines` on a Review card and the `degree` used in resolution leave names out, so a name does not pass for evidence or pad a count; `entity_facts` for chat and MCP returns names marked as names; the RDF export writes them as `skos:altLabel`.
 
 Considered: an `entity_names` table with the same columns. It keeps conflicts and reasoning untouched, and rebuilds validity, provenance, invalidation and revert beside the ledger that already has them.
 
