@@ -202,6 +202,15 @@ where the truth reads the platform as the subject; both readings are defensible 
 flipped by chance in the baseline rounds. The fourth, Huang's election, was structural, and it is
 the first revision to decision 3 above.
 
+Two rounds on the integration of this change with the caption-run revision and the structural
+shape checks of #637, extracting the same rebuilt chunks: **43/52**, then **46/52** once the
+shape checks read structure instead of words. The second round had relations **12/12** and the
+earnings release **19/19**. Its six misses were four Ohio literals, the acquisition's fiscal
+year end and one vote count. None of them appears in `extraction_drops`, so the model did not
+write them; the Ohio exhibit's literals are the figures that move most between rounds (15/15,
+12/15, 11/15). Every round since the change lies within one standard deviation of the baseline,
+with no headerless continuation chunk in any of them.
+
 Seen in the rebuilt chunks, independent of the score: no chunk begins inside a table without
 its header (was 13 of 35 in the earnings release); the Neal vote table is one table again with
 no rule inside it; the chunk holding the non-GAAP EPS carries a header — the parser's layout row,
