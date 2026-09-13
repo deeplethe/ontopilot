@@ -2659,22 +2659,25 @@ pub async fn nearest_typed_entities(
              SELECT DISTINCT ev.document_id FROM fact_evidence ev
              JOIN facts f ON f.id = ev.fact_id
              WHERE f.kb_id = $1 AND (f.subject_id = $2 OR f.object_id = $2)
+         ),
+         ranked AS MATERIALIZED (
+             SELECT e.canonical_name, t.id, t.key,
+                    ({distance})::float8 AS distance,
+                    EXISTS (SELECT 1 FROM fact_evidence ev2
+                            JOIN facts f2 ON f2.id = ev2.fact_id
+                            WHERE f2.kb_id = $1 AND (f2.subject_id = e.id OR f2.object_id = e.id)
+                              AND ev2.document_id IN (SELECT document_id FROM my_docs))
+                    AS same_document
+             FROM entities e
+             JOIN entity_types t ON t.id = e.type_id
+             WHERE e.kb_id = $1 AND e.merged_into IS NULL AND e.id <> $2
+               AND e.profile_embedding IS NOT NULL AND {same_dims}
+             ORDER BY distance
+             LIMIT $4
          )
-         SELECT e.canonical_name, t.id, t.key,
-                ({distance})::float8 AS distance,
-                EXISTS (SELECT 1 FROM fact_evidence ev2
-                        JOIN facts f2 ON f2.id = ev2.fact_id
-                        WHERE f2.kb_id = $1 AND (f2.subject_id = e.id OR f2.object_id = e.id)
-                          AND ev2.document_id IN (SELECT document_id FROM my_docs))
-                AS same_document
-         -- 内连接就是那道门：没判出类型的实体（type_id IS NULL）不是答案，
-         -- 拿它当邻居的证据只会把「没判出来」传染开
-         FROM entities e
-         JOIN entity_types t ON t.id = e.type_id
-         WHERE e.kb_id = $1 AND e.merged_into IS NULL AND e.id <> $2
-           AND e.profile_embedding IS NOT NULL AND {same_dims}
-         ORDER BY {distance}
-         LIMIT $4",
+         SELECT canonical_name, id, key, distance, same_document
+         FROM ranked
+         ORDER BY distance, id",
         distance = crate::vector_index::distance("e.profile_embedding", 3, dims),
         same_dims = crate::vector_index::same_dims("e.profile_embedding", dims),
     ))

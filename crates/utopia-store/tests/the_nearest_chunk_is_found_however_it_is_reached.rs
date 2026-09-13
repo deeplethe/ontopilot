@@ -250,6 +250,12 @@ async fn the_answers_agree_with_and_without_the_index() -> anyhow::Result<()> {
             then.contains(&f.superseded),
             "三月一日它还活着，带时刻的检索该看见它"
         );
+        // 距离相同 → id 升序：`planted` 先于 `superseded`（`seed` 里的 now_v7 顺序）
+        assert_eq!(
+            then.first().copied(),
+            Some(f.planted),
+            "并列按 id 排序，planted 应当居首"
+        );
 
         // ---- 二、建索引：任务本体，事务外，两次幂等
         let built = vector_index::build(&pool, Target::Chunks, DIMS).await?;

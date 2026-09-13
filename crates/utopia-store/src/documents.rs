@@ -1235,11 +1235,15 @@ pub async fn vector_search(
     let mut tx = pool.begin().await?;
     crate::vector_index::relaxed_order(pool, &mut tx).await?;
     let rows: Vec<(Uuid,)> = sqlx::query_as(&format!(
-        "SELECT id FROM chunks c
-         WHERE c.kb_id = $1 AND c.embedding IS NOT NULL AND {live}
-           AND {same_dims}
-         ORDER BY {distance}
-         LIMIT $3",
+        "WITH ranked AS MATERIALIZED (
+             SELECT id, {distance} AS distance
+             FROM chunks c
+             WHERE c.kb_id = $1 AND c.embedding IS NOT NULL AND {live}
+               AND {same_dims}
+             ORDER BY distance
+             LIMIT $3
+         )
+         SELECT id FROM ranked ORDER BY distance, id",
         live = crate::record_axis::chunk_live_at("c", 4),
         same_dims = crate::vector_index::same_dims("c.embedding", dims),
         distance = crate::vector_index::distance("c.embedding", 2, dims),
