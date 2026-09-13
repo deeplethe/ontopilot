@@ -214,9 +214,10 @@ pub async fn record_signature_breaks(
 /// 跑一遍检查，把结果落库。
 pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
     let (timed, spans, _) = timed_edges(pool, kb_id).await?;
-    let edges: Vec<Edge> = timed.iter().map(|t| t.edge).collect();
     let axioms = axioms(pool, kb_id).await?;
-    let mut violations = check(&edges, &axioms);
+    // 带着区间查：互斥的三类只在同时成立时才算（#634）。从前这里把区间剥掉再查，
+    // 每一次调薪、每一次换负责人都进了 Review
+    let mut violations = check(&timed, &axioms);
     // 第五类不在纯逻辑引擎里：它要看实体的类型与谓词的 domain / range，那是库里的
     // 东西。算出来后与其它四类走同一条落库与清陈规矩
     for fact in signature_breaks(pool, kb_id, None).await? {
@@ -279,7 +280,7 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
     }
 
     let mut report = Report {
-        edges: edges.len(),
+        edges: timed.len(),
         predicates_with_axioms: axioms.len(),
         found: violations.len(),
         contradictions: details.len(),
@@ -287,6 +288,8 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
         rules_disagree: clashes.between_derivations.len(),
         ..Default::default()
     };
+
+    let accepted = accepted_groups(pool, kb_id).await?;
 
     // 事务里做，否则「插新的」与「清陈旧的」之间有个窗口，那一瞬间 Review 页
     // 会短暂地少东西
@@ -299,6 +302,17 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
             right,
             path,
         } = v;
+        let grouped = is_grouped(*kind);
+        // 人认可过「这几条可以并存」，这一轮的组又全在那几条里——比如其中一条后来
+        // 撤了，剩下的组首尾变了、键也变了——仍然是那句认可管着，不再端上来。
+        // 组里有一条认可时没见过的，就不在这里拦：那是新情况
+        if grouped
+            && accepted
+                .iter()
+                .any(|(k, facts)| k == kind.as_str() && path.iter().all(|f| facts.contains(f)))
+        {
+            continue;
+        }
         let detail = details
             .get(&(*left, *right))
             .cloned()
@@ -317,7 +331,8 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
         // 本来就在而且 resolved 的要再看一眼：`fact_retracted` / `fact_closed` /
         // `axiom_relaxed` 都是「世界会变」的承诺——事实没了、区间闭了、公理放宽了，
         // 违规就不该再算出来。又算出来了，承诺就是没兑现，那行回到 open，人再看一次。
-        // `accepted` 是有意并存，重算多少次都沉默（#202）
+        // `accepted` 是有意并存，重算多少次都沉默（#202）——只要还是认可时那几条。
+        // 互斥的组走到这里说明上面没拦住：同一个键下多了一条，那行也回到 open
         let (keep, status, resolution, is_new): (Uuid, String, Option<String>, bool) =
             sqlx::query_as(
                 "INSERT INTO axiom_violations
@@ -339,12 +354,12 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
         if is_new {
             report.inserted += 1;
         }
-        if status == "resolved"
-            && matches!(
-                resolution.as_deref(),
-                Some("fact_retracted" | "fact_closed" | "axiom_relaxed")
-            )
-        {
+        let broken = match resolution.as_deref() {
+            Some("fact_retracted" | "fact_closed" | "axiom_relaxed") => true,
+            Some("accepted") => grouped,
+            _ => false,
+        };
+        if status == "resolved" && broken {
             sqlx::query(
                 "UPDATE axiom_violations
                     SET status = 'open', resolution = NULL, decided_by = NULL,
@@ -440,6 +455,39 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
     .await?;
     tx.commit().await?;
     Ok(report)
+}
+
+/// 互斥的三类：一处违规是一组同时成立、彼此冲突的事实（`path` 是整组）。
+fn is_grouped(kind: Kind) -> bool {
+    matches!(
+        kind,
+        Kind::Asymmetry | Kind::Functional | Kind::InverseFunctional
+    )
+}
+
+/// 人认可过并存的互斥组：(种类, 组里的事实)。
+///
+/// 认可说的是「这几条可以同时成立」，所以按事实集合比，不按键比——组里撤掉一条，
+/// 剩下的首尾换了、键也换了，那句认可照样管着它们（#624）。
+async fn accepted_groups(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<(String, HashSet<Uuid>)>> {
+    let rows: Vec<(String, Uuid, Uuid, Vec<Uuid>)> = sqlx::query_as(
+        "SELECT kind, left_fact, right_fact, path FROM axiom_violations
+          WHERE kb_id = $1 AND status = 'resolved' AND resolution = 'accepted'
+            AND kind IN ('asymmetry', 'functional', 'inverse_functional')",
+    )
+    .bind(kb_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(kind, left, right, path)| {
+            let mut facts: HashSet<Uuid> = path.into_iter().collect();
+            // 首尾本来就在 path 里；0053 之前记下的一对 path 是空的，靠这两列
+            facts.insert(left);
+            facts.insert(right);
+            (kind, facts)
+        })
+        .collect())
 }
 
 /// 矛盾要写成人能读的话，而派生没有落库、没有文本可查——名字在这里补。

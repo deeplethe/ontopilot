@@ -1187,7 +1187,7 @@ pub struct ConceptMapping {
 #[derive(Debug, Clone, Serialize)]
 pub struct AxiomViolation {
     pub id: Uuid,
-    /// self_loop | asymmetry | cycle | functional | signature | derived_contradiction
+    /// self_loop | asymmetry | cycle | functional | inverse_functional | signature | derived_contradiction
     pub kind: String,
     /// 判据来自哪条关系。人若判「公理写错了」，从这里进本体去改
     pub predicate: Option<String>,
@@ -1195,7 +1195,7 @@ pub struct AxiomViolation {
     pub left_text: String,
     pub right_fact: Uuid,
     pub right_text: String,
-    /// 环的长度（含首尾）。其余三类为 0——前端据此决定要不要显示「查看路径」
+    /// `path` 的长度：环上的事实（含首尾）、互斥组里的事实、派生的前提。自环与签名为 0
     pub path_len: i32,
     pub detected_at: chrono::DateTime<chrono::Utc>,
     /// `derived_contradiction` 独有（0017）：推出来的那条三元组——它没有落库，

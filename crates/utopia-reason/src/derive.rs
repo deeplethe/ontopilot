@@ -88,8 +88,8 @@ pub struct Derivation {
 
 /// 一条参与推导的边,比 [`Edge`] 多带有效期。
 ///
-/// 单独一个类型而不是给 `Edge` 加字段:R0 完全用不上时间——公理是否被违反
-/// 与它什么时候成立无关，而 R1 每一步都要算交集。
+/// 单独一个类型而不是给 `Edge` 加字段:环与自环用不上时间,R0 的互斥三类要看
+/// 两条是否同时成立(#634),R1 每一步都要算交集。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimedEdge {
     pub edge: Edge,
@@ -386,7 +386,7 @@ pub fn validity(
 pub struct Clash {
     /// `Derivation::facts` 里的下标
     pub derived: usize,
-    /// 撞在哪条公理上：`Functional`（含 inverse_functional）、`Asymmetry`、`SelfLoop`
+    /// 撞在哪条公理上：`Functional`、`InverseFunctional`、`Asymmetry`、`SelfLoop`
     pub axiom: Kind,
     /// 被撞的断言。自环没有对方，取派生的最后一条前提
     pub against: Uuid,
@@ -528,7 +528,7 @@ pub fn contradictions(
                     if *subj != d.subject && overlap(span, *sp).is_some() {
                         out.with_assertions.push(Clash {
                             derived: i,
-                            axiom: Kind::Functional,
+                            axiom: Kind::InverseFunctional,
                             against: *fact,
                         });
                     }
@@ -594,7 +594,7 @@ pub fn contradictions(
             if let Some(v) = d_po.get(&(d.predicate, d.object)) {
                 for &j in v {
                     if j > i && derivation.facts[j].subject != d.subject && overlapping(j) {
-                        note(i, j, Kind::Functional);
+                        note(i, j, Kind::InverseFunctional);
                     }
                 }
             }

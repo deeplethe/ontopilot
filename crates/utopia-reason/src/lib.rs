@@ -16,6 +16,7 @@ pub mod derive;
 pub mod ontology;
 pub mod rules;
 
+use derive::TimedEdge;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -59,10 +60,11 @@ impl Axioms {
 pub struct Violation {
     pub kind: Kind,
     /// 涉及的事实。**自反违反只有一条**——它跟自己矛盾，不需要第二条。
-    /// 环取首尾两条（中间那些在 `path` 里）。
+    /// 环取首尾两条（中间那些在 `path` 里）；互斥的三类（asymmetry、functional、
+    /// inverse_functional）取整组里 id 最小与最大的两条。
     pub left: Uuid,
     pub right: Uuid,
-    /// 环的完整路径，按事实排列；其余三类为空。
+    /// 环的完整路径，按事实排列；互斥的三类是整组事实，按 id 排序；自环为空。
     /// 留着是因为「A→B→C→A」比「A 与 C 矛盾」有用得多——人要顺着看一遍才知道
     /// 该撤哪一条
     pub path: Vec<Uuid>,
@@ -76,9 +78,13 @@ pub enum Kind {
     Asymmetry,
     /// `A p B p … p A`，而 p 声明了 transitive——闭包里推出 `A p A`
     Cycle,
-    /// 同一主语与谓词同时指向两个宾语，而 p 声明了 functional
-    /// （inverse_functional 则是同一宾语被两个主语指）
+    /// 同一主语与谓词在同一段时间里指向两个宾语，而 p 声明了 functional
     Functional,
+    /// 同一宾语在同一段时间里被两个主语指，而 p 声明了 inverse_functional。
+    ///
+    /// 与 `Functional` 分开记（#634）：从前两个方向共用一个种类，一个项目同时有两位
+    /// 负责人被写成「该只有一个值，却有两个」，人照着去主语那一侧找，找的是错的一端
+    InverseFunctional,
     /// `A p B`，而 A 不在 p 声明的 domain 里、或 B 不在 range 里（#190 / #196）。
     ///
     /// **这一类不由本 crate 算出**：它要看实体的类型与 domain / range 的闭包，那是
@@ -100,6 +106,7 @@ impl Kind {
             Kind::Asymmetry => "asymmetry",
             Kind::Cycle => "cycle",
             Kind::Functional => "functional",
+            Kind::InverseFunctional => "inverse_functional",
             Kind::Signature => "signature",
             Kind::DerivedContradiction => "derived_contradiction",
         }
@@ -118,34 +125,54 @@ pub const MAX_DEPTH: usize = 12;
 ///
 /// 每个谓词各查各的：公理是挂在谓词上的，跨谓词的边之间没有可比性
 /// （`A part_of B` 与 `B produces A` 同时成立不是矛盾）。
-pub fn check(edges: &[Edge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violation> {
+///
+/// **互斥的三类要求两条事实同时成立**（#634）。functional、inverse_functional、
+/// asymmetric 说的都是「同一时刻」：Lin Zhao 的薪水在 2024-02-20 从 28000 变成
+/// 32000，两段首尾相接，那是一次调薪。从前这里只收 `Edge`，区间在调用方就丢了，
+/// 于是每一次接任都进了 Review。判据与 `derive::contradictions` 同一个——派生那一侧
+/// 一直是按区间重叠判的，断言这一侧跟它对齐。
+///
+/// 区间照 `TimedEdge` 的读法：半开 `[from, to)`，`None` 是那一侧无界（恒常谓词两端
+/// 都是 `None`，于是退回到只看形状）。自环与环不看时间。
+pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violation> {
     let mut out = Vec::new();
-    let mut by_pred: HashMap<Uuid, Vec<Edge>> = HashMap::new();
-    for e in edges {
-        let Some(ax) = axioms.get(&e.predicate) else {
+    let mut by_pred: HashMap<Uuid, Vec<TimedEdge>> = HashMap::new();
+    for t in edges {
+        let Some(ax) = axioms.get(&t.edge.predicate) else {
             continue;
         };
         if ax.says_nothing() {
             continue;
         }
-        by_pred.entry(e.predicate).or_default().push(*e);
+        by_pred.entry(t.edge.predicate).or_default().push(*t);
     }
     for (pred, group) in by_pred {
         let ax = axioms[&pred];
+        let shapes: Vec<Edge> = group.iter().map(|t| t.edge).collect();
         if ax.irreflexive {
-            out.extend(self_loops(&group));
+            out.extend(self_loops(&shapes));
         }
         if ax.asymmetric {
             out.extend(asymmetries(&group));
         }
         if ax.transitive {
-            out.extend(cycles(&group));
+            out.extend(cycles(&shapes));
         }
         if ax.functional {
-            out.extend(too_many(&group, |e| e.subject, |e| e.object));
+            out.extend(clashes(
+                &group,
+                Kind::Functional,
+                |e| (e.subject, Uuid::nil()),
+                |a, b| a.object != b.object,
+            ));
         }
         if ax.inverse_functional {
-            out.extend(too_many(&group, |e| e.object, |e| e.subject));
+            out.extend(clashes(
+                &group,
+                Kind::InverseFunctional,
+                |e| (e.object, Uuid::nil()),
+                |a, b| a.subject != b.subject,
+            ));
         }
     }
     out
@@ -165,25 +192,23 @@ fn self_loops(edges: &[Edge]) -> Vec<Violation> {
         .collect()
 }
 
-fn asymmetries(edges: &[Edge]) -> Vec<Violation> {
-    let mut seen: HashMap<(Uuid, Uuid), Uuid> = HashMap::new();
-    let mut out = Vec::new();
-    for e in edges {
-        if e.subject == e.object {
-            // 自环由 irreflexive 那一档负责；反对称在这里报一遍是重复
-            continue;
-        }
-        if let Some(&other) = seen.get(&(e.object, e.subject)) {
-            out.push(Violation {
-                kind: Kind::Asymmetry,
-                left: other,
-                right: e.fact,
-                path: Vec::new(),
-            });
-        }
-        seen.insert((e.subject, e.object), e.fact);
-    }
-    out
+/// 反对称：同一对节点在同一段时间里两个方向都断言了。
+///
+/// 键是无序的那一对节点，「不同」是方向相反——与 functional 同一个形状，所以走
+/// 同一个函数。
+fn asymmetries(edges: &[TimedEdge]) -> Vec<Violation> {
+    // 自环由 irreflexive 那一档负责；反对称在这里报一遍是重复
+    let two_way: Vec<TimedEdge> = edges
+        .iter()
+        .filter(|t| t.edge.subject != t.edge.object)
+        .copied()
+        .collect();
+    clashes(
+        &two_way,
+        Kind::Asymmetry,
+        |e| (e.subject.min(e.object), e.subject.max(e.object)),
+        |a, b| a.subject != b.subject,
+    )
 }
 
 /// 找环。**每个环只报一次，而且只以一种形状报**：去重按环上事实的集合，报出来的
@@ -279,35 +304,87 @@ fn walk<'a>(
     }
 }
 
-/// 函数性违反：同一个「一端」指向了两个不同的「另一端」。
+/// 互斥：同一个键下，两条「不同」的事实同时成立。
 ///
-/// `functional` 与 `inverse_functional` 是同一个判断的两个方向，所以共用这一个
-/// 函数，由调用方决定哪一端是键。
-fn too_many(edges: &[Edge], key: fn(&Edge) -> Uuid, val: fn(&Edge) -> Uuid) -> Vec<Violation> {
-    let mut by_key: HashMap<Uuid, Vec<&Edge>> = HashMap::new();
-    for e in edges {
-        by_key.entry(key(e)).or_default().push(e);
+/// functional（键是主语，不同是宾语不同）、inverse_functional（键是宾语，不同是
+/// 主语不同）、asymmetric（键是无序的一对节点，不同是方向相反）都是这个形状，
+/// 调用方给键和「不同」。
+///
+/// **一组报一处。** 同一个主语同一段时间里指了五个宾语，是一件事；两两组合报十处
+/// 只是把它说十遍。组是冲突关系的连通块：a 与 b 同时成立、b 与 c 同时成立，三条
+/// 就是一组，哪怕 a 与 c 首尾相接。先后出现、互不重叠的两场冲突是两组。
+///
+/// **身份只由组里有哪些事实决定**（#624）。`axiom_violations` 按
+/// `(kind, left_fact, right_fact)` 唯一；从前 left/right 取遇到的头两条，而遇到的
+/// 顺序来自 HashMap 与取数顺序——同一处冲突换个顺序就是另一行，人裁过的那行被绕开，
+/// 与 #618 的环是同一个病。现在 `path` 是排过序的整组，left/right 是它的首尾。
+fn clashes(
+    edges: &[TimedEdge],
+    kind: Kind,
+    key: fn(&Edge) -> (Uuid, Uuid),
+    differ: fn(&Edge, &Edge) -> bool,
+) -> Vec<Violation> {
+    let mut by_key: HashMap<(Uuid, Uuid), Vec<&TimedEdge>> = HashMap::new();
+    for t in edges {
+        // 空区间（没有日期的事件，0031）哪一刻都不成立，跟谁都不同时
+        if matches!((t.from, t.to), (Some(f), Some(to)) if f >= to) {
+            continue;
+        }
+        by_key.entry(key(&t.edge)).or_default().push(t);
     }
     let mut out = Vec::new();
-    for (_, group) in by_key {
-        // 只报第一对。同一个主语指了五个宾语时报十对（两两组合）只是把同一件事
-        // 说十遍——人要处理的是「这里有冲突」，看一对就够去查了
-        let mut distinct: Vec<&Edge> = Vec::new();
-        for e in group {
-            if !distinct.iter().any(|d| val(d) == val(e)) {
-                distinct.push(e);
+    for mut group in by_key.into_values() {
+        if group.len() < 2 {
+            continue;
+        }
+        // 按起点扫一遍，手里留着还没结束的：它们正是与这一条同时成立的。一长串前后
+        // 相接的历史值（逐月的薪水）手里始终只有一两条，不会两两比一遍
+        group.sort_by_key(|t| (t.from.unwrap_or(i64::MIN), t.edge.fact));
+        let mut parent: Vec<usize> = (0..group.len()).collect();
+        let mut clashed = vec![false; group.len()];
+        let mut open: Vec<usize> = Vec::new();
+        for i in 0..group.len() {
+            let start = group[i].from.unwrap_or(i64::MIN);
+            // 半开区间：终点正好是这一条起点的，已经结束了——首尾相接是接任
+            open.retain(|&j| group[j].to.is_none_or(|to| to > start));
+            for &j in &open {
+                if differ(&group[i].edge, &group[j].edge) {
+                    clashed[i] = true;
+                    clashed[j] = true;
+                    let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+                    parent[a] = b;
+                }
+            }
+            open.push(i);
+        }
+        let mut blocks: HashMap<usize, Vec<Uuid>> = HashMap::new();
+        for i in 0..group.len() {
+            if clashed[i] {
+                let r = root(&mut parent, i);
+                blocks.entry(r).or_default().push(group[i].edge.fact);
             }
         }
-        if distinct.len() > 1 {
+        for mut facts in blocks.into_values() {
+            facts.sort_unstable();
+            facts.dedup();
             out.push(Violation {
-                kind: Kind::Functional,
-                left: distinct[0].fact,
-                right: distinct[1].fact,
-                path: Vec::new(),
+                kind,
+                left: facts[0],
+                right: facts[facts.len() - 1],
+                path: facts,
             });
         }
     }
     out
+}
+
+/// 并查集找根，顺手压缩路径
+fn root(parent: &mut [usize], mut i: usize) -> usize {
+    while parent[i] != i {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    i
 }
 
 #[cfg(test)]
@@ -333,6 +410,52 @@ mod tests {
     }
     fn with(ax: Axioms) -> HashMap<Uuid, Axioms> {
         HashMap::from([(n(99), ax)])
+    }
+    /// 不带时间地查：两端都无界，任意两条都同时成立，检查只剩形状。大部分用例问的
+    /// 就是形状；问时间的用例用 `at` 造边，直接调 `super::check`
+    fn check(edges: &[Edge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violation> {
+        let timed: Vec<TimedEdge> = edges
+            .iter()
+            .map(|&edge| TimedEdge {
+                edge,
+                from: None,
+                to: None,
+            })
+            .collect();
+        super::check(&timed, axioms)
+    }
+    /// 带区间的边，`[from, to)`
+    fn at(fact: u8, s: u8, o: u8, from: Option<i64>, to: Option<i64>) -> TimedEdge {
+        TimedEdge {
+            edge: e(fact, s, o),
+            from,
+            to,
+        }
+    }
+    /// 输入的全排列。顺序是这一类 bug 的全部来源，所以每种顺序都要跑到
+    fn permutations<T: Copy>(items: &[T]) -> Vec<Vec<T>> {
+        if items.len() <= 1 {
+            return vec![items.to_vec()];
+        }
+        let mut out = Vec::new();
+        for i in 0..items.len() {
+            let mut rest = items.to_vec();
+            let head = rest.remove(i);
+            for mut tail in permutations(&rest) {
+                tail.insert(0, head);
+                out.push(tail);
+            }
+        }
+        out
+    }
+    /// 一次检查的结果，排成与顺序无关的形状，好拿来比
+    fn shape(v: Vec<Violation>) -> Vec<(&'static str, Uuid, Uuid, Vec<Uuid>)> {
+        let mut out: Vec<_> = v
+            .into_iter()
+            .map(|x| (x.kind.as_str(), x.left, x.right, x.path))
+            .collect();
+        out.sort();
+        out
     }
     fn kinds(v: &[Violation]) -> Vec<Kind> {
         let mut k: Vec<Kind> = v.iter().map(|x| x.kind).collect();
@@ -532,7 +655,7 @@ mod tests {
         )
         .is_empty());
 
-        // 同一个宾语被两个主语指
+        // 同一个宾语被两个主语指：记成它自己的种类，不冒充 functional（#634）
         let inn = [e(1, 2, 1), e(2, 3, 1)];
         assert_eq!(
             kinds(&check(
@@ -542,7 +665,7 @@ mod tests {
                     ..Default::default()
                 })
             )),
-            vec![Kind::Functional]
+            vec![Kind::InverseFunctional]
         );
         assert!(check(
             &inn,
@@ -554,8 +677,8 @@ mod tests {
         .is_empty());
     }
 
-    /// 同一个主语指五个宾语只报一对。报十对（两两组合）是把同一件事说十遍——
-    /// 人要处理的是「这里有冲突」，看一对就够去查了。
+    /// 同一个主语指五个宾语只报一处。报十处（两两组合）是把同一件事说十遍；
+    /// 那一处带着全部五条，人撤哪条都有按钮。
     #[test]
     fn one_finding_per_conflicting_key_not_one_per_pair() {
         let edges = [e(1, 1, 2), e(2, 1, 3), e(3, 1, 4), e(4, 1, 5), e(5, 1, 6)];
@@ -567,6 +690,147 @@ mod tests {
             }),
         );
         assert_eq!(v.len(), 1);
+        assert_eq!(v[0].path, vec![f(1), f(2), f(3), f(4), f(5)]);
+        assert_eq!((v[0].left, v[0].right), (f(1), f(5)));
+    }
+
+    /// **一处冲突，不管以什么顺序读进来，都是同一行**（#624）。从前 left/right 取
+    /// 遇到的头两条：三个值的六种顺序给出六种键，反对称两种顺序给出两种键——而
+    /// `axiom_violations` 按键唯一，换个顺序，人裁过的那行就被绕开了。
+    ///
+    /// 跑全排列而不是跑一百次：顺序是这里唯一的变量，每一种都要到。
+    #[test]
+    fn the_same_clash_is_the_same_row_whatever_the_order() {
+        let functional = with(Axioms {
+            functional: true,
+            ..Default::default()
+        });
+        let inverse = with(Axioms {
+            inverse_functional: true,
+            ..Default::default()
+        });
+        let asymmetric = with(Axioms {
+            asymmetric: true,
+            ..Default::default()
+        });
+        let cases: [(&[Edge], &HashMap<Uuid, Axioms>); 3] = [
+            (&[e(1, 1, 2), e(2, 1, 3), e(3, 1, 4)], &functional),
+            (&[e(1, 2, 1), e(2, 3, 1), e(3, 4, 1)], &inverse),
+            (&[e(1, 1, 2), e(2, 2, 1), e(3, 1, 2)], &asymmetric),
+        ];
+        for (edges, ax) in cases {
+            let shapes: HashSet<_> = permutations(edges)
+                .iter()
+                .map(|p| shape(check(p, ax)))
+                .collect();
+            assert_eq!(shapes.len(), 1, "顺序换出了不同的行: {shapes:?}");
+            let only = shapes.into_iter().next().unwrap();
+            assert_eq!(only.len(), 1);
+            let (_, left, right, path) = &only[0];
+            assert_eq!(path, &vec![f(1), f(2), f(3)], "整组，按 id 排序");
+            assert_eq!((*left, *right), (f(1), f(3)), "首尾是最小与最大");
+        }
+    }
+
+    /// **前后相接是接任，不是矛盾**（#634）。Lin Zhao 的薪水 `[2023-06, 2024-02)`
+    /// 是 28000、`[2024-02, 现在)` 是 32000：一个人任何一刻都只有一份薪水。从前
+    /// 检查不看时间，每次调薪都进 Review。重叠哪怕一秒，才是同时有两个值。
+    #[test]
+    fn a_succession_is_not_a_contradiction() {
+        let functional = with(Axioms {
+            functional: true,
+            ..Default::default()
+        });
+        let (jun23, feb24) = (1_685_577_600, 1_708_387_200);
+
+        let raise = [
+            at(1, 1, 2, Some(jun23), Some(feb24)),
+            at(2, 1, 3, Some(feb24), None),
+        ];
+        assert!(super::check(&raise, &functional).is_empty(), "首尾相接");
+
+        let overlap = [
+            at(1, 1, 2, Some(jun23), Some(feb24 + 1)),
+            at(2, 1, 3, Some(feb24), None),
+        ];
+        assert_eq!(
+            kinds(&super::check(&overlap, &functional)),
+            vec![Kind::Functional]
+        );
+
+        // 宾语侧同理：一个项目换了负责人，中间还空了一年
+        let handover = [
+            at(1, 2, 9, Some(jun23), Some(feb24)),
+            at(2, 3, 9, Some(feb24 + 31_536_000), None),
+        ];
+        let inverse = with(Axioms {
+            inverse_functional: true,
+            ..Default::default()
+        });
+        assert!(super::check(&handover, &inverse).is_empty());
+
+        // 反对称同理：先是 A 管 B，后来 B 管 A
+        let reversal = [
+            at(1, 1, 2, Some(jun23), Some(feb24)),
+            at(2, 2, 1, Some(feb24), None),
+        ];
+        let asymmetric = with(Axioms {
+            asymmetric: true,
+            ..Default::default()
+        });
+        assert!(super::check(&reversal, &asymmetric).is_empty());
+    }
+
+    /// 无界的那一侧跟谁都重叠：一条不知道从何时起、一直成立的事实，与任何一段
+    /// 都同时成立。没有日期的事件区间为空（0031），哪一刻都不成立，跟谁都不冲突。
+    #[test]
+    fn an_unbounded_span_meets_everything_and_an_empty_one_meets_nothing() {
+        let functional = with(Axioms {
+            functional: true,
+            ..Default::default()
+        });
+        let always = [at(1, 1, 2, None, None), at(2, 1, 3, Some(100), Some(200))];
+        assert_eq!(
+            kinds(&super::check(&always, &functional)),
+            vec![Kind::Functional]
+        );
+
+        let undated_event = [
+            at(1, 1, 2, Some(150), Some(150)),
+            at(2, 1, 3, Some(100), Some(200)),
+        ];
+        assert!(super::check(&undated_event, &functional).is_empty());
+    }
+
+    /// **组是冲突的连通块。** a 与 b 重叠、b 与 c 重叠，a 与 c 首尾相接：三条是一组
+    /// ——撤掉 b 两场冲突一起消失，分开报会让人以为是两件事。两场彼此隔开的冲突是两组。
+    #[test]
+    fn a_clash_is_a_connected_group_and_separate_clashes_stay_separate() {
+        let functional = with(Axioms {
+            functional: true,
+            ..Default::default()
+        });
+        let chained = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 1, 3, Some(50), Some(150)),
+            at(3, 1, 4, Some(100), Some(200)),
+        ];
+        let v = super::check(&chained, &functional);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].path, vec![f(1), f(2), f(3)]);
+
+        let apart = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 1, 3, Some(50), Some(100)),
+            at(3, 1, 4, Some(500), Some(600)),
+            at(4, 1, 5, Some(550), Some(600)),
+            // 与谁都不重叠的一条不进任何一组
+            at(5, 1, 6, Some(300), Some(400)),
+        ];
+        let v = shape(super::check(&apart, &functional));
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].3, vec![f(1), f(2)]);
+        assert_eq!(v[1].3, vec![f(3), f(4)]);
     }
 
     /// 同一个主语两次指向**同一个**宾语不是冲突——重复断言而已。
