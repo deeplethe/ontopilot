@@ -187,7 +187,11 @@ fn lines(text: &str, r: Range<usize>) -> Range<usize> {
     while end > start && matches!(text.as_bytes()[end - 1], b'\n' | b' ' | b'\t') {
         end -= 1;
     }
-    let end = text[end..].find('\n').map_or(text.len(), |i| end + i);
+    let mut end = text[end..].find('\n').map_or(text.len(), |i| end + i);
+    // 扩到行尾会把行尾的空格再收回来；块的文本不带尾随空白
+    while end > start && matches!(text.as_bytes()[end - 1], b' ' | b'\t') {
+        end -= 1;
+    }
     start..end
 }
 

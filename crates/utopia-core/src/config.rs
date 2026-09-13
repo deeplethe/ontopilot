@@ -49,7 +49,7 @@ impl Default for AppConfig {
             secret_key: None,
             web_dist: "web/dist".into(),
             data_dir: "data".into(),
-            chunk_tokens: 1000,
+            chunk_tokens: 300,
             db_max_connections: None,
             cookie_secure: false,
             open_registration: true,
@@ -159,7 +159,7 @@ mod tests {
             jail.set_env("UTOPIA_BIND_ADDR", "");
             let cfg = AppConfig::load().unwrap();
             assert_eq!(cfg.data_dir, "data");
-            assert_eq!(cfg.chunk_tokens, 1000);
+            assert_eq!(cfg.chunk_tokens, 300);
             assert_eq!(cfg.web_dist, "web/dist");
             assert_eq!(cfg.bind_addr, "0.0.0.0:1516");
             Ok(())

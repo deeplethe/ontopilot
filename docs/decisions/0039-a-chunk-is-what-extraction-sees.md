@@ -101,7 +101,17 @@ split; a piece that is caption plus header plus one row and still over budget is
 because there is no better cut. This is the change that addresses the 13 headerless chunks
 directly. The rest of this record makes it possible; this is the point.
 
-### 4. The budget is tokens, not characters, and it is 1000
+### 4. The budget is tokens, not characters — and it is 300, because 1000 was measured and lost
+
+> **Revised 2026-09-13, the same day, by the first bench round.** The paragraph below chose
+> 1000 to honour the old comment. One round at 1000 scored 36/52 against 43 and 45 before, and
+> the acquisition 8-K showed why: nine chunks became two, and from 4,700 characters the model
+> wrote seven facts — the address, the phone number, "published in the SEC" — and not one about
+> the acquisition. The extractor's output per call does not grow with its input; handed more, it
+> picks the easiest few. The default is now 300, which is what the old character budget came to
+> in English and the condition the 43/45 rounds were measured under. Chinese gets less context
+> than it did; that is unmeasured and open. The budget is a knob (`UTOPIA_CHUNK_TOKENS`) so the
+> next measurement does not need a rebuild.
 
 Counted with `tiktoken` cl100k, which is embedded in the crate and needs no network. It is not
 the extraction model's tokenizer — that is DeepSeek's — but it is a BPE with a similar ratio,
@@ -162,8 +172,19 @@ Before, two rounds on `dev` unchanged: **43/52** and **45/52**; relations 12/12 
 stable misses across both rounds were three, none of them present in `extraction_drops` or
 `ontology_misses` — never extracted, not extracted and dropped.
 
-After: recorded in the pull request that implements this record, two rounds, with
-`--reprocess` so the chunks are rebuilt.
+After, with `--reprocess` so every chunk is rebuilt. At 1000 tokens: **36/52**, relations 8/12,
+the acquisition 8-K 4/11 with seven facts from two chunks — the round that overturned decision 4.
+At 300 tokens: **37/52**, but not a measurement: the extraction model's account ran out of
+balance (HTTP 402) at 01:22 while the Ohio exhibit was being extracted, and its chunks 3–7 —
+the paragraph holding all seven of its numbers — were never sent. On the three documents that
+finished before the balance ran out the round scored 29/37, against 29/37 and 33/37 for the two
+rounds before; within one standard deviation of both. The round is to be rerun once the account
+is funded, and the number that matters is the Ohio exhibit's.
+
+Seen in the rebuilt chunks, independent of the score: no chunk begins inside a table without
+its header (was 13 of 35 in the earnings release); the Neal vote table is one table again with
+no rule inside it; the chunk holding the non-GAAP EPS carries a header — the parser's layout row,
+not the column names, which is the open question below.
 
 ## Open questions
 

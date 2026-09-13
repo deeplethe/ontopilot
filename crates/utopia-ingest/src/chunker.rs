@@ -32,12 +32,21 @@ pub struct ChunkPiece {
     pub heading: Option<String>,
 }
 
-/// 一块的预算（cl100k token）。1000 是旧字符预算写在注释里的本意。
-pub const BUDGET_TOKENS: usize = 1000;
+/// 一块的预算（cl100k token）。
+///
+/// **300，不是 1000。**1000 是旧字符预算的注释里写的本意，第一轮就量掉了：收购
+/// 8-K 从九块变成两块，模型对着 4700 字符只写了七条事实——地址、电话、「published
+/// in the SEC」——收购本身一条都没有。模型一次调用写出的事实数不随输入变长而变多，
+/// 块一大它就挑最容易的几条写。300 是旧切法在英文上的实际大小，也是 43/45 那两轮
+/// 量出来的条件；中文在这个数下拿到的上下文比从前少，还没量（0039 开放问题）。
+pub const BUDGET_TOKENS: usize = 300;
 
 /// 说明句最长多少字节还算说明句：表上面那一段要短、或者以冒号结尾，
 /// 才当成表的一部分带着走；一整段分析不是说明句
 const CAPTION_MAX_BYTES: usize = 200;
+
+/// 不到这么多 token 的一段（页码、脚注标记）不单独成块，并进上一块
+const TINY_TOKENS: usize = 8;
 
 pub fn chunk_text(text: &str) -> Vec<ChunkPiece> {
     chunk_with_budget(text, BUDGET_TOKENS)
@@ -193,8 +202,33 @@ impl<'a> Packer<'a> {
         tokens(&self.render(prefix, body)) <= self.budget
     }
 
-    /// 试着把一项放进当前块；放不下就先收当前块，再试一次空块
+    /// 试着把一项放进当前块；放不下就先收当前块，再试一次空块。
+    ///
+    /// **极小的一项不单独成块。**新闻稿末尾有一行页码「4」，按预算它放不进已经
+    /// 满了的上一块，于是自己成了一块——一个字符的块，抽取照样为它调一次模型。
+    /// 几个 token 的东西并进上一块，超预算那几个 token 无所谓。
     fn place(&mut self, piece: Piece) -> Option<Piece> {
+        if self.pending.is_empty() {
+            if let Piece::Text(r) = &piece {
+                if tokens(&self.text[r.clone()]) <= TINY_TOKENS {
+                    if !self.body.is_empty() {
+                        self.body.push(piece);
+                        return None;
+                    }
+                    // 上一块已经发出去了（长段落走退路切分会立刻 flush）：接到它尾上
+                    if let Some(last) = self.out.last_mut() {
+                        last.text.push_str(
+                            "
+
+",
+                        );
+                        last.text.push_str(&self.text[r.clone()]);
+                        last.char_end = last.char_end.max(r.end as i32);
+                        return None;
+                    }
+                }
+            }
+        }
         let mut with_headings: Vec<Piece> = self.pending.iter().cloned().map(Piece::Text).collect();
         with_headings.push(piece);
         if self.body.is_empty() {
@@ -514,6 +548,29 @@ mod tests {
             assert!(!p.text.trim().is_empty());
         }
         assert!(!pieces[0].text.contains("* * *"), "水平线不进块");
+    }
+
+    /// 新闻稿末尾的页码「4」：不单独成块，并进上一块，哪怕上一块已经满了。
+    #[test]
+    fn a_page_number_never_becomes_a_chunk_of_its_own() {
+        let body = "A sentence that fills the budget nicely. ".repeat(6);
+        let text = format!(
+            "{body}
+
+4"
+        );
+        let pieces = chunk_with_budget(&text, tokens(body.trim()));
+        assert_eq!(
+            pieces.len(),
+            1,
+            "{:?}",
+            pieces.iter().map(|p| &p.text).collect::<Vec<_>>()
+        );
+        assert!(pieces[0].text.ends_with(
+            "
+
+4"
+        ));
     }
 
     #[test]
