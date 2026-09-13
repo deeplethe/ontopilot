@@ -159,7 +159,8 @@ function resolveAnchors(kb) {
            d.filename,
            replace(replace(coalesce(fe.quote, ''), chr(10), ' '), chr(13), ' '),
            coalesce(ss.survivor::text, ''), coalesce(st.key, ''), coalesce(sv.canonical_name, ''),
-           coalesce(os.survivor::text, ''), coalesce(ot.key, ''), coalesce(ov.canonical_name, ''))
+           coalesce(os.survivor::text, ''), coalesce(ot.key, ''), coalesce(ov.canonical_name, ''),
+           coalesce(f.object_value->>'value', ''))
       FROM facts f
       JOIN fact_evidence fe ON fe.fact_id = f.id
       JOIN documents d ON d.id = fe.document_id
@@ -173,8 +174,8 @@ function resolveAnchors(kb) {
     .split("\n")
     .filter(Boolean)
     .map((l) => {
-      const [file, quote, sId, sType, sName, oId, oType, oName] = l.split("");
-      return { file, quote, sides: { subject: [sId, sType, sName], object: [oId, oType, oName] } };
+      const [file, quote, sId, sType, sName, oId, oType, oName, value] = l.split("");
+      return { file, quote, value, sides: { subject: [sId, sType, sName], object: [oId, oType, oName] } };
     });
 
   const squash = (s) => (s || "").toLowerCase().replace(/\s+/g, "");
@@ -185,7 +186,14 @@ function resolveAnchors(kb) {
       if (r.file !== a.doc || !squash(r.quote).includes(squash(a.quote_has))) continue;
       for (const role of a.role ? [a.role] : ["subject", "object"]) {
         const [id, type, name] = r.sides[role];
-        if (id && type === a.type) ids.set(id, name);
+        if (!id || type !== a.type) continue;
+        // 一句话里并排好几条事实时（「位于舟山，下设财务部和工程部」），用另一侧把锚点钉在
+        // 那一条上：另一侧的名字或值里得有 other_has
+        if (a.other_has) {
+          const other = r.sides[role === "subject" ? "object" : "subject"];
+          if (!squash(`${other[2]} ${r.value}`).includes(squash(a.other_has))) continue;
+        }
+        ids.set(id, name);
       }
     }
     out[a.id] = [...ids.entries()];
