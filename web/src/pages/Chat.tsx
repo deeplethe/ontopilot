@@ -1,7 +1,7 @@
 /* Chat：agentic 对话（检索/图谱工具 + remember 记忆）。
    会话持久化：左栏会话列表;上下文由服务端拼,前端只发 conversation_id + 新消息;
    行动轨迹(steps)与引用(sources)随消息落库,历史回放与实时流共用渲染。 */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import Markdown from "react-markdown";
@@ -26,7 +26,6 @@ import {
   Waypoints,
   Wrench,
 } from "lucide-react";
-import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import {
   api,
   conversationsApi,
@@ -37,10 +36,17 @@ import {
 } from "../api";
 import { S } from "../i18n";
 import { toast } from "../toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useKb, useKbId } from "../kb";
 import {
   Button,
   cn,
+  ConvMark,
   DangerConfirm,
   IconButton,
   Input,
@@ -50,6 +56,7 @@ import {
   ROW_HOVER,
   Textarea,
 } from "../ui";
+import { convMarks, useLive, useUnread } from "../unread";
 import { liveAnswer, type LiveHandle, type Turn } from "../liveAnswer";
 import { NodCard } from "./PendingFacts";
 import { NextStep, nextStep, useReadiness } from "./NextStep";
@@ -113,12 +120,22 @@ export function Chat() {
   // 会话搜索。**搜标题也搜正文**——人记得住的往往是问过的那句话
   const [convSearch, setConvSearch] = useState("");
   // 三点菜单展开的是哪一条。同时只开一个
-  const [menuFor, setMenuFor] = useState<string | null>(null);
   // 「最近」这一组收起来没有。默认展开：左栏本来就是为了看见这些会话
   const [recentOpen, setRecentOpen] = useState(true);
+  /* 左栏每一条会话的记号（正在写 / 写完了还没看）。两张表都活在组件外面——
+     "写完了"常常发生在这个组件已经卸载的时候（见 unread.ts 开头） */
+  const liveIds = useLive();
+  const unreadIds = useUnread();
   const scopeRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  /* 打开哪一场就等于看过哪一场：记号消掉，并且告诉 unread「此刻看的是它」——
+     正看着的那一场写完时不该变成未读。传 null（新对话、删掉了当前这场）
+     同样有意义：那之后写完的任何一场都算未读 */
+  useEffect(() => {
+    convMarks.view(activeId);
+  }, [activeId]);
 
   // 作用域弹层：点外面 / Esc 关闭（与 ui/Dropdown 同惯例）
   useEffect(() => {
@@ -305,6 +322,8 @@ export function Chat() {
 
   const removeConversation = async (id: string) => {
     await conversationsApi.remove(kb!.id, id);
+    // 记号跟着会话走，否则这个 id 会一直留在浏览器的那张表里
+    convMarks.forget(id);
     if (sessionStorage.getItem(lastKey(kb!.id)) === id) {
       sessionStorage.removeItem(lastKey(kb!.id));
     }
@@ -397,12 +416,15 @@ export function Chat() {
         <div className="flex items-center gap-3 min-w-0">
           {/* 作用域 chip：提问点位可见"在问哪个库"，切库沿用现有语义（开新会话） */}
           <div ref={scopeRef} className="relative shrink-0">
-            {/* 左内距去掉：图标的左缘落在上面占位符的起点上，与顶栏切换器同一个
-                图标——两处都是「在哪个库」 */}
+            {/* 图标的左缘要落在上面占位符的起点上（与顶栏切换器同一个图标——
+                两处都是「在哪个库」）。**做法是整颗按钮左挂一档，不是把内距抹掉**：
+                抹掉内距，图标就贴死在按钮的边上，指针一停，底色紧紧箍着图标，
+                左边没有一点余地。挂出去则内距照留——图标落在同一个位置，
+                而那块底色在它四周是匀的。挂多少就给多少内距（都是 8）。 */}
             <Button
               variant="ghost"
               size="sm"
-              className="max-w-52 border-0 pl-0"
+              className="max-w-52 border-0 px-2 -ml-2"
               title={S.ask.scopeLabel}
               onClick={() => setScopeOpen((v) => !v)}
             >
@@ -414,7 +436,7 @@ export function Chat() {
               />
             </Button>
             {scopeOpen && (
-              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-overlay shadow-2xl overflow-hidden">
+              <div className="u-menu-glass u-pop-up absolute bottom-full mb-2 left-0 z-50 w-56 rounded-overlay u-lift-strong overflow-hidden">
                 <div className="border-b border-line px-4 py-3 text-body font-medium text-ink">
                   {S.ask.scopeLabel}
                 </div>
@@ -424,13 +446,19 @@ export function Chat() {
                       key={k.id}
                       density="menu"
                       active={k.id === kb?.id}
+                      /* 对勾走 `trailing` 槽。**塞进 children 的 svg 会掉到第二行**：
+                         Row 把 children 整个包进一个 `flex-1 truncate` 的 span，
+                         那个 span 不是 flex 容器，preflight 又把 svg 设成块级，
+                         于是勾自己占一行、整行跟着变高（顶栏的库切换器早就这么写的） */
+                      trailing={
+                        k.id === kb?.id ? <Check size={12} className="text-ink-2" /> : undefined
+                      }
                       onClick={() => {
                         setScopeOpen(false);
                         if (k.id !== kb?.id) setKb(k.id);
                       }}
                     >
-                      <span className="flex-1 min-w-0 truncate">{k.name}</span>
-                      {k.id === kb?.id && <Check size={12} className="shrink-0 text-ink-2" />}
+                      <span className="truncate">{k.name}</span>
                     </Row>
                   ))}
                 </div>
@@ -484,9 +512,11 @@ export function Chat() {
             onKeyDown={(e) => e.key === "Escape" && setConvSearch("")}
           />
         </div>
-        {/* 左栏里的一切都从 12 起：输入框的盒、行的盒。新对话是个动作，带图标；
-            下面的会话是一组标题，不带——一列重复的气泡图标只是把每个标题往右
-            推 22px，而它们对齐的对象是彼此，不是上面这一行 */}
+        {/* 左栏的节奏（DESIGN 规矩 2 的左栏基线）：**盒 8 / 图标 20 / 文字 42**。
+            栏的横内距 8，行的横内距 12，图标 14，图标到字 8——所以这一栏里
+            每一行的字都从 42 起，搜索框的占位字也是（它的图标槽正好 left-3
+            + pl-[34px]）。不带图标的行**留着那一格**（Row 自动补），字才落在
+            同一条竖线上；`flush` 是给整组都没有图标的栏用的，不是给这一栏用的 */}
         <div className="px-2 pb-1">
           <Row density="nav" icon={<SquarePen size={14} />} onClick={newChat}>
             {S.ask.newChat}
@@ -498,7 +528,6 @@ export function Chat() {
         <div className="px-2">
           <Row
             density="nav"
-            flush
             aria-expanded={recentOpen}
             onClick={() => setRecentOpen((v) => !v)}
             trailing={
@@ -535,7 +564,17 @@ export function Chat() {
               ) : (
                 <Row
                   density="nav"
-                  flush
+                  icon={
+                    <ConvMark
+                      state={
+                        liveIds.has(c.id)
+                          ? "live"
+                          : unreadIds.has(c.id)
+                            ? "unread"
+                            : "rest"
+                      }
+                    />
+                  }
                   active={c.id === activeId}
                   className="pr-8"
                   onClick={() => openConversation(c.id)}
@@ -549,64 +588,56 @@ export function Chat() {
                   </span>
                 </Row>
               )}
-              {/* 三点菜单：**一个入口装下所有动作**。从前右边直接是删除，
-                  而删除是这里最不该一步到位的那个 */}
+              {/* 三点菜单：**一个入口装下所有动作**（从前右边直接是删除，
+                  而删除是这里最不该一步到位的那个）。走 shadcn 的
+                  DropdownMenu：弹层样式与全站统一，触发器由 Radix 自动带上
+                  `aria-haspopup`——按钮的"按下去沉 1px"那条特意排除了菜单
+                  触发器，手搓的入口没有这个标记，所以从前一点就跳。 */}
               {renamingId !== c.id && (
-                <IconButton
-                  size="sm"
-                  label={S.ask.moreActions}
-                  className={cn(REVEAL, "absolute right-1 top-1/2 -translate-y-1/2")}
-                  onClick={() => setMenuFor(menuFor === c.id ? null : c.id)}
-                >
-                  <MoreHorizontal size={14} />
-                </IconButton>
-              )}
-              {menuFor === c.id && (
-                <>
-                  {/* 点别处就关。铺满全屏而不是监听 document：不必在卸载时
-                      记得摘监听器 */}
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setMenuFor(null)}
-                  />
-                  <div className="glass-strong absolute right-2 top-8 z-20 w-32 rounded-overlay py-1 shadow-xl">
-                    <Row
-                      density="menu"
-                      onClick={() => {
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton
+                      size="sm"
+                      label={S.ask.moreActions}
+                      className={cn(REVEAL, "absolute right-1 top-1/2 -translate-y-1/2")}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal size={14} />
+                    </IconButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem
+                      onSelect={() => {
                         setRenameDraft(c.title || "");
                         setRenamingId(c.id);
-                        setMenuFor(null);
                       }}
                     >
                       {S.ask.rename}
-                    </Row>
-                    <Row
-                      density="menu"
-                      onClick={() => {
-                        navigator.clipboard?.writeText(c.title || "");
-                        setMenuFor(null);
-                      }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => navigator.clipboard?.writeText(c.title || "")}
                     >
                       {S.ask.copyTitle}
-                    </Row>
-                    <Row
-                      density="menu"
-                      danger
-                      onClick={() => {
-                        setPendingDelete(c);
-                        setMenuFor(null);
-                      }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => setPendingDelete(c)}
                     >
                       {S.ask.deleteConversation}
-                    </Row>
-                  </div>
-                </>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           ))}
-          {/* 文字从 20 起（盒 12 + 8），与上面每条会话的标题同一条线 */}
+          {/* 文字从 20 起：栏的 px-2（8）加行自己的 px-3（12），与「最近」和
+              上面每条会话的标题同一条线。写成 px-2 就落在 16，差那 4px 一眼看得出 */}
           {convs.data?.conversations.length === 0 && (
-            <p className="px-2 py-2 text-small text-ink-2">{S.ask.noConversations}</p>
+            /* 34 = 行内距 12 + 图标 14 + 间距 8：这句话与上面每一条会话的
+               标题同一条竖线，而不是自己另起一列 */
+            <p className="py-2 pl-[34px] pr-3 text-small text-ink-2">
+              {S.ask.noConversations}
+            </p>
           )}
         </div>
         )}
@@ -636,7 +667,7 @@ export function Chat() {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto u-scroll px-4 py-6">
+            <div className="flex-1 overflow-y-auto u-scroll u-chat-fade px-4 pt-6 pb-12">
               <div className="max-w-3xl mx-auto space-y-4">
                 {shown.map((t, i) => (
                   <TurnView key={i} turn={t} live={streaming && i === shown.length - 1} />
@@ -711,8 +742,9 @@ function segments(turn: Turn): Segment[] {
 function stepIcon(kind: ChatStep["kind"]) {
   if (kind === "search") return <SearchIcon size={11} />;
   if (kind === "docs") return <BookOpen size={11} />;
-  if (kind === "entity") return <Waypoints size={11} />;
-  if (kind === "facts") return <History size={11} />;
+  if (kind === "entity" || kind === "neighbors" || kind === "path")
+    return <Waypoints size={11} />;
+  if (kind === "facts" || kind === "timeline") return <History size={11} />;
   // facts 读世界轴、changes 读认知轴，两个图谱工具给不同的图标——
   // 用户看步骤条时该看得出问的是哪根轴
   if (kind === "changes") return <GitCompareArrows size={11} />;
@@ -721,24 +753,34 @@ function stepIcon(kind: ChatStep["kind"]) {
 }
 
 /** 工具步骤 → 球体状态：思考球讲当前动作的语言 */
-function orbState(kind?: ChatStep["kind"]): OrbState {
-  if (kind === "search" || kind === "docs") return "searching";
-  if (kind === "entity") return "connecting";
-  if (kind === "facts" || kind === "changes") return "solving";
-  if (kind === "query" || kind === "tool") return "working";
-  return "listening"; // 尚无步骤：刚接到消息
-}
+/** 一段 markdown。**按文本记忆化**：一次生成里每来一个词元，整条消息都要重渲染，
+ *  而 react-markdown 每次都把那一段从头解析一遍——答案越长每个词元越贵，读起来
+ *  就是越写越顿。收了尾的段落文本不再变，`memo` 让它们一次也不重解析；
+ *  还在长的那一段照旧，它本来就得重解析。 */
+const Segment = memo(function Segment({ text }: { text: string }) {
+  return (
+    <div className="u-chat-prose">
+      <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {text}
+      </Markdown>
+    </div>
+  );
+});
 
-/** 思考指示：thinking-orbs 球体 + 当前动作（应用是深色定妆，theme 钉死 dark）。 */
+/** 思考指示：**正在做的那句话自己在发光**。
+ *
+ * 这里换过两轮。最早是 `thinking-orbs` 的球体，跟这套界面不是一路——chrome 是
+ * 零色偏的中性灰，花样留给画布，而那颗球自带一套发光点阵，`theme` 还写死成暗色。
+ * 换成房里的转圈之后问题只剩一半：在做什么本来就由那行字说了
+ * （「检索文档 · 3 篇」），旁边再转一个零件，等于同一件事说两遍，而且转圈说的是
+ * 「有个东西在忙」，跟屏幕上这句话没关系。
+ *
+ * 现在没有零件：亮带横扫过那行字。它既是「还在动」，也是「动的是这句话」。
+ * 还没有步骤可说的时候就扫「Thinking…」——那也是一句话，不是一个图标。 */
 function Thinking({ step }: { step?: ChatStep }) {
   return (
-    <span className="inline-flex items-center gap-3 text-ink-2">
-      <ThinkingOrb state={orbState(step?.kind)} size={20} theme="dark" />
-      {step && (
-        <span className="text-small truncate">
-          {step.label} · {step.detail}
-        </span>
-      )}
+    <span className="u-thinking text-small truncate">
+      {step ? `${step.label} · ${step.detail}` : S.ask.thinking}
     </span>
   );
 }
@@ -748,7 +790,10 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   if (turn.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="u-bubble-user max-w-[85%] rounded-panel px-4 py-2 text-body whitespace-pre-wrap text-ink">
+        {/* **对话按 title 那一档读**（16/24，不是正文的 14/22）。这一页是这个
+            产品里唯一一块拿来"读"的长文本，其余都是表格、清单、面板里的字段，
+            14px 在那些地方是对的，成段读就偏小了。仍在五档之内，不新增字号 */}
+        <div className="u-bubble-user max-w-[85%] rounded-panel px-4 py-2 text-title whitespace-pre-wrap text-ink">
           {turn.content}
         </div>
       </div>
@@ -761,7 +806,7 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
   return (
     <div className="max-w-[95%]">
       {/* agent 回复无气泡：正文直接落在画布上（用户消息保留气泡以区分角色） */}
-      <div className="py-1 text-body text-ink leading-relaxed">
+      <div className="py-1 text-title text-ink leading-relaxed">
         {/* **轨迹按发生的顺序穿在正文里。**
             模型是边说边查的：说一句、调一次、再说一句。把调用整块提到最前面，
             读起来就成了「先查七次再一口气说完」——那不是它做的事，而且相邻两次
@@ -791,11 +836,10 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
                流式中经 remend 修补未闭合语法（粗体/围栏/链接），
                rehype-highlight 做代码高亮——成熟件组装，观感自持。
                **只有还在长的那一段需要 remend**：先前的段落已经收尾了 */
-            <div key={i} className="u-chat-prose">
-              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                {live && seg.last ? remend(seg.text) : seg.text}
-              </Markdown>
-            </div>
+            <Segment
+              key={i}
+              text={live && seg.last ? remend(seg.text) : seg.text}
+            />
           ),
         )}
         {thinking && <Thinking step={lastStep} />}

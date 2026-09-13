@@ -109,8 +109,82 @@ async fn counted_relation_groups(
             existing,
         });
     }
+    fold_by_meaning(state, kb_id, &mut out).await;
     out.sort_by(|a, b| b.facts.cmp(&a.facts).then(a.key.cmp(&b.key)));
     Ok(out)
+}
+
+/// 拼写对不上、意思对得上的，也不新建（#560）。
+///
+/// `PredicateIndex` 只认写法、屈折与被动；`comprised` 对 `has_member`、`ceo` 对
+/// `chief_executive` 它看不出来，于是本体里长出第二个关系，图上同一件事两种谓词，
+/// 查询按谓词分组时它们各站一边。这里把没落地的说法嵌一次，与已有关系的向量比，
+/// 够近的就落到那一条上。阈值取得紧：折错一次是把两个关系永久并成一个，
+/// 而不折只是多一个关系，后者便宜得多。每个候选的距离都进日志，好在真语料上校
+const FOLD_DISTANCE: f32 = 0.20;
+
+async fn fold_by_meaning(state: &AppState, kb_id: Uuid, groups: &mut [RelationGroup]) {
+    let unmatched: Vec<usize> = groups
+        .iter()
+        .enumerate()
+        .filter(|(_, g)| g.existing.is_none())
+        .map(|(i, _)| i)
+        .collect();
+    if unmatched.is_empty() {
+        return;
+    }
+    let Ok(kb) = utopia_store::kbs::get(&state.pool, kb_id).await else {
+        return;
+    };
+    let Ok(Some(settings)) = utopia_store::settings::get(&state.pool, kb.workspace_id).await else {
+        return;
+    };
+    let Some(client) = crate::llm_util::embed_client(&settings) else {
+        return;
+    };
+    let texts: Vec<String> = unmatched
+        .iter()
+        .map(|i| groups[*i].key.replace('_', " "))
+        .collect();
+    let vectors = match client.embed(&texts).await {
+        Ok(v) if v.len() == texts.len() => v,
+        Ok(_) => return,
+        Err(e) => {
+            tracing::warn!(%kb_id, error = %e, "说法嵌入失败，按拼写采纳");
+            return;
+        }
+    };
+    for (i, vec) in unmatched.into_iter().zip(vectors) {
+        let near = utopia_store::ontology::nearest_relation_types(
+            &state.pool,
+            kb_id,
+            &vec,
+            3,
+            Some("relation"),
+        )
+        .await
+        .unwrap_or_default();
+        for c in &near {
+            tracing::debug!(%kb_id, form = %groups[i].key, key = %c.key, distance = c.distance, "同义候选");
+        }
+        if let Some(hit) = fold_pick(&near, FOLD_DISTANCE) {
+            tracing::info!(
+                %kb_id, form = %groups[i].key, onto = %hit.key, distance = hit.distance,
+                "说法按意思落到已有关系上"
+            );
+            groups[i].existing = Some((hit.id, false));
+        }
+    }
+}
+
+/// 最近的一个在阈值内就是它；候选按距离升序来
+fn fold_pick(
+    near: &[utopia_core::models::TypeCandidate],
+    max_distance: f32,
+) -> Option<&utopia_core::models::TypeCandidate> {
+    near.iter()
+        .min_by(|a, b| a.distance.total_cmp(&b.distance))
+        .filter(|c| c.distance <= max_distance)
 }
 
 pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result<()> {
@@ -129,9 +203,21 @@ pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result
         .filter(|f| f.doc_count >= MIN_DOCS)
         .collect();
     let types = utopia_store::resolution::proposed_types(&state.pool, kb_id).await?;
-    if forms.len() + types.len() < MIN_SIGNALS {
+    /* **字面值那一档也要算进来。**
+    `proposed_predicates` 只数宾语是实体的事实（它数的是"采纳要改写的东西"），
+    于是一个满是数额的语料在这里算出 predicates=0，整个自动扩本体被跳过，
+    下面那段建属性的代码一次都跑不到。实测：12 条带着 `valuation`、
+    `investment_amount` 等说法的值事实在库里等着，日志里只有一行
+    「够格的信号太少」。它们同样是"够不够一次 LLM 调用的量"的信号 */
+    let value_forms: Vec<_> = utopia_store::graph::proposed_attributes(&state.pool, kb_id)
+        .await?
+        .into_iter()
+        .filter(|f| f.doc_count >= MIN_DOCS)
+        .collect();
+    if forms.len() + types.len() + value_forms.len() < MIN_SIGNALS {
         tracing::debug!(
             %kb_id, predicates = forms.len(), types = types.len(),
+            values = value_forms.len(),
             "够格的信号太少，跳过自动扩本体"
         );
         return Ok(());
@@ -232,8 +318,19 @@ pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result
     // 指引，而这里没有可信的来源可写。编一句反而是往提示词里塞一个没人负责的断言，
     // 而 key 本身（`runs_on`、`available_on`）已经说清楚了。
     //
-    // temporal 一律 state：它只在 functional / inverse_functional 为真时驱动时态
-    // 引擎，而这条路**永不**自动设那两位（见文件头），所以此处它没有行为后果。
+    /* **temporal 从提案里取，不再一律 state。**
+    这里原来写死 state，理由是「它只在 functional / inverse_functional 为真时
+    驱动时态引擎，而这条路永不自动设那两位」。那个理由**在 0031（#486）之后
+    已经不成立**：`Validity::under` 现在按谓词的 temporal 规整每一次写入，
+    event 会把 `valid_to` 收到与 `valid_from` 同一刻。写死 state 的后果是
+    `Meridian invested Kestrel 2025-05-09` 被记成「从那天起一直在投」，
+    时间轴上读出来就是这样——而它是一件发生过的事，不是一个持续的状态。
+
+    答案本来就在手边：提案那一步问模型要的 JSON 里就有
+    `"temporal":"state|event|eternal"`，而下面的类、属性、map_to 都在用同一份
+    提案，唯独关系这一档把它丢了。**采纳与否仍旧只由票数决定**（0007），
+    模型只回答「这个关系是哪一种」——那是计数答不了的意义问题。 */
+    let temporal_of = proposed_temporal(&proposals);
     for g in &counted {
         // 本体里已经有等价关系就不新建，直接把事实改写过去。
         // 被动形（`produced_by` 对上 `produces`）改写时主宾对调
@@ -241,12 +338,13 @@ pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result
             Some(hit) => hit,
             None => {
                 let label = g.key.replace('_', " ");
+                let temporal = temporal_of(&g.key, &g.forms);
                 match utopia_store::ontology::create_relation_type(
                     &state.pool,
                     kb_id,
                     &g.key,
                     &label,
-                    "state",
+                    temporal,
                     // 冷启动不替人声明任何公理：推理机的判据必须是人写下来的
                     Default::default(),
                     "",
@@ -285,6 +383,7 @@ pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result
         tracing::info!(
             %kb_id, key = %g.key, forms = ?g.forms, docs = g.docs, facts = g.facts, moved, left_off,
             corrected, reused = g.existing.is_some(), swap,
+            temporal = temporal_of(&g.key, &g.forms),
             "按票数采纳关系"
         );
         moved_total += moved;
@@ -298,6 +397,20 @@ pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result
         }
     }
 
+    // 新建的关系要有向量：抽取按分块检索候选靠它，谓词对齐（#558）靠它，下一次
+    // 同义归并也靠它。从前 `embed_ontology` 只在导入时跑一次，冷启动建的关系
+    // 永远没有向量——这个库里 76 个，`comprised` 是其中之一
+    if !added_relations.is_empty() {
+        if let Err(e) = crate::ontology_index::refresh_scoped(
+            state,
+            kb_id,
+            Some(utopia_store::ontology::TypeKind::Relation),
+        )
+        .await
+        {
+            tracing::warn!(%kb_id, error = %e, "新建关系的向量没补上");
+        }
+    }
     // 属性那一档：宾语是字面值的说法。
     //
     // domain 不从提案里读——它从这些事实的主语类型里取，见 adopt_attribute。
@@ -471,9 +584,110 @@ pub async fn bootstrap_ontology(state: &AppState, kb_id: Uuid) -> anyhow::Result
     Ok(())
 }
 
+/// 从提案里查一个说法的 temporal，查不到给 `state`。
+///
+/// 按 key 查，再按 forms 查——计数那条路的规范 key 取的是组里事实最多的那个说法，
+/// 模型提案挑的未必是同一个（`acquires` 对 `acquired`），但它们同组，说的是一件事。
+///
+/// **查不到就 state**，与从前一致：这一档只在有明确答案时才偏离缺省，
+/// 而 state 是三者里最保守的——它不会像 event 那样把 `valid_to` 收成一个点。
+fn proposed_temporal(proposals: &serde_json::Value) -> impl Fn(&str, &[String]) -> &'static str {
+    let mut by_word: HashMap<String, &'static str> = HashMap::new();
+    if let Some(list) = proposals.get("relation_types").and_then(|v| v.as_array()) {
+        for p in list {
+            let t = match str_of(p, "temporal") {
+                Some("event") => "event",
+                Some("eternal") => "eternal",
+                // 模型偶尔编第四个值；不认识的一律当没说
+                _ => continue,
+            };
+            let mut words: Vec<String> = str_of(p, "key").map(str::to_string).into_iter().collect();
+            if let Some(forms) = p.get("forms").and_then(|v| v.as_array()) {
+                words.extend(forms.iter().filter_map(|f| f.as_str()).map(str::to_string));
+            }
+            for w in words {
+                by_word.insert(w.to_lowercase(), t);
+            }
+        }
+    }
+    move |key: &str, forms: &[String]| {
+        std::iter::once(key)
+            .chain(forms.iter().map(String::as_str))
+            .find_map(|w| by_word.get(&w.to_lowercase()).copied())
+            .unwrap_or("state")
+    }
+}
+
 fn str_of<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     v.get(key)
         .and_then(|x| x.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use utopia_core::models::TypeCandidate;
+
+    /// 一个关系是发生过一次，还是持续成立。
+    ///
+    /// 从前这里写死 `state`，于是「Meridian 2025-05-09 投了 Kestrel」被记成
+    /// 从那天起一直在投。答案本来就在提案里，只是没人读。
+    #[test]
+    fn a_relation_takes_the_temporal_it_was_proposed_with() {
+        let proposals = serde_json::json!({
+            "relation_types": [
+                { "key": "acquired", "temporal": "event", "forms": ["acquires", "acquisition_of"] },
+                { "key": "capital_of", "temporal": "eternal", "forms": [] },
+                { "key": "employs", "temporal": "state", "forms": ["employed_by"] },
+                // 模型偶尔编一个第四值：当没说，落回缺省
+                { "key": "sponsors", "temporal": "ongoing", "forms": [] },
+            ]
+        });
+        let t = proposed_temporal(&proposals);
+
+        assert_eq!(t("acquired", &[]), "event");
+        // 规范 key 取的是组里事实最多的说法，未必是模型挑的那个——按 forms 也要查得到
+        assert_eq!(t("acquisition_of", &[]), "event");
+        assert_eq!(t("Acquires", &[]), "event", "大小写不该影响");
+        assert_eq!(
+            t("bought", &["acquires".into()]),
+            "event",
+            "本名查不到时看同组说法"
+        );
+        assert_eq!(t("capital_of", &[]), "eternal");
+        assert_eq!(t("employs", &[]), "state");
+
+        // **查不到一律 state**：三者里最保守的，不会像 event 那样把 valid_to 收成一个点
+        assert_eq!(t("sponsors", &[]), "state", "不认识的值当没说");
+        assert_eq!(t("never_proposed", &[]), "state");
+        assert_eq!(
+            proposed_temporal(&serde_json::json!({}))("anything", &[]),
+            "state"
+        );
+    }
+
+    fn cand(key: &str, distance: f32) -> TypeCandidate {
+        TypeCandidate {
+            id: Uuid::now_v7(),
+            key: key.into(),
+            label: key.into(),
+            description: String::new(),
+            kind: Some("relation".into()),
+            distance,
+        }
+    }
+
+    /// 只认阈值内最近的那个；差一点也不折——折错比不折贵
+    #[test]
+    fn a_form_folds_only_onto_a_close_enough_relation() {
+        let near = vec![cand("has_member", 0.18), cand("member_of", 0.31)];
+        assert_eq!(
+            fold_pick(&near, 0.20).map(|c| c.key.as_str()),
+            Some("has_member")
+        );
+        assert!(fold_pick(&near, 0.15).is_none());
+        assert!(fold_pick(&[], 0.20).is_none());
+    }
 }

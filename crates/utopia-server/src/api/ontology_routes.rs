@@ -243,6 +243,9 @@ pub struct RelationTypeReq {
     /// 调用方（属性表单）不该因为一次改名就把 domain 清空
     #[serde(default)]
     pub domains: Option<Vec<Uuid>>,
+    /// 这条关系的边能带哪些属性（0037）：属性定义的 id。None = 不动
+    #[serde(default)]
+    pub qualifiers: Option<Vec<Uuid>>,
     /// 可以当宾语的类。只对 relation 有意义
     #[serde(default)]
     pub ranges: Option<Vec<Uuid>>,
@@ -303,6 +306,9 @@ pub async fn create_relation_type(
         req.unit.as_deref().map(str::trim).filter(|s| !s.is_empty()),
     )
     .await?;
+    if let Some(q) = req.qualifiers.as_deref() {
+        utopia_store::ontology::set_relation_qualifiers(&state.pool, kb_id, id, q).await?;
+    }
     let _ = utopia_store::audit::record(
         &state.pool,
         Some(kb_id),
@@ -338,6 +344,9 @@ pub async fn update_relation_type(
         req.ranges.as_deref(),
     )
     .await?;
+    if let Some(q) = req.qualifiers.as_deref() {
+        utopia_store::ontology::set_relation_qualifiers(&state.pool, kb_id, id, q).await?;
+    }
     let _ = utopia_store::audit::record(
         &state.pool,
         Some(kb_id),
@@ -1391,6 +1400,43 @@ pub(crate) struct AttributeAdopted {
 }
 
 /// 建（或指向已有的）属性，并把等着它的字面值事实改挂过去。人工与自动共用。
+/// 等着这个说法的值**是不是清一色的量**；是的话给出它们共同的单位。
+///
+/// 判据要全体一致：混着 `$12 billion` 与 `chief executive` 的一批，
+/// 按 number 落地会把后者整条丢掉（换不动的不改写），那不如老实当 text。
+fn quantity_shape(facts: &[(Uuid, Option<Uuid>, serde_json::Value)]) -> Option<String> {
+    if facts.is_empty() {
+        return None;
+    }
+    let mut unit: Option<String> = None;
+    let mut agreed = true;
+    for (_, _, v) in facts {
+        let raw = v.get("value").unwrap_or(v);
+        let hit = match raw {
+            serde_json::Value::Number(_) => Some((0.0, None)),
+            serde_json::Value::String(s) => utopia_extract::parse_leading_quantity(s),
+            _ => None,
+        }?;
+        // 抽取那一步单记的单位更可信（`$5 billion` → `$`），没有再退回解出来的
+        let u = v
+            .get("unit")
+            .and_then(|u| u.as_str())
+            .map(str::to_string)
+            .or(hit.1);
+        match (&unit, u) {
+            (None, Some(u)) => unit = Some(u),
+            (Some(a), Some(b)) if *a != b => agreed = false,
+            _ => {}
+        }
+    }
+    // 全体都是量才走到这里；单位不一致就当没有单位，别挑一个塞上去
+    Some(if agreed {
+        unit.unwrap_or_default()
+    } else {
+        String::new()
+    })
+}
+
 pub(crate) async fn adopt_attribute_core(
     state: &AppState,
     kb_id: Uuid,
@@ -1407,7 +1453,10 @@ pub(crate) async fn adopt_attribute_core(
     } else {
         // **domain 从数据里取。** 属性必须声明能挂在哪些类下，猜错的代价是硬的：
         // 主语类型对不上就整条丢弃。这些事实的主语现在是什么类是事实，不是判断
-        let mut domains: Vec<Uuid> = facts.iter().map(|(_, type_id, _)| *type_id).collect();
+        let mut domains: Vec<Uuid> = facts
+            .iter()
+            .filter_map(|(_, type_id, _)| *type_id)
+            .collect();
         domains.sort_unstable();
         domains.dedup();
         if domains.is_empty() {
@@ -1416,7 +1465,16 @@ pub(crate) async fn adopt_attribute_core(
                 "nothing is waiting on those wordings",
             ));
         }
-        utopia_store::ontology::create_relation_type(
+        /* **datatype 由等着的那些值定，不听模型的。**
+        实测模型给 `valuation` 报的是 text，而等它的四个值全是
+        `$12 billion` 这样的量；存成 text 就比不了大小——而"能比大小"
+        正是这些数不该当节点的理由。手里有事实的时候不必去问判断题，
+        `keep_forms` 那里已经是同一个原则。
+        单位同理：几条值的单位一致就落在属性上（`$`、`%`、`people`）。 */
+        let inferred = quantity_shape(&facts);
+        let datatype = inferred.as_ref().map_or(spec.datatype, |_| "number");
+        let unit = inferred.as_deref().filter(|u| !u.is_empty()).or(spec.unit);
+        match utopia_store::ontology::create_relation_type(
             &state.pool,
             kb_id,
             spec.key,
@@ -1429,10 +1487,34 @@ pub(crate) async fn adopt_attribute_core(
             "attribute",
             &domains,
             &[],
-            Some(spec.datatype),
-            spec.unit,
+            Some(datatype),
+            unit,
         )
-        .await?
+        .await
+        {
+            Ok(id) => id,
+            /* 键被一个**空的**同名关系占着：改判它，别放弃。
+            实测就是这么卡住的——`Relation key 'valuation' already exists`，
+            然后 valuation 那几个数额永远没有谓词，而那条关系自己一条事实
+            都没有。有事实的不会被改判（判据在 store 那一侧的 SQL 里），
+            那种是本体与语料的真分歧，照旧报错留给人看 */
+            Err(e) => match utopia_store::ontology::attribute_from_unused_relation(
+                &state.pool,
+                kb_id,
+                spec.key,
+                &domains,
+                datatype,
+                unit,
+            )
+            .await?
+            {
+                Some(id) => {
+                    tracing::info!(%kb_id, key = spec.key, "空关系改判成属性");
+                    id
+                }
+                None => return Err(e),
+            },
+        }
     };
 
     // 换算按**库里那一条**的 datatype，不按请求——指向已有属性时请求里根本
@@ -1446,7 +1528,16 @@ pub(crate) async fn adopt_attribute_core(
         // 抽取写进去的形状是 {"value": …}，取里面那一层来换算
         let raw = object_value.get("value").unwrap_or(object_value);
         match utopia_extract::normalize_attr_value(&datatype, raw) {
-            Some(v) => rewrites.push((*fact_id, json!({ "value": v }))),
+            // **单位跟着值走**。抽取那一步把 `$5 billion` 的 `$` 单记了一格
+            // （见 extraction 里那段说明）；换算成 5e9 之后符号丢掉的话，
+            // 剩下的数就不知道是钱还是别的什么了
+            Some(v) => {
+                let mut next = json!({ "value": v });
+                if let Some(u) = object_value.get("unit") {
+                    next["unit"] = u.clone();
+                }
+                rewrites.push((*fact_id, next))
+            }
             // 换不动的**不改写**：宁可让它继续没有谓词，等下一次，
             // 也不把一个换不动的值硬塞进类型化的属性里
             None => unconvertible += 1,

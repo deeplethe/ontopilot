@@ -65,6 +65,9 @@ pub struct Shared {
     pub schema: Value,
     /// 日志里写模型名，好按模型统计
     pub model: String,
+    /// 这一轮用户问的那句话。工具拿它给同名实体排序：「张伟的雇主」和「张伟的论文」
+    /// 该落到不同的张伟上（dev 上的手写循环早就传了；MCP 那边没有这句话，传 None）
+    pub question: String,
     pub sink: tokio::sync::Mutex<ToolSink>,
     /// 工具跑完留给界面的一步，按 rig 的 internal_call_id 取；
     /// `check_call` 拒掉的调用也在这里留一步
@@ -86,6 +89,7 @@ impl Shared {
         actor: Uuid,
         schema: Value,
         model: String,
+        question: String,
     ) -> Arc<Self> {
         Arc::new(Self {
             state,
@@ -96,6 +100,7 @@ impl Shared {
             actor,
             schema,
             model,
+            question,
             sink: tokio::sync::Mutex::new(ToolSink::default()),
             steps: Mutex::new(HashMap::new()),
             gate_passed: AtomicBool::new(false),
@@ -128,6 +133,7 @@ impl Shared {
             actor: Some(self.actor),
             // 网页端对话不经令牌：说话的就是这个人本人
             via_token: None,
+            question: Some(&self.question),
         }
     }
 }
@@ -156,7 +162,11 @@ pub fn dynamic_tools(shared: &Arc<Shared>) -> Vec<DynamicTool> {
                 let name = tool_name.clone();
                 Box::pin(async move {
                     let tool_ctx = shared.tool_ctx();
-                    let (result, step) = {
+                    // dispatch 现在回一个结构体（#601 给 MCP 加了 structuredContent 与
+                    // is_error）。网页端对话只要正文与界面那一步，与 dev 上手写循环取的一样
+                    let tools::ToolResult {
+                        text: result, step, ..
+                    } = {
                         let mut sink = shared.sink.lock().await;
                         tools::dispatch(&tool_ctx, &mut sink, &name, &args).await
                     };

@@ -111,13 +111,18 @@ export const en = {
     passwordChanged: "Password updated",
     avatarHint: "Avatars are generated from your name for now.",
     language: "Language",
+    theme: "Theme",
+    themeNames: { dark: "Dark", light: "Light", system: "Follow system" } as Record<"dark" | "light" | "system", string>,
     kbsNav: "Knowledge bases",
     kbsTitle: "Knowledge bases",
     kbsFilter: "Filter by name…",
     kbOpen: "Open",
     kbRestricted: "Restricted",
-    kbStats: (docs: number, members: number) =>
-      `${docs} doc${docs === 1 ? "" : "s"} · ${members} member${members === 1 ? "" : "s"}`,
+    kbNameLabel: "Knowledge base",
+    kbRoleLabel: "My role",
+    kbDocsLabel: "Docs",
+    kbMembersLabel: "Members",
+    kbAccessLabel: "Access",
     addedBy: (name: string, date: string) => `Added by ${name} · ${date}`,
     joinedOn: (date: string) => `Joined ${date}`,
     openToEveryone: "Open to everyone",
@@ -127,8 +132,7 @@ export const en = {
     /* 个人令牌页（0014 / 0016 A2）：给 agent 的钥匙，以这个人的身份行事 */
     tokensNav: "Agents & tokens",
     tokensTitle: "Personal access tokens",
-    tokensHint:
-      "A token lets an agent reach Utopia over MCP as you, never with more than you can do yourself. Read-only by default, limited to the bases you pick, revocable here at any time.",
+    tokensHint: "A token lets an agent reach Utopia over MCP as you, with no more access than you have. Read-only by default, limited to the bases you pick, revocable here.",
     newToken: "New token",
     tokenName: "Name",
     tokenNamePlaceholder: "My laptop",
@@ -506,6 +510,7 @@ export const en = {
       extracting: "Extracting",
       done: "Done",
       failed: "Failed",
+      skipped: "Not extracted",
     },
     sources: "Sources",
     allDocs: "All documents",
@@ -526,8 +531,7 @@ export const en = {
       notion: "Notion",
     },
     sourceKindHints: {
-      folder:
-        "A plain folder. Select it and upload (or drag) files straight into it — nothing is watched or synced.",
+      folder: "Holds the files you upload: add, drag in and remove them here.",
       url: "Fetches the listed web pages; changed pages update the same document.",
       rss: "Subscribes to a feed; each entry becomes a document dated by its publish time.",
       jira_issues:
@@ -609,8 +613,9 @@ export const en = {
       "The first sync records what the feed holds now and imports nothing. Each item that appears after that is stored from the feed's own text when there is enough of it, otherwise from the linked article; an item with neither is listed as skipped.",
     rssFeedModeHint:
       "Stores what the feed itself carries — the entry text or its summary — and never opens the linked article.",
-    rssHydrationCounts: (pending: number, queued: number, retrying: number, complete: number, terminal: number) =>
-      `pending ${pending} · queued ${queued} · retrying ${retrying} · complete ${complete} · terminal ${terminal}`,
+    // 五个数一起读，所以收一个对象：分开传五个位置参数，调换两个不会有人发现
+    rssHydrationCounts: (c: { pending: number; queued: number; retrying: number; complete: number; terminal: number }) =>
+      `pending ${c.pending} · queued ${c.queued} · retrying ${c.retrying} · complete ${c.complete} · terminal ${c.terminal}`,
     repoField: "Repository (owner/name)",
     jiraUrlField: "Jira site URL",
     jiraProjectField: "Project key",
@@ -788,17 +793,6 @@ export const en = {
     editSaved: "Entity updated",
     editEmptyName: "Name cannot be empty",
     /* 同名不是错误——两个张伟可以并存。只提示，不阻断 */
-    sameNameNote: (n: number) =>
-      n === 1
-        ? "One other entity shares this name."
-        : `${n} other entities share this name.`,
-    sameNameHint: "If they are the same thing, merge them under Review.",
-    mergeInto: "Merge in",
-    mergeTitle: "Merge entities",
-    mergeIntoHint:
-      "Fold that entity into this one. Its facts move here; merges can be reverted.",
-    mergeConfirm: (from: string, into: string) =>
-      `Merge “${from}” into “${into}”? Its facts move here. You can revert this from Review.`,
     viewRelations: "Relations",
     viewTimeline: "Timeline",
     /* 第三视图：记录时间轴——不是"事情何时发生"，而是"我们何时这么认为" */
@@ -1063,7 +1057,7 @@ export const en = {
       packsLabel: "Bundled ontologies",
       packsHint: "Optional, and more can be imported later.",
       packsPick: "Search packs…",
-      packsNone: "None — start from the ten seed relations",
+      packsNone: "None — the ontology grows out of the documents",
       packsCount: (c: number, p: number) => `${c} classes · ${p} properties`,
       name: "Name",
       description: "Description",
@@ -1099,7 +1093,6 @@ export const en = {
     tabClasses: "Classes",
     colName: "Name",
     multiParentHint: "This class has more than one parent; the indentation follows one of them, and the Parent column lists them all",
-    colKey: "Key",
     colSignature: "Subject → Object",
     colInstances: "Instances",
     colFacts: "Facts",
@@ -1130,10 +1123,7 @@ export const en = {
     rulesTitle: "Business rules",
     /* 说清三件事：谁写的、结论是什么身份、什么时候重算。第三件最容易被误解成
        「保存就生效」，而它其实等下一轮物化 */
-    rulesHint:
-      "A rule reads one entity's own attributes and concludes a class or a value. " +
-      "You write the criteria — the model never proposes one. " +
-      "What a rule concludes is derived: it never replaces an asserted fact, it carries the readings that made it true, and it retires by itself when they change.",
+    rulesHint: "Rules that decide a class or compute a value from an entity's own attributes. A conclusion is derived and lapses when its premises do.",
     rulesEmpty: "No rules yet.",
     rulesNoMatch: "No rule matches that.",
     /** 搜的是整条规则，不只是名字——判据里的谓词和值也在里面 */
@@ -1226,8 +1216,7 @@ export const en = {
     ruleCappedHint:
       "Some entities carry too many readings of the same attribute to expand every combination, so this rule's conclusions for them are incomplete.",
     refineTitle: "Refine types",
-    refineHint:
-      "Entities whose class is roughly right but not the most specific one available. Look first, then apply — retyping does not appear on any timeline, so this is the only place you get to see it before it happens.",
+    refineHint: "Narrow entity types that came out broader than they should be.",
     refinePreview: "Look first",
     refineLooking: "Looking…",
     refineRun: "Run and apply",
@@ -1279,6 +1268,11 @@ export const en = {
     shapeColor: "Shape & color",
     parent: "Parent class",
     noParent: "(top level)",
+    subclasses: "Subclasses",
+    qualifiers: "Edge attributes",
+    noQualifiers: "None",
+    qualifiersHint: "Attributes an edge of this relation may carry, e.g. amount on invested_in",
+    noSubclasses: "None",
     disjoint: "Cannot also be",
     disjointHint:
       "Classes nothing can belong to at the same time. A Person is not an Organisation. The consistency check uses this to find classes that can never have an instance.",
@@ -1338,8 +1332,7 @@ export const en = {
     /* ---- OWL / RDFS 导入 ---- */
     importShort: "Import",
     importTitle: "Import an ontology",
-    importHint:
-      "Load an OWL or RDFS file (.owl, .rdf, .ttl). Classes and properties are matched by IRI, so re-importing a newer version of the same vocabulary updates what it already created instead of duplicating it.",
+    importHint: "Import an OWL or RDFS file (.owl, .rdf, .ttl). Classes and properties are matched by IRI, so importing a newer version of the same vocabulary updates what is already here.",
     importPick: "Choose file",
     importChange: "Choose another",
     importReading: "Reading…",
@@ -1426,14 +1419,12 @@ export const en = {
     importSize: (bytes: number) =>
       bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(0)} KB`,
     misses: "Unmatched from extraction",
-    missesHint:
-      "The extractor produced these outside your ontology (they fell back to concept / related to). They are signals for extending the ontology.",
+    missesHint: "Types and predicates the extractor produced outside the ontology, to judge what the ontology still lacks.",
     /* ---- 一端挂着两个以上开放值的谓词（#341） ----
        文案克制：状态一句话，后果一句话，动作在按钮上。这一档的读者要判断的是
        「这条关系一次只能有一个值吗」，不是读一篇关于双时态的说明 */
     uniqueness: "Overlapping values",
-    uniquenessHint:
-      "One holder, two values, neither closed. Until the relation says it holds one value at a time, a successor does not close a predecessor — and a question about any past date answers with both.",
+    uniquenessHint: "Say which relations may hold only one value at a time, and a new value will end the old one on its own.",
     uniquenessEmpty: "No overlaps. Every holder has at most one open value.",
     /* 主语侧 / 宾语侧：说人话，不写 functional / inverse functional */
     uniquenessSubject: (n: number) =>
@@ -1547,7 +1538,8 @@ export const en = {
     schemaBundle: (n: number) => `${n} relations`,
     schemaOutgoing: "From this class",
     schemaIncoming: "To this class",
-    schemaNoRelationships: "No relationships yet.",
+    schemaNoRelationships:
+      "This class takes part in no relationships. Its inheritance is shown under Definition.",
     schemaNoInstances: "No instances yet.",
     schemaConnectHint: "Connect using an existing relationship",
     schemaConnectPlaceholder: "Search relationships…",
@@ -1557,7 +1549,7 @@ export const en = {
   },
   mapping: {
     title: "Data mapping",
-    hint: "What business concepts point at in the database, and how they are computed. Ask only answers using confirmed definitions.",
+    hint: "Which tables and columns each business concept points at, and how it is computed. Ask answers only from confirmed definitions.",
     tabDefinitions: "Definitions",
     tabSources: "Data sources",
     filterAll: "All",
@@ -1583,6 +1575,10 @@ export const en = {
     noDefinition: "(empty)",
     approve: "Confirm",
     reject: "Reject",
+    selectPage: "Select this page",
+    selectMapping: (name: string, source: string) =>
+      `Select ${name} from ${source}`,
+    selected: (n: number) => (n === 1 ? "1 selected" : `${n} selected`),
     edit: "Edit",
     editTitle: "Revise definition",
     fieldTable: "Table",
@@ -1935,7 +1931,9 @@ export const en = {
       "just wait for you to approve them.",
     materialize: "Materialize inferences",
     materializeNote:
-      "Write facts the ontology entails into the ledger — transitive chains and symmetric pairs. Off by default: a declaration can be wrong, and this one changes the graph. Derived facts are marked and can be taken back.",
+      "Write facts the ontology entails into the ledger — transitive chains and symmetric pairs. " +
+      "They are marked as derived and kept in their own section, so if the declaration behind " +
+      "them turns out to be wrong, taking them back takes one click.",
     autoResolveTypes: "Resolve entity types after extraction",
     autoResolveTypesNote:
       "After each document is extracted, run a round of type resolution on entities the engine has not looked at yet. Only refinements within the current class are applied on their own — a re-classification across the tree still waits for you on the Ontology page. Every batch is listed there and can be undone.",
@@ -2054,6 +2052,9 @@ export const en = {
     deactivatedTitle: "Deactivated accounts",
     deactivatedHint:
       "They cannot sign in and do not appear in any member list. What they did is still attributed to them — that is why the account is kept rather than deleted.",
+    editMember: "Edit member",
+    close: "Close",
+    save: "Save",
     reactivate: "Restore",
     roleLabel: "Role",
     filterAll: "All users",

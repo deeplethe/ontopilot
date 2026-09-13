@@ -52,31 +52,33 @@ import {
   Button,
   Chip,
   DangerConfirm,
+  Dialog,
   Disclosure,
   IconButton,
   Input,
+  LinkButton,
   Loading,
+  PageHeader,
   Pager,
+  RAIL_CLS,
+  ROW_TRAILING,
   RailItem,
   Row,
-  ROW_TRAILING,
+  Segmented,
   SkeletonRows,
   Spinner,
-  rowClass,
-  Segmented,
-  RAIL_CLS,
-  cn,
-  pageSlice,
-  PageHeader,
-  Dialog,
-  LinkButton,
-  Table,
+  Status,
   TBody,
+  THead,
+  Table,
   Td,
   Th,
-  THead,
   Tr,
+  chipLike,
+  cn,
   localDateTime,
+  pageSlice,
+  rowClass,
 } from "../ui";
 
 /** 左栏行高（py-2 + 13px 文字 + space-y 间隙）与底部预留（新建行 + 分页器） */
@@ -538,6 +540,9 @@ export function Ontology() {
           {view === "table" ? (
             <OntologyTables
               loading={loading}
+              selected={
+                sel?.kind === "class" || sel?.kind === "relation" ? sel : null
+              }
               entityTypes={entity_types}
               relationTypes={relation_types}
               onOpenClass={(t) => setSel({ kind: "class", id: t.id })}
@@ -639,6 +644,7 @@ export function Ontology() {
                 <ClassDefinition
                   cls={selectedClass}
                   allTypes={entity_types}
+                  onSelectClass={(id) => setSel({ kind: "class", id })}
                   onNewSub={() =>
                     setEdit({ kind: "class", existing: null, parentId: selectedClass.id })
                   }
@@ -823,7 +829,7 @@ function DockedPanel({
     <div
       // 与图谱页的实体面板同一副壳：同宽（w-96）、同一个顶部起点（给顶上那排
       // 药丸让位），同一个头部解剖。两页并排看是同一件东西
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-3 w-96 z-10 rounded-overlay shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-3 right-3 bottom-3 w-96 z-10 rounded-overlay u-lift-strong flex flex-col`}
     >
       <div className="shrink-0 flex items-start justify-between gap-2 px-4 py-4 border-b border-line">
         <div className="min-w-0">{header}</div>
@@ -979,7 +985,9 @@ function RelationshipsCard({
           onClick={() => setOpen((v) => !v)}
         >
           <span className="flex items-center gap-2 text-small font-medium">
-            {dir === "out" ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
+            {/* 与下面每条关系行的箭头**同一尺寸**（12）：同一个记号排成一列，
+                标题这个小 2px 就只会读成没对齐 */}
+            {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
             <span className="truncate">
               {dir === "out" ? S.ontology.schemaOutgoing : S.ontology.schemaIncoming}
             </span>
@@ -1269,21 +1277,36 @@ function Description({ text }: { text: string | null | undefined }) {
   );
 }
 
-function ClassDefinition({
+export function ClassDefinition({
   cls,
   allTypes,
+  onSelectClass,
   onNewSub,
 }: {
   cls: EntityTypeView;
   allTypes: EntityTypeView[];
+  onSelectClass: (id: string) => void;
   /** 以当前类为父级新建子类：开弹窗 */
   onNewSub: () => void;
 }) {
   const nameOf = (id: string) => allTypes.find((t) => t.id === id)?.label ?? id;
+  const classLinks = (ids: string[]) =>
+    ids.map((id, index) => (
+      <span key={id}>
+        {index > 0 && ", "}
+        <LinkButton onClick={() => onSelectClass(id)}>{nameOf(id)}</LinkButton>
+      </span>
+    ));
+  const subclasses = allTypes.filter((type) => type.parents.includes(cls.id));
   return (
     <div>
       <Def label={S.ontology.parent}>
-        {cls.parents.length > 0 ? cls.parents.map(nameOf).join(", ") : S.ontology.noParent}
+        {cls.parents.length > 0 ? classLinks(cls.parents) : S.ontology.noParent}
+      </Def>
+      <Def label={S.ontology.subclasses}>
+        {subclasses.length > 0
+          ? classLinks(subclasses.map((type) => type.id))
+          : S.ontology.noSubclasses}
       </Def>
       <Def label={S.ontology.disjoint}>
         {cls.disjoint.length > 0 ? cls.disjoint.map(nameOf).join(", ") : S.ontology.noDisjoint}
@@ -1339,6 +1362,14 @@ function PropertyDefinition({
       </Def>
       <Def label={S.ontology.rangeLabel}>
         {rel.ranges.length > 0 ? rel.ranges.map(typeName).join(", ") : S.ontology.anyType}
+      </Def>
+      {/* 边上的属性（0037）：这条关系的边能带哪些属性，按属性的 label 列 */}
+      <Def label={S.ontology.qualifiers}>
+        {/* `?? []`：这一格是后加的（0037），**旧版本的后端不发它**。
+            少一格不该让整块面板崩掉——点一条关系就白屏，正是这么来的 */}
+        {(rel.qualifiers ?? []).length > 0
+          ? (rel.qualifiers ?? []).map(typeName).join(", ")
+          : S.ontology.noQualifiers}
       </Def>
       <Def label={S.ontology.temporal}>{temporal}</Def>
       <Def label={S.ontology.axioms}>
@@ -1480,7 +1511,7 @@ function RefinePanel({
                   <span
                     key={c.id}
                     title={c.description}
-                    className="u-chip u-chip-neutral u-num text-fine"
+                    className={chipLike("neutral", "u-num text-fine")}
                   >
                     {c.label} {c.distance.toFixed(2)}
                   </span>
@@ -1528,9 +1559,9 @@ function RefinePanel({
                       {r.coarse ?? S.graph.untyped} → {r.choice}
                     </span>
                     {r.crosses_axis && (
-                      <span className="u-chip u-chip-warn text-fine">
+                      <Status tone="warn" className="text-fine">
                         {S.ontology.refineCrossesAxis}
-                      </span>
+                      </Status>
                     )}
                     <span className="ml-auto u-num text-fine text-ink-2">
                       {Math.round(r.confidence * 100)}%
@@ -1658,6 +1689,7 @@ function UniquenessPanel({
           description: rel.description,
           domains: rel.domains,
           ranges: rel.ranges,
+          qualifiers: rel.qualifiers,
         });
       }
       const r = await api.reconcileRelationType(kbId, c.predicate_id);

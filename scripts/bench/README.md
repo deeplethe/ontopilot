@@ -120,6 +120,104 @@ node scripts/bench/govern.mjs --kb <id> --score --stuck   # 连留给人的那�
 同一份语料上的对照（2026-09-06，闸门还是「没先例不合」那版）：治理关着老裁决器自动合
 146、留 50 给人；治理开着一对不合、留 200。这个数就是记录 0025 决定 4 修订的起因。
 
+## 映射的测量台（#501）
+
+`mappings.mjs` 量的是探索从数据库 schema 提议的口径，对不对、漏了多少。
+
+```
+node scripts/bench/mappings.mjs --fresh                # 新库 → 挂源 → 探索 → 打分
+node scripts/bench/mappings.mjs --fresh --no-comments  # 同上，语料不带列注释
+node scripts/bench/mappings.mjs --kb <id> --score      # 只打分，不动库
+```
+
+**打分不看名字，看数。** 治理那边真值按两个名字键，因为它判的是二分类；这里概念名
+是模型自己起的，「Revenue」与「已支付 GMV」按名字对不上任何一条。所以真值一条是
+「一个业务口径 + 一条 gold SQL」，打分把提议真跑一遍，跟 gold 的结果比数——数一样
+就是同一个口径。省掉逐条手标，判据还是客观的。
+
+四栏分开读：`covered` 是真值里被算出来的有几条（漏没漏）；`right` 是提议里跑得通
+且对上某条真值的；`wrong` 是**跑得通但一条都对不上**的，附它算出的数与最接近的真值；
+`broken` 是跑不通的。**要看的是 `wrong`。** 跑不通的提议无害，它失败得很响，人一眼
+看得见；跑得通而算错的才是全部风险——问数会拿它印出一个看起来完全正常的数字。这一栏
+也是 #504 能不能默认开的唯一依据。
+
+`traps_hit` 数的是落到陷阱列上的提议：整数外键求和、`o_shippriority` 这种恒为 0 的列、
+把一段自由文本当维度。它们都跑得通。
+
+语料在 `schemas/<corpus>.sql`，真值在 `truth/<corpus>.mappings.json`。
+
+- **口径不是我们定的。** TPC-H 的 22 条查询里写死了「收入」在这个 schema 上就是
+  `sum(l_extendedprice * (1 - l_discount))`，真值从那儿抄。自己拟一份口径来量自己的
+  探索，量出来的是自我一致。
+- **行是 `generate_series` 造的，不按 TPC 的生成规范。** 探索只读 schema 不读数据，
+  打分时 gold 与提议跑在同一批行上，比的是两个数一不一样——那份规范值钱的是 schema
+  与查询，不是它的数据分布。`setseed` 固定，两轮之间语料不变。
+- **列注释单独一个文件，因为它是一个自变量。** 真 TPC-H 一条注释都没有，而真实库里
+  注释是探索最主要的线索（提示词专门要求 citing column comments）。加载与不加载各跑
+  一轮，两个分数之差就是注释值多少分。注释只描述列，不描述口径——写「折后收入 =
+  extendedprice × (1 - discount)」等于把 gold SQL 抄给模型。
+- **每一组一个新库**在这里还多一层理由：`propose` 的 `ON CONFLICT … WHERE status =
+  'proposed'` 让第二轮探索继承第一轮的行，同一个库上跑两次，第二次的分不是第二次的。
+
+## 问数的测量台（#520）
+
+`ask.mjs` 量的是端到端：人问一句话，拿回来的数对不对。
+
+```
+node scripts/bench/ask.mjs --kb <id>                  # 跑全部问题
+node scripts/bench/ask.mjs --kb <id> --only disc_revenue
+node scripts/bench/ask.mjs --kb <id> --seed           # 先把真值写成确认口径（上界）
+node scripts/bench/ask.mjs --kb <id> --confirm        # 先确认探索提的那些（产品路径）
+node scripts/bench/ask.mjs --kb <id> --replay         # 不重问，拿库里上一轮的回答重判
+node scripts/bench/ask.mjs --kb <id> --parallel 4     # 同时问四题：一题 2–6 个模型回合、串行半小时
+node scripts/bench/ask.mjs --kb <id> --conventions    # 先把真值里的 conventions 写进库（#570）
+node scripts/bench/ask.mjs --kb <id> --recall 8       # 只量检索：那条对的口径在不在前 8（#574），几秒
+```
+
+**口径是按问题挑的，不是全塞**（#574）：`--recall K` 不问，只看检索前 K 条里有没有那条对的
+口径——答案卷就是 `mapped` 那一步按数对上的行。要撑爆老的 30 上限，用
+`mappings.mjs --fresh --corpus wide --also tpch` 把两个源挂进同一个库，再各 seed 一份真值
+（45 条）。量过：seed 的说明是占位符时 wide recall@8 13/18、问数 15/18；说明换成真的
+（真值里的 `summary`，用提问的语言）之后 recall 18/18、问数 18/18；tpch 两次都是 23/24 与
+24/24。**嵌进去的那句说明就是检索的全部**，reranker 目前没有它该修的漏。
+
+`mappings.mjs --fresh --conventions` 同理，只是写在探索之前——探索的提示词也读它。wide 上
+量过的阶梯（chat right）：什么都没有 2/18；探索生成的描述 2/18；描述 + 六条约定 11/18；
+约定 + 十八条口径写成一页散文靠检索 14/18；二十七条确认口径进 prompt 17/18。探索覆盖：
+没有约定 0/18，有约定 3/18——错的那几条也都带上了 `is_test != 1`，差在选错列。
+
+**与 `mappings.mjs` 量的不是一回事，一个也推不出另一个。** 口径确认得再准，
+答案照样可能错——模型会挑错源、join 错、按错的日期列过滤，或者压根不看语义层，
+照着 schema 文档自己写 SQL。反过来，一个一条确认映射都没有的库照样答得出问题，
+而且有时是对的。
+
+判分材料只有两样，因为 `query_data` 记得很少（step 里只有源名与用途）：助手最后
+那段话，以及 `tool_exchange` 里**模型真正跑过的 SQL**。后者是有用的那个——
+把它跑过的 SQL 重跑一遍，跟 gold 比数。SQL 很短，逃得过 `tool_exchange` 的截断，
+而它的输出逃不过。
+
+于是两栏而不是一栏：`sql_right` 是它跑的那条算的就是问题问的数，`answer_right`
+是它印出来的数就是那个数。**两者会分家**——查对了却把单位说错、四舍五入错、
+或者转述成另一个数字，在只看 SQL 的分里是对的，而人读到的答案是错的。判等用
+`lib.mjs` 的 `roughly`（比 `same` 松两个量级）：模型说「约 8.63 亿」与
+862793473.48 是同一个答案，判成错的话，量的就不是问数准不准，是模型肯不肯把
+小数点后八位抄全。
+
+问题在 `truth/tpch.questions.json`，**按口径的 id 键**，与 `tpch.mappings.json`
+共用 gold SQL。这不只是省事：一道题答错时，脚本据此说得出它需要的那条口径**有没有
+确认映射**——`mapped` / `UNMAPPED`。闭环就在这一句上：
+
+1. 跑一轮，看哪些错；
+2. 错的题里，口径没配映射的 → 覆盖率的问题，去探索或手写；
+3. 配了还错的 → 提示词、工具或口径本身的问题；
+4. 再跑。
+
+`mapped_definitions` 这一栏满了，「映射全」就有了确定的意思，剩下的错都不再是
+覆盖率的事。
+
+`lib.mjs` 是两个测量台共用的地基——**判等必须是同一份**，各写一份 `same()`
+迟早漂移，而一旦漂移，「提议对了几条」与「答案对了几条」就不是同一把尺子量出来的。
+
 ## 读数怎么算
 
 - `prompt_tokens_est` 是**本体段**的估算，不是整个提示词。实测 4.0 字符 ≈ 1 token

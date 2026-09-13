@@ -51,6 +51,10 @@ pub struct UpdateKbReq {
     /// 打开那一刻就排一轮，关掉后任务在两簇之间看到就停。见 docs/decisions/0025
     #[serde(default)]
     pub governance: Option<bool>,
+    /// 人写的数据约定（「测试单不算数」这类 schema 里没有的规则），问数与探索的
+    /// 提示词都读它。探索生成的描述在另一个字段，PATCH 不了。见 #570
+    #[serde(default)]
+    pub data_conventions: Option<String>,
 }
 
 /// 用户可见的 KB 列表（restricted 库仅矩阵成员与系统管理员可见）。
@@ -104,6 +108,7 @@ pub async fn create(
             None,
             None,
             Some(v),
+            None,
             None,
             None,
             None,
@@ -191,6 +196,7 @@ pub async fn update(
         req.inference_interval_minutes,
         req.auto_type_resolution,
         req.governance,
+        req.data_conventions.as_deref().map(str::trim),
     )
     .await?;
     // 打开开关就自动开始处理：排一轮，同库已排着的不重复
@@ -206,7 +212,13 @@ pub async fn update(
         "kb.updated",
         "kb",
         Some(id),
-        json!({ "name": req.name, "visibility": req.visibility, "governance": req.governance }),
+        // 约定改了要留痕：那段文字进每一次问数的提示词，谁什么时候改过得查得到
+        json!({
+            "name": req.name,
+            "visibility": req.visibility,
+            "governance": req.governance,
+            "data_conventions": req.data_conventions.is_some(),
+        }),
     )
     .await;
     Ok(Json(kb))
@@ -379,10 +391,9 @@ pub async fn audit_log(
 /// **一个包失败不回滚已装的**：本体是加法，装了一半的库仍然可用，
 /// 而回滚要撤已经建好的类——那正是 0008 决定不做导入撤销的理由。
 /// 失败信息里带上是哪个包，让人知道从哪补。
-/// 建库对话框里预勾选的那个包（0008、0009）。注册时建出来的 General 库
-/// 绕过了对话框，所以它在那条路径上也要用同一个默认（#322）。
-pub(super) const DEFAULT_PACK: &str = "schema-org";
-
+///
+/// 没有默认包（#580）：注册建的 General 库与对话框里新建的库都空着起步，
+/// 装哪个包是建库的人选的。
 pub(super) async fn install_packs(
     state: &AppState,
     kb_id: Uuid,

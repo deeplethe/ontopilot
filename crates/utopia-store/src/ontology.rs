@@ -82,6 +82,8 @@ pub async fn relation_type_views(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Re
                       WHERE d.relation_type_id = r.id) AS domains,
                 ARRAY(SELECT g.entity_type_id FROM relation_type_ranges g
                       WHERE g.relation_type_id = r.id) AS ranges,
+                ARRAY(SELECT q.qualifier_type_id FROM relation_type_qualifiers q
+                      WHERE q.relation_type_id = r.id) AS qualifiers,
                 (SELECT count(*) FROM facts f
                  WHERE f.predicate_id = r.id AND f.invalidated_at IS NULL) AS usage
          FROM relation_types r WHERE r.kb_id = $1 ORDER BY lower(r.label)",
@@ -493,6 +495,99 @@ async fn set_domains_ranges(
         .execute(pool)
         .await?;
     }
+    Ok(())
+}
+
+/// 一条关系声明自己的边能带哪些属性（0037）。覆盖式写入，与 domain / range 同一套。
+///
+/// 两条校验都在这里，CHECK 引不到别的行：同库，且每一个都是 `kind = 'attribute'`
+/// ——边上的属性是字面值，复用的正是属性定义的 datatype / unit / 换算。
+/// 一个关系不能把自己声明成自己的属性（DB 有 CHECK，这里给人话）。
+pub async fn set_relation_qualifiers(
+    pool: &PgPool,
+    kb_id: Uuid,
+    relation_type_id: Uuid,
+    qualifier_type_ids: &[Uuid],
+) -> AppResult<()> {
+    if qualifier_type_ids.contains(&relation_type_id) {
+        return Err(AppError::invalid(
+            "qualifier_is_self",
+            "A relation cannot be its own qualifier",
+        ));
+    }
+    if !qualifier_type_ids.is_empty() {
+        let (ok,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM relation_types
+             WHERE kb_id = $1 AND kind = 'attribute' AND id = ANY($2)",
+        )
+        .bind(kb_id)
+        .bind(qualifier_type_ids)
+        .fetch_one(pool)
+        .await?;
+        if ok as usize != qualifier_type_ids.len() {
+            return Err(AppError::invalid(
+                "qualifier_not_attribute",
+                "Every qualifier must be an attribute of this base",
+            ));
+        }
+    }
+    sqlx::query("DELETE FROM relation_type_qualifiers WHERE relation_type_id = $1")
+        .bind(relation_type_id)
+        .execute(pool)
+        .await?;
+    if !qualifier_type_ids.is_empty() {
+        sqlx::query(
+            "INSERT INTO relation_type_qualifiers (relation_type_id, qualifier_type_id)
+             SELECT $1, x FROM unnest($2::uuid[]) AS x
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(relation_type_id)
+        .bind(qualifier_type_ids)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+/// 给一条关系**追加**一个边上的属性声明（0037）。
+///
+/// 与 `set_relation_qualifiers` 的覆盖式不同：抽取时几篇文档并行，各自从语料里
+/// 补声明，覆盖式写入会把别人刚补的冲掉（实测 `round` 补过又没了）。
+/// 这里只加不删，撞上已有的什么都不做。校验与覆盖式同一套。
+pub async fn add_relation_qualifier(
+    pool: &PgPool,
+    kb_id: Uuid,
+    relation_type_id: Uuid,
+    qualifier_type_id: Uuid,
+) -> AppResult<()> {
+    if relation_type_id == qualifier_type_id {
+        return Err(AppError::invalid(
+            "qualifier_is_self",
+            "A relation cannot be its own qualifier",
+        ));
+    }
+    let (ok,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM relation_types
+         WHERE kb_id = $1 AND kind = 'attribute' AND id = $2",
+    )
+    .bind(kb_id)
+    .bind(qualifier_type_id)
+    .fetch_one(pool)
+    .await?;
+    if ok != 1 {
+        return Err(AppError::invalid(
+            "qualifier_not_attribute",
+            "Every qualifier must be an attribute of this base",
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO relation_type_qualifiers (relation_type_id, qualifier_type_id)
+         VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(relation_type_id)
+    .bind(qualifier_type_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -1249,6 +1344,45 @@ pub async fn relation_type_id_by_key(
             .fetch_optional(pool)
             .await?;
     Ok(row.map(|(id,)| id))
+}
+
+/// 一个**从没当关系用过**的关系，改判成属性。改成了返回 true。
+///
+/// 冷启动认出某个说法该是属性、去建的时候，键可能已经被一个同名关系占着
+/// （实测：`Relation key 'valuation' already exists`，然后整批放弃，那些数
+/// 永远拿不到谓词）。可占着这个键的关系常常是空的——本体包带进来的、或者
+/// 早先按票数建的，一条事实都没挂上。空的关系改判不破坏任何东西：
+/// 没有边会因此断，撤销也只是再改回去。
+///
+/// **有事实的一律不动**。`invested`、`raised` 这类既连实体又带数额的，
+/// 改判会把已有的边连根拔起；那是本体与语料的真分歧，该留给人看，
+/// 不该由冷启动替人决定。
+pub async fn attribute_from_unused_relation(
+    pool: &PgPool,
+    kb_id: Uuid,
+    key: &str,
+    domains: &[Uuid],
+    datatype: &str,
+    unit: Option<&str>,
+) -> AppResult<Option<Uuid>> {
+    validate_attribute_fields("attribute", domains, Some(datatype))?;
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "UPDATE relation_types SET kind = 'attribute', datatype = $3, unit = $4,
+                inverse_of = NULL, sub_property_of = NULL
+         WHERE kb_id = $1 AND key = $2 AND kind = 'relation'
+           AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.predicate_id = relation_types.id)
+         RETURNING id",
+    )
+    .bind(kb_id)
+    .bind(key)
+    .bind(datatype)
+    .bind(unit)
+    .fetch_optional(pool)
+    .await?;
+    let Some((id,)) = row else { return Ok(None) };
+    // domain / range 在各自的表里，不是列。属性没有 range——值域落在 datatype 上
+    set_domains_ranges(pool, id, domains, &[]).await?;
+    Ok(Some(id))
 }
 
 /// 一个属性声明的 datatype。改写字面值事实时要按它换算。

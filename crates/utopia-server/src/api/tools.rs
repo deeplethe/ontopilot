@@ -42,6 +42,29 @@ pub struct ToolCtx<'a> {
     /// 经 MCP 时，是哪一枚令牌在说话。**人之外还要记它**：一个人可以同时挂
     /// 三个 agent，审核卡上只写人名分不出是哪一个记的（0026）。对话里为 None
     pub via_token: Option<Uuid>,
+    /// 用户这一轮的原话。图谱工具拿它消歧：同名候选按「谁的上下文画像离这个问题近」排。
+    /// MCP 没有它（agent 的意图不在请求里），那边按事实数排
+    pub question: Option<&'a str>,
+}
+
+impl ToolCtx<'_> {
+    /// 一段文字的向量，用这个工作区配的嵌入模型。没配、或调用失败时 None：
+    /// 图谱工具照常按子串走，向量只是第二阶段
+    pub async fn embed(&self, text: &str) -> Option<Vec<f32>> {
+        let settings = utopia_store::settings::get(&self.state.pool, self.workspace_id)
+            .await
+            .ok()
+            .flatten()?;
+        let client = crate::llm_util::embed_client(&settings)?;
+        match client.embed(&[text.to_string()]).await {
+            Ok(mut v) if !v.is_empty() => Some(v.remove(0)),
+            Ok(_) => None,
+            Err(e) => {
+                tracing::warn!(error = %e, "嵌入失败，图谱工具按子串匹配");
+                None
+            }
+        }
+    }
 }
 
 /// 工具执行过程中往外攒的东西。
@@ -58,8 +81,34 @@ pub struct ToolSink {
     pub resolved: Vec<serde_json::Value>,
 }
 
-/// 一次工具调用的产出：给模型的文本 + 给界面的一步。
-pub type ToolResult = (String, serde_json::Value);
+/// 一次调用的文本、界面步骤与可选机器读取结果；不放进跨调用累计的 ToolSink。
+pub struct ToolResult {
+    pub text: String,
+    pub step: serde_json::Value,
+    pub structured_content: Option<serde_json::Value>,
+    pub is_error: bool,
+}
+
+impl ToolResult {
+    pub fn new(text: String, step: serde_json::Value) -> Self {
+        Self {
+            text,
+            step,
+            structured_content: None,
+            is_error: false,
+        }
+    }
+
+    pub fn structured(mut self, content: serde_json::Value) -> Self {
+        self.structured_content = Some(content);
+        self
+    }
+
+    pub fn error(mut self) -> Self {
+        self.is_error = true;
+        self
+    }
+}
 
 /// 按名字派发。**未知工具不是错误**——模型偶尔会编一个名字出来，
 /// 告诉它没有这个工具，它下一轮就换一个，比中断整场对话好。
@@ -73,8 +122,11 @@ pub async fn dispatch(
         "search_chunks" => search_chunks(ctx, sink, args).await,
         "get_document" => get_document(ctx, sink, args).await,
         "search_docs" => search_docs(ctx, sink, args).await,
-        "find_entities" => find_entities(ctx, sink, args).await,
-        "entity_facts" => entity_facts(ctx, args).await,
+        "find_entities" => super::tools_graph::find_entities(ctx, sink, args).await,
+        "entity_facts" => super::tools_graph::entity_facts(ctx, sink, args).await,
+        "neighbors" => super::tools_graph::neighbors(ctx, sink, args).await,
+        "timeline" => super::tools_graph::timeline(ctx, sink, args).await,
+        "paths_between" => super::tools_graph::paths_between(ctx, sink, args).await,
         "changes" => changes(ctx, args).await,
         // 业务规则只读（0021）：判据要看得见，但**写规则不开给模型**——
         // 「推理的判据由人写」是 0002 与 0021 共同的那条线，而一个工具调用
@@ -83,7 +135,7 @@ pub async fn dispatch(
         "rule_matches" => rule_matches(ctx, args).await,
         "query_data" if !ctx.mounted_sources.is_empty() => query_data(ctx, args).await,
         "remember" if ctx.can_write => remember(ctx, args).await,
-        other => (
+        other => ToolResult::new(
             format!("Unknown tool: {other}"),
             json!({ "kind": "tool", "label": other, "detail": "unknown" }),
         ),
@@ -114,7 +166,7 @@ pub async fn search_chunks(
     // 记录轴（0019 / #347）：只搜那一刻库里有的东西。全文那一路仍是"现在"，
     // 命中不会错但会缺——retrieval.rs 的头上写了
     let as_of = args["as_of"].as_str().and_then(parse_when);
-    let chunks = retrieval::hybrid(
+    let chunks = match retrieval::hybrid(
         ctx.state,
         ctx.kb_id,
         ctx.workspace_id,
@@ -123,7 +175,17 @@ pub async fn search_chunks(
         as_of,
     )
     .await
-    .unwrap_or_default();
+    {
+        Ok(chunks) => chunks,
+        Err(e) => {
+            tracing::warn!(error = %e, "MCP chunk search failed");
+            return ToolResult::new(
+                "Could not search the documents.".into(),
+                json!({"kind": "search", "label": q, "detail": "failed"}),
+            )
+            .error();
+        }
+    };
     let mut lines = Vec::new();
     for c in &chunks {
         let n = cite(sink, c.id.to_string(), |n| source_json(n, c));
@@ -141,10 +203,20 @@ pub async fn search_chunks(
     } else {
         lines.join("\n\n")
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "search", "label": q, "detail": format!("{} sources", chunks.len()) }),
     )
+    .structured(json!({
+        "kb_id": ctx.kb_id, "as_of": as_of,
+        "limit": SEARCH_TOP_K, "limit_reached": chunks.len() == SEARCH_TOP_K,
+        "chunks": chunks.iter().map(|c| json!({
+            "chunk_id": c.id, "document_id": c.document_id,
+            "seq": c.seq, "filename": c.filename,
+            "text": truncate(&c.text, TOOL_CHUNK_CHARS),
+            "truncated": c.text.trim().chars().count() > TOOL_CHUNK_CHARS,
+        })).collect::<Vec<_>>()
+    }))
 }
 
 /// 一篇文档的全文。**search_chunks 够不到的东西全在这里**：它只回前六条命中、
@@ -156,7 +228,7 @@ pub async fn get_document(
     args: &serde_json::Value,
 ) -> ToolResult {
     let refuse = |detail: &str| {
-        (
+        ToolResult::new(
             "No document with that id in this knowledge base.".to_string(),
             json!({ "kind": "document", "label": "?", "detail": detail }),
         )
@@ -221,7 +293,7 @@ pub async fn get_document(
     } else {
         format!("{header}\n\n{}", lines.join("\n\n"))
     };
-    (
+    ToolResult::new(
         text,
         json!({
             "kind": "document", "label": doc.filename,
@@ -264,139 +336,23 @@ pub async fn search_docs(
     } else {
         lines.join("\n\n")
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "docs", "label": q, "detail": format!("{} sections", hits.len()) }),
     )
-}
-
-pub async fn find_entities(
-    ctx: &ToolCtx<'_>,
-    sink: &mut ToolSink,
-    args: &serde_json::Value,
-) -> ToolResult {
-    let name = args["name"].as_str().unwrap_or("").to_string();
-    let (hits, _) = utopia_store::graph::search_entities(&ctx.state.pool, ctx.kb_id, &name, 8, 0)
-        .await
-        .unwrap_or_default();
-    let text = if hits.is_empty() {
-        "No matching entities.".to_string()
-    } else {
-        hits.iter()
-            .map(|n| {
-                let dis = n
-                    .disambiguator
-                    .as_deref()
-                    .map(|d| format!(" ({d})"))
-                    .unwrap_or_default();
-                format!(
-                    "{} | {}{} | {} | {} facts",
-                    n.id,
-                    n.name,
-                    dis,
-                    // 没判出类型的实体照样能被搜到、被引用（0009）
-                    n.type_label.as_deref().unwrap_or("untyped"),
-                    n.degree
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    for n in &hits {
-        sink.resolved.push(json!({
-            "id": n.id.to_string(), "name": n.name, "type": n.type_label
-        }));
-    }
-    (
-        text,
-        json!({ "kind": "entity", "label": name, "detail": format!("{} matches", hits.len()) }),
-    )
-}
-
-pub async fn entity_facts(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult {
-    let id = args["entity_id"]
-        .as_str()
-        .and_then(|s| s.parse::<Uuid>().ok());
-    // 世界轴过滤在 SQL 里（world_axis，0022）：没起点的事实从最早的证据起，结束了
-    // 不知哪天的到说出它的那份文档为止。这里只把 T 传下去，不自己解释 NULL
-    let at = args["at"].as_str().and_then(parse_when);
-    // 记录轴（0019 / #347）：那一刻**我们持有**的事实。两根轴两个参数，绝不合成
-    // 一个——合起来就会拿「三月的世界，以今天的认知」去答「三月的世界，以三月的认知」
-    // 「更正到来之前」（#416）：`before` 是 changes 里印出来的那个时刻，原样抄过来。
-    // 账本的钟是微秒，「严格早于 T」就是「不晚于 T 减一微秒」——这一步在这里做，
-    // 不让模型对着 ISO 字符串算小数秒的借位：算错一位，答的就是更正**之后**的状态，
-    // 而且看不出来（#351 那种错）。给了 before 就以它为准
-    let before = args["before"].as_str().and_then(parse_when);
-    let as_of = match before {
-        Some(t) => Some(just_before(t)),
-        None => args["as_of"].as_str().and_then(parse_when),
-    };
-    let Some(id) = id else {
-        return (
-            "Invalid entity_id (expected the uuid returned by find_entities).".to_string(),
-            json!({ "kind": "facts", "label": "?", "detail": "invalid id" }),
-        );
-    };
-    match utopia_store::graph::entity_detail(&ctx.state.pool, ctx.kb_id, id, at, as_of).await {
-        Ok((node, facts)) => {
-            // 规则的结论也是这个实体的一部分（0021）。**不给的话模型会拿那些
-            // 读数自己再判一遍**——而阈值写在规则里，它看不见，于是两处判断
-            // 迟早不一致，agent 那次还没有前提链、没有区间、也不进账本
-            let derived =
-                utopia_store::reasoning::derived_for_entity(&ctx.state.pool, ctx.kb_id, id, at)
-                    .await
-                    .unwrap_or_default();
-            let mut derived: Vec<String> = derived
-                .iter()
-                .map(|d| {
-                    format!(
-                        "{} · {} · {} [rule: {}]",
-                        d.subject,
-                        d.predicate,
-                        d.object,
-                        d.rule_name.as_deref().unwrap_or(&d.rule),
-                    )
-                })
-                .collect();
-
-            let text = if facts.is_empty() && derived.is_empty() {
-                match at {
-                    Some(t) => format!(
-                        "{}: no facts valid as of {}.",
-                        node.name,
-                        crate::time_text::instant(t)
-                    ),
-                    None => format!("{}: no recorded facts.", node.name),
-                }
-            } else {
-                let mut lines: Vec<String> = facts.iter().map(fact_line).collect();
-                lines.append(&mut derived);
-                lines.join("\n")
-            };
-            let detail = entity_facts_detail(facts.len(), at, as_of, before);
-            (
-                text,
-                json!({ "kind": "facts", "label": node.name, "detail": detail }),
-            )
-        }
-        Err(_) => (
-            "Entity not found.".to_string(),
-            json!({ "kind": "facts", "label": "?", "detail": "not found" }),
-        ),
-    }
 }
 
 /// 这个库的判据。**把阈值原样给出来**——模型要能解释「凭什么算含气井」，
 /// 而不是猜一个听起来合理的门槛。
 pub async fn list_rules(ctx: &ToolCtx<'_>) -> ToolResult {
     let Ok(rules) = utopia_store::business_rules::list(&ctx.state.pool, ctx.kb_id).await else {
-        return (
+        return ToolResult::new(
             "Could not read the rules.".to_string(),
             json!({ "kind": "tool", "label": "list_rules", "detail": "failed" }),
         );
     };
     if rules.is_empty() {
-        return (
+        return ToolResult::new(
             "This base has no business rules.".to_string(),
             json!({ "kind": "tool", "label": "list_rules", "detail": "none" }),
         );
@@ -446,7 +402,7 @@ pub async fn list_rules(ctx: &ToolCtx<'_>) -> ToolResult {
         .collect::<Vec<_>>()
         .join("\n");
     let n = rules.len();
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "tool", "label": "list_rules", "detail": format!("{n} rules") }),
     )
@@ -458,7 +414,7 @@ pub async fn rule_matches(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
         .as_str()
         .and_then(|s| s.parse::<Uuid>().ok())
     else {
-        return (
+        return ToolResult::new(
             "Invalid rule_id (expected the uuid returned by list_rules).".to_string(),
             json!({ "kind": "tool", "label": "rule_matches", "detail": "invalid id" }),
         );
@@ -467,13 +423,13 @@ pub async fn rule_matches(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
     let Ok((rows, total)) =
         utopia_store::business_rules::matches(&ctx.state.pool, ctx.kb_id, rule_id, limit, 0).await
     else {
-        return (
+        return ToolResult::new(
             "Could not read what that rule marks.".to_string(),
             json!({ "kind": "tool", "label": "rule_matches", "detail": "failed" }),
         );
     };
     if rows.is_empty() {
-        return (
+        return ToolResult::new(
             "That rule marks nothing right now.".to_string(),
             json!({ "kind": "tool", "label": "rule_matches", "detail": "0" }),
         );
@@ -509,7 +465,7 @@ pub async fn rule_matches(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolRe
     } else {
         text
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "tool", "label": "rule_matches", "detail": format!("{total} entities") }),
     )
@@ -527,10 +483,11 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
         .and_then(utopia_extract::parse_time)
         .map(|(t, p)| period_last_day(t.date_naive(), p));
     let Some((since, until, window)) = changes_window(since, until, chrono::Utc::now()) else {
-        return (
+        return ToolResult::new(
             "Invalid or missing `since` (expected YYYY-MM-DD).".to_string(),
             json!({ "kind": "changes", "label": "?", "detail": "invalid since" }),
-        );
+        )
+        .error();
     };
     let entity = args["entity_id"]
         .as_str()
@@ -541,7 +498,7 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
             .collect()
     });
     let kinds = kinds.filter(|k: &Vec<String>| !k.is_empty());
-    let rows = utopia_store::graph::graph_changes(
+    let rows = match utopia_store::graph::graph_changes(
         &ctx.state.pool,
         ctx.kb_id,
         since,
@@ -551,7 +508,17 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
         CHANGES_LIMIT,
     )
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "Graph changes lookup failed");
+            return ToolResult::new(
+                "Could not read the graph changes.".into(),
+                json!({"kind": "changes", "label": window, "detail": "failed"}),
+            )
+            .error();
+        }
+    };
     let text = if rows.is_empty() {
         format!("No recorded changes in {window}.")
     } else {
@@ -562,10 +529,24 @@ pub async fn changes(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult 
     } else {
         format!("{} changes", rows.len())
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "changes", "label": window, "detail": detail }),
     )
+    .structured(json!({
+        "kb_id": ctx.kb_id, "since": since, "until": until,
+        "limit": CHANGES_LIMIT, "limit_reached": rows.len() as i64 == CHANGES_LIMIT,
+        "changes": rows.iter().map(|r| json!({
+            "fact_id": r.fact_id, "at": r.at, "kind": r.kind,
+            "subject_id": r.subject_id, "subject_name": r.subject_name,
+            "predicate_label": r.predicate_label, "object_name": r.object_name,
+            "object_value": r.object_value, "confidence": r.confidence,
+            "valid_from": r.valid_from, "valid_to": r.valid_to,
+            "valid_from_precision": r.valid_from_precision,
+            "valid_to_precision": r.valid_to_precision,
+            "document_id": r.document_id, "filename": r.filename, "quote": r.quote,
+        })).collect::<Vec<_>>()
+    }))
 }
 
 pub async fn query_data(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult {
@@ -597,7 +578,7 @@ pub async fn query_data(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResu
     } else {
         purpose.to_string()
     };
-    (
+    ToolResult::new(
         text,
         json!({ "kind": "query", "label": ds_name, "detail": detail }),
     )
@@ -627,7 +608,7 @@ pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult
         }
     };
     if text.is_empty() {
-        return (
+        return ToolResult::new(
             "remember requires non-empty text.".to_string(),
             json!({ "kind": "tool", "label": "remember", "detail": "empty" }),
         );
@@ -649,7 +630,7 @@ pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult
             )
             .await;
             ctx.state.emit_document(ctx.kb_id, doc_id);
-            (
+            ToolResult::new(
                 format!(
                     "Recorded the sentence (effective {}): {text}\n\
                      Facts extracted from it will be shown to the user for confirmation \
@@ -666,7 +647,7 @@ pub async fn remember(ctx: &ToolCtx<'_>, args: &serde_json::Value) -> ToolResult
                 }),
             )
         }
-        Err(e) => (
+        Err(e) => ToolResult::new(
             format!("Failed to record: {e}"),
             json!({ "kind": "tool", "label": "remember", "detail": "failed" }),
         ),
@@ -701,7 +682,7 @@ pub(super) fn charter_source_json(n: usize, h: &utopia_search::DocsSection) -> s
 }
 
 /// 问数执行：安全闸（解析白名单）→ 引擎执行（只读会话 + 强制 LIMIT + 超时）→ JSON 行。
-async fn run_query(state: &AppState, ds_id: Uuid, sql: &str) -> anyhow::Result<String> {
+pub(crate) async fn run_query(state: &AppState, ds_id: Uuid, sql: &str) -> anyhow::Result<String> {
     let (engine, conn) = utopia_store::datasources::engine_and_conn(&state.pool, ds_id).await?;
     // 闸门按引擎选方言：Databricks 的反引号、Snowflake 的 :: 转型都得先过得了解析
     let guarded = crate::query_engine::guard_sql_for(&engine, sql)?;
@@ -726,7 +707,7 @@ async fn run_query(state: &AppState, ds_id: Uuid, sql: &str) -> anyhow::Result<S
 }
 
 /// 事实行："works at → 星云科技 (2023-08 → now) [90%]"，in 方向用 ←。
-fn fact_line(f: &EntityFact) -> String {
+pub(super) fn fact_line(f: &EntityFact) -> String {
     // 属性事实没有对端实体，值在 `object_value` 里（0004）。从前这里只看 `other_name`，
     // 于是薪资、职位到了模型眼前是 `salary → ?`——区间和置信度都在，唯独值没到，
     // 模型只能说"没有薪资信息"（#348）。渲染规则与客户端 `fmtObjectValue` 一致
@@ -740,6 +721,26 @@ fn fact_line(f: &EntityFact) -> String {
         .as_deref()
         .or(literal.as_deref())
         .unwrap_or("?");
+    // 边上的属性（0037）跟在对端后面：`invested_in → Kestrel [amount: 4000000000 $]`。
+    // 模型读事实行时最常问的就是"投了多少"，数不在行里它就答"没有金额信息"
+    let quals: Vec<String> = f
+        .qualifiers
+        .iter()
+        .map(|q| {
+            let v = q
+                .value
+                .as_ref()
+                .and_then(literal_text)
+                .or_else(|| q.entity_name.clone())
+                .unwrap_or_else(|| "?".to_string());
+            format!("{}: {v}", q.key)
+        })
+        .collect();
+    let other = if quals.is_empty() {
+        other.to_string()
+    } else {
+        format!("{other} [{}]", quals.join(", "))
+    };
     // 本体没认下、原文说法也没留下时用 "?"——与 other 同一个约定。
     // 不编一个"相关"出来：那正是删掉 related_to 要消灭的东西
     let pred = f.predicate_label.as_deref().unwrap_or("?");
@@ -774,11 +775,11 @@ fn record_stamp(time: chrono::DateTime<chrono::Utc>) -> String {
 /// 严格早于 T，按账本的分辨率（timestamptz 是微秒）：不晚于 T − 1µs。
 /// `recorded_at <= T−1µs` 恰好是 `recorded_at < T`，`invalidated_at > T−1µs` 恰好是
 /// `invalidated_at >= T`——0019 的 held_at 一个字不用改
-fn just_before(t: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+pub(super) fn just_before(t: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
     t - chrono::Duration::microseconds(1)
 }
 
-fn entity_facts_detail(
+pub(super) fn entity_facts_detail(
     count: usize,
     at: Option<chrono::DateTime<chrono::Utc>>,
     as_of: Option<chrono::DateTime<chrono::Utc>>,
@@ -800,7 +801,7 @@ fn entity_facts_detail(
 
 /// 时刻参数：`YYYY-MM-DD` 或 RFC3339。`at` 与 `as_of` 共用一个解析——记录轴上的
 /// 时刻常常是一个带时间的戳（"第一波灌完那一刻"），日期粒度装不下它
-fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+pub(super) fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     let s = raw.trim();
     // 完整的 RFC3339 时刻原样收下，小数秒也留着——记录轴上同一秒内可以先录入再更正
     // （#351），这里截掉一位就把两次认知叠回一起。日期形式（YYYY / YYYY-MM / YYYY-MM-DD，
@@ -814,7 +815,7 @@ fn parse_when(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 /// 字面值宾语给模型看的样子：`{value, unit}` → "28000 CNY"，布尔 → ✓/✗，
 /// 映射那类 `{summary}` → 摘要本身。与 `web/src/pages/Graph.tsx::fmtObjectValue` 同一条规则，
 /// 两边分叉的话，人看到的和模型看到的就不是同一个值
-fn literal_text(v: &serde_json::Value) -> Option<String> {
+pub(super) fn literal_text(v: &serde_json::Value) -> Option<String> {
     // 裸标量（`changes` 那头的旧数据长这样）：字符串读成它自己，不带引号
     match v {
         serde_json::Value::Null => return None,
@@ -1127,6 +1128,10 @@ mod tests {
 
     fn attribute_fact(value: serde_json::Value) -> EntityFact {
         EntityFact {
+            recorded_at: chrono::Utc::now(),
+            invalidated_at: None,
+            supersedes: None,
+            document_ids: vec![],
             id: Uuid::nil(),
             direction: "out".into(),
             predicate_key: Some("salary".into()),
@@ -1135,6 +1140,8 @@ mod tests {
             temporal: Some("state".into()),
             other_id: None,
             other_name: None,
+            other_type: None,
+            qualifiers: Vec::new(),
             object_value: Some(value),
             valid_from: Some(t("2023-06-01T00:00:00Z")),
             valid_to: Some(t("2024-02-20T00:00:00Z")),

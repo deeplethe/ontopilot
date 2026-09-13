@@ -38,7 +38,7 @@ flowchart TB
 
 **The dotted line back into extraction is the loop.** Extraction uses the ontology; when it meets a term the ontology lacks, it records the original wording; proposals flow back into the ontology; the next batch of documents is extracted with it. See [0003](decisions/0003-ontology-growth-loop.md).
 
-**Where the ontology comes from.** A new database seeds nothing. The starting point is an optional prebuilt pack (schema.org checked by default; also W3C Org, PROV-O, FOAF, IOF Core), a user-imported OWL file, or nothing at all. An empty ontology still extracts; an entity without a type simply has no type. See [0008](decisions/0008-ontology-packs-as-cold-start.md) and [0009](decisions/0009-no-type-is-a-type.md).
+**Where the ontology comes from.** A new database seeds nothing. The starting point is an optional prebuilt pack (schema.org, W3C Org, PROV-O, FOAF, IOF Core; none is checked by default), a user-imported OWL file, or nothing at all, which is the default. An empty ontology still extracts; an entity without a type simply has no type. See [0008](decisions/0008-ontology-packs-as-cold-start.md) and [0009](decisions/0009-no-type-is-a-type.md).
 
 **The bottom two boxes are the ontology's axioms at work.** The consistency check never writes `facts`; it only surfaces contradictions (the Review page's two tiers, violations and defects). Materialized inference is off by default; when on, derived facts go to a separate table, show as gold on the graph, and never close any asserted fact. See section 4.
 

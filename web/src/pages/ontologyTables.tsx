@@ -10,13 +10,20 @@
 // （#482 里那句「一列卡片跟我们刚重做的任何东西都不像」）。本体是最后一个，
 // 也是列数最多的一个。
 //
+// **不列 key**：它是机器身份（`accepted_answer`），不是人要读的东西。三张表
+// 是拿来横着看这个库的——哪些类没实例、哪些属性没 domain——而 key 在每一行
+// 里都只是把名字重说一遍。要看它的时候（对词表、写规则）在右侧详情里，
+// 那儿一次只讲一个，读得完整。
+//
 // **层级怎么办**：`subClassOf` 是本体的骨架，拍平就丢了。所以默认按层级排、
 // 名字列带缩进；按别的列排序就拍平，而父类那一列一直在，拍平不丢信息，只是
 // 换了一种读法。文件管理器就是这么做的。
 
 import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 
 import type { EntityTypeView, RelationTypeView } from "../api";
+
 import { S } from "../i18n";
 import {
   Chip,
@@ -24,18 +31,31 @@ import {
   GroupLabel,
   Input,
   LinkButton,
+  Pager,
+  pageSlice,
+  SkeletonTableRows,
   ROW_TRAILING,
   Segmented,
-  SkeletonRows,
   Table,
   TBody,
   Td,
   Th,
   THead,
   Tr,
-} from "../ui";
+  chipLike,} from "../ui";
 
 export type TableTab = "classes" | "properties" | "attributes";
+
+/** 一页画多少行。
+ *
+ * 三张表分别是 916 / 1102 / 599 行，从前一次全画进 DOM——**滚动条那一下就能
+ * 感觉到**，而且真正在看的从来只有屏幕里那十几行。左栏的类树早就是分页的
+ * （每页 14），这里只是把同一件事补上；50 比 14 大，是因为整幅宽度的表一屏
+ * 本来就装得下更多，翻页翻得太勤也烦。
+ *
+ * 类那张表分的是**已经拍平的树**，所以一页仍是树序里连续的一段，父子关系
+ * 不会被切散到两页去（与左栏同一个做法）。 */
+const TABLE_PAGE = 50;
 
 /** 这一行挂在谁下面。**没有主父类就退回第一个父类**：`primary_parent` 只在
  *  人手动指定时才写，而导入的包一个都没有——schema.org 那 916 个类里是 0 个。
@@ -138,16 +158,19 @@ function ClassesTable({
   types,
   attributes,
   filter,
+  selectedId,
   onOpen,
   onSeeInstances,
 }: {
   types: EntityTypeView[];
   attributes: RelationTypeView[];
   filter: string;
+  selectedId: string | null;
   onOpen: (t: EntityTypeView) => void;
   onSeeInstances: (t: EntityTypeView) => void;
 }) {
   const [sort, setSort] = useState<Sort>(null);
+  const [page, setPage] = useState(0);
   const nameOf = useMemo(
     () => new Map(types.map((t) => [t.id, t.label])),
     [types],
@@ -171,12 +194,14 @@ function ClassesTable({
     : t.label,
   ), !!sort || !!q);
 
+  const { rows: paged, safe } = pageSlice(rows, page, TABLE_PAGE);
+
   return (
-    <Table>
+    <>
+      <Table>
       <THead>
         <Tr>
           <Th>{S.ontology.colName}</Th>
-          <Th className="hidden md:table-cell">{S.ontology.colKey}</Th>
           <SortTh col="parent" sort={sort} onSort={setSort}>
             {S.ontology.parent}
           </SortTh>
@@ -190,8 +215,13 @@ function ClassesTable({
         </Tr>
       </THead>
       <TBody>
-        {rows.map(({ t, depth }) => (
-          <Tr key={t.id} interactive onClick={() => onOpen(t)}>
+        {paged.map(({ t, depth }) => (
+          <Tr
+            key={t.id}
+            interactive
+            active={t.id === selectedId}
+            onClick={() => onOpen(t)}
+          >
             <Td>
               <span
                 className="flex items-center gap-2"
@@ -209,7 +239,7 @@ function ClassesTable({
                     把它们都列着 */}
                 {t.parents.length > 1 && (
                   <span
-                    className="u-chip u-chip-neutral shrink-0 !px-2 !text-fine"
+                    className={chipLike("neutral", "shrink-0 px-2 text-fine")}
                     title={S.ontology.multiParentHint}
                   >
                     +{t.parents.length - 1}
@@ -217,9 +247,6 @@ function ClassesTable({
                 )}
                 {t.builtin && <Chip tone="neutral">{S.ontology.builtin}</Chip>}
               </span>
-            </Td>
-            <Td className="hidden font-mono text-small text-ink-2 md:table-cell">
-              {t.key}
             </Td>
             <Td className="text-small text-ink-2">
               {t.parents.length
@@ -252,7 +279,16 @@ function ClassesTable({
           </Tr>
         ))}
       </TBody>
-    </Table>
+      </Table>
+      {/* 翻页器跟在表后面，不做固定底栏：这一块本来就是滚动区，
+          再钉一条栏会把最后一行压掉半截 */}
+      <Pager
+        total={rows.length}
+        pageSize={TABLE_PAGE}
+        page={safe}
+        onPage={setPage}
+      />
+    </>
   );
 }
 
@@ -274,7 +310,7 @@ function Axioms({ r }: { r: RelationTypeView }) {
   return (
     <span className="flex flex-wrap gap-1">
       {shown.map(([, mark, title]) => (
-        <span key={mark} className="u-chip u-chip-neutral !px-2 !text-fine" title={title}>
+        <span key={mark} className={chipLike("neutral", "px-2 text-fine")} title={title}>
           {mark}
         </span>
       ))}
@@ -286,14 +322,17 @@ function PropertiesTable({
   relations,
   types,
   filter,
+  selectedId,
   onOpen,
 }: {
   relations: RelationTypeView[];
   types: EntityTypeView[];
   filter: string;
+  selectedId: string | null;
   onOpen: (r: RelationTypeView) => void;
 }) {
   const [sort, setSort] = useState<Sort>(null);
+  const [page, setPage] = useState(0);
   const nameOf = useMemo(
     () => new Map(types.map((t) => [t.id, t.label])),
     [types],
@@ -315,12 +354,14 @@ function PropertiesTable({
     : r.label,
   );
 
+  const { rows: paged, safe } = pageSlice(rows, page, TABLE_PAGE);
+
   return (
-    <Table>
+    <>
+      <Table>
       <THead>
         <Tr>
           <Th>{S.ontology.colName}</Th>
-          <Th className="hidden md:table-cell">{S.ontology.colKey}</Th>
           <Th>{S.ontology.colSignature}</Th>
           <SortTh col="temporal" sort={sort} onSort={setSort}>
             {S.ontology.temporal}
@@ -333,16 +374,18 @@ function PropertiesTable({
         </Tr>
       </THead>
       <TBody>
-        {rows.map((r) => (
-          <Tr key={r.id} interactive onClick={() => onOpen(r)}>
+        {paged.map((r) => (
+          <Tr
+            key={r.id}
+            interactive
+            active={r.id === selectedId}
+            onClick={() => onOpen(r)}
+          >
             <Td>
               <span className="flex items-center gap-2">
                 <span className="truncate">{r.label}</span>
                 {r.builtin && <Chip tone="neutral">{S.ontology.builtin}</Chip>}
               </span>
-            </Td>
-            <Td className="hidden font-mono text-small text-ink-2 md:table-cell">
-              {r.key}
             </Td>
             <Td className="text-small text-ink-2">
               {side(r.domains)} → {side(r.ranges)}
@@ -364,7 +407,16 @@ function PropertiesTable({
           </Tr>
         ))}
       </TBody>
-    </Table>
+      </Table>
+      {/* 翻页器跟在表后面，不做固定底栏：这一块本来就是滚动区，
+          再钉一条栏会把最后一行压掉半截 */}
+      <Pager
+        total={rows.length}
+        pageSize={TABLE_PAGE}
+        page={safe}
+        onPage={setPage}
+      />
+    </>
   );
 }
 
@@ -384,6 +436,7 @@ function AttributesTable({
   onOpen: (a: RelationTypeView) => void;
 }) {
   const [sort, setSort] = useState<Sort>(null);
+  const [page, setPage] = useState(0);
   const nameOf = useMemo(
     () => new Map(types.map((t) => [t.id, t.label])),
     [types],
@@ -400,12 +453,14 @@ function AttributesTable({
     : a.label,
   );
 
+  const { rows: paged, safe } = pageSlice(rows, page, TABLE_PAGE);
+
   return (
-    <Table>
+    <>
+      <Table>
       <THead>
         <Tr>
           <Th>{S.ontology.colName}</Th>
-          <Th className="hidden md:table-cell">{S.ontology.colKey}</Th>
           <SortTh col="domain" sort={sort} onSort={setSort}>
             {S.ontology.colOnClass}
           </SortTh>
@@ -420,12 +475,9 @@ function AttributesTable({
         </Tr>
       </THead>
       <TBody>
-        {rows.map((a) => (
+        {paged.map((a) => (
           <Tr key={a.id} interactive onClick={() => onOpen(a)}>
             <Td className="truncate">{a.label}</Td>
-            <Td className="hidden font-mono text-small text-ink-2 md:table-cell">
-              {a.key}
-            </Td>
             <Td className="text-small text-ink-2">
               {a.domains.length
                 ? a.domains.map((d) => nameOf.get(d) ?? d).join(", ")
@@ -440,7 +492,16 @@ function AttributesTable({
           </Tr>
         ))}
       </TBody>
-    </Table>
+      </Table>
+      {/* 翻页器跟在表后面，不做固定底栏：这一块本来就是滚动区，
+          再钉一条栏会把最后一行压掉半截 */}
+      <Pager
+        total={rows.length}
+        pageSize={TABLE_PAGE}
+        page={safe}
+        onPage={setPage}
+      />
+    </>
   );
 }
 
@@ -453,6 +514,7 @@ export function OntologyTables({
   onOpenProperty,
   onOpenAttribute,
   onSeeInstances,
+  selected,
   loading = false,
 }: {
   entityTypes: EntityTypeView[];
@@ -461,6 +523,14 @@ export function OntologyTables({
   onOpenProperty: (r: RelationTypeView) => void;
   onOpenAttribute: (a: RelationTypeView) => void;
   onSeeInstances: (t: EntityTypeView) => void;
+  /** 当前选中的那个类或属性。表里要标出来——**点一行开的是右边的面板，
+   *  行本身不留痕的话，翻两页之后就不知道正在看的是哪一个了**。
+   *  只收这两档：页面那个 `Sel` 还含 import / rules / schema 几种，
+   *  它们跟表里的行没有对应关系，收窄了比整个传下来诚实 */
+  selected:
+    | { kind: "class"; id: string }
+    | { kind: "relation"; id: string }
+    | null;
   /** 本体还没到。控件照常渲染、表身出骨架，**计数与行数一律不报**——
    *  这时候它们只会是 0，而 0 是个结论，不是「还不知道」 */
   loading?: boolean;
@@ -497,7 +567,10 @@ export function OntologyTables({
           )}
         />
         <Input
-          icon={<span className="text-ink-2">/</span>}
+          // 从前这里是一个 `/`，照惯例它是"按斜杠聚焦"的提示——**可这一页没绑
+          // 那个键**（只有文档页绑了），提示了一个不存在的功能。而左栏那个
+          // 一模一样的过滤框用的是放大镜，同一页两个图标也说不通
+          icon={<Search size={12} />}
           className="w-58"
           placeholder={S.ontology.filter}
           value={filter}
@@ -518,12 +591,15 @@ export function OntologyTables({
       <div className="u-scroll min-h-0 flex-1 overflow-y-auto px-8 pb-6">
         {/* 表身出骨架，**表头不画**：列名是什么此刻还没定（三张表的列不一样），
             画一排灰条冒充列名是在编。分段控件、过滤框、滚动区都已经在了 */}
-        {loading && <SkeletonRows rows={10} />}
+        {loading && <SkeletonTableRows rows={10} />}
         {!loading && tab === "classes" && (
           <ClassesTable
             types={entityTypes}
             attributes={attributes}
             filter={filter}
+            selectedId={
+              selected?.kind === "class" ? selected.id : null
+            }
             onOpen={onOpenClass}
             onSeeInstances={onSeeInstances}
           />
@@ -533,6 +609,9 @@ export function OntologyTables({
             relations={relations}
             types={entityTypes}
             filter={filter}
+            selectedId={
+              selected?.kind === "relation" ? selected.id : null
+            }
             onOpen={onOpenProperty}
           />
         )}

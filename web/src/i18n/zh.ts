@@ -100,13 +100,18 @@ export const zh: Strings = {
     passwordChanged: "密码已更新",
     avatarHint: "头像目前由你的名字生成。",
     language: "语言",
+    theme: "主题",
+    themeNames: { dark: "深色", light: "浅色", system: "跟随系统" } as Record<"dark" | "light" | "system", string>,
     kbsNav: "知识库",
     kbsTitle: "知识库",
     kbsFilter: "按名字筛选…",
     kbOpen: "公开",
     kbRestricted: "受限",
-    kbStats: (docs: number, members: number) =>
-      `${docs} 篇文档 · ${members} 名成员`,
+    kbNameLabel: "知识库",
+    kbRoleLabel: "我的身份",
+    kbDocsLabel: "文档",
+    kbMembersLabel: "成员",
+    kbAccessLabel: "权限来源",
     addedBy: (name: string, date: string) => `由 ${name} 加入 · ${date}`,
     joinedOn: (date: string) => `${date} 加入`,
     openToEveryone: "对所有人开放",
@@ -115,8 +120,7 @@ export const zh: Strings = {
     kbSettingsBtn: "设置",
     tokensNav: "Agent 与令牌",
     tokensTitle: "个人访问令牌",
-    tokensHint:
-      "令牌让 agent 经 MCP 以你的身份使用 Utopia，权限永远不超过你自己。缺省只读，限定到你选的库，随时可在这里撤销。",
+    tokensHint: "令牌让 agent 以你的身份通过 MCP 访问 Utopia，权限不超过你自己。默认只读，限定在你选的库，可随时在这里撤销。",
     newToken: "新令牌",
     tokenName: "名字",
     tokenNamePlaceholder: "我的笔记本",
@@ -457,6 +461,7 @@ export const zh: Strings = {
       extracting: "抽取中",
       done: "完成",
       failed: "失败",
+      skipped: "不抽取",
     },
     sources: "来源",
     allDocs: "全部文档",
@@ -477,8 +482,7 @@ export const zh: Strings = {
       notion: "Notion",
     },
     sourceKindHints: {
-      folder:
-        "一个普通文件夹。选中它，把文件直接上传（或拖）进去——不监听、不同步。",
+      folder: "可在文件夹中管理上传的文件：上传、拖入、删除都在这里。",
       url: "抓取所列的网页；内容变化时更新同一篇文档。",
       rss: "订阅一个源；每条目成为一篇文档，日期取其发布时间。",
       jira_issues:
@@ -555,8 +559,8 @@ export const zh: Strings = {
     rssFullModeHint:
       "第一次同步只记下订阅当前有哪些条目，不导入。之后新出现的条目，订阅自带的正文够长就用它，不够就去抓链接的文章；两者都没有的条目记为跳过。",
     rssFeedModeHint: "只存订阅自带的内容——正文或摘要——不去打开链接的文章。",
-    rssHydrationCounts: (pending: number, queued: number, retrying: number, complete: number, terminal: number) =>
-      `待处理 ${pending} · 排队 ${queued} · 重试 ${retrying} · 完成 ${complete} · 终止 ${terminal}`,
+    rssHydrationCounts: (c: { pending: number; queued: number; retrying: number; complete: number; terminal: number }) =>
+      `待处理 ${c.pending} · 排队 ${c.queued} · 重试 ${c.retrying} · 完成 ${c.complete} · 终止 ${c.terminal}`,
     repoField: "仓库（owner/name）",
     jiraUrlField: "Jira 地址",
     jiraProjectField: "项目 key",
@@ -639,7 +643,7 @@ export const zh: Strings = {
     chunkOf: (filename: string, seq: number) => `${filename} · 第 ${seq} 段`,
   },
   ask: {
-    greeting: "问问 Utopia 记得什么",
+    greeting: "问问 Utopia 都记住了什么",
     emptyTitle: "对话",
     emptyBody:
       "与你的知识库对话——带引用的回答、关于时间的提问，而且它会记住。\n请先在「文库」上传文档，并在「管理 → 模型」里配置模型。",
@@ -715,13 +719,6 @@ export const zh: Strings = {
     editCancel: "取消",
     editSaved: "实体已更新",
     editEmptyName: "名称不能为空",
-    sameNameNote: (n: number) => `另有 ${n} 个实体同名。`,
-    sameNameHint: "如果它们是同一个东西，去「审阅」里合并。",
-    mergeInto: "并入",
-    mergeTitle: "合并实体",
-    mergeIntoHint: "把那个实体并进这一个。它的事实搬过来；合并可以撤销。",
-    mergeConfirm: (from: string, into: string) =>
-      `把「${from}」并进「${into}」？它的事实会搬过来。可以在审阅页撤销。`,
     viewRelations: "关系",
     viewTimeline: "时间线",
     viewHistory: "记录历史",
@@ -948,7 +945,7 @@ export const zh: Strings = {
       packsLabel: "预置本体",
       packsHint: "可不选，之后还能再导入。",
       packsPick: "搜索本体包…",
-      packsNone: "不选 —— 从十个种子关系起步",
+      packsNone: "不选 —— 本体从文档里长出来",
       packsCount: (c: number, p: number) => `${c} 个类 · ${p} 个属性`,
       name: "名称",
       description: "描述",
@@ -984,7 +981,6 @@ export const zh: Strings = {
     tabClasses: "类",
     colName: "名称",
     multiParentHint: "这个类有不止一个父类；缩进挂在其中一个，父类那一列把它们都列着",
-    colKey: "键",
     colSignature: "主语 → 宾语",
     colInstances: "实例",
     colFacts: "事实",
@@ -1012,9 +1008,7 @@ export const zh: Strings = {
     refineShort: "类型消解",
     rulesShort: "业务规则",
     rulesTitle: "业务规则",
-    rulesHint:
-      "一条规则读一个实体自己的属性，得出一个类或一个值。判据由你写下——模型不会提议。" +
-      "规则得出的结论是派生的：它不会盖掉断言，它带着让它成立的那几条读数，读数变了它自己退场。",
+    rulesHint: "按实体自己的属性判定类别、或算出取值的规则。结论是派生的，依据没了就自动失效。",
     rulesEmpty: "还没有规则。",
     rulesNoMatch: "没有规则匹配。",
     ruleSearch: "搜索规则、属性、取值",
@@ -1084,8 +1078,7 @@ export const zh: Strings = {
     ruleCappedHint:
       "有些实体同一属性的读数太多，组合展不完，这条规则在它们身上的结论是不完整的。",
     refineTitle: "类型消解",
-    refineHint:
-      "类挂得大致对、但本体里有更具体的那一个。先看一遍再落库——改类不进任何时间轴，这是唯一能在它发生之前看见它的地方。",
+    refineHint: "人工收窄定得过宽的实体类型。",
     refinePreview: "先看一遍",
     refineLooking: "计算中…",
     refineRun: "跑一遍并落库",
@@ -1136,6 +1129,11 @@ export const zh: Strings = {
     shapeColor: "形状与颜色",
     parent: "父类",
     noParent: "（顶层）",
+    subclasses: "子类",
+    qualifiers: "边上的属性",
+    noQualifiers: "无",
+    qualifiersHint: "这条关系的边能带的属性，例如 invested_in 上的金额",
+    noSubclasses: "无",
     disjoint: "不可能同时是",
     disjointHint:
       "任何东西不可能同时属于的类。人不是组织。一致性检查据此找出永远不可能有实例的类。",
@@ -1188,8 +1186,7 @@ export const zh: Strings = {
     deleteBlocked: "在用中——无法删除",
     importShort: "导入",
     importTitle: "导入本体",
-    importHint:
-      "载入一个 OWL 或 RDFS 文件（.owl、.rdf、.ttl）。类与属性按 IRI 匹配，所以重新导入同一份词汇表的新版本，是更新它已建出来的东西，而不是再建一份。",
+    importHint: "导入 OWL 或 RDFS 文件（.owl、.rdf、.ttl）。类与属性按 IRI 匹配，导入同一份词汇表的新版本会更新已有的，不会再进一份。",
     importPick: "选择文件",
     importChange: "换一个",
     importReading: "读取中…",
@@ -1260,12 +1257,10 @@ export const zh: Strings = {
     importSize: (bytes: number) =>
       bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(0)} KB`,
     misses: "抽取中未匹配的",
-    missesHint:
-      "抽取器产出了这些，但它们不在你的本体里（于是降级成了 concept / related to）。它们是扩展本体的信号。",
+    missesHint: "抽取时落在本体之外的类型和谓词，用来判断本体还缺什么。",
     /* 一端挂着两个以上开放值的谓词（#341）：状态一句话，后果一句话，动作在按钮上 */
     uniqueness: "并存的取值",
-    uniquenessHint:
-      "同一个持有者挂着两个取值，都没有终点。除非这条关系声明了一次只能有一个值，接任就不会闭合前任——问任何一个过去的日期，两个都会答。",
+    uniquenessHint: "标明哪些关系同时只能有一个值，之后新值会自动结束旧值。",
     uniquenessEmpty: "没有并存：每个持有者至多一个开放取值。",
     uniquenessSubject: (n: number) => `${n} 个主语挂着两个以上开放取值`,
     uniquenessObject: (n: number) => `${n} 个取值被两个以上主语挂着`,
@@ -1341,7 +1336,7 @@ export const zh: Strings = {
     schemaBundle: (n) => `${n} 条关系`,
     schemaOutgoing: "从这个类出发",
     schemaIncoming: "指向这个类",
-    schemaNoRelationships: "还没有关系。",
+    schemaNoRelationships: "这个类没有参与任何关系。继承信息显示在“定义”中。",
     schemaNoInstances: "还没有实例。",
     schemaConnectHint: "用一个已有的关系连接",
     schemaConnectPlaceholder: "搜索关系…",
@@ -1351,7 +1346,7 @@ export const zh: Strings = {
   },
   mapping: {
     title: "数据映射",
-    hint: "业务概念在数据库里对应什么、怎么算。问数只按确认过的口径回答。",
+    hint: "每个业务概念对应库里的哪张表、哪一列，以及怎么算。对话只用已确认的定义作答。",
     tabDefinitions: "口径",
     tabSources: "数据源",
     filterAll: "全部",
@@ -1376,6 +1371,9 @@ export const zh: Strings = {
     noDefinition: "（未填）",
     approve: "确认",
     reject: "拒绝",
+    selectPage: "全选本页",
+    selectMapping: (name, source) => `选择 ${source} 中的 ${name}`,
+    selected: (n) => `已选 ${n} 条`,
     edit: "编辑",
     editTitle: "改口径",
     fieldTable: "表",
@@ -1684,7 +1682,7 @@ export const zh: Strings = {
       "那些说法仍然会汇集到「未匹配」下，只是要等你点头。",
     materialize: "物化推理",
     materializeNote:
-      "把本体蕴含的事实写进账本——传递链与对称对。默认关：声明可能是错的，而这一步会改图。派生事实带标记，也随时可以撤回。",
+      "把本体蕴含的事实写进账本——传递链与对称对。它们带派生标记、单列一段，背后的声明要是错了，撤掉只要一下。",
     autoResolveTypes: "抽取后自动消解实体类型",
     autoResolveTypesNote:
       "每篇文档抽完，对引擎还没看过的实体跑一轮类型消解。只有在现类子树里精化的才自动落地，跨轴的改判仍留在本体页等你。每一批都列在本体页，随时可以撤回。",
@@ -1792,6 +1790,9 @@ export const zh: Strings = {
     deactivatedTitle: "已停用的账号",
     deactivatedHint:
       "他们登不进来，也不出现在任何成员列表里。做过的事仍然算在他们名下——账号被保留而不是删除，正是为了这个。",
+    editMember: "编辑成员",
+    close: "关闭",
+    save: "保存",
     reactivate: "恢复",
     roleLabel: "角色",
     filterAll: "全部用户",

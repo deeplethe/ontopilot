@@ -29,6 +29,8 @@ const TOKENS = [
 ];
 const TEXT_UTILITIES =
   "left|center|right|justify|start|end|ellipsis|clip|wrap|nowrap|balance|pretty|white|black|transparent|current|inherit";
+/* `white` / `black` 留在这张表里，为的是让 `unknown-text` 放过它们——
+   它们归下面 `raw-white` 一条管，两条都报会把同一个错说两遍 */
 const KNOWN_TEXT = [...TOKENS, ...TEXT_UTILITIES.split("|")]
   .sort((a, b) => b.length - a.length)
   .join("|");
@@ -63,9 +65,16 @@ const RULES = [
     ui: true,
   },
   {
-    id: "alpha-white",
-    re: /\b(bg|border|text|ring|outline|divide)-(white|black)\/\[?[0-9.]+\]?/g,
-    why: "白色透明度是 surface / surface-2 / surface-3 / line 的事，不在页面里调（规矩 4）",
+    id: "raw-white",
+    /* 白与黑都不是颜色令牌，**带不带透明度都一样**。从前这条只认 `text-white/10`
+       那种带斜杠的写法，`text-white` 光秃秃地写就过了——`white` 还被算进下面
+       `unknown-text` 的合法工具类里（它跟 text-left、text-nowrap 排在一起）。
+       两道门都开着，于是顶栏的字标写死了白色：暗底上看不出来，翻成纸底之后
+       它还是白的，等于隐形。名字要的是 `text-ink`，随主题走。
+       真要"在深色块上永远是浅字"（主按钮、危险按钮里的字）另有令牌：
+       `--u-on-accent` / `--u-on-danger`，它们在浅色那套里也是对的 */
+    re: /\b(bg|border|text|ring|outline|divide|fill|stroke|placeholder|decoration|from|via|to)-(white|black)\b(\/\[?[0-9.]+\]?)?/g,
+    why: "白与黑不是令牌：文字用 ink / ink-2，面用 surface / surface-2 / surface-3，线用 line；深色块上的字用 on-accent / on-danger（规矩 4）",
     ui: true,
   },
   {
@@ -104,6 +113,29 @@ const RULES = [
     ui: false,
   },
   {
+    id: "raw-colour",
+    // 页面和组件里不出现色值本身：令牌在 styles.css 里定义一次，浅色/暗色各一套，
+    // 写死一个 #ffffff 就是写死了「暗底」。两个例外文件是**令牌的读者**：
+    // graphVisuals.ts 从 CSS 变量里把画布要的颜色读出来（canvas 不认 var()），
+    // palette.ts 是实体类型的数据色（规矩 4：彩色只属于数据），暗浅两套都在那里。
+    // `rgba(0,0,0,0)` 是透明，不是颜色，放行
+    re: /#[0-9a-fA-F]{6}(?![0-9a-fA-F])|(?<![a-zA-Z_])rgba?\(/g,
+    why: "颜色只用令牌（规矩 4）；画布从 graphVisuals 的调色板读，数据色在 palette.ts",
+    ui: true,
+    skip: (rel) => /src\/(pages\/graphVisuals\.ts|palette\.ts)$/.test(rel) || /\.test\.tsx?$/.test(rel),
+    allow: /rgba\(0,\s*0,\s*0,\s*0\)/g,
+  },
+  {
+    id: "raw-shadow",
+    /* Tailwind 自带的阴影是按浅色界面调的黑影，与 `--u-shadow` 不是一回事；
+       暗底上它们几乎看不见，所以能一直混在页面里没人察觉。浮起只有两档：
+       贴着画布的控件 `u-lift`，盖在页面上的浮层 `u-lift-strong`。
+       `shadow-none` 是"把它取消掉"，不是一档深浅，放行 */
+    re: /\bshadow-(sm|md|lg|xl|2xl)\b/g,
+    why: "浮起两档：u-lift（贴着画布的控件）/ u-lift-strong（浮层）；深浅归 --u-shadow（规矩 4）",
+    ui: true,
+  },
+  {
     id: "native-confirm",
     re: /\bwindow\.(confirm|alert)\(|(?<![.\w])(confirm|alert)\(/g,
     why: "确认走 DangerConfirm / Dialog，不用 window.confirm（规矩 5）",
@@ -111,11 +143,18 @@ const RULES = [
   },
 ];
 
+/** shadcn CLI 生成的那一层不受检：它是**供应层**，按 Tailwind 原生刻度写
+ *  （text-sm / rounded-md / bg-primary），与这套规矩不是一套词。改它要么去
+ *  registry 改，要么重新 `shadcn add` 覆盖，手写规矩管不到也不该管。
+ *  规矩仍然管页面：页面怎么用这些组件、有没有自己拼控件，那是这里的事。 */
+const VENDOR = path.join("src", "components", "ui");
+
 function walk(dir, out = []) {
+  if (dir.includes(VENDOR)) return out;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, out);
-    else if (entry.name.endsWith(".tsx")) out.push(full);
+    else if (entry.name.endsWith(".tsx") || entry.name.endsWith(".ts")) out.push(full);
   }
   return out;
 }
@@ -137,11 +176,37 @@ for (const rel of files) {
     m.replace(/[^\n]/g, " "),
   );
   const lines = text.split("\n");
+  // 块注释里的行也不算：/* … */ 跨行时逐行看不出自己在注释里，这里记个状态
+  let inBlock = false;
+  const commentFree = lines.map((line) => {
+    let out = "";
+    let i = 0;
+    while (i < line.length) {
+      if (inBlock) {
+        const end = line.indexOf("*/", i);
+        if (end < 0) return out;
+        inBlock = false;
+        i = end + 2;
+      } else {
+        const start = line.indexOf("/*", i);
+        if (start < 0) {
+          out += line.slice(i);
+          break;
+        }
+        out += line.slice(i, start);
+        inBlock = true;
+        i = start + 2;
+      }
+    }
+    return out;
+  });
   for (const rule of RULES) {
     if (inUi && !rule.ui) continue;
-    lines.forEach((line, i) => {
+    if (rule.skip && rule.skip(rel)) continue;
+    commentFree.forEach((line, i) => {
       // 注释里提到旧写法不算（规矩要能在注释里被引用）
-      const code = line.replace(/\/\/.*$/, "").replace(/\{\/\*.*?\*\/\}/g, "");
+      let code = line.replace(/\/\/.*$/, "");
+      if (rule.allow) code = code.replace(rule.allow, "");
       const hits = code.match(rule.re);
       if (!hits) return;
       failures += 1;

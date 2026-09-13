@@ -1,0 +1,30 @@
+{
+  "corpus": "tpch",
+  "notes": "One question per single-value definition in tpch.mappings.json, keyed by the same id — so a wrong answer points straight at the definition it needed, and the script can say whether that definition had a confirmed mapping. Questions are worded the way somebody who has never seen the schema would ask them: no table names, no column names, no SQL. The gold SQL is not repeated here; it lives with the definition.",
+  "questions": [
+    { "id": "line_count", "ask": "How many order lines are there in total?" },
+    { "id": "sum_qty", "ask": "What is the total number of units sold across all order lines?" },
+    { "id": "base_price", "ask": "What are our total gross sales, before any discount or tax?" },
+    { "id": "disc_revenue", "ask": "What is our total revenue after discounts, before tax?" },
+    { "id": "charge", "ask": "What is our total revenue including tax, after discounts?" },
+    { "id": "avg_qty", "ask": "On average, how many units are on an order line?" },
+    { "id": "avg_price", "ask": "What is the average amount of an order line before discount?" },
+    { "id": "avg_disc", "ask": "What discount rate do we give on average?" },
+    { "id": "discount_given", "ask": "How much money did we give away in discounts in total?" },
+    { "id": "returned_revenue", "ask": "What is the discounted revenue of the lines that customers returned?" },
+    { "id": "late_lines", "ask": "How many order lines reached the customer later than the date we committed to?" },
+    { "id": "order_count", "ask": "How many orders do we have?" },
+    { "id": "order_total", "ask": "What is the total booked value of all orders?" },
+    { "id": "avg_order_value", "ask": "What is the average value of an order?" },
+    { "id": "urgent_orders", "ask": "How many orders are urgent or high priority?" },
+    { "id": "customer_count", "ask": "How many customers do we have?" },
+    { "id": "customer_balance", "ask": "What is the total account balance across all our customers?" },
+    { "id": "positive_balance", "ask": "Counting only the customers who are in credit, what is their total account balance?" },
+    { "id": "inventory_value", "ask": "What is the total value of the stock our suppliers hold, valued at supply cost?" },
+    { "id": "avail_qty", "ask": "How many units in total do our suppliers have available?" },
+    { "id": "min_supply_cost", "ask": "What is the lowest supply cost any supplier quotes?" },
+    { "id": "supplier_count", "ask": "How many suppliers do we have?" },
+    { "id": "part_count", "ask": "How many parts are in the catalogue?" },
+    { "id": "avg_retail_price", "ask": "What is the average list price of a part?" }
+  ]
+}

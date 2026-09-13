@@ -73,6 +73,29 @@ pub async fn get(pool: &PgPool, id: Uuid) -> AppResult<KnowledgeBase> {
         .ok_or(AppError::NotFound)
 }
 
+/// 探索写的数据描述与它拿不准的问题（#570）。
+///
+/// **不碰 `data_conventions`。** 那是人写的；探索每跑一次都重写描述，两样混在
+/// 一个字段里，下一次探索就把人的答案盖了。所以是两列、两条写入路径。
+pub async fn set_data_description(
+    pool: &PgPool,
+    id: Uuid,
+    description: &str,
+    questions: &[String],
+) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE knowledge_bases
+            SET data_description = $2, data_questions = $3, updated_at = now()
+          WHERE id = $1",
+    )
+    .bind(id)
+    .bind(description)
+    .bind(serde_json::json!(questions))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn update(
     pool: &PgPool,
@@ -86,6 +109,7 @@ pub async fn update(
     inference_interval_minutes: Option<i32>,
     auto_type_resolution: Option<bool>,
     governance: Option<bool>,
+    data_conventions: Option<&str>,
 ) -> AppResult<KnowledgeBase> {
     // 改语言不回头重写已有的类——它们已经是这个库的数据，可能有人手工调过。
     // 这一列往后管的是**新**描述（自动扩本体、AI 建议）写成什么语言
@@ -125,6 +149,8 @@ pub async fn update(
              -- 从关到开的那一刻记下来：保险丝只数它之后的撤回。SET 右边读的是旧值
              governance_since = CASE WHEN $10 IS TRUE AND NOT governance THEN now()
                                      ELSE governance_since END,
+             -- 人写的约定；清空要送空串，送 null 等于不改（与 description 同一约定）
+             data_conventions = COALESCE($11, data_conventions),
              updated_at = now()
          WHERE id = $1 RETURNING *",
     )
@@ -138,6 +164,7 @@ pub async fn update(
     .bind(inference_interval_minutes)
     .bind(auto_type_resolution)
     .bind(governance)
+    .bind(data_conventions)
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::NotFound)

@@ -3,7 +3,9 @@
 - **Status**: Implemented · `concept_mappings` table and wiring (#126, the same commit as
   this record), a standalone Data Mappings page (#140), moved out of the Review queue (#148)
   · of the three things to rebuild, the Review flow and history are done, the evidence chain
-  is not · one of two open questions answered (2026-09-02 check)
+  is not · one of two open questions answered (2026-09-02 check) · **revised in part by
+  [0036](0036-exploration-aligns-a-schema-to-the-ontology.md)** (2026-09-09): what a mapping
+  is stands; what a concept is changes, and the table becomes a rendered one
 - **Written**: 2026-08-31 · condensed into English 2026-09-03
 - **Related**: [0009](0009-no-type-is-a-type.md) removes the builtin entity classes,
   [0010](0010-no-relation-is-no-relation.md) the fallback relation, #125 the other eight
@@ -78,6 +80,20 @@ rebuilding all three.
   rule.
 - 2026-09-02: we assumed a Review group would be the mapping's home; in use it became its
   own page (#140, #148).
+- 2026-09-09: **the concept a mapping hangs from is the wrong kind of thing.** This record
+  decided what a mapping is (configuration, its own table, revisions) and did not decide what
+  a *concept* is; the implementation made it an entity of a builtin class `Metric` or
+  `Dimension`, with the definition in the side table and nothing on the graph. Two benches
+  measured the cost: on a flattened order table exploration proposed 0 of 18 usable
+  definitions and the extractor filed 28 column names as concept entities (#501); a
+  convention such as "test orders do not count" had nowhere to live, and its absence moved
+  chat from 17 of 18 right answers to 1 of 18 (#520).
+  [0036](0036-exploration-aligns-a-schema-to-the-ontology.md) keeps every decision above and
+  changes the concept: an attribute of a real class, or a rule over such attributes; the
+  mapping is how a column becomes that attribute's value; `concept_mappings` becomes a
+  rendered table. Decision 4 (evidence recorded separately) and the second open question
+  (one concept, several sources) are answered by the alignment itself — the evidence is the
+  alignment, and a concept with two sources is an attribute two columns feed.
 
 ## Open questions
 

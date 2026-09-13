@@ -292,6 +292,15 @@ pub async fn resolve_mention(
         });
     };
 
+    // 这一次调用**绝不能归上去**的全部：调用方点名排除的（`exclude`），加上这一轮
+    // 看过、并且会被判「不是同一个」的同名候选。下面无论走哪条分支决定新建，都要把
+    // 这份名单递给 `create_entity`——锁里那条回捞按名字捞，不给名单就会把它们捞回来
+    let weighed: Vec<Uuid> = exclude
+        .iter()
+        .copied()
+        .chain(candidates.iter().map(|c| c.id))
+        .collect();
+
     // 有画像的候选算相似度；无画像（历史数据/无 embedding 期创建）单独归类
     let mut scored: Vec<(&Candidate, f32)> = Vec::new();
     let mut unprofiled: Option<&Candidate> = None;
@@ -347,7 +356,16 @@ pub async fn resolve_mention(
                         });
                     }
                 }
-                let id = create_entity(pool, kb_id, type_id, &name, context).await?;
+                let (id, created) =
+                    create_entity(pool, kb_id, type_id, &name, context, &weighed).await?;
+                if !created {
+                    // 并行的另一份文档刚建好它：用它的，审核对也是它排的
+                    return Ok(Resolution {
+                        entity_id: id,
+                        created: false,
+                        reviews: Vec::new(),
+                    });
+                }
                 refresh_disambiguators(pool, kb_id, &name).await?;
                 let reviews = [(best, sim), (runner, r_sim)]
                     .into_iter()
@@ -403,7 +421,15 @@ pub async fn resolve_mention(
             });
         }
     }
-    let id = create_entity(pool, kb_id, type_id, &name, context).await?;
+    let (id, created) = create_entity(pool, kb_id, type_id, &name, context, &weighed).await?;
+    if !created {
+        // 并行的另一份文档刚建好它：用它的，审核对也是它排的
+        return Ok(Resolution {
+            entity_id: id,
+            created: false,
+            reviews: Vec::new(),
+        });
+    }
     refresh_disambiguators(pool, kb_id, &name).await?;
     let mut reviews = best_scored
         .filter(|(_, sim)| *sim >= SIM_NEW)
@@ -877,7 +903,21 @@ async fn resolve_type_drift(
         }
     }
 
-    let id = create_entity(pool, kb_id, type_id, name, context).await?;
+    // 同上：点名排除的，加上跨类型同名里掂量过的
+    let weighed: Vec<Uuid> = exclude
+        .iter()
+        .copied()
+        .chain(cross.iter().map(|c| c.id))
+        .collect();
+    let (id, created) = create_entity(pool, kb_id, type_id, name, context, &weighed).await?;
+    if !created {
+        // 并行的另一份文档刚建好它：用它的，审核对也是它排的
+        return Ok(Resolution {
+            entity_id: id,
+            created: false,
+            reviews: Vec::new(),
+        });
+    }
     if !cross.is_empty() {
         // 跨类型同名并存：消歧后缀按名字分组（不分类型），需要刷新
         refresh_disambiguators(pool, kb_id, name).await?;
@@ -911,6 +951,13 @@ async fn resolve_type_drift(
     })
 }
 
+/// 新建一个实体。返回 `(id, 是否真的新建)`。
+///
+/// **同名同类的新建串行化。** 上面的查找不在事务里：两份文档并行抽取，同一个名字
+/// 各自查一遍都没有、各自建一个——实测「澜图数据」在同一秒里建了两个，之后每一次
+/// 提到它都撞上两个候选，再各建一个、各排一对审核，一篇语料跑完裂成四个。
+/// 这里按（库，名字）拿事务级咨询锁，锁里再查一次：别人刚建好的，就用它的。
+/// 不同类型的同名不在此列——那是消歧的事，不是竞态
 async fn create_entity(
     pool: &PgPool,
     kb_id: Uuid,
@@ -918,7 +965,37 @@ async fn create_entity(
     type_id: Option<Uuid>,
     name: &str,
     context: Option<&[f32]>,
-) -> AppResult<Uuid> {
+    // 调用方**刚刚掂量过、并且决定不并**的那些同名实体。
+    //
+    // 锁里那条回捞不加这个就分不清两件事：一件是「并行的另一份文档一毫秒前
+    // 建好了同名的它」——该用它的；另一件是「这个名字本来就有人，而调用方看过
+    // 之后决定另建一个」——这时回捞只会捞回它刚拒绝的那个候选，等于让一把锁
+    // 替人把 mention 归到其中一个身上。同名并列那条路上这正是 #270 禁的事：
+    // 分不开就别硬分，谁也不归，两个都送审。
+    weighed: &[Uuid],
+) -> AppResult<(Uuid, bool)> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))")
+        .bind(kb_id.to_string())
+        .bind(name)
+        .execute(&mut *tx)
+        .await?;
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM entities
+         WHERE kb_id = $1 AND canonical_name = $2 AND type_id IS NOT DISTINCT FROM $3
+           AND merged_into IS NULL AND id <> ALL($4)
+         ORDER BY id LIMIT 1",
+    )
+    .bind(kb_id)
+    .bind(name)
+    .bind(type_id)
+    .bind(weighed)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some((id,)) = existing {
+        tx.commit().await?;
+        return Ok((id, false));
+    }
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO entities (id, kb_id, type_id, canonical_name, profile_embedding, profile_n)
@@ -930,9 +1007,10 @@ async fn create_entity(
     .bind(name)
     .bind(context.map(|c| Vector::from(c.to_vec())))
     .bind(i32::from(context.is_some()))
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(id)
+    tx.commit().await?;
+    Ok((id, true))
 }
 
 async fn touch_entity(pool: &PgPool, id: Uuid) -> AppResult<()> {
@@ -965,6 +1043,7 @@ async fn update_profile(pool: &PgPool, id: Uuid, n: i32, ctx: &[f32]) -> AppResu
         }
         _ => (ctx.to_vec(), 1),
     };
+    let dims = new_vec.len();
     sqlx::query(
         "UPDATE entities SET profile_embedding = $2, profile_n = $3, updated_at = now()
          WHERE id = $1",
@@ -974,6 +1053,8 @@ async fn update_profile(pool: &PgPool, id: Uuid, n: i32, ctx: &[f32]) -> AppResu
     .bind(new_n)
     .execute(pool)
     .await?;
+    // 画像表也要索引（0035 / #514）：类型消解按主语逐个扫它。在了的话这一句是一次查找
+    crate::vector_index::request(pool, crate::vector_index::Target::EntityProfiles, dims).await?;
     Ok(())
 }
 
@@ -998,6 +1079,35 @@ async fn update_profile(pool: &PgPool, id: Uuid, n: i32, ctx: &[f32]) -> AppResu
 ///
 /// 没有谓词的事实（`predicate_id IS NULL`，0010）不参与：原话留在证据里，
 /// 不是本体承认的说法，不该被当成一个人的身份写进后缀。
+/// 库里有没有叫这个名字的实体，**不问类型**、并掉的不算。
+///
+/// 抽取用它判断一个没声明的主宾是不是已知的东西（#559）：模型偶尔漏报一个实体
+/// 却在事实里用了它，那时库里多半已经有它；库里也没有的，就不是漏报，是一个
+/// 描述（"lawsuit against OpenAI"），不该成节点。同名多个时取事实最多的那个——
+/// 这里只回答「有没有」，谁是谁交给消解
+pub async fn existing_by_name(
+    pool: &PgPool,
+    kb_id: Uuid,
+    raw_name: &str,
+) -> AppResult<Option<Uuid>> {
+    let name = normalize_name(raw_name);
+    let keys = recall_keys(&name);
+    let id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT e.id FROM entities e
+          WHERE e.kb_id = $1 AND e.merged_into IS NULL
+            AND (lower(e.canonical_name) = ANY($2)
+                 OR EXISTS (SELECT 1 FROM unnest(e.aliases) a WHERE lower(a) = ANY($2)))
+          ORDER BY (SELECT count(*) FROM facts f
+                     WHERE f.subject_id = e.id OR f.object_id = e.id) DESC, e.created_at
+          LIMIT 1",
+    )
+    .bind(kb_id)
+    .bind(&keys)
+    .fetch_optional(pool)
+    .await?;
+    Ok(id)
+}
+
 pub async fn refresh_disambiguators(pool: &PgPool, kb_id: Uuid, name: &str) -> AppResult<()> {
     let group: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM entities
@@ -2480,23 +2590,78 @@ pub async fn set_specific_type(pool: &PgPool, entity_id: Uuid, value: &str) -> A
 ///
 /// 已知弱点：只出现在一篇文档里的实体，语境向量就是那一块的向量，同文档的实体
 /// 会互相成为近邻。调用方要看得到 `same_document`，别把它当成类型证据。
+/// 一批之内 [`descendants_of`] 的记忆（#514）。
+///
+/// 粗类来自抽取的小词表（person、organization、product 加几个），六十个主语里
+/// 同一个 `coarse_id` 反复出现，同一个递归 CTE 就反复发。批内本体不动，同一输入
+/// 同一结果，记住不改答案。**没有粗类的主语不进这张表**：它没有「后代」这个轴
+/// （0009），整张类表都是候选；用 `Option` 当键会把它和某个真实的类混在一起
+#[derive(Default)]
+pub struct DescendantsMemo {
+    sets: std::collections::HashMap<Uuid, HashSet<Uuid>>,
+}
+
+impl DescendantsMemo {
+    pub async fn get(
+        &mut self,
+        pool: &PgPool,
+        kb_id: Uuid,
+        root: Option<Uuid>,
+    ) -> AppResult<HashSet<Uuid>> {
+        let Some(root) = root else {
+            return Ok(HashSet::new());
+        };
+        if let Some(set) = self.sets.get(&root) {
+            return Ok(set.clone());
+        }
+        let set: HashSet<Uuid> = descendants_of(pool, kb_id, root)
+            .await?
+            .into_iter()
+            .collect();
+        self.sets.insert(root, set.clone());
+        Ok(set)
+    }
+
+    /// 记住了几个根
+    pub fn len(&self) -> usize {
+        self.sets.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sets.is_empty()
+    }
+}
+
+/// 一个主语的近邻：语境相似的已定类实体，连同「是否同一篇文档」。
+///
+/// 主语自己的向量先取出来再查：维度要写进 SQL（`vector_index` 规矩 1），SQL 里的
+/// 子查询给不了这个数。没有向量的主语没有近邻，回空
 pub async fn nearest_typed_entities(
     pool: &PgPool,
     kb_id: Uuid,
     entity_id: Uuid,
     limit: i64,
 ) -> AppResult<Vec<(String, Uuid, String, f64, bool)>> {
-    Ok(sqlx::query_as(
-        "WITH me AS (
-             SELECT profile_embedding AS v FROM entities WHERE id = $2 AND kb_id = $1
-         ),
-         my_docs AS (
+    let me: Option<(Option<Vector>,)> =
+        sqlx::query_as("SELECT profile_embedding FROM entities WHERE id = $2 AND kb_id = $1")
+            .bind(kb_id)
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?;
+    let Some(query_vec) = me.and_then(|(v,)| v) else {
+        return Ok(Vec::new());
+    };
+    let dims = query_vec.as_slice().len();
+    let mut tx = pool.begin().await?;
+    crate::vector_index::relaxed_order(pool, &mut tx).await?;
+    let rows = sqlx::query_as(&format!(
+        "WITH my_docs AS (
              SELECT DISTINCT ev.document_id FROM fact_evidence ev
              JOIN facts f ON f.id = ev.fact_id
              WHERE f.kb_id = $1 AND (f.subject_id = $2 OR f.object_id = $2)
          )
          SELECT e.canonical_name, t.id, t.key,
-                (e.profile_embedding <=> (SELECT v FROM me))::float8 AS distance,
+                ({distance})::float8 AS distance,
                 EXISTS (SELECT 1 FROM fact_evidence ev2
                         JOIN facts f2 ON f2.id = ev2.fact_id
                         WHERE f2.kb_id = $1 AND (f2.subject_id = e.id OR f2.object_id = e.id)
@@ -2507,16 +2672,54 @@ pub async fn nearest_typed_entities(
          FROM entities e
          JOIN entity_types t ON t.id = e.type_id
          WHERE e.kb_id = $1 AND e.merged_into IS NULL AND e.id <> $2
-           AND e.profile_embedding IS NOT NULL
-           AND (SELECT v FROM me) IS NOT NULL
-         ORDER BY e.profile_embedding <=> (SELECT v FROM me)
-         LIMIT $3",
-    )
+           AND e.profile_embedding IS NOT NULL AND {same_dims}
+         ORDER BY {distance}
+         LIMIT $4",
+        distance = crate::vector_index::distance("e.profile_embedding", 3, dims),
+        same_dims = crate::vector_index::same_dims("e.profile_embedding", dims),
+    ))
     .bind(kb_id)
     .bind(entity_id)
+    .bind(&query_vec)
     .bind(limit)
-    .fetch_all(pool)
-    .await?)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(rows)
+}
+
+/// 同时跑几个近邻查询。池是 32、按「同时跑的短查询」定的（`db.rs`）；六十个
+/// 全表扫一起上就是那里记的池子被吃空的样子——慢请求和超时，没有一句话说池小了。
+/// 八个留足了给请求的余量，而 HNSW 就位之后每个查询只有几毫秒，再高也没意义
+pub const NEIGHBOUR_SCANS: usize = 8;
+
+/// 一批主语各自的近邻，**按送进来的顺序回**：下游裁决按这个顺序读。
+///
+/// 六十个查询彼此无关，串行只因为循环是串行的（#514）。这里有界并发地取，
+/// `buffered` 保序，推理仍在原顺序上做
+pub async fn nearest_typed_for_each(
+    pool: &PgPool,
+    kb_id: Uuid,
+    ids: &[Uuid],
+    limit: i64,
+) -> AppResult<Vec<Vec<(String, Uuid, String, f64, bool)>>> {
+    nearest_typed_for_each_with(pool, kb_id, ids, limit, NEIGHBOUR_SCANS).await
+}
+
+/// 同上，并发上限由调用方给（测试用它证明上限不改答案）
+pub async fn nearest_typed_for_each_with(
+    pool: &PgPool,
+    kb_id: Uuid,
+    ids: &[Uuid],
+    limit: i64,
+    at_once: usize,
+) -> AppResult<Vec<Vec<(String, Uuid, String, f64, bool)>>> {
+    use futures_util::{stream, StreamExt, TryStreamExt};
+    stream::iter(ids.iter().copied())
+        .map(|id| nearest_typed_entities(pool, kb_id, id, limit))
+        .buffered(at_once.max(1))
+        .try_collect()
+        .await
 }
 
 /// 按实体逐个改类，写进同一本账。返回 (批次 id, 改动数)。

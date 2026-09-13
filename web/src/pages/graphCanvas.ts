@@ -33,6 +33,7 @@ import {
   RING_HOVER_MIX,
   RING_SELECT_MIX,
   TRANSPARENT,
+  INK,
 } from "./graphVisuals";
 
 /* ============ 节点程序 ============ */
@@ -43,6 +44,36 @@ import {
  * 而它们是同一个 `createNodeBorderProgram`——两个名字说的是同一件事 */
 export const NODE_TYPE_SHELL = "shell";
 export const NODE_TYPE_SQUARE = "square";
+
+/* ---------- 高亮的边画在最上层 ---------- */
+
+/** 「最上层」那一批的类型名后缀 */
+const TOP = "Top";
+
+/** 一条边高亮时该用的类型名。
+ *
+ * **`zIndex` 在这里不管用。**sigma 一个程序一批绘制，`zIndex` 只在批内排序；
+ * 跨程序谁先谁后，看的是 `edgeProgramClasses` 里键的顺序。于是选中一个节点
+ * 之后，它那几条亮线照样会被别的程序里压暗的边切断——放大看就是白线被一条条
+ * 细黑条切开。
+ *
+ * 解法是把同一个程序**注册两遍**（见 `withTopLayer`），高亮的边整批走后注册的
+ * 那一份，最后画。两页都踩过这个坑：图谱页先解的，本体页后来又踩了一遍——
+ * 所以它收在这里，不在任何一页里。 */
+export function drawLast(type: string): string {
+  return type.endsWith(TOP) ? type : type + TOP;
+}
+
+/** 给一份边程序表配上「最上层」的那一份：同样的程序，键排在后面。
+ *  高亮时把 `res.type` 换成 `drawLast(res.type)` 就落进这一批。 */
+export function withTopLayer<T>(programs: Record<string, T>): Record<string, T> {
+  return {
+    ...programs,
+    ...Object.fromEntries(
+      Object.entries(programs).map(([name, program]) => [drawLast(name), program]),
+    ),
+  };
+}
 
 export const NODE_PROGRAMS = {
   [NODE_TYPE_SHELL]: createNodeBorderProgram({
@@ -91,6 +122,12 @@ export interface CanvasOptions {
  * 边的悬停事件默认是关的，这里一律开：两页都靠 `enterEdge` 让边说话。 */
 export function sigmaOptions(o: CanvasOptions) {
   return {
+    /* **按层级画**。两个 reducer 一直在设 `res.zIndex`（压暗 0、邻居 2、
+       选中 3、指到 4、高亮的边 5），可 sigma 默认不看它——绘制顺序就是缓冲区
+       顺序，于是一条高亮的白边会被后画的暗边一段段切断，看着像被虚线打断。
+       打开它，那些层级值才真正生效。代价是每帧多一次排序，几百条边这个量级
+       可以忽略 */
+    zIndex: true,
     allowInvalidContainer: true,
     defaultNodeType: NODE_TYPE_SHELL,
     nodeProgramClasses: NODE_PROGRAMS,
@@ -172,7 +209,7 @@ export function softMutedNode(
 }
 
 /** 指着的那一个：×1.08，最小 10.4，偏白的环——为的是跳出来。
- *  名字出一块**深底浅字**的底牌，与选中那一档同一副形状（选中是反过来的
+ *  名字那块牌子的底亮一档并浮起来，与选中那一档同一副形状（选中是反色的
  *  浅底深字）。从前这里是一张浮起来的两行卡片，与选中完全不像 */
 export function hoveredNode(
   res: NodeAttrs,
@@ -180,9 +217,9 @@ export function hoveredNode(
   base: number,
 ): NodeAttrs {
   res.size = Math.max(base * 1.08, 10.4);
-  res.ringColor = mix(ownColorOf(attrs), "#ffffff", RING_HOVER_MIX);
+  res.ringColor = mix(ownColorOf(attrs), INK, RING_HOVER_MIX);
   res.forceLabel = true;
-  res.labelSlab = true;
+  res.labelLift = true;
   res.zIndex = 4;
   return deferToHoverLayer(res);
 }
@@ -213,10 +250,10 @@ export function selectedNode(
   base: number,
 ): NodeAttrs {
   res.size = Math.max(base * 1.02, 9.2);
-  res.ringColor = mix(ownColorOf(attrs), "#ffffff", RING_SELECT_MIX);
+  res.ringColor = mix(ownColorOf(attrs), INK, RING_SELECT_MIX);
   res.forceLabel = true;
-  res.labelSlab = true;
-  // **反色**：浅底深字。指到的那一个是深底浅字，同一副形状调个个儿——
+  res.labelLift = true;
+  // **反色**：浅底深字。指到的那一个是底亮一档的牌子，同一副形状调个个儿——
   // 一眼分得出"我正指着"和"我选中了"，而不必再多一种记号
   res.labelInvert = true;
   // 再加粗一档。反色要看向它才读得出来，字重在余光里也分得清

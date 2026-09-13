@@ -15,18 +15,33 @@ import forceAtlas2 from "graphology-layout-forceatlas2";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
 import Sigma from "sigma";
 import EdgeCurveProgram from "@sigma/edge-curve";
+import { EdgeRectangleProgram } from "sigma/rendering";
+import { onThemeChange } from "../theme";
 import {
-  drawWorldGrid,
+  EDGE,
+  EDGE_CONTEST,
+  EDGE_DERIVED,
+  EDGE_DERIVED_DIM,
+  EDGE_DIM,
+  EDGE_FOCUS,
+  EDGE_FOCUS_CONTEST,
+  EDGE_FOCUS_DERIVED,
+  EDGE_INFERRED,
   HOVER_MUTE,
-  lerpColor,
-  mix,
   MUTED_SHELL,
   NODE_BORDER_BASE,
   NODE_CORE_BASE,
   NODE_CORE_MIX,
   NODE_SHELL_BASE,
   NODE_TINT_MIX,
+  SCRUB_FUTURE,
+  SCRUB_PAST,
+  SCRUB_PLAY,
   TRANSPARENT,
+  drawWorldGrid,
+  lerpColor,
+  mix,
+  refreshPalette,
 } from "./graphVisuals";
 // 画布那台机器是两页共用的（#496）：构造选项、状态表、相机、拖拽都在那边，
 // 这个文件只管把实例与事实投影成一张图、说清楚每个节点是什么颜色
@@ -40,6 +55,8 @@ import {
   NODE_TYPE_SQUARE,
   selectedNode,
   sigmaOptions,
+  withTopLayer,
+  drawLast,
   softMutedNode,
 } from "./graphCanvas";
 import { EntityHistory } from "./EntityHistory";
@@ -49,7 +66,6 @@ import { NextStep, nextStep, useReadiness } from "./NextStep";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronDown,
   ChevronRight,
   CircleDashed,
   ExternalLink,
@@ -81,7 +97,6 @@ import { predicateSentence } from "../predicateText";
 import {
   Button,
   CanvasLoading,
-  DangerConfirm,
   ExpandCard,
   HOVER_ROW,
   IconButton,
@@ -97,25 +112,16 @@ import {
   ToolTower,
   cn,
   GroupLabel,
-} from "../ui";
-import { usePopoverFlip } from "../ui/popoverFlip";
+  chipLike,
+  Chip,} from "../ui";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useKb, useKbId } from "../kb";
 import { toast } from "../toast";
 
-const EDGE_COLOR = "rgba(163,163,163,0.2)"; // 纯灰（应用户要求，不用钢蓝）
-// 本体没认下的关系：同色更淡。名字来自原文，不该跟词表里的关系看着一样重
-const EDGE_COLOR_INFERRED = "rgba(163,163,163,0.1)";
-// 推出来的边（R1）。**跟上面两者说的不是一件事**：那两个说「这条边的名字从哪来」，
-// 这个说「这条边根本不是谁说的，是引擎推的」。所以给它自己的色相而不是再淡一档灰——
-// 用户要在余光里就分得出「文档里写的」和「推出来的」
-const EDGE_COLOR_DERIVED = "rgba(231,197,124,0.42)";
-const EDGE_COLOR_DERIVED_DIM = "rgba(231,197,124,0.14)";
-/* 争议（0017 §3）：珊瑚橙 `--u-contest`。金是派生、琥珀是警告、粉是危险，
-   它得跟三个都拉开。**整条边换色**——环在节点上、边还是灰的，余光分不出来 */
-const EDGE_COLOR_CONTEST = "rgba(255,106,61,0.55)";
-const EDGE_FOCUS_CONTEST = "rgba(255,106,61,1)";
-
-/** 相邻两条弧之间的曲率差。太小仍然糊，太大在长边上会甩得离节点很远 */
 const EDGE_CURVATURE_STEP = 0.18;
 
 /** 一条边画在哪条弧上；`curvature === 0` = 直线。 */
@@ -229,19 +235,11 @@ const LEGEND_MAX = 6;
    ——它只影响看得清还是拖得动，用户要的是「多点/少点」，不是 237 这个数。
    最大值与后端 GRAPH_NODE_CAP_MAX 对齐；再高先垮的是拖动，不是清晰度 */
 const NODE_BUDGETS: number[] = [150, 300, 600, 1000];
-// 注意：sigma 边着色器在预乘混合(ONE, ONE_MINUS_SRC_ALPHA)下不预乘 RGB，
-// alpha 无法压暗边——暗度必须编码进 RGB（不透明近背景色）
-const EDGE_DIM = "#141414";
-/* 幽灵边：没落地的派生。同一个色相往 EDGE_DIM 混（预乘混合下 alpha 压不暗边），
-   更细。sigma 默认的边程序画不了虚线，也不为此另写一个 */
-const EDGE_GHOST = lerpColor("rgba(255,106,61,1)", EDGE_DIM, 0.55);
-const EDGE_GHOST_FOCUS = lerpColor("rgba(255,106,61,1)", EDGE_DIM, 0.2);
-const EDGE_FOCUS = "rgba(255,255,255,0.55)";
-// 选中/悬停时的派生边。**不能跟着走白**：选中恰恰是看得最仔细的时候，
-// 而这时候「这条边是推出来的、没人写过」比任何时候都该说清楚。
-// 从前一律 EDGE_FOCUS，一选中金线就变白，等于把来历抹掉了。
-// 比常态的金更亮更实——它同样要表达「被选中了」
-const EDGE_FOCUS_DERIVED = "rgba(255,214,140,0.95)";
+/* 边色全部来自调色板（graphVisuals，读的是当前主题的令牌，0038）。
+   幽灵边（没落地的派生）同一个色相往 EDGE_DIM 混——sigma 的边着色器在预乘混合
+   下 alpha 压不暗边，暗度必须编码进 RGB——所以是函数，切主题后重算 */
+const edgeGhost = () => lerpColor(EDGE_FOCUS_CONTEST, EDGE_DIM, 0.55);
+const edgeGhostFocus = () => lerpColor(EDGE_FOCUS_CONTEST, EDGE_DIM, 0.2);
 const DAY_MS = 24 * 3600 * 1000;
 
 /* 播放淡入：解析 hex / rgb / rgba（含 alpha）并线性插值 */
@@ -258,6 +256,8 @@ export function Graph() {
   const search = useSearch({ from: "/app/kb/$kbId/graph" });
   const navigate = useNavigate();
   const entityParam = search.entity;
+  // 主题一变，图要重构（颜色烤在属性里）：见构图 effect
+  const [themeTick, setThemeTick] = useState(0);
   const [focusEntity, setFocusEntity] = useState<string | null>(
     search.focus ?? entityParam ?? null,
   );
@@ -268,16 +268,11 @@ export function Graph() {
   // 推出来的边显不显示。默认显示——推理默认关着，有派生就意味着用户开过开关
   const [showDerived, setShowDerived] = useState(true);
   // 信息窗默认收起：它答的是「什么时候推的」，那是偶尔才问的问题
-  /* Inference 也用原地展开，与「+N 个类」、通知、用户菜单同一套。
-     **贴左下角**：塔在画布左下，面板要从那个 ⋯ 按钮往右上长开 */
-  const derivedPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>(
-    "bottom left",
-  );
-  /* 「+N 个类」用与通知/用户卡片同一套原地展开：面板压到 chip 的真实边界
-     （圆角 999px）再长成卡片。**贴左边，所以锚点角是 top left** */
-  const legendPop = usePopoverFlip<HTMLButtonElement, HTMLDivElement>(
-    "top left",
-  );
+  /* 画布上的两块浮层（Inference、「+N 个类」）与顶栏那三个面板同一副：
+     shadcn 的 Popover。从前是手写的原地展开，面板第一行还要把触发它的那个
+     胶囊再画一遍当关闭键；统一之后关闭归 Esc、外点与触发器本身 */
+  const [derivedOpen, setDerivedOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [legendQ, setLegendQ] = useState("");
   /* 正在退场的实体。**面板不能一取消选中就卸载**——那样它是瞬间消失的。
      先留在原地演完退场，再真的移除。用 selectedRef 取当前值而不是把
@@ -678,6 +673,9 @@ export function Graph() {
   }, [timeT, recomputeActive]);
 
   useEffect(() => {
+    // 节点壳色、边色是**烤进图属性**的，不是渲染时才取；所以构图前先把调色板
+    // 读成当前主题的值，切主题时靠 themeTick 让这里重跑一遍（0038）
+    refreshPalette();
     if (!containerRef.current || !data.data) return;
     const g = new Graphology({ multi: true });
     for (const n of data.data.nodes) {
@@ -708,14 +706,14 @@ export function Graph() {
         label: (e.contested ? "⚠ " : "") + (e.label ?? ""),
         size: e.blocked ? 0.7 : 1,
         color: e.blocked
-          ? EDGE_GHOST
+          ? edgeGhost()
           : e.contested
-            ? EDGE_COLOR_CONTEST
+            ? EDGE_CONTEST
             : e.derived
-              ? EDGE_COLOR_DERIVED
+              ? EDGE_DERIVED
               : e.inferred
-                ? EDGE_COLOR_INFERRED
-                : EDGE_COLOR,
+                ? EDGE_INFERRED
+                : EDGE,
         contested: e.contested,
         blocked: e.blocked,
         // 独一条就走直线：曲线是为了把重叠分开，没有重叠就不必弯
@@ -826,14 +824,62 @@ export function Graph() {
       },
     };
 
+    /* **此刻还连着吗**。
+     *
+     * `areNeighbors` 只问图上有没有这条边，不问时间轴停的这一刻它还成不成立；
+     * 边那边是问的（见 `liveNow`）。两边不一致，画出来就是「节点亮着、线却
+     * 没有」：悬停 Google DeepMind，Arthur Mensch 亮着，可它那条
+     * former_employee_of 早就结束了，线被压回背景色——看着像凭空亮了一个。
+     * 派生边关掉时同理：那条边整条不画，另一头就不该还当邻居亮着。
+     *
+     * **按焦点节点缓存一份**：这个判断每帧要对每个节点问一次，而枢纽点动辄
+     * 几百条边，逐节点扫一遍度数太亏。时间轴每动一次 `activeEdges` 都是新的
+     * Set（见 `recomputeActive`），拿它的身份当键就够，再带上边数兜住图本身
+     * 被换掉的情况 */
+    const liveNbr = {
+      focus: "",
+      edges: null as Set<string> | null,
+      derived: true,
+      size: -1,
+      set: new Set<string>(),
+    };
+    const isLiveNeighbor = (focus: string, node: string) => {
+      const { activeEdges, showDerived } = filterRef.current;
+      if (
+        liveNbr.focus !== focus ||
+        liveNbr.edges !== activeEdges ||
+        liveNbr.derived !== showDerived ||
+        liveNbr.size !== g.size
+      ) {
+        const set = new Set<string>();
+        g.forEachEdge(focus, (e, attrs, src, tgt) => {
+          if (activeEdges && !activeEdges.has(e)) return;
+          if (!showDerived && attrs.derived === true) return;
+          set.add(src === focus ? tgt : src);
+        });
+        liveNbr.focus = focus;
+        liveNbr.edges = activeEdges;
+        liveNbr.derived = showDerived;
+        liveNbr.size = g.size;
+        liveNbr.set = set;
+      }
+      return liveNbr.set.has(node);
+    };
+
     sigmaRef.current?.kill();
+    // 画布颜色从令牌读（0038）：建实例前读一次，切主题后再读一次并重画
+    refreshPalette();
     const sigma = new Sigma(g, containerRef.current, {
       ...sigmaOptions({
         defaultEdgeType: "line",
         /* 平行边扇成弧（见 `layOutParallelEdges`）。直线那一版把同一对节点
            之间的每条边画在同一条线段上，于是几个标签逐字符叠成乱码——实测
            一对节点之间最多压着六条 */
-        edgeProgramClasses: { curved: EdgeCurveProgram },
+        // 每个程序配一份「最上层」的（见 `withTopLayer`）：高亮的边整批最后画
+        edgeProgramClasses: withTopLayer({
+          line: EdgeRectangleProgram,
+          curved: EdgeCurveProgram,
+        }),
         // 边上写的是谓词，近距离下每条画得出来的边都写（见 updateEdgeLabels）
         renderEdgeLabels: true,
         // 上千个节点，得缩得比本体页更远才看得见全貌
@@ -866,9 +912,15 @@ export function Graph() {
         if (hov === node) return hoveredNode(res, attrs, base);
         if (sel) {
           // 邻居收到 0.76：上千个节点，得给选中的那一条路让地方
-          if (g.areNeighbors(sel, node)) neighborNode(res, base, 0.76);
+          if (isLiveNeighbor(sel, node)) neighborNode(res, base, 0.76);
+          /* **指到谁，就把谁的邻居也留出来**。边那边悬停是压过选中的
+             （`boost()` 在最前面），节点这边不跟上，选中之后再指别处就成了
+             一圈亮着的边通向一圈黑着的点——指过去正是想读"它连着谁"，
+             而那一问什么也答不出来 */
+          else if (hov && isLiveNeighbor(hov, node))
+            neighborNode(res, base, 0.76);
           else return mutedNode(res, base);
-        } else if (hov && hov !== node && !g.areNeighbors(hov, node)) {
+        } else if (hov && hov !== node && !isLiveNeighbor(hov, node)) {
           // **悬停也压暗其余**，只是比选中轻一档（见 HOVER_MUTE）。
           // 邻居留着：悬停要回答的正是"它连着谁"。
           // **此刻还不存在的节点直接压到底**：这个分支会提前 return，
@@ -974,11 +1026,11 @@ export function Graph() {
             const ghost = attrs.blocked === true;
             const from = !focused
               ? ghost
-                ? EDGE_GHOST
-                : EDGE_COLOR_DERIVED
+                ? edgeGhost()
+                : EDGE_DERIVED
               : s === focused || t === focused
                 ? ghost
-                  ? EDGE_GHOST_FOCUS
+                  ? edgeGhostFocus()
                   : EDGE_FOCUS_DERIVED
                 : EDGE_DIM;
             res.color = lerpColor(from, EDGE_DIM, k);
@@ -987,10 +1039,10 @@ export function Graph() {
           }
           // 幽灵边不呼吸：它不是知识，是一条没走通的路
           const pulse = attrs.blocked === true
-            ? EDGE_GHOST
+            ? edgeGhost()
             : lerpColor(
-            EDGE_COLOR_DERIVED_DIM,
-            EDGE_COLOR_DERIVED,
+            EDGE_DERIVED_DIM,
+            EDGE_DERIVED,
             // 三角波而不是正弦：两端各停一瞬，看起来是「呼吸」不是「闪」
             Math.abs(
               ((performance.now() % DERIVED_PULSE_MS) / DERIVED_PULSE_MS) * 2 -
@@ -1010,7 +1062,7 @@ export function Graph() {
         const boost = () => {
           res.color =
             attrs.blocked === true
-              ? EDGE_GHOST_FOCUS
+              ? edgeGhostFocus()
               : attrs.contested === true
                 ? EDGE_FOCUS_CONTEST
                 : isDerived
@@ -1018,6 +1070,8 @@ export function Graph() {
                   : EDGE_FOCUS;
           res.size = Math.max((attrs.size as number) * 1.42, 1.85);
           res.zIndex = 5;
+          // 换到最后画的那批（见 `edgeProgramClasses`）：光有 zIndex 压不住别的程序
+          res.type = drawLast(String(res.type ?? "line"));
         };
         /* **时间轴停在某一刻时，这条边此刻存不存在**。
            悬停的两条分支都会提前 return，绕过下面那道时间过滤——
@@ -1047,6 +1101,11 @@ export function Graph() {
         }
         if (f.activeEdges && !f.activeEdges.has(edge)) {
           res.color = EDGE_DIM;
+          /* **压暗了就退出最上层那批**（见 `boost()`）。这一档在 `boost()`
+             之后：一条挨着选中项、但此刻时间轴上还不存在的边，颜色已经被压
+             回背景色，却还留着高亮时换上的置顶程序——那就成了一条画在所有
+             高亮边之上的暗线，正好把它们切断 */
+          res.type = attrs.type as string;
           res.label = "";
           return res;
         }
@@ -1072,6 +1131,12 @@ export function Graph() {
       event.preventSigmaDefault();
       setFocusEntity(node);
       setSelected(node);
+    });
+    const offTheme = onThemeChange(() => {
+      refreshPalette();
+      setThemeTick((t) => t + 1);
+      sigma.refresh();
+      if (gridRef.current) drawWorldGrid(gridRef.current, sigma);
     });
     sigma.on("clickStage", () => deselect());
     sigma.on("enterNode", ({ node }) => {
@@ -1103,7 +1168,9 @@ export function Graph() {
        打上就绕开那条启发式 */
     const updateEdgeLabels = () => {
       const ratio = sigma.getCamera().ratio;
-      sigma.setSetting("renderEdgeLabels", ratio < 0.7);
+      // 边少的图（≤ 40 条）始终写谓词：标签藏起来是为了大图不挤，
+      // 一个十几条边的库进来 ratio = 1，藏了只会让人以为谓词没了
+      sigma.setSetting("renderEdgeLabels", ratio < 0.7 || g.size <= 40);
       const deep = ratio < 0.35;
       if (deep !== deepZoomRef.current) {
         deepZoomRef.current = deep;
@@ -1154,6 +1221,8 @@ export function Graph() {
     }
     recomputeActive(timeT);
     return () => {
+      offTheme();
+
       if (stabilizeTimer) clearTimeout(stabilizeTimer);
       if (settleTimer) clearTimeout(settleTimer);
       fa2?.kill();
@@ -1162,7 +1231,7 @@ export function Graph() {
       sigmaRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.data]);
+  }, [data.data, themeTick]);
 
   if (!kb)
     return <div className="p-8 text-body text-ink-2">{S.nav.loading}</div>;
@@ -1184,7 +1253,7 @@ export function Graph() {
           {/* 与本体页左栏的过滤框同一副身材、同一个角落（见 Ontology.tsx） */}
           <Input
             icon={<Search size={12} />}
-            className="w-58 shadow-lg"
+            className="w-58 u-lift"
             placeholder={
               inSubgraph ? S.graph.searchInSubgraph : S.graph.searchEntity
             }
@@ -1195,7 +1264,7 @@ export function Graph() {
             }}
           />
           {searchQ && searchHits.length > 0 && (
-            <div className="glass-strong absolute mt-1 w-full rounded-overlay shadow-xl overflow-hidden">
+            <div className="glass-strong absolute mt-1 w-full rounded-overlay u-lift-strong overflow-hidden">
               {searchHits.map((c) => (
                 <Row
                   key={c.id}
@@ -1208,14 +1277,18 @@ export function Graph() {
                     setSearchQ("");
                   }}
                 >
-                  <span className="flex items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ background: c.color }}
                     />
+                    {/* **名字最后才让**：两段都是 truncate 的话，flex 按各自
+                        的宽度一起收，一个长一点的消歧词能把名字挤成「Ac…」。
+                        消歧词收得快四倍、且最多占四成——它是补充，名字才是
+                        这一行要读的东西 */}
                     <span className="truncate">{c.name}</span>
-                    {c.disambiguator && (
-                      <span className="truncate text-small text-ink-2">
+                    {c.disambiguator && c.disambiguator !== c.type_label && (
+                      <span className="min-w-0 max-w-[40%] shrink-[4] truncate text-small text-ink-2">
                         · {c.disambiguator}
                       </span>
                     )}
@@ -1244,7 +1317,7 @@ export function Graph() {
         {focusEntity && (
           <Button
             variant="secondary"
-            className="glass-strong pointer-events-auto shadow-lg"
+            className="glass-strong pointer-events-auto u-lift"
             onClick={() => setFocusEntity(null)}
           >
             {S.graph.backToOverview}
@@ -1281,16 +1354,9 @@ export function Graph() {
               点开看到的就是全部（搜得到任何一个），写「+3」等于承诺了另一件事 */}
 
           {legendRest.length > 0 && (
-            <div className="relative" ref={legendPop.rootRef}>
-              <Pill
-                ref={legendPop.anchorRef}
-                active={legendPop.open}
-                title={S.graph.legendAllHint}
-                aria-expanded={legendPop.open}
-                onClick={() =>
-                  legendPop.open ? legendPop.close() : legendPop.setOpen(true)
-                }
-              >
+            <Popover open={legendOpen} onOpenChange={setLegendOpen}>
+              <PopoverTrigger asChild>
+              <Pill active={legendOpen} title={S.graph.legendAllHint}>
                 {S.graph.legendMore(types.length)}
                 {/* 收起来的类里有正被隐藏的就点一下。**不点就是无声过滤**：
                     在面板里关掉一个类、把面板一收，界面上再没有任何东西说它被关了 */}
@@ -1298,25 +1364,13 @@ export function Graph() {
                   <span className="h-1.5 w-1.5 rounded-full bg-ink-2" />
                 )}
               </Pill>
-              {legendPop.open && (
-                <div
-                  ref={legendPop.panelRef}
-                  className="u-menu-glass absolute left-0 top-0 z-50 w-72 overflow-hidden rounded-overlay shadow-2xl"
-                >
-                  {/* 与库切换器、告警面板、用户菜单同一副解剖：第一行是触发它的
-                      那个胶囊自己，三角翻上去，点它缩回；没有浮在角上的关闭叉
-                      ——「哪儿展开的就从哪儿收回去」 */}
-                  <div
-                    onClick={() => legendPop.close()}
-                    className="u-row-shell flex cursor-pointer items-center gap-3 border-b border-line px-4 py-3"
-                  >
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 overflow-hidden p-0">
+                  {/* 标题行只说这是什么，不再兼任关闭键 */}
+                  <div className="flex items-center gap-3 border-b border-line px-4 py-3">
                     <span className="min-w-0 flex-1 truncate text-body font-medium text-ink">
                       {S.graph.legendMore(types.length)}
                     </span>
-                    <ChevronDown
-                      size={12}
-                      className="shrink-0 rotate-180 text-ink-2"
-                    />
                   </div>
                   {/* 全开 / 全关。**从顶栏那枚独立胶囊搬进来的**：它只在有隐藏时
                       才出现，于是那一排的宽度会随着你点类跳来跳去；而它要做的事
@@ -1428,9 +1482,8 @@ export function Graph() {
                       </div>
                     )}
                   </div>
-                </div>
-              )}
-            </div>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 
@@ -1537,10 +1590,9 @@ export function Graph() {
             「显不显示推出来的边」正是同一族问题。外壳保持中性，
             金色只出现在图标本身——与色点用在类胶囊上是同一个做法。 */}
         {derivedCount > 0 && (
-          /* **两层**：外层只负责定位，内层才有 overflow-hidden。
-             那个类是给按钮堆裁圆角的，可面板是同一个盒子的子元素——
-             合成一层的话面板会被一起裁掉，实测只剩塔本身那 32px 宽 */
-          <div className="relative" ref={derivedPop.rootRef}>
+          /* 面板现在走 Popover（Portal 到 body），不再是塔的子元素，
+             所以外层这一圈只是为了跟下一座塔隔开 */
+          <div className="relative">
             <ToolTower>
               <ToolButton
                 role="switch"
@@ -1550,7 +1602,7 @@ export function Graph() {
                 title={`${S.graph.derivedEdges(derivedCount)} · ${S.graph.derivedHint}`}
                 icon={<Waypoints size={15} />}
                 style={
-                  showDerived ? { color: "rgba(231,197,124,0.95)" } : undefined
+                  showDerived ? { color: EDGE_FOCUS_DERIVED } : undefined
                 }
                 onClick={() => setShowDerived((v) => !v)}
               />
@@ -1558,29 +1610,25 @@ export function Graph() {
               {/* 展开成一个小窗：这批边是什么时候推的、现在还推不推、手动再跑一次。
                   **与开关分成两个按钮**——「藏起来」是每天要点的，「什么时候推的」
                   是偶尔才问的，合成一个会让常用动作多一步 */}
-              <ToolButton
-                ref={derivedPop.anchorRef}
-                aria-expanded={derivedPop.open}
-                active={derivedPop.open}
-                label={S.graph.derivedPanel}
-                icon={
-                  <span className="grid h-4 w-4 shrink-0 place-items-center leading-none">
-                    ⋯
-                  </span>
-                }
-                onClick={() =>
-                  derivedPop.open ? derivedPop.close() : derivedPop.setOpen(true)
-                }
-              />
+              <Popover open={derivedOpen} onOpenChange={setDerivedOpen}>
+                <PopoverTrigger asChild>
+                  <ToolButton
+                    active={derivedOpen}
+                    label={S.graph.derivedPanel}
+                    icon={
+                      <span className="grid h-4 w-4 shrink-0 place-items-center leading-none">
+                        ⋯
+                      </span>
+                    }
+                  />
+                </PopoverTrigger>
+                {kb && (
+                  <PopoverContent side="right" align="end" className="w-72 p-0">
+                    <DerivedPanel kbId={kb.id} count={derivedCount} />
+                  </PopoverContent>
+                )}
+              </Popover>
             </ToolTower>
-            {derivedPop.open && kb && (
-              <DerivedPanel
-                panelRef={derivedPop.panelRef}
-                kbId={kb.id}
-                count={derivedCount}
-                onClose={() => derivedPop.close()}
-              />
-            )}
           </div>
         )}
         <ToolTower>
@@ -1697,6 +1745,12 @@ export function Graph() {
 /* ============ 时间轴（底部居中悬浮岛：播放 + 密度带 + 拖动） ============ */
 
 /** 轨道 clientX → 对齐天步进的时间值（数据精度即 day，拖动求精细；播放仍按月推进求节奏）。 */
+/** 轨道两端的余量，**等于轨道自己的圆角**（`rounded-control`）。
+ *  柱子与播放头都缩进这么多：不缩的话，最左最右那几根正好落在圆角的弧里，
+ *  看着像被切掉了一块；播放头走到头时也会贴上弧线。位置换算跟着一起缩，
+ *  否则点在轨道最左边得到的值会比看到的位置偏一点。 */
+const SCRUB_INSET = 10;
+
 function scrubValueAt(
   clientX: number,
   track: HTMLDivElement | null,
@@ -1707,7 +1761,12 @@ function scrubValueAt(
   const rect = track.getBoundingClientRect();
   // 布局未成形（宽度 0）时避免除零产出 NaN
   if (rect.width < 1) return maxTs;
-  const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  const span = rect.width - SCRUB_INSET * 2;
+  if (span < 1) return maxTs;
+  const frac = Math.min(
+    1,
+    Math.max(0, (clientX - rect.left - SCRUB_INSET) / span),
+  );
   const raw = minTs + frac * (maxTs - minTs);
   return Math.min(maxTs, minTs + Math.round((raw - minTs) / DAY_MS) * DAY_MS);
 }
@@ -1894,7 +1953,7 @@ function TimeScrubber({
        仍夹在视口内（calc 那一项），窄屏不会顶出去。
        实测宽度：年 320 / 月 648 / 日 760。 */
     <div
-      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-overlay px-3 py-2 flex items-center gap-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] u-scrub-island${playing ? " u-solid" : ""}`}
+      className={`glass-strong absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-overlay px-3 py-2 flex items-center gap-3 u-scrub-island${playing ? " u-solid" : ""}`}
       style={{ width: `min(${trackW}px, calc(100vw - 4rem))` }}
     >
       <IconButton
@@ -1968,8 +2027,12 @@ function TimeScrubber({
             ≈ 430px，而轨道内宽才 ~455px——柱子被挤成 0.1px，整条看起来是空的。
             实测就是这么丢的。柱子稀疏时留 2px 好数，密了就贴在一起当密度带看 */}
         <div
-          className="absolute inset-x-1.5 top-1.5 bottom-1.5 flex items-end"
-          style={{ gap: bars.length > 120 ? 0 : bars.length > 40 ? 1 : 2 }}
+          className="absolute top-1.5 bottom-1.5 flex items-end"
+          style={{
+            left: SCRUB_INSET,
+            right: SCRUB_INSET,
+            gap: bars.length > 120 ? 0 : bars.length > 40 ? 1 : 2,
+          }}
         >
           {bars.map((b) => {
             // 进入即亮（桶起点为判据）：播放头脚下的柱子即已覆盖——进度条通用语义
@@ -1998,10 +2061,10 @@ function TimeScrubber({
                     // 归零等于假装那段没有数据，而它只是还没到
                     background:
                       value !== null && past && (playing || trackHover)
-                        ? "rgba(255,255,255,0.62)"
+                        ? SCRUB_PLAY
                         : value === null || past
-                          ? "rgba(255,255,255,0.32)"
-                          : "rgba(255,255,255,0.04)",
+                          ? SCRUB_PAST
+                          : SCRUB_FUTURE,
                   }}
                 />
               </div>
@@ -2011,6 +2074,8 @@ function TimeScrubber({
         <input
           type="range"
           className="scrubber-range"
+          /* CSS 里那条 width:100% 要让开，否则左右缩进之后整条会溢出 */
+          style={{ left: SCRUB_INSET, right: SCRUB_INSET, width: "auto" }}
           min={minTs}
           max={maxTs}
           step={DAY_MS}
@@ -2097,18 +2162,7 @@ function fmtInterval(f: EntityFact): string {
  *
  * 手动按钮留在这里而不是别处：想重推的人正是刚看完这三行、觉得数字太旧的那个人。
  */
-function DerivedPanel({
-  panelRef,
-  kbId,
-  count,
-  onClose,
-}: {
-  panelRef: React.Ref<HTMLDivElement>;
-  kbId: string;
-  count: number;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
+function DerivedPanel({ kbId, count }: { kbId: string; count: number }) {
   const kb = useQuery({
     queryKey: ["kbOne", kbId],
     queryFn: () => api.kbDetail(kbId),
@@ -2121,6 +2175,7 @@ function DerivedPanel({
 
      也没有用全站的 DangerConfirm：那是红标题、可要求逐字输入的危险级，
      留给删库那类不可逆操作。重跑推理重但可重复，够不上那一档 */
+  const qc = useQueryClient();
   const [armed, setArmed] = useState(false);
   const run = useMutation({
     mutationFn: () => api.runInference(kbId),
@@ -2138,13 +2193,10 @@ function DerivedPanel({
     ? Math.round((Date.now() - new Date(last).getTime()) / 60000)
     : null;
 
-  // **盖在触发器原位往右上长开**（bottom-0 left-0），而不是在旁边挂一扇窗。
-  // 面与圆角跟通知/用户卡片对齐：u-menu-glass + rounded-panel
+  /* 内容而已：定位、关闭、外点都归 Popover（与顶栏三个面板同一套）。
+     从前它自己盖在触发器原位往右上长开，还得带一个关闭叉 */
   return (
-    <div
-      ref={panelRef}
-      className="u-menu-glass pointer-events-auto absolute bottom-0 left-0 z-50 w-72 overflow-hidden rounded-overlay px-3 pb-3 pt-3 shadow-2xl"
-    >
+    <div className="px-3 pb-3 pt-3">
       {/* items-center 而不是 baseline：标题旁边站着一个按钮和一个关闭键，
           按基线对齐会让那两个看着往上飘 */}
       <div className="flex items-center gap-2">
@@ -2163,16 +2215,6 @@ function DerivedPanel({
             {run.isPending ? S.graph.derivedRunning : S.graph.derivedRun}
           </Button>
         )}
-        {/* 固定 18px 方格：**别让关闭键撑起标题行的高**——一撑高，
-            行里最矮的标题就被居中挤出上下空当，看着像上边距过大 */}
-        <IconButton
-          size="sm"
-          label={S.graph.close}
-          className={armed ? "ml-auto" : undefined}
-          onClick={onClose}
-        >
-          ×
-        </IconButton>
       </div>
 
       {/* 问句 + 两个目标。**取消排在前面**：从「跑」那一下移过来最先碰到的
@@ -2354,7 +2396,7 @@ function ProofSteps({ kbId, steps }: { kbId: string; steps: ProofStep[] }) {
               {st.object ?? "?"}
             </span>
             {st.retracted && (
-              <span className="u-chip u-chip-warn text-fine">{S.graph.proofRetracted}</span>
+              <Chip tone="warn" className="text-fine">{S.graph.proofRetracted}</Chip>
             )}
           </div>
           <div className="mt-1 space-y-1 pl-2">
@@ -2523,7 +2565,7 @@ function ContestedChip({
           });
         }
       }}
-      className="u-chip u-chip-contest shrink-0 !text-fine !px-2 cursor-pointer"
+      className={chipLike("contest", "shrink-0 cursor-pointer text-fine")}
       title={S.graph.contestedHint(c.kind, c.derived ?? null)}
     >
       {S.graph.contestedChip}
@@ -2602,37 +2644,14 @@ function EntityPanel({
   const e: GraphNode | undefined = detail.data?.entity;
 
   // 实体修正（名字、类型）在弹窗里：面板只展示
-  const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
-  // 同名的其他实体：详情接口打开就给。改名之后再用响应里的那份覆盖——
-  // 改完名可能撞上一批新的同名，那时候的答案比打开时的新
-  const [renamedPeers, setRenamedPeers] = useState<GraphNode[] | null>(null);
-  const sameName = renamedPeers ?? detail.data?.same_name ?? [];
-  const setSameName = setRenamedPeers;
-  // 手动合并：把同名的那个并进**当前这个**。方向写死是有意的——
-  // 用户正在看的就是他判断为「主」的那一个
-  // 「并进来」先问一句。从前是浏览器原生 confirm()，和全站的对话框不是一套；
-  // 合并可撤销，所以走轻确认（不要求打字），同 Library 的重抽
-  const [mergeCandidate, setMergeCandidate] = useState<{ id: string; name: string } | null>(
-    null,
-  );
-  // 什么让你这么定（0026）：可不写；写了就跟着合并进台账
-  const [mergeWhy, setMergeWhy] = useState("");
-  const merge = useMutation({
-    mutationFn: ({ source, why }: { source: string; why: string }) =>
-      api.mergeEntities(kbId, source, entityId, why),
-    onSuccess: () => {
-      toast.success(S.toast.saved);
-      // 本地把并掉的那个摘掉，别等重取——它已经不存在了，留着会让人再点一次
-      setSameName((prev) =>
-        (prev ?? sameName).filter((p) => p.id !== merge.variables?.source),
-      );
-      qc.invalidateQueries({ queryKey: ["entity", kbId, entityId] });
-      qc.invalidateQueries({ queryKey: ["graph"] });
-      qc.invalidateQueries({ queryKey: ["review", kbId] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  /* **同名的其他实体不在这块面板上出现。**（曾经有一条横幅，列出同名的
+     每一个并给「并进来」。）两个问题：那些行只有类型名可读，同名的七个
+     全写着「Organization」，界面在问"它们是同一个吗"却不给判断的依据；
+     而且横幅没有高度上限，同名多几个就把 Relations / History / Derived
+     挤到屏幕外。合并是 Review 那边的事——那里有并排比对。
+     这块面板只回答"我正在看的这个实体是什么"。 */
+
   const openEdit = () => {
     if (!e) return;
     setEditing(true);
@@ -2667,7 +2686,7 @@ function EntityPanel({
 
   return (
     <div
-      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-overlay shadow-2xl flex flex-col`}
+      className={`${exiting ? "u-dock-out" : "u-dock-in"} glass-strong absolute top-14 right-3 bottom-20 w-96 z-10 rounded-overlay u-lift-strong flex flex-col`}
     >
       <div className="flex items-start justify-between px-4 py-4 border-b border-line">
         <div>
@@ -2717,93 +2736,19 @@ function EntityPanel({
           entityId={entityId}
           entity={e}
           onClose={() => setEditing(false)}
-          onSaved={(peers) => {
-            setEditing(false);
-            setSameName(peers);
-          }}
+          onSaved={() => setEditing(false)}
         />
       )}
 
-      {/* 同名不是错误——两个张伟可以并存。只提示，判定是不是同一个是人的事 */}
-      {sameName.length > 0 && (
-        <div className="mx-4 mt-3 rounded-panel border border-line bg-surface px-3 py-2">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-fine text-ink-2">
-              {S.graph.sameNameNote(sameName.length)}{" "}
-              <span className="text-ink-2">{S.graph.sameNameHint}</span>
-            </p>
-            <IconButton
-              size="sm"
-              label={S.graph.close}
-              className="shrink-0"
-              onClick={() => setSameName([])}
-            >
-              <X size={11} />
-            </IconButton>
-          </div>
-          {/* 每个同名的给两个动作：去看它，或者把它并进来。
-              **方向写死成「并进当前这个」**——合并有方向（源消失、事实搬到目标上），
-              而当前打开的这个就是用户正在看、正在判断的那一个 */}
-          <div className="mt-2 space-y-1">
-            {sameName.map((p) => (
-              <div key={p.id} className="flex items-center gap-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="min-w-0 flex-1 justify-start"
-                  onClick={() => onNavigate(p.id)}
-                >
-                  <span className="truncate">
-                    {p.type_label ?? S.graph.untyped}
-                    {p.disambiguator && p.disambiguator !== p.type_label
-                      ? ` · ${p.disambiguator}`
-                      : ""}
-                  </span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0"
-                  disabled={merge.isPending}
-                  title={S.graph.mergeIntoHint}
-                  onClick={() => setMergeCandidate({ id: p.id, name: p.name })}
-                >
-                  {S.graph.mergeInto}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {mergeCandidate && (
-        <DangerConfirm
-          title={S.graph.mergeTitle}
-          hint={S.graph.mergeConfirm(mergeCandidate.name, e?.name ?? "")}
-          confirmLabel={S.graph.mergeInto}
-          cancelLabel={S.graph.editCancel}
-          busy={merge.isPending}
-          onConfirm={() => {
-            merge.mutate({ source: mergeCandidate.id, why: mergeWhy });
-            setMergeCandidate(null);
-            setMergeWhy("");
-          }}
-          onCancel={() => {
-            setMergeCandidate(null);
-            setMergeWhy("");
-          }}
-        >
-          <Input
-            className="w-full"
-            placeholder={S.review.rationalePlaceholder}
-            value={mergeWhy}
-            onChange={(e) => setMergeWhy(e.target.value)}
-          />
-        </DangerConfirm>
-      )}
 
       {/* 视图切换：Relations（一张表，过去的折在组尾）| History（记录轴）| Derived */}
-      <div className="px-4 pt-3">
+      {/* **左边比头部多一档**（24 而不是 16）。两个盒子本来都从 px-4 起，可
+          分段控件自己还有一圈内距（p-1 加按钮的 px-2），于是「Relations」四个字
+          落在 29，而标题「OpenAI」落在 35——标题前面是色点加 gap，正好差 6px，
+          看着就是这一排比标题往左漏出去一截。加一档之后字落在 37，压回标题上。
+          这一条只给这里：本体页那条是 `fill` 的整条，与下面正文同宽，
+          它的左缘该跟正文对齐，不跟标题对齐 */}
+      <div className="pl-6 pr-4 pt-3">
         <Segmented
           size="sm"
           value={view}
@@ -2959,9 +2904,21 @@ function EntityPanel({
 function fmtObjectValue(v: Record<string, unknown> | null): string | null {
   if (!v) return null;
   if (v.value !== undefined) {
-    const val =
-      typeof v.value === "boolean" ? (v.value ? "✓" : "✗") : String(v.value);
-    return typeof v.unit === "string" && v.unit ? `${val} ${v.unit}` : val;
+    if (typeof v.value === "boolean") return v.value ? "✓" : "✗";
+    const unit = typeof v.unit === "string" && v.unit ? v.unit : "";
+    /* 大数收成 `$5B`。金额存进来是**乘开的数**（`$5 billion` → 5000000000），
+       因为值要能比大小才有资格不当节点；可原样念出来是「5000000000 $」，
+       比原文那句「$5 billion」难读得多。符号在前、数收成紧凑写法，两头都要 */
+    if (typeof v.value === "number" && unit && unit !== "%") {
+      const n = new Intl.NumberFormat(undefined, {
+        notation: Math.abs(v.value) >= 10000 ? "compact" : "standard",
+        maximumFractionDigits: 2,
+      }).format(v.value);
+      return `${unit}${n}`;
+    }
+    const val = String(v.value);
+    // 百分号紧贴着数，别的单位空一格
+    return unit ? (unit === "%" ? `${val}%` : `${val} ${unit}`) : val;
   }
   if (typeof v.summary === "string") return v.summary;
   return JSON.stringify(v);
@@ -2993,11 +2950,17 @@ function FactSection({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex items-center gap-2 text-small font-medium">
-          {dir === "out" ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
+          {/* 与下面每条事实行的方向箭头**同一尺寸**（12）。它们是同一个记号、
+              还特意排成一列，标题这个小 2px 就只会读成没对齐 */}
+          {dir === "out" ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
           <span className="truncate">{title}</span>
           <span className="u-num">{count}</span>
         </span>
       </Row>
+      {/* **箭头与标题里那个箭头排成一列**（实测都在 40.7）。一度改成 pl-8 想让
+          行"挂"在标题下面，结果两个箭头差开 8px，看着就是没对齐——而它们是
+          同一个方向记号（→ 出边 / ← 入边），同一个记号本来就该成列。
+          层级由前面那个折叠三角表示（在 18.7），不必再靠缩进说第二遍 */}
       {open && <div className="pl-6">{children}</div>}
     </div>
   );
@@ -3105,6 +3068,16 @@ function FactRow({
             <span className={ROW_VALUE}>
               {fact.other_name ?? fmtObjectValue(fact.object_value) ?? "?"}
             </span>
+            {/* 边上的属性（0037）：`amount $4B`——跟在宾语后面，不另起一行。
+                投了谁和投了多少是同一句话，拆开就读不成一句了 */}
+            {fact.qualifiers?.map((q) => (
+              <span key={q.qualifier_type_id} className="shrink-0 text-small text-ink-2">
+                {q.label || q.key}{" "}
+                <span className="text-ink">
+                  {q.entity_name ?? fmtObjectValue(q.value) ?? "?"}
+                </span>
+              </span>
+            ))}
           </span>
           {/* 第二行：何时成立、要不要留神、以及看证据与改期的入口。
               **没有日期也要说一句**——空着的时候，「原文没写日期」和
@@ -3123,9 +3096,9 @@ function FactRow({
               {interval || S.graph.undated}
             </span>
             {fact.stale && (
-              <span className="u-chip u-chip-neutral shrink-0 !text-fine !px-2">
+              <Chip tone="neutral" className="shrink-0 text-fine">
                 {S.graph.staleFactChip}
-              </span>
+              </Chip>
             )}
             {fact.contested && <ContestedChip kbId={kbId} c={fact.contested} />}
             <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">

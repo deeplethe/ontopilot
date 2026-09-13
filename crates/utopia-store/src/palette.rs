@@ -27,7 +27,7 @@
 /// 拿真实的图一看就否了：低饱和加中明度是为纸面调的，撞上近黑的画布会整片发灰，
 /// 类与类之间分不开。深色底需要的是饱和度撑得住的颜色。
 ///
-/// **改这里就得同步改 `web/src/ui/index.tsx` 的 `ENTITY_PALETTE`**：
+/// **改这里就得同步改 `web/src/palette.ts` 的 `ENTITY_PALETTE`**：
 /// 手动挑的色和自动取的色必须来自同一组，否则一张图里会出现两套配色。
 /// 有测试盯着（见本文件末尾），改漏了会红。
 pub const ENTITY_PALETTE: &[&str] = &[
@@ -138,7 +138,7 @@ mod tests {
     /// 按 char code 遍历算出来就不一样了。
     #[test]
     fn the_frontend_has_a_matching_hash() {
-        let ts = include_str!("../../../web/src/ui/index.tsx");
+        let ts = include_str!("../../../web/src/palette.ts");
         assert!(
             ts.contains("export function colorForKey"),
             "前端缺 colorForKey——新建类的颜色就会跟后端对不上"
@@ -161,7 +161,7 @@ mod tests {
     /// 界面上选得到、建的时候报 kind 不合法，只有端到端会撞上）。
     #[test]
     fn the_frontend_palette_matches_this_one() {
-        let ts = include_str!("../../../web/src/ui/index.tsx");
+        let ts = include_str!("../../../web/src/palette.ts");
         let start = ts
             .find("export const ENTITY_PALETTE")
             .expect("前端找不到 ENTITY_PALETTE");

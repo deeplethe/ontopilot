@@ -303,40 +303,42 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
             .get(&(*left, *right))
             .cloned()
             .unwrap_or_else(|| json!({}));
-        let id: Option<(Uuid,)> = sqlx::query_as(
-            "INSERT INTO axiom_violations (id, kb_id, kind, left_fact, right_fact, path, detail)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (kb_id, kind, left_fact, right_fact) DO NOTHING
-             RETURNING id",
-        )
-        .bind(Uuid::now_v7())
-        .bind(kb_id)
-        .bind(kind.as_str())
-        .bind(left)
-        .bind(right)
-        .bind(path)
-        .bind(&detail)
-        .fetch_optional(&mut *tx)
-        .await?;
-        if id.is_some() {
-            report.inserted += 1;
-        }
-        // 无论新插的还是本来就在的，都算「这一轮仍然成立」。
+        // **证据跟着这一轮走**（#619）。从前这里是 `DO NOTHING`，而除此之外没有任何
+        // 地方写 `path` / `detail`——重开那一支也不写。于是一行只要不被删，它带的
+        // 证据就永远是**头一次**记下这个键时算出来的那一份：同一个环后来经由另一条
+        // 中间路径再被算出来，行上写的还是最早那条。重开时更难看，`detected_at`
+        // 换成 now() 而 path 不动，一行上于是一个新时间戳配一份别的轮次的证据。
         //
+        // 插与更新合成一条语句：从前是插一次再 SELECT 一次，两条语句问的是同一行。
+        // `xmax = 0` 只有真正新插的行才成立——`DO UPDATE` 会让 RETURNING 对更新也
+        // 出一行，不这么分就会把「本来就在」数成「新插的」。
+        //
+        // 无论新插的还是本来就在的，都算「这一轮仍然成立」。
         // 本来就在而且 resolved 的要再看一眼：`fact_retracted` / `fact_closed` /
         // `axiom_relaxed` 都是「世界会变」的承诺——事实没了、区间闭了、公理放宽了，
         // 违规就不该再算出来。又算出来了，承诺就是没兑现，那行回到 open，人再看一次。
         // `accepted` 是有意并存，重算多少次都沉默（#202）
-        let (keep, status, resolution): (Uuid, String, Option<String>) = sqlx::query_as(
-            "SELECT id, status, resolution FROM axiom_violations
-              WHERE kb_id = $1 AND kind = $2 AND left_fact = $3 AND right_fact = $4",
-        )
-        .bind(kb_id)
-        .bind(kind.as_str())
-        .bind(left)
-        .bind(right)
-        .fetch_one(&mut *tx)
-        .await?;
+        let (keep, status, resolution, is_new): (Uuid, String, Option<String>, bool) =
+            sqlx::query_as(
+                "INSERT INTO axiom_violations
+                     (id, kb_id, kind, left_fact, right_fact, path, detail)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 ON CONFLICT (kb_id, kind, left_fact, right_fact) DO UPDATE
+                     SET path = EXCLUDED.path, detail = EXCLUDED.detail
+                 RETURNING id, status, resolution, xmax = 0",
+            )
+            .bind(Uuid::now_v7())
+            .bind(kb_id)
+            .bind(kind.as_str())
+            .bind(left)
+            .bind(right)
+            .bind(path)
+            .bind(&detail)
+            .fetch_one(&mut *tx)
+            .await?;
+        if is_new {
+            report.inserted += 1;
+        }
         if status == "resolved"
             && matches!(
                 resolution.as_deref(),
@@ -2407,7 +2409,8 @@ async fn derived_one(
     derived_id: Uuid,
 ) -> AppResult<Option<DerivedFactView>> {
     Ok(sqlx::query_as(
-        "SELECT d.id,
+        "SELECT d.id, d.predicate_id, d.object_value, d.rule_id, d.attribute_rule_id,
+                d.invalidated_at, d.valid_from_precision, d.valid_to_precision,
                 d.subject_id, s.canonical_name AS subject,
                 d.object_id,
                 COALESCE(o.canonical_name, ct.label,
@@ -2458,14 +2461,20 @@ pub async fn derived_for_entity(
     kb_id: Uuid,
     entity_id: Uuid,
     at: Option<chrono::DateTime<chrono::Utc>>,
+    as_of: Option<chrono::DateTime<chrono::Utc>>,
 ) -> AppResult<Vec<DerivedFactView>> {
+    // 记录轴（0019 / #549）：断言那一半早就走 `held_at`，这一半曾写死
+    // `invalidated_at IS NULL`——回放到三月的面板上挂着四月才推出的结论，
+    // 前提一条都不在，结论却在。谓词只在 record_axis 里拼，这里不自己写。
+    //
     // **宾语与规则两侧都是 LEFT JOIN。** 表拓宽之后（0021）一条派生的宾语可能
     // 是字面值而不是实体，规则可能是业务规则而不是公理——内连接会把这两种
     // 结论**静默地**从面板上抹掉，而它们恰恰是最需要解释的那种。
     //
     // 宾语的显示文本因此有三个来源：实体名、归类结论里的类标签、属性结论的值。
     Ok(sqlx::query_as(&format!(
-        "SELECT d.id,
+        "SELECT d.id, d.predicate_id, d.object_value, d.rule_id, d.attribute_rule_id,
+                d.invalidated_at, d.valid_from_precision, d.valid_to_precision,
                 d.subject_id, s.canonical_name AS subject,
                 d.object_id,
                 COALESCE(o.canonical_name,
@@ -2500,15 +2509,17 @@ pub async fn derived_for_entity(
            LEFT JOIN rules ru ON ru.id = d.rule_id
            LEFT JOIN attribute_rules ar ON ar.id = d.attribute_rule_id
            LEFT JOIN entity_types ct ON ct.id = ar.conclude_type_id
-          WHERE d.kb_id = $1 AND d.invalidated_at IS NULL
+          WHERE d.kb_id = $1 AND {derived_held}
             AND (d.subject_id = $2 OR d.object_id = $2)
             AND {derived_hold}
           ORDER BY d.derived_at DESC",
         derived_hold = crate::world_axis::derived_hold_at("d", 3),
+        derived_held = crate::record_axis::derived_held_at("d", 4),
     ))
     .bind(kb_id)
     .bind(entity_id)
     .bind(at)
+    .bind(as_of)
     .fetch_all(pool)
     .await?)
 }

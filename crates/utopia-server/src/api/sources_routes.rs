@@ -551,6 +551,15 @@ pub async fn re_extract(
     if source.kb_id != kb_id {
         return Err(utopia_core::AppError::NotFound.into());
     }
+    // `queue_extraction` 自己也会把这种来源的文档滤掉，那样这里回的是「排了 0 篇」。
+    // 点按钮的人该听到的是为什么
+    if !source.extracts() {
+        return Err(utopia_core::AppError::invalid(
+            "source_not_extracted",
+            "Documents under this source are searched, not extracted",
+        )
+        .into());
+    }
     // 任务由 queue_extraction 与状态同事务建好，这里只负责推送
     let ids =
         utopia_store::documents::queue_extraction(&state.pool, kb_id, Some(source_id)).await?;

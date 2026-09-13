@@ -10,6 +10,7 @@ utopia-ingest.workspace = true
 utopia-reason.workspace = true
 serde.workspace = true
 pgvector.workspace = true
+futures-util.workspace = true
 cron.workspace = true
 sqlx.workspace = true
 tokio.workspace = true

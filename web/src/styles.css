@@ -1,4 +1,10 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "./typeset.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
 @plugin "@tailwindcss/typography";
 
 @theme {
@@ -43,17 +49,20 @@
   --color-contest: var(--u-contest);
   --color-violet: var(--u-violet);
   --color-accent: var(--u-accent);
+  --color-unread: var(--u-unread);
+  --color-bar: var(--u-bar);
 
-  /* 圆角四档（规矩 3）。**按角色命名，不按尺寸**——同 ink / ink-2 的道理：
-     `rounded-panel` 说得出「这是个面板」，`rounded-lg` 只说得出 8px，而
-     style-guard 检查的是角色用错没有，不是数字对不对。
-     分档的理由是同一个绝对半径在不同尺寸上圆润度不同：8px 放在 24px 高的
-     chip 上很圆，放在 300px 高的面板上几乎是直角——「一个圆角」统一的是
-     数字，不是观感。嵌套时内档不得大于外档（control 6 < panel 8）。 */
-  --radius-cell: 4px;
-  --radius-control: 6px;
-  --radius-panel: 8px;
-  --radius-overlay: 12px;
+  /* 圆角四档（规矩 3）。**按角色命名，数由预设给**——名字说得出「这是个面板」，
+     `rounded-lg` 只说得出 10px，而 style-guard 检查的是角色用错没有，不是数字
+     对不对。从前这四个数是自己挑的（4/6/8/12），于是 shadcn 的按钮写死
+     `rounded-lg`＝10 时，它装在我们 8px 的卡片里——内圈比外圈还圆。
+     现在四档全部从 `--radius` 派生，**倍数与 shadcn 自己的用法对齐**：
+     它的菜单项是 md、按钮与浮层是 lg、卡片与对话框是 xl。整套圆润度只剩
+     `--radius` 一个旋钮，调它一处，控件与面一起动。 */
+  --radius-cell: calc(var(--radius) * 0.8);
+  --radius-control: var(--radius);
+  --radius-panel: calc(var(--radius) * 1.4);
+  --radius-overlay: var(--radius);
 }
 
 /* 动效两档（规矩 5）：进入用 fast，离开用 base。只在 ui/ 里用 */
@@ -73,8 +82,11 @@
   font-family: var(--font-sans);
   color-scheme: dark;
 
-  /* 品牌字：碑铭式衬线（Marcellus 仅 400，一字不粗） */
-  --font-brand: "Marcellus", "Georgia", "Times New Roman", serif;
+  /* 品牌字：Manrope（几何无衬线，可变字重）。与界面同族但不同款——
+     字标要认得出是"名字"，不是又一行界面文字，所以给它 600 一档的重量和
+     收紧一点的字距；几何体的字面本来就宽，0.06em 那种碑铭式的拉距在这里
+     会散。退回 Geist 与系统无衬线 */
+  --font-brand: "Manrope", "Geist", system-ui, sans-serif;
 
   --u-ground: #0a0a0a;
   /* 字色两档，不是三档。第三档（原 #7c7c7c）取消了：它承担的是"次要里的
@@ -104,6 +116,15 @@
   /* 面板只比背景亮一丁点：边界主要由 --u-line 那条线交代，填充不负责撑出
      一个盒子。三档一起收窄，静止→悬停仍是 5 级灰，跳得不比从前明显。
      悬停与选中属于**行**，不属于面板——面板是槽，槽不响应指针（DESIGN.md 6） */
+  /* **浮起来的面**：面板、卡片、栏、对话框的输入框、用户气泡。
+     与下面那三档「面」不是一回事——`--u-surface` 那三档是压进去的（分段控件的
+     槽、kbd、井、指到的行、选中的行），浮起来的是撑出来的。
+     一句话两个主题都成立：**浮起来的东西更亮**。暗底上是往白里加一点，
+     纸底上「更亮」走到尽头就是白 —— 这也是纸底上的界面本来的样子，
+     灰的是页面，白的是纸片，而不是反过来。 */
+  --u-raise: rgba(255, 255, 255, 0.025);
+  /* 用户说的那句话比一块面板更该被看见，所以比 raise 再实一档 */
+  --u-bubble: rgba(255, 255, 255, 0.08);
   --u-surface: rgba(255, 255, 255, 0.025);
   --u-surface-2: rgba(255, 255, 255, 0.045);
   --u-surface-3: rgba(255, 255, 255, 0.08);
@@ -115,10 +136,16 @@
   --u-fast: 120ms;
   --u-base: 260ms;
   /* 浮在画布上的那些面：顶栏、导航、时间岛、控件塔、停靠面板、所有弹层。
-     **0.72 → 0.68**：原先几乎是一块实底，浮在图上像贴了张纸，而这一层
-     本该让人隐约看得见它盖住了什么。一度调到 0.62，太轻——底下的图透过来
-     开始跟面板上的字抢注意力，这一层是拿来读的 */
-  --u-surface-strong: rgba(10, 10, 10, 0.68);
+     这个数调过三轮：0.72 像贴了张纸，0.62 太轻（底下的图开始跟面板上的字
+     抢注意力），一度定在 0.68。
+     **0.68 → 0.78 → 0.86**：0.68 那一版是在 backdrop 还没去色时定的。加上
+     `saturate(0.3)` 之后透上来的东西变灰了，"像纸"的那种腻感没有了，于是
+     可以吃回厚度——而 0.68、0.78 摆在本体那张密图上，白边线仍旧穿字而过。
+     这一层是拿来读的，读不动就不成立；"隐约看得见盖住了什么"由模糊承担，
+     不必靠透明度。
+     **两页只有这一个数**：图谱页与本体页的停靠面板都是 `glass-strong`，
+     所以它们不会各调各的、也不会调着调着就不一样 */
+  --u-surface-strong: rgba(10, 10, 10, 0.86);
   /* 指针停在面上时的实底。**毛玻璃是给"没在看它"的时候用的**——
      半透让浮层不至于把画布切断；可一旦人把指针移进来，他要读的就是面板本身，
      这时候背后的图反而是噪声。所以这两档不是审美偏好，是同一块面在
@@ -128,6 +155,237 @@
   --u-surface-strong-hover: rgba(10, 10, 10, 0.94);
   --u-menu-surface: rgba(14, 14, 14, 0.85);
   --u-menu-surface-hover: rgba(14, 14, 14, 0.97);
+
+  /* ---------- 以下令牌是浅色版（0038）加的：从前这些数写死在各处 ---------- */
+  /* 「墨」与「底」的 RGB 三元组：所有 rgba(255,255,255,α) / rgba(10,10,10,α)
+     都归到这两个上，透明度留在用的地方。浅色版只换三元组，透明度一处不动 */
+  --u-ink-rgb: 255, 255, 255;
+  --u-ground-rgb: 10, 10, 10;
+  /* 实底主按钮上的字：与 --u-accent 相反的那一头 */
+  --u-on-accent: #0a0a0a;
+  /* 遮罩 / 弹层 / 对话框 / 不透明卡片的面 */
+  --u-scrim: rgba(0, 0, 0, 0.8);
+  --u-pop-surface: rgba(16, 16, 16, 0.98);
+  --u-modal-surface: rgba(12, 12, 12, 0.97);
+  --u-card-surface: rgba(12, 12, 12, 0.92);
+  /* 图里的柱子。**不是 accent**：accent 是"这一屏最该按的那个按钮"，
+     实心的一档，浅色下就是近黑。一张十四根柱子的小图铺这个色，画面上最重的
+     一块成了"上周办了几件"。柱子是读的东西不是按的东西，取墨色的一半——
+     暗底上是中灰，纸底上也是中灰，两边一样重。只定义一次：ink-rgb 自己翻面 */
+  --u-bar: rgba(var(--u-ink-rgb), 0.55);
+  /* 画布网格两级 */
+  --u-grid: rgba(var(--u-ink-rgb), 0.055);
+  --u-grid-2: rgba(var(--u-ink-rgb), 0.02);
+  /* 语义色的三元组：画布上的争议边、危险边、规则边要按透明度调 */
+  --u-contest-rgb: 255, 106, 61;
+  --u-danger-rgb: 255, 157, 175;
+  --u-violet-rgb: 196, 165, 255;
+  --u-derived-rgb: 231, 197, 124;
+  /* 画布：节点四层与几档边。canvas 读不到 var()，graphVisuals 从算出来的值里读 */
+  --u-node-shell: #121212;
+  --u-node-core: #767676;
+  --u-node-border: #909090;
+  --u-node-muted: #151515;
+  --u-edge: rgba(163, 163, 163, 0.2);
+  --u-edge-inferred: rgba(163, 163, 163, 0.1);
+  --u-edge-dim: #141414;
+  --u-edge-focus: rgba(var(--u-ink-rgb), 0.55);
+  --u-edge-derived: rgba(var(--u-derived-rgb), 0.42);
+  --u-edge-derived-dim: rgba(var(--u-derived-rgb), 0.14);
+  --u-edge-derived-focus: rgba(255, 214, 140, 0.95);
+  --u-edge-subclass: rgba(235, 235, 235, 0.55);
+  --u-edge-subclass-focus: rgba(var(--u-ink-rgb), 0.95);
+  --u-edge-relation: rgba(128, 128, 128, 0.3);
+  --u-edge-relation-focus: rgba(var(--u-ink-rgb), 0.6);
+  --u-edge-schema-dim: rgba(48, 48, 48, 0.4);
+  /* 选中的那一行的底（左栏、表格、菜单都用它）。从前这个数直接写在
+     `.u-nav-active` 里，于是浅色版没处调——而它正是最需要按主题分开调的一个：
+     指到的一档与选中的一档之间要留得出差别，黑压白比白压黑重，两边同一个数
+     就会在纸底上糊成一块灰带 */
+  --u-active: rgba(var(--u-ink-rgb), 0.09);
+  --u-pill-bg: rgba(12, 12, 12, 0.9);
+  /* 指到的那块名字牌。暗底上往亮里走一档——与 chrome 里 hover 升一层面
+     （surface → surface-2）是同一个说法，只是画布上的面必须够实，
+     底下压着的是线和点，不是页面的底 */
+  --u-pill-bg-hover: rgba(42, 42, 42, 0.96);
+  /* 选中的那块名字牌：底浅字深，反着来。暗底上它就是墨色本身 */
+  --u-pill-invert: var(--u-text);
+  --u-halo: rgba(var(--u-ground-rgb), 0.92);
+  /* 时间轴刻度：走过的、播放头、没到的 */
+  --u-scrub-past: rgba(var(--u-ink-rgb), 0.32);
+  --u-scrub-play: rgba(var(--u-ink-rgb), 0.62);
+  --u-scrub-future: rgba(var(--u-ink-rgb), 0.04);
+  /* 危险实底按钮上的字：深红上永远是白，与主题无关 */
+  --u-on-danger: #ffffff;
+  /* 浮岛的投影：暗底下要重，浅底下要轻 */
+  --u-shadow: rgba(0, 0, 0, 0.5);
+  /* 未读那一枚记号的蓝。**chrome 本来零色相，这是唯一一处例外**，而且是
+     故意的：ok / warn / danger 说的是"这件事好不好"，未读说的是"这里有你
+     还没看过的东西"，借用三档语义色里的任何一档都会被读成一个判断。蓝在
+     这套语汇里还没有别的意思，于是它能只说这一件事。 */
+  --u-unread: #4d8dff;
+  /* 浮起两档。**从前这一档根本不在令牌里**：页面写的是 Tailwind 自带的
+     `shadow-lg` / `shadow-2xl`，它们是按浅色界面调的黑影，压在近黑的底上
+     几乎看不见，于是没人发现界面里还有一套不归自己管的颜色——翻成纸底之后
+     它们全冒出来了，而且深浅与 `--u-shadow` 对不上。
+     u-lift：贴着画布浮的控件（搜索框、图例）。
+     u-lift-strong：盖在页面上的浮层（菜单、对话框、停靠面板、toast）。 */
+  /* 页面顶上那层晕。暗底上是一点墨色的空间感；纸底上不加——同样一层墨压在
+     近白的底上，只会把正文区压得比左栏深一档，看着像两块颜色 */
+  --u-page-glow: rgba(var(--u-ink-rgb), 0.045);
+  --u-lift: 0 4px 16px var(--u-shadow);
+  --u-lift-strong: 0 12px 40px var(--u-shadow);
+  /* 播放头那一圈。暗底上是一圈光晕（它本来就该是"亮着的那一条"），
+     纸底上改成一圈纸色的描边——同一个作用（把 2px 的头从柱子里分出来），
+     换一种手法：一圈黑光晕压在浅色的柱子上只是一团糊 */
+  --u-scrub-head-ring: 0 0 6px rgba(var(--u-ink-rgb), 0.5);
+  /* 语义色的另外两个三元组：底色淡染（chip / mark）按透明度调 */
+  --u-ok-rgb: 76, 195, 138;
+  --u-warn-rgb: 242, 182, 109;
+  /* 危险实底按钮悬停时更亮的那一档 */
+  --u-danger-solid-hover: #d9464b;
+  /* 对话里代码高亮的八个色：数据色的近亲，浅底上要换深版才读得出 */
+  --u-code-quote: #7d8590;
+  --u-code-meta: #9fa8ff;
+  --u-code-addition: #63e2b7;
+  --u-code-symbol: #ffd479;
+  --u-code-section: #7fd0ff;
+  --u-code-class: #5fd4d0;
+  --u-code-template: #c4a5ff;
+  --u-code-deletion: #ff8a9e;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* ---------- 浅色（0038）：只改令牌，一条规则都不重写 ----------
+   底是纸白不是纯白，字是近黑不是纯黑，线与面从「白的透明度」换成「黑的透明度」，
+   透明度数值一律沿用暗色那套——它们描述的是层级差，不是颜色。
+   语义色换成同一色相的深版：浅底上淡玫瑰/淡金读不出来。 */
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* 底是浅灰，不是白。白留给浮在它上面的东西（见 --u-raise）——
+     从前底是 #fafafa、面板反而更深，那是把暗色的做法直接翻了个面：
+     暗底上"比底亮"是对的，纸底上照抄成"比底暗"，于是每一块面板都是灰的 */
+  /* 底回到近白。**灰的底是给白卡片当衬的**，而这套界面的框（左栏、顶栏、
+     导航条）本来就与底同色，底一暗，整屏就先灰了一层，白只剩下卡片那几块 */
+  --u-ground: #fafafa;
+  --u-text: #171717;
+  --u-text-2: #5f5f5f;
+  --u-accent: #262626;
+  --u-accent-deep: 23, 23, 23;
+  --u-ink-rgb: 23, 23, 23;
+  --u-ground-rgb: 250, 250, 250;
+  --u-on-accent: #fafafa;
+  --u-ok: #1a7f4b;
+  --u-warn: #9a6a12;
+  --u-danger: #c0284f;
+  --u-danger-solid: #c9353a;
+  --u-contest: #c8471c;
+  --u-violet: #6d4fd6;
+  --u-line: rgba(0, 0, 0, 0.08);
+  --u-line-strong: rgba(0, 0, 0, 0.14);
+  /* 压进去的那三档留在墨色这一边：白纸上的槽、井、指到与选中的行都是变暗。
+     0.015 是面板还在用它的时候压出来的——面板改用 --u-raise 之后，
+     这一档只剩下槽与 kbd，在白纸片上要看得见，回到 0.03 */
+  --u-raise: #ffffff;
+  --u-surface: rgba(0, 0, 0, 0.03);
+  --u-surface-2: rgba(0, 0, 0, 0.03);
+  --u-surface-3: rgba(0, 0, 0, 0.055);
+  --u-ring: rgba(0, 0, 0, 0.5);
+  --u-well: rgba(0, 0, 0, 0.03);
+  /* **框跟页面同色**，不跟着「浮起来的面用白」那条走：左栏、顶栏、导航条
+     是页面的框，不是浮在页面上的东西。暗色那边这个令牌本来就是底色本身
+     （`rgba(10,10,10,0.86)` 压在 #0a0a0a 上），浅色照同一个道理取底色；
+     白留给真正浮起来的（--u-raise 的面板、菜单、对话框） */
+  --u-surface-strong: rgba(250, 250, 250, 0.9);
+  --u-surface-strong-hover: rgba(250, 250, 250, 0.97);
+  --u-menu-surface: rgba(255, 255, 255, 0.95);
+  --u-menu-surface-hover: rgba(255, 255, 255, 1);
+  --u-bubble: #ffffff;
+  --u-page-glow: transparent;
+  --u-scrim: rgba(0, 0, 0, 0.35);
+  --u-pop-surface: rgba(255, 255, 255, 0.98);
+  --u-modal-surface: rgba(255, 255, 255, 0.97);
+  --u-card-surface: rgba(255, 255, 255, 0.92);
+  --u-contest-rgb: 200, 71, 28;
+  --u-danger-rgb: 192, 40, 79;
+  --u-violet-rgb: 109, 79, 214;
+  --u-derived-rgb: 176, 120, 20;
+  --u-node-shell: #ffffff;
+  --u-node-core: #8a8a8a;
+  --u-node-border: #6f6f6f;
+  --u-node-muted: #ececec;
+  /* 画布上的边在浅色下会被 graphVisuals 按底色摊平成不透明色（WebGL 那边透明度
+     压不暗线，只会加亮）；这里的 α 因此是「摊平后多深」，不是屏幕上的透明度 */
+  --u-edge: rgba(23, 23, 23, 0.36);
+  --u-edge-inferred: rgba(23, 23, 23, 0.18);
+  --u-edge-dim: #e4e4e4;
+  /* **选中的线是深灰，不是墨黑**。这几档摊平之后是实色（见 flattenOnLight），
+     0.85 的墨压在纸上合成 #393939，一条细线看着还好，可选中之后线会加粗、
+     一次亮起十几条，整片就发死。0.68 合成 #5b5b5b：仍然是全图最重的东西，
+     但让得出位置给名字那块牌子（--u-pill-invert #3f3f3f 比它深一档） */
+  --u-edge-focus: rgba(23, 23, 23, 0.68);
+  --u-edge-derived: rgba(176, 120, 20, 0.6);
+  --u-edge-derived-dim: rgba(176, 120, 20, 0.22);
+  --u-edge-derived-focus: rgba(150, 100, 10, 0.8);
+  --u-edge-subclass: rgba(23, 23, 23, 0.6);
+  --u-edge-subclass-focus: rgba(23, 23, 23, 0.72);
+  --u-edge-relation: rgba(23, 23, 23, 0.4);
+  --u-edge-relation-focus: rgba(23, 23, 23, 0.66);
+  --u-edge-schema-dim: rgba(23, 23, 23, 0.12);
+  /* 指到 0.03 → 选中 0.055，与暗色那边 0.045 → 0.09 同一个倍数，绝对值减半 */
+  --u-active: rgba(0, 0, 0, 0.055);
+  --u-pill-bg: rgba(255, 255, 255, 0.92);
+  /* 纸底上反过来：hover 往暗里走一档（chrome 的 --u-surface 也是加黑） */
+  --u-pill-bg-hover: rgba(236, 236, 236, 0.96);
+  /* 反色那一档**不跟着墨色走**：纸底上的墨是 #171717，一块纯黑的牌子压在
+     一张浅色的图上，比暗底上那块近白的牌子重得多——同样是"反过来"，
+     在纸上要收一档。深灰仍然与指到的那块浅灰分得清清楚楚 */
+  --u-pill-invert: #3f3f3f;
+  --u-shadow: rgba(0, 0, 0, 0.18);
+  /* 纸底上同一枚蓝要压深一档才立得住（浅蓝在白纸上是一团雾） */
+  --u-unread: #2563eb;
+  --u-scrub-head-ring: 0 0 0 1.5px rgba(var(--u-ground-rgb), 0.95);
+  --u-ok-rgb: 26, 127, 75;
+  --u-warn-rgb: 154, 106, 18;
+  --u-code-quote: #6b7280;
+  --u-code-meta: #4f5bd5;
+  --u-code-addition: #1a7f4b;
+  --u-code-symbol: #9a6a12;
+  --u-code-section: #1d6fb8;
+  --u-code-class: #0f8a86;
+  --u-code-template: #6d4fd6;
+  --u-code-deletion: #c0284f;
 }
 
 body {
@@ -139,7 +397,7 @@ body {
 /* 选中态：中性白纱替掉浏览器默认蓝（零色偏原则同样管到这里）。
    只设底色不改字色——半透明白纱下内容自身的颜色（代码令牌、实体色）仍透出 */
 ::selection {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(var(--u-ink-rgb), 0.22);
 }
 
 /* 空间感：极克制的中性顶光 + 暗角，零色偏 */
@@ -149,7 +407,7 @@ body::before {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(1000px 600px at 50% -20%, rgba(255, 255, 255, 0.045), transparent 60%),
+    radial-gradient(1000px 600px at 50% -20%, var(--u-page-glow), transparent 60%),
     var(--u-ground);
 }
 
@@ -158,6 +416,15 @@ body::before {
    `glass-strong border-l-0` 这种写法里 border-l-0 是输的——左栏四边都有
    1px 边框，内容整体偏 1px，两个页面左上角本该重合的输入框差一像素。 */
 @layer components {
+
+  /* 浮起：页面只说"浮哪一档"，深浅交给主题 */
+  .u-lift {
+    box-shadow: var(--u-lift);
+  }
+  .u-lift-strong {
+    box-shadow: var(--u-lift-strong);
+  }
+
   /* **backdrop 要去色**。这一层的底色本身是纯中性的（rgba(10,10,10)、
      白 2.5%，三个通道相等），可 backdrop-filter 把背后的画布糊上来一起显示——
      图上的节点是有类型色的，蓝紫一片时透上来就是一块偏蓝的面。
@@ -165,7 +432,7 @@ body::before {
      去掉饱和，再谈透明度。这也正是「chrome 零色偏、彩色只属于数据」
      那条原则该管到的地方——面板是 chrome，它不该跟着背后画的是什么变颜色 */
   .glass {
-    background: var(--u-surface);
+    background: var(--u-raise);
     backdrop-filter: blur(14px) saturate(0.3);
     -webkit-backdrop-filter: blur(14px) saturate(0.3);
     border: 1px solid var(--u-line);
@@ -217,7 +484,7 @@ body::before {
   /* **中性，不掺色相**：原本是 rgba(12,12,14)，蓝比红绿高 2——
      在大面积深底上肉眼看得出偏冷。这产品的既定原则是
      「chrome 零色偏、彩色只属于数据」，这里也照办 */
-  background: rgba(12, 12, 12, 0.97);
+  background: var(--u-modal-surface);
   /* saturate(1) 是恒等，加它只为**让滤镜列表与其他玻璃面同形**：
      两个列表函数不一致时，backdrop-filter 只能离散跳变，插值动不了 */
   backdrop-filter: blur(24px) saturate(1);
@@ -258,7 +525,7 @@ body::before {
   }
 }
 .u-modal-scrim {
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--u-scrim);
   backdrop-filter: blur(4px) saturate(1);
   -webkit-backdrop-filter: blur(4px) saturate(1);
   animation: u-modal-scrim-kf 0.14s ease-out both;
@@ -275,7 +542,7 @@ body::before {
 
 /* 弹出层（下拉/取色器等 popover）：近实底——下层内容透出只会干扰 */
 .u-pop {
-  background: rgba(16, 16, 16, 0.98);
+  background: var(--u-pop-surface);
   backdrop-filter: blur(8px) saturate(1);
   -webkit-backdrop-filter: blur(8px) saturate(1);
   border: 1px solid var(--u-line-strong);
@@ -326,7 +593,7 @@ body::before {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.18),
+    rgba(var(--u-ink-rgb), 0.18),
     transparent
   );
   animation: u-sweep-kf 720ms cubic-bezier(0.4, 0, 0.2, 1) both;
@@ -405,7 +672,7 @@ body::before {
   transition: background-color var(--u-base) ease;
   backdrop-filter: blur(24px) saturate(0.3);
   -webkit-backdrop-filter: blur(24px) saturate(0.3);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--u-line-strong);
 }
 .u-menu-glass:hover {
   background: var(--u-menu-surface-hover);
@@ -428,57 +695,6 @@ body::before {
 
 @layer components {
 /* ---- form controls ---- */
-/* 输入框：无填充、细线。玻璃左栏、玻璃工具条上的输入框不该再是面上叠面——
-   一条 line 粗细的线把它圈出来就够了；悬停与聚焦线都只亮一档，聚焦的信号
-   在外面那圈光晕上——它要亮到隔着半个屏幕也看得出光标在哪，线本身不必变白。
-   与顶栏无背景的切换器同一个逻辑 */
-.input-dark {
-  background: transparent;
-  border: 1px solid var(--u-line);
-  color: var(--u-text);
-  border-radius: var(--radius-control);
-  transition:
-    border-color var(--u-fast),
-    box-shadow var(--u-fast);
-}
-.input-dark::placeholder {
-  color: var(--u-text-2);
-}
-.input-dark:hover:not(:disabled):not(:focus) {
-  border-color: var(--u-line-strong);
-}
-.input-dark:focus {
-  outline: none;
-  border-color: var(--u-line-strong);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
-}
-.input-dark:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-/* 尺寸两档，与按钮同高：同一行里输入框与按钮顶齐是靠这个，不靠页面调 py */
-.u-input-md {
-  height: 2rem;
-  padding: 0 0.75rem;
-  font-size: var(--text-body);
-  line-height: var(--text-body--line-height);
-}
-.u-input-sm {
-  height: 1.625rem;
-  padding: 0 0.625rem;
-  font-size: var(--text-small);
-  line-height: var(--text-small--line-height);
-}
-textarea.u-input-md,
-textarea.u-input-sm {
-  height: auto;
-  padding-top: 0.375rem;
-  padding-bottom: 0.375rem;
-}
-select.input-dark option {
-  background: #111111;
-  color: var(--u-text);
-}
 
 /* mono 输入框的 placeholder 回默认字体（提示语不是代码） */
 .u-placeholder-sans::placeholder {
@@ -496,108 +712,10 @@ select.input-dark option {
   appearance: textfield;
 }
 
-/* ---- buttons (Vercel: primary = white on black) ----
-   基类管形状、动效、焦点、禁用；尺寸两档管高度与字号；变体只管颜色。
-   页面不写 px/py/text-*，只选尺寸与变体（ui/index.tsx 的 Button）。
-   `u-btn-ghost` 是迁移期的旧名（有边框，等于 secondary）；迁完删掉，
-   `u-btn-quiet` 那时改回 ghost 这个名字 */
-.u-btn,
-.btn-primary,
-.btn-ghost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  border-radius: var(--radius-control);
-  font-weight: 500;
-  white-space: nowrap;
-  transition:
-    background-color var(--u-fast),
-    border-color var(--u-fast),
-    color var(--u-fast);
-}
-.u-btn:focus-visible,
-.btn-primary:focus-visible,
-.btn-ghost:focus-visible {
-  outline: 2px solid var(--u-ring);
-  outline-offset: 2px;
-}
-.u-btn:disabled,
-.btn-primary:disabled,
-.btn-ghost:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.u-btn-md {
-  height: 2rem;
-  padding: 0 0.75rem;
-  font-size: var(--text-body);
-  line-height: var(--text-body--line-height);
-}
-.u-btn-sm {
-  height: 1.625rem;
-  padding: 0 0.625rem;
-  font-size: var(--text-small);
-  line-height: var(--text-small--line-height);
-}
-/* 只有图标的按钮：正方形，图标居中 */
-.u-btn-icon-md {
-  height: 2rem;
-  width: 2rem;
-  padding: 0;
-}
-.u-btn-icon-sm {
-  height: 1.625rem;
-  width: 1.625rem;
-  padding: 0;
-}
-.u-btn-primary,
-.btn-primary {
-  background: var(--u-text);
-  border: 1px solid var(--u-text);
-  color: #0a0a0a;
-  font-weight: 600;
-}
-.u-btn-primary:hover:not(:disabled),
-.btn-primary:hover:not(:disabled) {
-  background: #ffffff;
-  border-color: #ffffff;
-}
-.u-btn-secondary,
-.u-btn-ghost,
-.btn-ghost {
-  border: 1px solid var(--u-line-strong);
-  color: var(--u-text-2);
-  background: transparent;
-}
-.u-btn-secondary:hover:not(:disabled),
-.u-btn-ghost:hover:not(:disabled),
-.btn-ghost:hover:not(:disabled) {
-  background: var(--u-surface-2);
-  color: var(--u-text);
-  border-color: rgba(255, 255, 255, 0.22);
-}
-/* 无边框：行内动作、图标按钮、工具条 */
-.u-btn-quiet {
-  border: 1px solid transparent;
-  color: var(--u-text-2);
-  background: transparent;
-}
-.u-btn-quiet:hover:not(:disabled) {
-  background: var(--u-surface-2);
-  color: var(--u-text);
-}
-/* 危险实底：深红配白字（浅玫瑰做底会发粉，见 --u-danger-solid） */
-.u-btn-danger {
-  background: var(--u-danger-solid);
-  border: 1px solid var(--u-danger-solid);
-  color: #ffffff;
-  font-weight: 600;
-}
-.u-btn-danger:hover:not(:disabled) {
-  background: #d9464b;
-  border-color: #d9464b;
-}
+/* ---- buttons ----
+   按钮的样子在 `@/components/ui/button`（shadcn，radix base / nova preset），
+   语义壳在 `ui/index.tsx`。这里从前有一百多行手写的按钮类，随迁移删了；
+   留这一句是给按图索骥的人看的：**别在这个文件里再写按钮**。 */
 
 /* 行里的小柄（树的折叠箭头）：不是按钮——按钮里不能再嵌按钮——但要有 hover */
 .u-toggle {
@@ -626,7 +744,7 @@ select.input-dark option {
   background: var(--u-surface-2);
 }
 .u-tool.is-on {
-  color: #ffffff;
+  color: var(--u-text);
   background: var(--u-surface-3);
 }
 .u-tool:focus-visible {
@@ -700,7 +818,7 @@ select.input-dark option {
   color: var(--u-text);
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: rgba(var(--u-ink-rgb), 0.3);
 }
 /* 只提亮不划线：整块引文那种链接 */
 .u-hover-ink {
@@ -718,6 +836,9 @@ select.input-dark option {
 .group:hover .u-reveal,
 .u-reveal:focus-visible,
 .u-reveal:focus,
+/* 菜单开着的时候也留着：Radix 一开菜单就把焦点移进菜单里，触发器既不 hover
+   也不 focus，按原来的规则会当场隐身——菜单还浮着，它的那个按钮没了 */
+.u-reveal[data-state="open"],
 .u-reveal.is-on {
   opacity: 1;
 }
@@ -769,9 +890,9 @@ select.input-dark option {
   background: var(--u-surface-2);
 }
 .u-choice.is-on {
-  border-color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(var(--u-ink-rgb), 0.6);
   background: var(--u-surface-3);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 1px rgba(var(--u-ink-rgb), 0.3);
 }
 .u-choice:focus-within {
   outline: 2px solid var(--u-ring);
@@ -784,16 +905,6 @@ select.input-dark option {
 }
 
 /* 无皮输入：装在别的面里 */
-.u-input-bare {
-  background: transparent;
-  border: 0;
-  outline: none;
-  padding: 0;
-  color: var(--u-text);
-}
-.u-input-bare::placeholder {
-  color: var(--u-text-2);
-}
 
 /* 顶栏里的小链接（Docs、返回） */
 .u-navlink {
@@ -815,41 +926,36 @@ select.input-dark option {
 }
 
 /* 主导航的一页：图标 + 文字，激活态下划线 */
+/* 顶栏导航的一项。**一颗药丸，不是一张标签纸**：
+   从前是「下划线 + 从线往上透一点光」，那是给直角界面配的——整条导航只有横平
+   竖直的线，而这套设计语言里一切有角的东西都是圆的（--radius 一个旋钮管着），
+   于是那排下划线在圆角的按钮、输入框、卡片中间显得格外硬。
+   现在选中的那一项是一颗填了底的药丸（与左栏选中的行、分段控件同一个记号，
+   `--u-active`），指到的是浅一档的底。没有下划线，也就没有那道在纸底上会晕开
+   的光——纸底与暗底同一副样子，不再需要一个只在暗底成立的技巧。 */
 .u-tab {
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  /* 左 16 与字标同缩进；右 20 给标签之间多留一口气，整行就不显得往里缩 */
-  padding: 0.75rem 1.25rem 0.75rem 1rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: var(--radius-control);
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
   font-weight: 500;
   color: var(--u-text-2);
-  /* 1px 的线：光晕已经在说「这一页」，线只用点到为止 */
-  border-bottom: 1px solid transparent;
-  transition: color var(--u-fast);
+  transition:
+    color var(--u-fast),
+    background-color var(--u-fast);
 }
 .u-tab:hover {
   color: var(--u-text);
+  background: var(--u-surface-2);
 }
 .u-tab.is-active {
   color: var(--u-text);
-  border-bottom-color: #ffffff;
-}
-/* 选中的那一页从下划线往上透一点光：白 6% 在底，到一半高处就没了——说的是
-   「光从线上来」，不是给标签涂一块底。压在文字后面，不接指针 */
-.u-tab.is-active::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(
-    to top,
-    rgba(255, 255, 255, 0.06),
-    rgba(255, 255, 255, 0) 50%
-  );
-  pointer-events: none;
+  background: var(--u-active);
 }
 
 /* 批量选中的卡片：边框亮一档说「这张在批里」——不涂底，底还是玻璃 */
@@ -874,15 +980,26 @@ select.input-dark option {
 .u-mark {
   border-radius: 3px;
   padding: 0 0.25rem;
-  background: rgba(242, 182, 109, 0.16);
+  background: rgba(var(--u-warn-rgb), 0.16);
   color: var(--u-warn);
 }
 
 /* 对话输入框的外壳 */
+/* 答案滚到输入框上沿是**化开**，不是被切一刀。遮罩打在滚动区自己身上，
+   不是在输入框上面盖一条底色的渐变——盖底色要跟身后那块地的颜色对上，
+   而这一屏底下还有页面的微光，对不齐就成了一条平白的横带。遮罩不管底色：
+   最后那 2.5rem 里内容自己淡成透明，深浅两套皮肤都不用改。
+   底部留 pb-12（48px）比渐隐区高一档：滚到底时淡掉的是那块净空，
+   不是最后一行字。 */
+.u-chat-fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+}
+
 .u-composer {
   border-radius: var(--radius-panel);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: var(--u-surface);
+  border: 1px solid rgba(var(--u-ink-rgb), 0.12);
+  background: var(--u-raise);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: border-color var(--u-fast);
@@ -921,52 +1038,8 @@ select.input-dark option {
 }
 
 /* ---- chips ---- */
-.u-chip {
-  display: inline-block;
-  border-radius: var(--radius-cell);
-  padding: 0.125rem 0.5rem;
-  font-size: var(--text-fine);
-  line-height: var(--text-fine--line-height);
-  white-space: nowrap;
-}
-.u-chip-neutral {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--u-text-2);
-}
-.u-chip-info {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ededed;
-}
-.u-chip-success {
-  background: rgba(76, 195, 138, 0.12);
-  color: var(--u-ok);
-}
-.u-chip-warn {
-  background: rgba(242, 182, 109, 0.12);
-  color: var(--u-warn);
-}
 /* 争议（0017 §3）：与图上的争议边同一个色相 */
-.u-chip-contest {
-  background: rgba(255, 106, 61, 0.14);
-  color: var(--u-contest);
-}
-.u-chip-danger {
-  background: rgba(255, 157, 175, 0.12);
-  color: var(--u-danger);
-}
-.u-chip-violet {
-  background: rgba(196, 165, 255, 0.12);
-  color: var(--u-violet);
-}
 /* 可点的 chip：指针停上提亮一点 */
-.u-chip-click {
-  cursor: pointer;
-  vertical-align: middle;
-  transition: filter var(--u-fast);
-}
-.u-chip-click:hover {
-  filter: brightness(1.25);
-}
 }
 
 /* 浏览态里的程度标注：同一个警示色，但没有填充、没有药丸形状。
@@ -974,16 +1047,16 @@ select.input-dark option {
    主角是实体名，置信度和右侧的时间区间同属元信息——不该是整屏
    唯一有填充色的东西。 */
 .u-meta-warn {
-  color: rgba(242, 182, 109, 0.55);
+  color: rgba(var(--u-warn-rgb), 0.55);
 }
 
 /* ---- graph canvas: 图纸式大小网格（细密小格 + 每 4 格一条更亮的主线） ---- */
 .u-grid-bg {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    linear-gradient(var(--u-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--u-grid) 1px, transparent 1px),
+    linear-gradient(var(--u-grid-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--u-grid-2) 1px, transparent 1px);
   background-size:
     104px 104px,
     104px 104px,
@@ -992,18 +1065,59 @@ select.input-dark option {
 }
 
 /* ---- interactive accents ---- */
+/* 自己发的那条。**只有一块底，没有描边**：这一屏上带框的东西都是可以操作的
+   （输入框、控件、卡片），一条已经说完的话不是其中之一，给它描边就是在暗示
+   还能点。角色靠这块 8% 的底区分就够了 */
 .u-bubble-user {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--u-bubble);
 }
 .u-highlight {
-  border-color: rgba(255, 255, 255, 0.45) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+  border-color: rgba(var(--u-ink-rgb), 0.45) !important;
+  background: rgba(var(--u-ink-rgb), 0.06) !important;
+  box-shadow: 0 0 0 2px rgba(var(--u-ink-rgb), 0.12);
 }
 .u-nav-active {
-  background: rgba(255, 255, 255, 0.09);
-  color: #ffffff;
+  background: var(--u-active);
+  color: var(--u-text);
+}
+
+/* 正在写的那一场，左栏那一格里跳三个点。**它替的是那枚空心小方块**，不是
+   加在它旁边——同一格、同一个位置，一列会话的字因此不会因为某一场在写而错开。
+   点用文字的次色：这一格说的是状态，不是内容，不该比标题还重。 */
+.u-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.u-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: var(--u-text-2);
+  animation: u-dots-kf 1.1s ease-in-out infinite;
+}
+.u-dots > span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.u-dots > span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes u-dots-kf {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+/* 设了减少动效就不跳：三个点站着也说得清"这一场在写" */
+@media (prefers-reduced-motion: reduce) {
+  .u-dots > span {
+    animation: none;
+    opacity: 0.65;
+  }
 }
 
 /* 引用定位闪现：进场强光收敛到持有亮度（运动比静态边框更抓眼）。
@@ -1011,18 +1125,18 @@ select.input-dark option {
    transition 淡回普通卡片 */
 @keyframes u-flash-kf {
   0% {
-    border-color: rgba(255, 255, 255, 0.9);
-    background-color: rgba(255, 255, 255, 0.14);
+    border-color: rgba(var(--u-ink-rgb), 0.9);
+    background-color: rgba(var(--u-ink-rgb), 0.14);
     box-shadow:
-      0 0 0 3px rgba(255, 255, 255, 0.3),
-      0 0 36px rgba(255, 255, 255, 0.16);
+      0 0 0 3px rgba(var(--u-ink-rgb), 0.3),
+      0 0 36px rgba(var(--u-ink-rgb), 0.16);
   }
   100% {
-    border-color: rgba(255, 255, 255, 0.55);
-    background-color: rgba(255, 255, 255, 0.07);
+    border-color: rgba(var(--u-ink-rgb), 0.55);
+    background-color: rgba(var(--u-ink-rgb), 0.07);
     box-shadow:
-      0 0 0 2px rgba(255, 255, 255, 0.16),
-      0 0 18px rgba(255, 255, 255, 0.06);
+      0 0 0 2px rgba(var(--u-ink-rgb), 0.16),
+      0 0 18px rgba(var(--u-ink-rgb), 0.06);
   }
 }
 .u-flash {
@@ -1031,9 +1145,9 @@ select.input-dark option {
 @media (prefers-reduced-motion: reduce) {
   .u-flash {
     animation: none;
-    border-color: rgba(255, 255, 255, 0.55);
-    background-color: rgba(255, 255, 255, 0.07);
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.16);
+    border-color: rgba(var(--u-ink-rgb), 0.55);
+    background-color: rgba(var(--u-ink-rgb), 0.07);
+    box-shadow: 0 0 0 2px rgba(var(--u-ink-rgb), 0.16);
   }
 }
 
@@ -1046,26 +1160,26 @@ select.input-dark option {
   color: var(--u-text);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: rgba(var(--u-ink-rgb), 0.3);
 }
 .u-link:hover {
-  text-decoration-color: rgba(255, 255, 255, 0.8);
+  text-decoration-color: rgba(var(--u-ink-rgb), 0.8);
 }
 .u-title {
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: #ffffff;
+  color: var(--u-text);
 }
 .brand-gradient {
-  color: #ffffff;
+  color: var(--u-text);
   letter-spacing: -0.02em;
 }
 }
 
 /* 登录卡：近实底，不用 backdrop-filter（对动画背景每帧重算模糊，代价高） */
 .u-card-opaque {
-  background: rgba(12, 12, 12, 0.92);
+  background: var(--u-card-surface);
   border: 1px solid var(--u-line);
 }
 
@@ -1128,7 +1242,7 @@ select.input-dark option {
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px #141414 inset;
+  -webkit-box-shadow: 0 0 0 1000px var(--u-ground) inset;
   -webkit-text-fill-color: var(--u-text);
   caret-color: var(--u-text);
 }
@@ -1243,6 +1357,34 @@ a:hover > .u-mark-arrow {
 
    底取 surface-2（4.5% 白）——比 surface 重一档，因为它此刻是画面上唯一
    有内容的东西；扫光只有 5%，它是"还在动"的信号，不是要人去看的东西。 */
+/* 还在想：**这句话自己在发光**，旁边不另立一个转动的零件。
+   一道亮带横扫过文字（background-clip: text 把渐变落在字身上），说的正是
+   "这行字正在被写出来"——而转圈说的是"有个东西在忙"，跟屏幕上其余的话没关系。
+   这也是骨架条那一套语言：亮带扫过占位的地方，表示内容在路上。 */
+.u-thinking {
+  background-image: linear-gradient(
+    90deg,
+    rgba(var(--u-ink-rgb), 0.4) 35%,
+    rgba(var(--u-ink-rgb), 0.95) 50%,
+    rgba(var(--u-ink-rgb), 0.4) 65%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: u-thinking-kf 1.8s linear infinite;
+}
+/* 亮带**从左往右**扫：字是从左往右写的，光跟着写的方向走才像"这句话正在长出来"。
+   反过来扫会读成倒带。 */
+@keyframes u-thinking-kf {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+
 .u-skel {
   position: relative;
   overflow: hidden;
@@ -1256,7 +1398,7 @@ a:hover > .u-mark-arrow {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.05),
+    rgba(var(--u-ink-rgb), 0.05),
     transparent
   );
   animation: u-skel-kf 1.4s ease-in-out infinite;
@@ -1270,8 +1412,32 @@ a:hover > .u-mark-arrow {
   .u-skel::after {
     animation: none;
   }
+  /* 不扫了就得把字还回来：透明的字配一张不动的渐变是读不出来的 */
+  .u-thinking {
+    background-image: none;
+    color: var(--u-ink-2);
+  }
 }
 
+/* 画布顶栏（图例那一排）给右侧停靠面板让开一条。
+   面板是 `w-96`（24rem）+ `right-3`（0.75rem），所以这一排的右缘停在 24.75rem：
+   窄窗口下图例会**提前换行**，而不是钻到面板底下去。只在面板开着时挂。
+   写成语义类而不是 Tailwind 的任意值，是因为这个数跟着面板的宽度走，
+   将来面板改宽了只有这一处要改。 */
+.u-canvas-chrome-docked {
+  right: 24.75rem;
+}
+
+/* 骨架行里装灰条的那一格：撑**一个行高**，而不是灰条自己的高度。
+   表格的单元格里本来是一行字（8 + 22 + 8 = 38），少了这一层就只有
+   8 + 16 + 8 = 32，一列排下来比真表矮一截、密一截。
+   高度取字号令牌自带的行高，字号改了它跟着改。
+   左栏那一档不用它：那儿的行本来就矮，套上反而显松（见 SkeletonRows）。 */
+.u-skel-line {
+  display: flex;
+  align-items: center;
+  height: var(--text-body--line-height);
+}
 
 /* ---- numbers in chrome: 默认字体（Geist）+ 等宽数字，不再用 mono ---- */
 .u-num {
@@ -1282,7 +1448,7 @@ a:hover > .u-mark-arrow {
 @supports not selector(::-webkit-scrollbar) {
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+    scrollbar-color: var(--u-line-strong) transparent;
   }
 }
 *::-webkit-scrollbar {
@@ -1293,11 +1459,11 @@ a:hover > .u-mark-arrow {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--u-line-strong);
   border-radius: 4px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.26);
+  background: rgba(var(--u-ink-rgb), 0.26);
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
@@ -1326,8 +1492,8 @@ a:hover > .u-mark-arrow {
   width: 2px;
   height: 28px;
   border-radius: 1px;
-  background: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  background: var(--u-text);
+  box-shadow: var(--u-scrub-head-ring);
   cursor: ew-resize;
 }
 .scrubber-range::-moz-range-thumb {
@@ -1335,8 +1501,8 @@ a:hover > .u-mark-arrow {
   height: 28px;
   border: none;
   border-radius: 1px;
-  background: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  background: var(--u-text);
+  box-shadow: var(--u-scrub-head-ring);
   cursor: ew-resize;
 }
 .scrubber-range::-webkit-slider-runnable-track {
@@ -1350,42 +1516,42 @@ a:hover > .u-mark-arrow {
    与实体色板同族——颜色属于内容，chrome 保持无色 ---- */
 .u-chat-prose .hljs-comment,
 .u-chat-prose .hljs-quote {
-  color: #7d8590;
+  color: var(--u-code-quote);
   font-style: italic;
 }
 .u-chat-prose .hljs-keyword,
 .u-chat-prose .hljs-selector-tag,
 .u-chat-prose .hljs-meta {
-  color: #9fa8ff;
+  color: var(--u-code-meta);
 }
 .u-chat-prose .hljs-string,
 .u-chat-prose .hljs-regexp,
 .u-chat-prose .hljs-addition {
-  color: #63e2b7;
+  color: var(--u-code-addition);
 }
 .u-chat-prose .hljs-number,
 .u-chat-prose .hljs-literal,
 .u-chat-prose .hljs-symbol {
-  color: #ffd479;
+  color: var(--u-code-symbol);
 }
 .u-chat-prose .hljs-title,
 .u-chat-prose .hljs-title.function_,
 .u-chat-prose .hljs-section {
-  color: #7fd0ff;
+  color: var(--u-code-section);
 }
 .u-chat-prose .hljs-type,
 .u-chat-prose .hljs-built_in,
 .u-chat-prose .hljs-class .hljs-title {
-  color: #5fd4d0;
+  color: var(--u-code-class);
 }
 .u-chat-prose .hljs-attr,
 .u-chat-prose .hljs-attribute,
 .u-chat-prose .hljs-variable,
 .u-chat-prose .hljs-template-variable {
-  color: #c4a5ff;
+  color: var(--u-code-template);
 }
 .u-chat-prose .hljs-deletion {
-  color: #ff8a9e;
+  color: var(--u-code-deletion);
 }
 
 /* 对话气泡内的 markdown：紧凑排版，色彩服从气泡 */
@@ -1413,14 +1579,14 @@ a:hover > .u-mark-arrow {
   margin: 0.15em 0;
 }
 .u-chat-prose strong {
-  color: #ffffff;
+  color: var(--u-text);
   font-weight: 600;
 }
 .u-chat-prose h1,
 .u-chat-prose h2,
 .u-chat-prose h3 {
   font-weight: 600;
-  color: #ffffff;
+  color: var(--u-text);
   margin: 0.7em 0 0.3em;
   font-size: 1em;
 }
@@ -1432,12 +1598,12 @@ a:hover > .u-mark-arrow {
 }
 .u-chat-prose code {
   font-size: 0.85em;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--u-ink-rgb), 0.08);
   border-radius: var(--radius-cell);
   padding: 0.1em 0.35em;
 }
 .u-chat-prose pre {
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--u-well);
   border: 1px solid var(--u-line);
   border-radius: var(--radius-panel);
   padding: 0.6em 0.8em;
@@ -1517,8 +1683,9 @@ a:hover > .u-mark-arrow {
    从前它写的是 text-display，字号整体上移一档之后跟着涨到 24，比同一顶栏里
    的分区字标（text-title）大了一半，压着旁边的导航。20 是它原本的大小 */
 .u-wordmark-top {
-  font-size: 20px;
-  line-height: 28px;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
 }
 
 /* 登录页与故障页正中的字标。它是品牌元素，不是界面文字，所以不在五档字号里——
@@ -1526,4 +1693,122 @@ a:hover > .u-mark-arrow {
 .u-wordmark-hero {
   font-size: 3rem;
   line-height: 1;
+  font-weight: 600;
+}
+
+/* 时间岛：投影从页面里收进来（0038） */
+.u-scrub-island {
+  box-shadow: var(--u-lift-strong);
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  /* **中文回退要留着**。preset 给的是 `'Geist Variable', sans-serif`——Geist 没有
+     汉字，回退到 `sans-serif` 就是系统默认那一款，与界面里其余的字不是一套。
+     Geist Variable 排前面（preset 自带的那份，字重连续），后面接回我们原来的
+     栈：Geist（Google 那份，做静态回退）、Inter、**Noto Sans SC**。 */
+  --font-sans: "Geist Variable", "Geist", "Inter", "Noto Sans SC", system-ui, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ---- typeset：内置手册那一面 ----
+   官方那张 typeset.css 只管 `.typeset` 容器里的东西，容器外一律不碰。
+   这里只调它开放的那几个变量：字走我们已经装好的那两款（Geist 变体 +
+   等宽），**中文回退跟着 --font-sans 一起带过来**；正文 15px、行高 1.75、
+   段间距 1.25em 按 shadcn 文档给的文档预设。
+   颜色不在这儿定——typeset 用的是 currentColor 与 --typeset-muted/rule，
+   接到我们的令牌上，暗浅两套自动跟着走。 */
+.typeset-docs {
+  --typeset-font-body: var(--font-sans);
+  --typeset-font-heading: var(--font-sans);
+  --typeset-font-mono: var(--font-mono);
+  --typeset-size: 15px;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+  --typeset-muted: var(--u-text-2);
+  --typeset-rule: var(--u-line);
+  color: var(--u-text);
 }

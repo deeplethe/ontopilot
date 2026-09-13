@@ -206,6 +206,8 @@ export interface SourceView {
     base_url?: string;
     /** jira_issues：项目 key，如 KAFKA */
     project?: string;
+    /** false = 这个来源下的文档只检索、不抽取（schema 文档，0035 决定 7）；缺省抽取 */
+    extract?: boolean;
   } | null;
   icon: string | null;
   sync_interval_minutes: number | null;
@@ -216,14 +218,21 @@ export interface SourceView {
   last_sync_added: number;
   doc_count: number;
   missing_count: number;
-  rss_full_content_state: "pending" | "active" | "disabled" | null;
-  rss_full_content_generation: number | null;
-  rss_full_content_baseline_count: number | null;
-  rss_full_content_pending_count: number;
-  rss_full_content_queued_count: number;
-  rss_full_content_retrying_count: number;
-  rss_full_content_complete_count: number;
-  rss_full_content_terminal_count: number;
+  /** 全文补全那一块；**不是 RSS 全文来源的就是 null**，不用再拿 kind 与
+   *  content_mode 自己推一遍适不适用（0026 / #417） */
+  rss_full_content: RssFullContentSummary | null;
+}
+
+/** 一个 RSS 来源当前代的全文补全进度。五个计数一起读，所以一起给。 */
+export interface RssFullContentSummary {
+  state: "pending" | "active" | "disabled";
+  pending: number;
+  /** queued 与 hydrating 合成一格 */
+  queued: number;
+  retrying: number;
+  complete: number;
+  /** terminal、deleted、superseded 合成一格 */
+  terminal: number;
 }
 
 export interface SearchResult {
@@ -824,6 +833,16 @@ export interface MergeLog {
   reverted_at: string | null;
 }
 
+/** 边上的属性（0037）：`{ key: "amount", value: { value: 4e9, unit: "$" } }` */
+export interface FactQualifier {
+  qualifier_type_id: string;
+  key: string;
+  label: string;
+  value: { value?: unknown; unit?: string } | null;
+  entity_id: string | null;
+  entity_name: string | null;
+}
+
 export interface GraphEdge {
   id: string;
   source: string;
@@ -856,6 +875,8 @@ export interface GraphEdge {
   /** 幽灵边（0017 §3）：没落地的派生。`id` 是那条 `derived_contradiction` 违规的 id；
    *  `derived` 同时为 true，跟着派生开关走。点它打开主语的面板 */
   blocked: boolean;
+  /** 边上的属性（0037） */
+  qualifiers: FactQualifier[];
 }
 
 export interface EntityFact {
@@ -872,6 +893,8 @@ export interface EntityFact {
   other_name: string | null;
   /** 字面值宾语（属性事实/问数映射）：{"value":…} 或 {"summary":…} */
   object_value: Record<string, unknown> | null;
+  /** 边上的属性（0037） */
+  qualifiers: FactQualifier[];
   valid_from: string | null;
   valid_to: string | null;
   /** 读出来的区间（0022），与 GraphEdge 同义：「此刻成立」按它判 */
@@ -1002,6 +1025,8 @@ export interface RelationTypeView {
   domains: string[];
   /** 可以当宾语的类。只对 relation 有意义——attribute 的值域是 datatype */
   ranges: string[];
+  /** 这条关系的边能带哪些属性（0037）：属性定义的 id */
+  qualifiers: string[];
   datatype: "text" | "number" | "date" | "bool" | null;
   unit: string | null;
   usage: number;
@@ -1110,7 +1135,7 @@ export interface PlannedItem {
   key: string;
   label: string;
   has_description: boolean;
-  disposition: "create" | "update" | "key_taken";
+  disposition: "create" | "update" | "key_taken" | "aligned" | "superseded";
   functional?: boolean;
   conflict_with?: string | null;
 }
@@ -1137,6 +1162,7 @@ export interface OntologyImportSummary {
   classes_without_description?: number;
   relations_seen?: number;
   relations_created?: number;
+  relations_superseded?: number;
   relations_updated?: number;
   functional_relations?: number;
   /** 逆属性 / 父属性连上了几条——目标 IRI 不在这个库里时会静默跳过 */
@@ -1177,7 +1203,17 @@ export interface Source {
 
 /** Agentic 对话的行动轨迹（工具调用一步一条）。 */
 export interface ChatStep {
-  kind: "search" | "docs" | "entity" | "facts" | "changes" | "query" | "tool";
+  kind:
+    | "search"
+    | "docs"
+    | "entity"
+    | "facts"
+    | "neighbors"
+    | "timeline"
+    | "path"
+    | "changes"
+    | "query"
+    | "tool";
   label: string;
   detail: string;
   /** `remember` 那一步带着它：那句记忆落成的 chunk。对话里的确认卡按它取
@@ -1229,10 +1265,6 @@ export type AlertGroup = {
   /** 明细，最多几条，新的在前 */
   lines: { name?: string; error?: string; job?: string }[];
 };
-
-/** 新库默认装的本体包。建库对话框和自动建出的第一个库都从这里取，
- *  两处只能有一个答案：README 承诺的是「默认 schema.org」，不是「默认没有词表」 */
-export const DEFAULT_ONTOLOGY_PACKS = ["schema-org"];
 
 export const api = {
   health: () =>

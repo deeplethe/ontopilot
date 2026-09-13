@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Lock, Plus, Search } from "lucide-react";
-import { api, DEFAULT_ONTOLOGY_PACKS, type MyKb } from "../api";
+import { api, type MyKb } from "../api";
 import { S } from "../i18n";
 import { useKb } from "../kb";
 import {
@@ -19,6 +19,12 @@ import {
   Loading,
   MultiSearchSelect,
   PageHeader,
+  TBody,
+  THead,
+  Table,
+  Td,
+  Th,
+  Tr,
 } from "../ui";
 
 const ymd = (iso: string) => iso.slice(0, 10);
@@ -94,66 +100,99 @@ export function MyKbs() {
         <div className="mb-4">
           <Input
             icon={<Search size={13} />}
-            className="w-72"
+            /* 筛选条上的搜索框全站一个宽度：w-64（成员、规则、数据口径都是它） */
+            className="w-64"
             placeholder={S.account.kbsFilter}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
         </div>
 
-        {/* 一个面板装多行，不是一行一张卡片（DESIGN.md 6）。一行说清三件事：
-            这是哪个库、里面有多少东西、我在里面是什么身份 */}
-        <div className="glass rounded-panel divide-y divide-line">
-          {rows.map((row) => {
-            const canManage = row.my_role === "admin" || row.my_role === "owner";
-            return (
-              <div key={row.kb.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-body text-ink">{row.kb.name}</span>
-                    {row.kb.is_default && (
-                      <Chip tone="neutral">{S.settings.kbs.defaultChip}</Chip>
-                    )}
-                    {row.kb.visibility === "restricted" && (
-                      <span className="flex items-center gap-1 text-fine text-ink-2">
-                        <Lock size={10} />
-                        {S.account.kbRestricted}
-                      </span>
-                    )}
-                    {row.my_role && (
-                      <Chip tone={canManage ? "info" : "neutral"}>
-                        {S.account.roleNames[row.my_role] ?? row.my_role}
-                      </Chip>
-                    )}
-                  </div>
-                  <div className="mt-1 truncate text-small text-ink-2">
-                    <span className="u-num">
-                      {S.account.kbStats(row.doc_count, row.member_count)}
-                    </span>
-                    <span className="mx-2">·</span>
-                    {joinInfo(row)}
-                  </div>
-                </div>
-                {/* 设置在前、打开在后：不是每一行都有设置（要 admin），把总是在的
-                    那个放右端，一列按钮的右缘才不会一行一个样 */}
-                <div className="flex shrink-0 items-center gap-2">
-                  {canManage && (
-                    <Button variant="secondary" size="sm"
-                      onClick={() => {
-                        setKb(row.kb.id);
-                        navigate({ to: "/kb/$kbId/settings", params: { kbId: row.kb.id } });
-                      }}
-                    >
-                      {S.account.kbSettingsBtn}
-                    </Button>
-                  )}
-                  <Button variant="secondary" size="sm" onClick={() => openKb(row.kb.id)}>
-                    {S.account.openKb}
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+        {/* **一张表，不是一列卡片。**这一页是一份记录清单——每个库的字段都一样，
+            人来这儿是横着比：谁的文档多、我在哪个库是 admin、哪个是受限的。
+            从前把这些堆成「名字 + 三枚胶囊」再加一行点号串起来的小字，同一个事实
+            在不同行落在不同的横向位置，比不了；而且全站别的清单（成员、令牌、
+            文库、规则、本体）早就是 Table / Th / Td，只有这一页是手写的。
+            身份那一列**是一个词，不是一枚填色胶囊**：它在自己那一列里，
+            列头已经说了这是什么，不需要再染一次色。 */}
+        <div className="glass rounded-panel overflow-hidden">
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{S.account.kbNameLabel}</Th>
+                <Th>{S.account.kbRoleLabel}</Th>
+                <Th className="text-right">{S.account.kbDocsLabel}</Th>
+                <Th className="text-right">{S.account.kbMembersLabel}</Th>
+                <Th>{S.account.kbAccessLabel}</Th>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
+              {rows.map((row) => {
+                const canManage =
+                  row.my_role === "admin" || row.my_role === "owner";
+                return (
+                  <Tr key={row.kb.id}>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-body text-ink">
+                          {row.kb.name}
+                        </span>
+                        {/* 这两个是**库自己的性质**，不是一列数据：缺省库只有一个，
+                            受限的也少，单开一列会空掉大半，所以贴在名字旁边 */}
+                        {row.kb.is_default && (
+                          <Chip tone="neutral">{S.settings.kbs.defaultChip}</Chip>
+                        )}
+                        {row.kb.visibility === "restricted" && (
+                          <span
+                            className="flex shrink-0 items-center gap-1 text-fine text-ink-2"
+                            title={S.account.kbRestricted}
+                          >
+                            <Lock size={10} />
+                            {S.account.kbRestricted}
+                          </span>
+                        )}
+                      </div>
+                    </Td>
+                    <Td className="text-ink-2">
+                      {row.my_role
+                        ? (S.account.roleNames[row.my_role] ?? row.my_role)
+                        : "—"}
+                    </Td>
+                    <Td className="u-num text-right text-ink-2">{row.doc_count}</Td>
+                    <Td className="u-num text-right text-ink-2">
+                      {row.member_count}
+                    </Td>
+                    <Td className="text-small text-ink-2">{joinInfo(row)}</Td>
+                    {/* 设置在前、打开在后：不是每一行都有设置（要 admin），把总是在的
+                        那个放右端，一列按钮的右缘才不会一行一个样 */}
+                    <Td className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {canManage && (
+                          <Button variant="secondary" size="sm"
+                            onClick={() => {
+                              setKb(row.kb.id);
+                              navigate({
+                                to: "/kb/$kbId/settings",
+                                params: { kbId: row.kb.id },
+                              });
+                            }}
+                          >
+                            {S.account.kbSettingsBtn}
+                          </Button>
+                        )}
+                        <Button variant="secondary" size="sm"
+                          onClick={() => openKb(row.kb.id)}
+                        >
+                          {S.account.openKb}
+                        </Button>
+                      </div>
+                    </Td>
+                  </Tr>
+                );
+              })}
+            </TBody>
+          </Table>
           {rows.length === 0 && (
             <p className="px-4 py-6 text-body text-ink-2">{S.ui.noMatches}</p>
           )}
@@ -192,10 +231,10 @@ function NewKbModal({
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [restricted, setRestricted] = useState(true);
-  // schema.org 默认勾选，可反选（0009）。删掉内置类之后不选任何包的库是真的空，
-  // 而空库仍然能用——但绝大多数人要的是一个已经能认出人、组织、产品的起点。
-  // 一秒装完（0008 的批量插入），所以默认装得起
-  const [packs, setPacks] = useState<string[]>([...DEFAULT_ONTOLOGY_PACKS]);
+  // 默认一个包都不勾（#580）。从前预勾 schema.org，理由是"要一个已经能认出人、
+  // 组织、产品的起点"；量过之后本体从文档里长出来的是库自己的十几个类，而 915 个
+  // 类的包让每块抽取提示词从 2k 涨到 18k tokens。要包的人在这里勾
+  const [packs, setPacks] = useState<string[]>([]);
 
   const available = useQuery({
     queryKey: ["ontologyPacks"],
@@ -258,7 +297,7 @@ function NewKbModal({
         <Checkbox
           className="mb-4"
           checked={restricted}
-          onChange={(e) => setRestricted(e.target.checked)}
+          onChange={(v) => setRestricted(v)}
           label={S.settings.kbs.visRestricted}
         />
 

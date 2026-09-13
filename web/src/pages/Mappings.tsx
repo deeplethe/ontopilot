@@ -6,9 +6,9 @@
 //
 // 审批留在同一个端点上（`review/mappings/{id}`，那里已经在写审计流水），
 // 搬的是界面不是逻辑：判断一条口径对不对要看得见表结构，而那在这一页。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Plus } from "lucide-react";
+import { Database, Plug, Plus, Search } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { api, type ConceptMapping } from "../api";
 import { S } from "../i18n";
@@ -18,21 +18,52 @@ import {
   Button,
   Checkbox,
   Chip,
-  type ChipTone,
-  cn,
+  Dropdown,
   EmptyState,
   ErrorText,
   Input,
-  LinkButton,
   Loading,
+  PageHeader,
   Pager,
-  PageTitle,
+  RAIL_CLS,
+  Row,
   SearchSelect,
+  Status,
+  cn,
+  type ChipTone,
 } from "../ui";
 
 const PAGE = 25;
 
 type StatusFilter = "all" | "proposed" | "confirmed" | "rejected";
+type MappingDecision = Extract<
+  ConceptMapping["status"],
+  "confirmed" | "rejected"
+>;
+const NO_PENDING_MAPPING_IDS: ReadonlySet<string> = new Set();
+
+export const decideMappings = async (
+  ids: string[],
+  decide: (id: string) => Promise<unknown>,
+) => {
+  const outcomes = await Promise.allSettled(ids.map((id) => decide(id)));
+  const failure = outcomes.find((outcome) => outcome.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+};
+
+export const selectedMappingIds = (
+  mappings: Pick<ConceptMapping, "id" | "status">[],
+  picked: ReadonlySet<string>,
+  pending: ReadonlySet<string> = NO_PENDING_MAPPING_IDS,
+) =>
+  mappings
+    .filter(
+      (mapping) =>
+        mapping.status === "proposed" &&
+        picked.has(mapping.id) &&
+        !pending.has(mapping.id),
+    )
+    .map((mapping) => mapping.id);
 
 const TONE: Record<string, ChipTone> = {
   proposed: "warn",
@@ -59,6 +90,9 @@ export function Mappings() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [deciding, setDeciding] = useState<Set<string>>(() => new Set());
+  useEffect(() => setPicked(new Set()), [kb?.id, page, q, status, tab]);
 
   const data = useQuery({
     queryKey: ["mappings", kb?.id, status, q, page],
@@ -75,9 +109,27 @@ export function Mappings() {
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["mappings", kb?.id] });
 
+  const batch = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: MappingDecision }) =>
+      decideMappings(ids, (id) => api.decideMapping(kb!.id, id, status)),
+    onSuccess: () => setPicked(new Set()),
+    onError: (e: unknown) => toast.error((e as Error).message),
+    onSettled: refresh,
+  });
+
   if (!kb) return <Loading>{S.nav.loading}</Loading>;
 
   const counts = data.data?.counts;
+  const selectable =
+    data.data?.items.filter(
+      (m) => m.status === "proposed" && !deciding.has(m.id),
+    ) ?? [];
+  const selectedIds = selectedMappingIds(
+    data.data?.items ?? [],
+    picked,
+    deciding,
+  );
+  const individualPending = deciding.size > 0;
   const FILTERS: { key: StatusFilter; label: string; n?: number }[] = [
     { key: "all", label: S.mapping.filterAll },
     { key: "proposed", label: S.mapping.filterProposed, n: counts?.proposed },
@@ -90,65 +142,46 @@ export function Mappings() {
   ];
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-4">
-      <div>
-        <PageTitle>{S.mapping.title}</PageTitle>
-        <p className="mt-1 text-small text-ink-2">{S.mapping.hint}</p>
-      </div>
-
-      {/* 分段控件用全站那一套（`bg-surface-3` 选中 + 静默的未选中），
-          不是 `u-btn-primary`——那是主操作的实心白，用在这里每个标签都像
-          一个行动号召 */}
-      <div className="flex w-fit rounded-control overflow-hidden border border-line">
+    /* **左栏切功能，不是标签页**：定义与数据源是两件不同的事（一个是判读，
+       一个是登记连接），全站凡是这种切换都在左栏（文库、审阅、本体都是）。
+       从前这里是一排按钮做的标签，选中那个还是实心主按钮——在这套语汇里
+       实心说的是"这一屏最该按的那一下"，四个标签四个行动号召。
+       内容区也从设置页那套居中限宽（max-w-4xl）改成内容页的铺满（px-8 py-6）。 */
+    <div className="flex h-full">
+      <aside className={`${RAIL_CLS} u-rail-list px-2 py-3`}>
         {(["definitions", "sources"] as const).map((t) => (
-          <Button
-            variant={tab === t ? "primary" : "ghost"}
-            size="sm"
+          <Row
             key={t}
+            density="nav"
+            active={tab === t}
+            icon={t === "definitions" ? <Database size={14} /> : <Plug size={14} />}
             onClick={() => setTab(t)}
           >
-            {t === "definitions"
-              ? S.mapping.tabDefinitions
-              : S.mapping.tabSources}
-          </Button>
+            {t === "definitions" ? S.mapping.tabDefinitions : S.mapping.tabSources}
+          </Row>
         ))}
-      </div>
+      </aside>
+
+      <div className="u-scroll flex-1 min-w-0 overflow-y-auto px-8 py-6">
+        <PageHeader
+          title={S.mapping.title}
+          sub={S.mapping.hint}
+          className="mb-4"
+        />
 
       {tab === "sources" ? (
         <DataSources kbId={kb.id} onExplored={refresh} />
       ) : (
-        <>
+        <div className="space-y-4">
+          {/* 筛选是下拉，不是一排按钮：四档状态是"挑一个看"，与全站其它页面的
+              筛选同一副控件（Dropdown），计数跟在标签里 */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex rounded-control overflow-hidden border border-line">
-              {FILTERS.map((f) => (
-                <Button
-                  variant={status === f.key ? "primary" : "ghost"}
-                  size="sm"
-                  key={f.key}
-                  onClick={() => {
-                    setStatus(f.key);
-                    setPage(0);
-                  }}
-                >
-                  {f.label}
-                  {f.n != null && (
-                    <span
-                      className={cn(
-                        "u-num",
-                        status === f.key
-                          ? "text-ink-2"
-                          : "text-ink-2",
-                      )}
-                    >
-                      {f.n}
-                    </span>
-                  )}
-                </Button>
-              ))}
-            </div>
+            {/* 筛选条与 Members、文库、图谱同一副身材：**带放大镜的 w-64 输入框在前**，
+                下拉跟在后面。这里从前是下拉在前、输入框 flex-1——一个人从一页走到
+                另一页，同样的一条工具行，控件换了顺序、搜索框还横跨整屏。 */}
             <Input
-              size="sm"
-              className="flex-1 min-w-40"
+              icon={<Search size={13} />}
+              className="w-64"
               placeholder={S.mapping.searchPlaceholder}
               value={q}
               onChange={(e) => {
@@ -156,6 +189,73 @@ export function Mappings() {
                 setPage(0);
               }}
             />
+            <Dropdown
+              className="w-40"
+              value={status}
+              onChange={(v) => {
+                setStatus(v as StatusFilter);
+                setPage(0);
+              }}
+              /* 计数写进括号里，不是用间隔点挂在后面。「Pending · 0」读起来是
+                 两样并列的东西（这一页别处的 `·` 正是这个用法：口径 · 来源 ·
+                 表），而这里的 0 不是第二个字段，是「Pending 有几条」——
+                 括号说的就是这个从属关系。 */
+              options={FILTERS.map((f) => ({
+                value: f.key,
+                label: f.n != null ? `${f.label} (${f.n})` : f.label,
+              }))}
+            />
+            {/* **一条工具行**：筛选、搜索、全选、批量动作排在一起。
+                从前它们各占一行，三行控件压在内容上面，读到列表要先翻过一块 */}
+            {selectable.length > 0 && (
+              <Checkbox
+                checked={selectable.every((m) => picked.has(m.id))}
+                disabled={batch.isPending || individualPending}
+                onChange={(v) =>
+                  setPicked(
+                    v
+                      ? new Set(selectable.map((m) => m.id))
+                      : new Set(),
+                  )
+                }
+                label={S.mapping.selectPage}
+                className="shrink-0"
+              />
+            )}
+            {selectedIds.length > 0 && (
+              <>
+                  <span className="u-num text-small text-ink-2">
+                    {S.mapping.selected(selectedIds.length)}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={batch.isPending || individualPending}
+                    onClick={() =>
+                      batch.mutate({
+                        ids: selectedIds,
+                        status: "confirmed",
+                      })
+                    }
+                  >
+                    {S.mapping.approve}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-danger"
+                    disabled={batch.isPending || individualPending}
+                    onClick={() =>
+                      batch.mutate({
+                        ids: selectedIds,
+                        status: "rejected",
+                      })
+                    }
+                  >
+                    {S.mapping.reject}
+                  </Button>
+              </>
+            )}
           </div>
 
           {status === "rejected" && (
@@ -181,6 +281,24 @@ export function Mappings() {
                   key={m.id}
                   kbId={kb.id}
                   mapping={m}
+                  picked={selectedIds.includes(m.id)}
+                  batchPending={batch.isPending}
+                  onDecisionPending={(pending) =>
+                    setDeciding((prev) => {
+                      const next = new Set(prev);
+                      if (pending) next.add(m.id);
+                      else next.delete(m.id);
+                      return next;
+                    })
+                  }
+                  onPick={(on) =>
+                    setPicked((prev) => {
+                      const next = new Set(prev);
+                      if (on) next.add(m.id);
+                      else next.delete(m.id);
+                      return next;
+                    })
+                  }
                   onChanged={refresh}
                 />
               ))}
@@ -192,8 +310,9 @@ export function Mappings() {
             page={page}
             onPage={setPage}
           />
-        </>
+        </div>
       )}
+      </div>
     </div>
   );
 }
@@ -203,10 +322,18 @@ export function Mappings() {
 function MappingRow({
   kbId,
   mapping: m,
+  picked,
+  batchPending,
+  onDecisionPending,
+  onPick,
   onChanged,
 }: {
   kbId: string;
   mapping: ConceptMapping;
+  picked: boolean;
+  batchPending: boolean;
+  onDecisionPending: (pending: boolean) => void;
+  onPick: (picked: boolean) => void;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -215,14 +342,29 @@ function MappingRow({
   const decide = useMutation({
     mutationFn: (s: "confirmed" | "rejected") =>
       api.decideMapping(kbId, m.id, s),
+    onMutate: () => onDecisionPending(true),
     onSuccess: onChanged,
     onError: (e: unknown) => toast.error((e as Error).message),
+    onSettled: () => onDecisionPending(false),
   });
 
   const how = howComputed(m);
   return (
-    <div className="px-4 py-3">
+    <div className={cn("px-4 py-3", picked && "u-picked")}>
       <div className="flex items-baseline gap-2 flex-wrap">
+        {m.status === "proposed" && (
+          <Checkbox
+            className="shrink-0 self-center"
+            checked={picked}
+            disabled={decide.isPending || batchPending}
+            onChange={(v) => onPick(v)}
+            label={
+              <span className="sr-only">
+                {S.mapping.selectMapping(m.concept_name, m.source)}
+              </span>
+            }
+          />
+        )}
         <span className="text-body text-ink">{m.concept_name}</span>
         <span className="text-fine text-ink-2">{m.source}</span>
         {m.unit && (
@@ -234,9 +376,9 @@ function MappingRow({
           </Chip>
         )}
         <span className="flex-1" />
-        <Chip tone={TONE[m.status]} className="text-fine">
+        <Status tone={TONE[m.status]} className="text-fine">
           {statusLabel(m.status)}
-        </Chip>
+        </Status>
       </div>
 
       <div
@@ -262,30 +404,39 @@ function MappingRow({
           onCancel={() => setEditing(false)}
         />
       ) : (
-        /* 行里的动作：拍板那一下是个按钮，其余是链接。**十一行十一个实底
-           按钮**（原来「确认」是 primary）等于把一页都染成动作，而一屏最多
-           一个 primary。拒绝是点了就生效的那种，所以它红（同成员页的移出） */
-        <div className="mt-2 flex items-center gap-3 flex-wrap">
+        /* 行里的动作：**拍板那一下描边，其余是 ghost，都不是实底。**十一行
+           十一个实底按钮等于把一整页染成动作，而一屏最多一个 primary。
+           但「不是实底」不等于「长成一句话」——从前这三个是 `LinkButton`：
+           没有内距、没有 hover 底、颜色就是正文那档灰，跟它们上面那行说明
+           一个样，看着不像能点。ghost 补回控件该有的两件事：一圈内距，
+           和指针停上去的那块底。静止时仍然轻。
+           拒绝**静止时就该是红的**：它是点了就生效的那一下，人要在按之前
+           看出来它跟「编辑」不是一类，而不是划过去才发现。 */
+        <div className="mt-2 -ml-2 flex items-center gap-1 flex-wrap">
           {m.status === "proposed" && (
             <>
-              <Button variant="secondary" size="sm"
-                disabled={decide.isPending}
+              <Button variant="secondary" size="sm" className="ml-2"
+                disabled={decide.isPending || batchPending || picked}
                 onClick={() => decide.mutate("confirmed")}
               >
                 {S.mapping.approve}
               </Button>
-              <LinkButton
-                tone="danger"
-                onClick={() => !decide.isPending && decide.mutate("rejected")}
+              <Button variant="ghost" size="sm" className="text-danger"
+                disabled={batchPending || picked}
+                onClick={() =>
+                  !picked && !decide.isPending && decide.mutate("rejected")
+                }
               >
                 {S.mapping.reject}
-              </LinkButton>
+              </Button>
             </>
           )}
-          <LinkButton onClick={() => setEditing(true)}>{S.mapping.edit}</LinkButton>
-          <LinkButton onClick={() => setShowHistory((v) => !v)}>
+          <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+            {S.mapping.edit}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setShowHistory((v) => !v)}>
             {S.mapping.history}
-          </LinkButton>
+          </Button>
         </div>
       )}
 
@@ -356,7 +507,7 @@ function EditForm({
       {field(S.mapping.fieldSummary, summary, setSummary)}
       <Checkbox
         checked={derived}
-        onChange={(e) => setDerived(e.target.checked)}
+        onChange={(v) => setDerived(v)}
         label={S.mapping.fieldDerived}
       />
       <span className="hidden">
@@ -522,14 +673,15 @@ function DataSources({
             >
               {S.mapping.syncSchema}
             </Button>
-            <LinkButton
-              tone="danger"
-              className="shrink-0"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 text-danger"
               disabled={unmount.isPending}
               onClick={() => unmount.mutate(d.id)}
             >
               {S.mapping.unmount}
-            </LinkButton>
+            </Button>
           </div>
         ))}
         {!hasMounted && (

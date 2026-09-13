@@ -5,7 +5,11 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { ToastHost } from "./toast";
 import { DEFAULT_STALE_MS, applyQueryDefaults } from "./queryDefaults";
+import { initTheme } from "./theme";
 import "./styles.css";
+
+// 主题先落到 <html> 再渲染：画布第一次读令牌时它得已经是对的
+initTheme();
 
 // staleTime 按键分档，表在 queryDefaults.ts；这里只给全局默认（#518）
 const queryClient = new QueryClient({

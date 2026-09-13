@@ -40,7 +40,7 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 /// 「凭什么算含气井」时，该读到那条规则和它的阈值，而不是自己猜一个。
 /// **写规则不放**：推理的判据由人写下，而一次工具调用分不出「人口述、agent
 /// 代打」与「模型自己编了一条」
-const EXPOSED: [&str; 8] = [
+const EXPOSED: [&str; 11] = [
     "search_chunks",
     "get_document",
     "search_docs",
@@ -49,6 +49,9 @@ const EXPOSED: [&str; 8] = [
     "rule_matches",
     "changes",
     "entity_facts",
+    "neighbors",
+    "timeline",
+    "paths_between",
 ];
 
 /// 会往账本里写的那些。
@@ -145,6 +148,17 @@ fn ok(id: Option<Value>, result: Value) -> Json<Value> {
     Json(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
 }
 
+fn tool_result(result: tools::ToolResult) -> Value {
+    let mut response = json!({
+        "content": [{ "type": "text", "text": result.text }],
+        "isError": result.is_error,
+    });
+    if let Some(content) = result.structured_content {
+        response["structuredContent"] = content;
+    }
+    response
+}
+
 /// JSON-RPC 的错误不是 HTTP 的错误：**传输成功了，方法失败了**。
 /// 回 200 带 error 体，客户端才解析得动。
 fn rpc_err(id: Option<Value>, code: i64, message: &str) -> Json<Value> {
@@ -204,20 +218,32 @@ pub async fn handle(
                 };
                 return Ok(rpc_err(id, -32601, &message));
             }
-            // `mounted_sources` 仍旧空着：`query_data` 没放出来，给了也没人用。
-            // `can_write` 不再写死 false——它现在是令牌与角色一起算出来的
-            let ctx = ToolCtx {
-                state: &state,
-                kb_id,
-                workspace_id: kb.workspace_id,
-                mounted_sources: &[],
-                can_write,
-                actor: Some(user.id),
-                // 「谁说的」要答到 agent 这一层：一个人可以同时挂三个客户端
-                via_token: Some(auth.token_id),
+            // 与聊天共用参数守卫：缺少 query 不能变成一次成功的空搜索。
+            let result = match super::chat::check_call(
+                &super::chat::tools_schema(can_write, &[]),
+                name,
+                &args.to_string(),
+            ) {
+                Err((text, step)) => tools::ToolResult::new(text, step).error(),
+                Ok(args) => {
+                    // `mounted_sources` 仍旧空着：`query_data` 没放出来，给了也没人用。
+                    // `can_write` 不再写死 false——它现在是令牌与角色一起算出来的
+                    let ctx = ToolCtx {
+                        state: &state,
+                        kb_id,
+                        workspace_id: kb.workspace_id,
+                        mounted_sources: &[],
+                        can_write,
+                        actor: Some(user.id),
+                        // 「谁说的」要答到 agent 这一层：一个人可以同时挂三个客户端
+                        via_token: Some(auth.token_id),
+                        // agent 的意图不在请求里；同名按事实数排
+                        question: None,
+                    };
+                    let mut sink = ToolSink::default();
+                    tools::dispatch(&ctx, &mut sink, name, &args).await
+                }
             };
-            let mut sink = ToolSink::default();
-            let (text, _step) = tools::dispatch(&ctx, &mut sink, name, &args).await;
             let _ = utopia_store::audit::record(
                 &state.pool,
                 Some(kb_id),
@@ -228,14 +254,12 @@ pub async fn handle(
                 json!({ "tool": name }),
             )
             .await;
-            ok(
-                id,
-                json!({
-                    "content": [{ "type": "text", "text": text }],
-                    "isError": false,
-                }),
-            )
+            ok(id, tool_result(result))
         }
         other => rpc_err(id, -32601, &format!("Unknown method: {other}")),
     })
 }
+
+#[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod tests;

@@ -496,6 +496,18 @@ pub fn emit_fact(
     for quote in &f.quotes {
         sink.l(&stmt, &utopia("quote"), &text(quote.clone()))?;
     }
+    // 边上的属性（0037）：陈述节点上各多一行，谓词是属性的 IRI，字面量按它的 datatype
+    for q in &f.qualifiers {
+        let Some(p) = vocab.relation(q.qualifier_type_id) else {
+            continue;
+        };
+        if let Some(v) = &q.value {
+            let (datatype, _) = vocab.literal_shape(q.qualifier_type_id);
+            sink.l(&stmt, p, &literal_value(v, datatype))?;
+        } else if let Some(e) = q.entity_id {
+            sink.r(&stmt, p, &names.entity(e))?;
+        }
+    }
 
     // 现行三元组：**仍被持有，且现在仍成立**。区间已闭合或已撤回的不写这一条,
     // 否则一个忽略具体化的消费者会读到「张三现在还管着那个项目」。
@@ -576,6 +588,10 @@ pub fn emit_derived(
     // 前提。审计顺着 prov:used 往下走一步就到断言，再走一步就到句子
     for premise in &d.premises {
         let p = names.fact(*premise);
+        sink.r(&stmt, &prov("used"), &p)?;
+    }
+    for premise in &d.premises_derived {
+        let p = names.derived(*premise);
         sink.r(&stmt, &prov("used"), &p)?;
     }
     Ok(())
@@ -684,6 +700,7 @@ mod tests {
 
     fn fact(n: u8) -> ExportFact {
         ExportFact {
+            qualifiers: Vec::new(),
             id: id(n),
             subject_id: id(10),
             predicate_id: Some(id(2)),
@@ -1024,26 +1041,31 @@ mod tests {
             rule: "transitive".into(),
             rule_name: None,
             premises: vec![id(5)],
-            premises_derived: Vec::new(),
+            premises_derived: vec![id(6)],
         };
-        let quads = export(Format::Turtle, |sink, names, vocab| {
-            emit_derived(sink, names, vocab, &derived).unwrap();
-        });
-        let stmt = "<urn:utopia:kb:01a06dc4-f40a-7013-b09f-1b499e2e7441:derived:07070707-0707-0707-0707-070707070707>";
-        assert!(has(
-            &quads,
-            stmt,
-            "urn:utopia:ns:derived",
-            "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"
-        ));
-        assert_eq!(
-            objects(&quads, stmt, "http://www.w3.org/ns/prov#used"),
-            vec![STMT]
-        );
-        assert!(
-            !has(&quads, SUBJ, WORKS_FOR, OBJ),
-            "推出来的边不写成平铺三元组：那会让人把引擎的结论当成文档里的话"
-        );
+        for format in [Format::Turtle, Format::JsonLd] {
+            let quads = export(format, |sink, names, vocab| {
+                emit_derived(sink, names, vocab, &derived).unwrap();
+            });
+            let stmt = "<urn:utopia:kb:01a06dc4-f40a-7013-b09f-1b499e2e7441:derived:07070707-0707-0707-0707-070707070707>";
+            assert!(has(
+                &quads,
+                stmt,
+                "urn:utopia:ns:derived",
+                "\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"
+            ));
+            assert_eq!(
+                objects(&quads, stmt, "http://www.w3.org/ns/prov#used"),
+                vec![
+                    STMT.to_string(),
+                    Names::new(kb(), None).unwrap().derived(id(6)).to_string()
+                ]
+            );
+            assert!(
+                !has(&quads, SUBJ, WORKS_FOR, OBJ),
+                "推出来的边不写成平铺三元组：那会让人把引擎的结论当成文档里的话"
+            );
+        }
     }
 
     #[test]

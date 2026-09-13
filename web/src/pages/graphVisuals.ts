@@ -11,11 +11,15 @@ import type Sigma from "sigma";
 /* 画布调色板 —— 结构取自 Semantica GraphWorkspace 源码；基色已中性化：
    Semantica 原版是钢蓝系（#0B1320/#5A7A9E/#7A92AE），按"chrome 零色偏、
    彩色只属于数据"的既定原则换成同明度纯灰，类型色混入比例不变 */
-export const NODE_SHELL_BASE = "#121212"; // 节点外壳深底（原 #0B1320 的中性化）
-export const NODE_CORE_BASE = "#767676"; // 节点核心灰（原 #5A7A9E 的中性化）
-export const NODE_BORDER_BASE = "#909090"; // 节点描边（原 #7A92AE 的中性化）
-export const NODE_TINT_MIX = 0.14; // 类型色只按 14% 混入外壳（高级感的关键）
-export const NODE_CORE_MIX = 0.5; // 核心向类型色的混入比例
+export let NODE_SHELL_BASE = "#121212"; // 节点外壳深底（原 #0B1320 的中性化）
+export let NODE_CORE_BASE = "#767676"; // 节点核心灰（原 #5A7A9E 的中性化）
+export let NODE_BORDER_BASE = "#909090"; // 节点描边（原 #7A92AE 的中性化）
+/* 配方的**比例两个主题共用**，随主题变的只有上面那三个底色。节点永远是
+   「壳 + 彩心」：壳跟着纸走（深色 #121212，浅色 #ffffff），类型色只按 14%
+   渗进壳里，核心收 50% ——于是两个主题里中间那一点都是这个类自己的颜色，
+   变的只是它坐在黑底上还是白底上。 */
+export const NODE_TINT_MIX = 0.14; // 类型色混入外壳的比例
+export const NODE_CORE_MIX = 0.5; // 类型色混入核心的比例
 /* 状态环取**节点自己的类型色**，不是写死的色相。往白里混而不是直接用原色：
    环画在节点自己身上，同色同亮度就看不出是个环。**悬停混得更白、选中混得
    更少**——悬停时全图不压暗，环要在一片乱线里立刻跳出来；选中时其余都
@@ -24,18 +28,22 @@ export const NODE_CORE_MIX = 0.5; // 核心向类型色的混入比例
 export const RING_HOVER_MIX = 0.7; // 悬停：偏白，为的是跳出来
 export const RING_SELECT_MIX = 0.35; // 选中：偏本色，为的是认得出
 export const TRANSPARENT = "rgba(0,0,0,0)";
-export const MUTED_SHELL = "#151515";
+export let MUTED_SHELL = "#151515";
 /* 悬停时其余的压暗程度。**比选中轻**（选中是压到底）：悬停是随鼠标走的、
    每划过一个节点就换一次，压到底会让整张画布不停明灭 */
 export const HOVER_MUTE = 0.78;
-export const PILL_BG = "rgba(12,12,12,0.9)";
-export const PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
-export const PILL_TEXT = "#ededed"; // --u-text
+export let PILL_BG = "rgba(12,12,12,0.9)";
+/** 指到的那一块底。静止那档是 `PILL_BG`，选中那档反色，见 `drawNodeLabel` */
+export let PILL_BG_HOVER = "rgba(42,42,42,0.96)";
+/** 选中那一档的底（反色）。**不等于 `PILL_TEXT`**：纸底上的墨是近黑的 */
+export let PILL_INVERT = "#ededed";
+export let PILL_BORDER = "rgba(255,255,255,0.14)"; // --u-line-strong
+export let PILL_TEXT = "#ededed"; // --u-text
 /* 裸字的光晕：与画布同色（--u-ground）的一圈描边，只为把从字底下穿过的
    连线压住。不是阴影——阴影会在一片细线里糊成一团脏 */
-export const LABEL_HALO = "rgba(10,10,10,0.92)";
+export let LABEL_HALO = "rgba(10,10,10,0.92)";
 /** 浮层的面，抄 `.u-pop`（tooltip / toast 用的那一档近实底） */
-export const POP_BG = "rgba(16,16,16,0.98)";
+export let POP_BG = "rgba(16,16,16,0.98)";
 
 /* 画布上的字与界面同一套刻度。**canvas 读不到 CSS 变量**，所以这里镜像一份
    `styles.css` 的值——它是源头，改那边记得回来改这里。
@@ -43,8 +51,8 @@ export const POP_BG = "rgba(16,16,16,0.98)";
    #a1a1a1）：字号整体上移一档之后，画布成了全站唯一还在用旧刻度的地方，
    而 9px 比界面里最小的字还小一半 */
 export const CANVAS_FONT = '"Geist", "Inter", "Noto Sans SC", sans-serif';
-export const CANVAS_TEXT = "#ededed"; // --u-text
-export const CANVAS_TEXT_2 = "#a8a8a8"; // --u-text-2
+export let CANVAS_TEXT = "#ededed"; // --u-text
+export let CANVAS_TEXT_2 = "#a8a8a8"; // --u-text-2
 /* 画在节点与连线之间的字比界面的底再小一档（11）。**画布不是界面**：
    这些字压在一片线和点上，与它们比邻的是 5–13px 的节点，不是页面上的正文；
    12 在这里显得比它标注的东西还重。浮在画布之上的悬浮卡不算——那是 tooltip，
@@ -53,17 +61,40 @@ export const CANVAS_LABEL_SIZE = 11;
 export const CANVAS_TITLE_SIZE = 14; // --text-body
 export const CANVAS_META_SIZE = 12; // --text-fine
 
+/** `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` 都收。
+ *
+ * **短写法是必须收的，不是顺手**：这些值是从 CSS 令牌读回来的，而构建时
+ * Lightning CSS 会把 `#ffffff` 压成 `#fff`。从前这里只认六位，于是浅色主题
+ * 的白色令牌全部落到下面那句兜底上——静静地变成中灰 128,128,128。画布上
+ * 看到的就是「浅色下每个节点都是一块灰疙瘩」：节点外壳的底色本该是纸白，
+ * 读成了中灰，四层配方一层塌了。dev 下 CSS 不压缩，所以只有打包产物发作。 */
 export function hexToRgb(hex: string): [number, number, number] {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return [128, 128, 128];
-  const v = parseInt(m[1], 16);
-  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  const [r, g, b] = hexToRgba(hex);
+  return [r, g, b];
+}
+
+/** 同上，连 alpha 一起。八位写法的最后两位是 alpha；没写就是 1 */
+export function hexToRgba(hex: string): [number, number, number, number] {
+  const m = /^#?([0-9a-f]{3,8})$/i.exec(hex.trim());
+  if (!m) return [128, 128, 128, 1];
+  let h = m[1];
+  // 短写法每一位翻倍：#1a2 → #11aa22，#1a2f → #11aa22ff
+  if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join("");
+  if (h.length !== 6 && h.length !== 8) return [128, 128, 128, 1];
+  const v = parseInt(h.slice(0, 6), 16);
+  const a = h.length === 8 ? parseInt(h.slice(6), 16) / 255 : 1;
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255, a];
 }
 
 /** c1 向 c2 按 t 比例混色 */
+/** 两色按比例混。**两端都走 `parseRgba`，不是 `hexToRgb`**：令牌读回来的值
+ *  是 `rgb(23,23,23)` 这种写法，用只认 `#rrggbb` 的解析器会静静地退回中灰
+ *  （`hexToRgb` 认不出就返回 128,128,128），于是 `mix(类型色, INK, t)` 混的
+ *  不是墨色而是一团灰——选中与悬停的那圈环因此在两个主题里都发闷。
+ *  从前 `INK` 是字面量 "#ffffff" 才没露馅，0038 把它改成从令牌读之后才显出来。 */
 export function mix(c1: string, c2: string, t: number): string {
-  const [r1, g1, b1] = hexToRgb(c1);
-  const [r2, g2, b2] = hexToRgb(c2);
+  const [r1, g1, b1] = parseRgba(c1);
+  const [r2, g2, b2] = parseRgba(c2);
   const f = (a: number, b: number) => Math.round(a + (b - a) * t);
   return `rgb(${f(r1, r2)},${f(g1, g2)},${f(b1, b2)})`;
 }
@@ -73,10 +104,7 @@ export function mix(c1: string, c2: string, t: number): string {
  * 与 `mix` 分工：那个只吃 hex、只管把类型色按比例调进壳色（节点的配方）；
  * 这个要处理边的 `rgba(...)` 与淡入淡出，两边都得能解析、alpha 不能丢 */
 function parseRgba(c: string): [number, number, number, number] {
-  if (c.startsWith("#")) {
-    const [r, g, b] = hexToRgb(c);
-    return [r, g, b, 1];
-  }
+  if (c.startsWith("#")) return hexToRgba(c);
   const m = c.match(
     /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/,
   );
@@ -132,26 +160,35 @@ export function drawNodeLabel(
   const x = data.x + dx + w + padX > vw ? data.x - dx - w : data.x + dx;
   const y = data.y - dy - size / 2 < 0 ? data.y + dy : data.y - dy;
   ctx.save();
-  if (data.labelSlab) {
-    /* 一块底，圆角 cell（4）、无描边——底已经把它托起来了。
-       **两档**：指到的是深底浅字，选中的反过来，浅底深字。同一副形状、同一个
-       位置，只有明暗调个个儿——"指着"与"选中"是同一件事的两个程度，从前一个是
-       浮起来的两行卡片、一个是这块底牌，看着像两种不同的东西 */
-    const h = size + padY * 2;
-    ctx.shadowColor = "rgba(0,0,0,0.6)";
+  /* **名字总是一块牌子**：一块底 + 一圈细边，圆角 cell（4）。三档只换颜色，
+     形状与位置一动不动——
+       静止   `--u-pill-bg` + `--u-line-strong` 的边
+       指到的 `--u-pill-bg-hover`，底亮一档，并浮起来（投影）
+       选中的 反色（浅底深字），加粗一档，也浮起来
+     从前静止那档是裸字加一圈画布色描边，只有指到/选中的才有底。裸字在一片
+     连线和节点之间读起来费劲——描边压住的是线，压不住线背后深浅不一的底，
+     而一块牌子自带一个稳定的底。代价是画面更满，所以牌子的边只有一档细线、
+     静止那档不带投影：一屏几十块牌子，每块都浮着就糊成一片。 */
+  const h = size + padY * 2;
+  if (data.labelLift) {
+    ctx.shadowColor = token("--u-shadow", "rgba(0,0,0,0.6)");
     ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
-    ctx.fillStyle = data.labelInvert ? PILL_TEXT : PILL_BG;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  } else {
-    /* 裸字：先描一圈画布色再填字（canvas 版的 paint-order: stroke fill），
-       连线从字底下穿过时不至于糊在一起 */
-    ctx.lineWidth = 3.5;
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = LABEL_HALO;
-    ctx.strokeText(data.label, x, y);
+  }
+  ctx.beginPath();
+  ctx.roundRect(x - padX, y - h / 2, w + padX * 2, h, 4);
+  ctx.fillStyle = data.labelInvert
+    ? PILL_INVERT
+    : data.labelLift
+      ? PILL_BG_HOVER
+      : PILL_BG;
+  ctx.fill();
+  // 投影只跟着底走：描边再来一次会把那圈黑描重一倍
+  ctx.shadowBlur = 0;
+  /* 反色那一档不描边：浅底自己就与画布分得开，再描一圈看着像两层皮 */
+  if (!data.labelInvert) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = PILL_BORDER;
+    ctx.stroke();
   }
   ctx.fillStyle = data.labelInvert ? LABEL_HALO : PILL_TEXT;
   ctx.fillText(data.label, x, y);
@@ -219,7 +256,8 @@ export function drawWorldGrid(canvas: HTMLCanvasElement, sigma: Sigma): void {
       (ss - GRID_FADE_IN_PX) / (GRID_FULL_PX - GRID_FADE_IN_PX),
     );
     if (t <= 0) continue;
-    ctx.strokeStyle = `rgba(255,255,255,${(GRID_MAX_ALPHA * t).toFixed(4)})`;
+    // 网格是墨色不是白色：暗底上是白，纸底上是近黑（0038）。透明度不变
+    ctx.strokeStyle = `rgba(${INK_RGB},${(GRID_MAX_ALPHA * t).toFixed(4)})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     const startX = ((p0.x % ss) + ss) % ss;
@@ -236,4 +274,146 @@ export function drawWorldGrid(canvas: HTMLCanvasElement, sigma: Sigma): void {
     }
     ctx.stroke();
   }
+}
+
+/* ---------- 令牌的读者（0038 浅色版） ----------
+ * canvas 读不到 var()，所以画布用的每一个颜色都从 <html> 上算好的令牌里读一遍。
+ * 上面那些 `let` 的初值是暗色，只在第一帧前、以及没有 DOM 的测试里生效；
+ * `refreshPalette()` 在启动和每次切主题时把它们全部换成当前主题的值。
+ * ES 模块的导出是活绑定：这里赋值，import 的那一侧读到的就是新值。 */
+export let EDGE = "rgba(163,163,163,0.2)";
+export let EDGE_INFERRED = "rgba(163,163,163,0.1)";
+export let EDGE_DIM = "#141414";
+export let EDGE_FOCUS = "rgba(255,255,255,0.55)";
+export let EDGE_DERIVED = "rgba(231,197,124,0.42)";
+export let EDGE_DERIVED_DIM = "rgba(231,197,124,0.14)";
+export let EDGE_FOCUS_DERIVED = "rgba(255,214,140,0.95)";
+export let EDGE_CONTEST = "rgba(255,106,61,0.55)";
+export let EDGE_FOCUS_CONTEST = "rgba(255,106,61,1)";
+export let EDGE_SUBCLASS = "rgba(235,235,235,0.55)";
+export let EDGE_SUBCLASS_FOCUS = "rgba(255,255,255,0.95)";
+export let EDGE_RELATION = "rgba(128,128,128,0.3)";
+export let EDGE_RELATION_FOCUS = "rgba(255,255,255,0.6)";
+export let EDGE_DISJOINT = "rgba(255,157,175,0.45)";
+export let EDGE_DISJOINT_FOCUS = "rgba(255,157,175,0.9)";
+export let EDGE_RULE = "rgba(196,165,255,0.5)";
+export let EDGE_RULE_FOCUS = "rgba(196,165,255,0.95)";
+export let EDGE_SCHEMA_DIM = "rgba(48,48,48,0.4)";
+export let LEGEND_SUBCLASS = "#ebebeb";
+export let LEGEND_RELATION = "#8c8c8c";
+export let LEGEND_DISJOINT = "#ff9daf";
+export let LEGEND_RULE = "#c4a5ff";
+export let SCRUB_PAST = "rgba(255,255,255,0.32)";
+export let SCRUB_PLAY = "rgba(255,255,255,0.62)";
+export let SCRUB_FUTURE = "rgba(255,255,255,0.04)";
+/** 墨色最亮的那一档（暗底白、浅底近黑）：环往它混、登录场景的粒子用它 */
+export let INK = "#ffffff";
+/** 墨的三元组，给需要自己调透明度的地方 */
+export let INK_RGB = "255,255,255";
+
+function token(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+function rgbOf(triplet: string, alpha: number): string {
+  return `rgba(${triplet.replace(/\s+/g, "")},${alpha})`;
+}
+
+/** 墨色按透明度：登录场景的粒子、边、脉冲都用它，页面里不再自己拼 rgba */
+export function inkAt(alpha: number): string {
+  return rgbOf(INK_RGB, alpha);
+}
+
+/** 浅色下把一个 rgba 边色按底色摊平成不透明的 rgb。
+ *
+ * sigma 的边着色器用预乘混合（ONE, ONE_MINUS_SRC_ALPHA）却不预乘 RGB，
+ * 于是透明度压不暗一条边，只会把它**加**到底上：黑底上加一点灰正好是一条淡线，
+ * 纸底上同一个 rgba(90,90,90,0.25) 加上去就溢出成白——「没选中时所有线都是白的」
+ * 就是这么来的。暗度必须编码进 RGB（Graph.tsx 里 EDGE_DIM 那条注释说的同一件事）。
+ * 暗色那一套是加法下调出来的，不动；浅色把 α 在这里就混掉。 */
+export function flattenOnLight(color: string): string {
+  if (typeof document === "undefined" || document.documentElement.dataset.theme !== "light") {
+    return color;
+  }
+  /* **两种写法都要认。**令牌里写的是 `rgba(176,120,20,0.6)`，打包时 Lightning CSS
+     把它压成 `#b0781499` —— 同一个颜色，十六进制带 alpha。从前这里只有一条
+     `rgba(...)` 的正则，压缩之后的写法整个漏过去，半透明没摊平就交给了 sigma，
+     于是那条派生边在纸底上被**加**成一道亮黄。（它没早点炸，是因为另一个 bug
+     兜住了：只认六位的 `hexToRgb` 把 `#b0781499` 读成不透明的中灰，线画成了灰的。
+     两个错凑成一个看着还行的结果，修好一个另一个就露出来。）
+     走 `parseRgba` 就不用管写法；alpha 已经是 1 的原样退回，省一次无谓的改写。 */
+  const [r, g, b, a] = parseRgba(color);
+  if (a >= 1) return color;
+  const ground = token("--u-ground-rgb", "250,250,250")
+    .split(",")
+    .map((v) => Number(v.trim()));
+  const ch = (v: number, i: number) => Math.round(v * a + ground[i] * (1 - a));
+  return `rgb(${ch(r, 0)},${ch(g, 1)},${ch(b, 2)})`;
+}
+
+/** 启动时和切主题后调一次，然后 `sigma.refresh()`。 */
+export function refreshPalette() {
+  NODE_SHELL_BASE = token("--u-node-shell", NODE_SHELL_BASE);
+  NODE_CORE_BASE = token("--u-node-core", NODE_CORE_BASE);
+  NODE_BORDER_BASE = token("--u-node-border", NODE_BORDER_BASE);
+  MUTED_SHELL = token("--u-node-muted", MUTED_SHELL);
+  PILL_BG = token("--u-pill-bg", PILL_BG);
+  PILL_BG_HOVER = token("--u-pill-bg-hover", PILL_BG_HOVER);
+  PILL_INVERT = token("--u-pill-invert", PILL_INVERT);
+  PILL_BORDER = token("--u-line-strong", PILL_BORDER);
+  PILL_TEXT = token("--u-text", PILL_TEXT);
+  LABEL_HALO = token("--u-halo", LABEL_HALO);
+  POP_BG = token("--u-pop-surface", POP_BG);
+  CANVAS_TEXT = token("--u-text", CANVAS_TEXT);
+  CANVAS_TEXT_2 = token("--u-text-2", CANVAS_TEXT_2);
+  EDGE = token("--u-edge", EDGE);
+  EDGE_INFERRED = token("--u-edge-inferred", EDGE_INFERRED);
+  EDGE_DIM = token("--u-edge-dim", EDGE_DIM);
+  EDGE_FOCUS = token("--u-edge-focus", EDGE_FOCUS);
+  EDGE_DERIVED = token("--u-edge-derived", EDGE_DERIVED);
+  EDGE_DERIVED_DIM = token("--u-edge-derived-dim", EDGE_DERIVED_DIM);
+  EDGE_FOCUS_DERIVED = token("--u-edge-derived-focus", EDGE_FOCUS_DERIVED);
+  EDGE_SUBCLASS = token("--u-edge-subclass", EDGE_SUBCLASS);
+  EDGE_SUBCLASS_FOCUS = token("--u-edge-subclass-focus", EDGE_SUBCLASS_FOCUS);
+  EDGE_RELATION = token("--u-edge-relation", EDGE_RELATION);
+  EDGE_RELATION_FOCUS = token("--u-edge-relation-focus", EDGE_RELATION_FOCUS);
+  EDGE_SCHEMA_DIM = token("--u-edge-schema-dim", EDGE_SCHEMA_DIM);
+  SCRUB_PAST = token("--u-scrub-past", SCRUB_PAST);
+  SCRUB_PLAY = token("--u-scrub-play", SCRUB_PLAY);
+  SCRUB_FUTURE = token("--u-scrub-future", SCRUB_FUTURE);
+  INK_RGB = token("--u-ink-rgb", INK_RGB);
+  INK = rgbOf(INK_RGB, 1);
+  // 语义色按三元组调透明度：争议边、不相交边、规则边
+  const contest = token("--u-contest-rgb", "255,106,61");
+  const danger = token("--u-danger-rgb", "255,157,175");
+  const violet = token("--u-violet-rgb", "196,165,255");
+  EDGE_CONTEST = rgbOf(contest, 0.55);
+  EDGE_FOCUS_CONTEST = rgbOf(contest, 1);
+  EDGE_DISJOINT = rgbOf(danger, 0.45);
+  EDGE_DISJOINT_FOCUS = rgbOf(danger, 0.9);
+  EDGE_RULE = rgbOf(violet, 0.5);
+  EDGE_RULE_FOCUS = rgbOf(violet, 0.95);
+  // 画布上的边：浅色下按底色摊平（见 flattenOnLight）
+  EDGE = flattenOnLight(EDGE);
+  EDGE_INFERRED = flattenOnLight(EDGE_INFERRED);
+  EDGE_FOCUS = flattenOnLight(EDGE_FOCUS);
+  EDGE_DERIVED = flattenOnLight(EDGE_DERIVED);
+  EDGE_DERIVED_DIM = flattenOnLight(EDGE_DERIVED_DIM);
+  EDGE_FOCUS_DERIVED = flattenOnLight(EDGE_FOCUS_DERIVED);
+  EDGE_CONTEST = flattenOnLight(EDGE_CONTEST);
+  EDGE_FOCUS_CONTEST = flattenOnLight(EDGE_FOCUS_CONTEST);
+  EDGE_SUBCLASS = flattenOnLight(EDGE_SUBCLASS);
+  EDGE_SUBCLASS_FOCUS = flattenOnLight(EDGE_SUBCLASS_FOCUS);
+  EDGE_RELATION = flattenOnLight(EDGE_RELATION);
+  EDGE_RELATION_FOCUS = flattenOnLight(EDGE_RELATION_FOCUS);
+  EDGE_DISJOINT = flattenOnLight(EDGE_DISJOINT);
+  EDGE_DISJOINT_FOCUS = flattenOnLight(EDGE_DISJOINT_FOCUS);
+  EDGE_RULE = flattenOnLight(EDGE_RULE);
+  EDGE_RULE_FOCUS = flattenOnLight(EDGE_RULE_FOCUS);
+  EDGE_SCHEMA_DIM = flattenOnLight(EDGE_SCHEMA_DIM);
+  LEGEND_SUBCLASS = token("--u-text", LEGEND_SUBCLASS);
+  LEGEND_RELATION = token("--u-text-2", LEGEND_RELATION);
+  LEGEND_DISJOINT = token("--u-danger", LEGEND_DISJOINT);
+  LEGEND_RULE = token("--u-violet", LEGEND_RULE);
 }

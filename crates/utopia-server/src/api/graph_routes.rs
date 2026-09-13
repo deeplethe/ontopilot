@@ -173,8 +173,10 @@ pub async fn entity_detail(
     // 推出来的那些**单独回一个键**，不掺进 `facts`。前端据此给它们自己的一档：
     // 一条派生边跟一条断言边混在同一个列表里，用户看不出「这条是文档里写的」
     // 和「这条是引擎推的」的区别，而那正是推理会污染知识的样子
+    // 同一个 as_of（#549）：回放中的面板上，派生那一档也是**当时**推出的
     let derived =
-        utopia_store::reasoning::derived_for_entity(&state.pool, kb_id, entity_id, None).await?;
+        utopia_store::reasoning::derived_for_entity(&state.pool, kb_id, entity_id, None, as_of)
+            .await?;
     // 同名的那些**打开面板时就给**，不是等改名之后才回。
     //
     // 从前它只随 `update_entity` 的响应回来，于是「把同名的合并进来」这个动作
@@ -474,6 +476,20 @@ pub async fn extract(
 ) -> ApiResult<Json<serde_json::Value>> {
     let doc = utopia_store::documents::get(&state.pool, document_id).await?;
     require_kb(&state, &user, doc.kb_id, Role::Editor).await?;
+    // 来源说了不抽取的（schema 文档，0035 决定 7）：说清楚为什么，而不是排一个
+    // 流水线到了那一步又跳过的任务
+    if let Some(source_id) = doc.source_id {
+        if !utopia_store::sources::get(&state.pool, source_id)
+            .await?
+            .extracts()
+        {
+            return Err(utopia_core::AppError::invalid(
+                "source_not_extracted",
+                "Documents under this source are searched, not extracted",
+            )
+            .into());
+        }
+    }
     // 手动触发 = 强制全量：清增量标记、解雇在跑的任务、置 queued、建任务，一个事务办完
     let job_id = utopia_store::documents::queue_extraction_one(&state.pool, document_id).await?;
     state.emit_document(doc.kb_id, document_id);

@@ -8,8 +8,8 @@ Utopia's chrome is neutral dark glass: Geist for text, Marcellus for the wordmar
 |---|---|---|
 | `text-fine` | 11 / 16 | metadata, chip text, table headers, hints under a control |
 | `text-small` | 12 / 18 | secondary text, dense rows, captions |
-| `text-body` | 13 / 20 | everything else: prose, controls, menus |
-| `text-title` | 15 / 22 | section and dialog titles |
+| `text-body` | 14 / 22 | everything else: prose, controls, menus |
+| `text-title` | 16 / 24 | section and dialog titles; chat reads at this step |
 | `text-display` | 20 / 28 | the page title, and only that |
 
 No `text-xs`/`text-sm`, no `text-[11px]`. If a size between two steps seems necessary, the step is wrong for the element, not the scale for the size. Weight is `font-medium` for controls and titles, `font-semibold` only on the primary button; `font-bold` is not used in chrome. Numbers in chrome are Geist with `u-num` (tabular figures), never monospace; `font-mono` is for keys, ids, code and URLs.
@@ -29,6 +29,8 @@ The names are the point. `rounded-panel` says what the box is, the way `text-ink
 Text is `text-ink` or `text-ink-2` — two levels: the content, and what is said about the content. There is no third, fainter level; a caption, a timestamp or a placeholder is already marked as secondary by where it sits and how big it is, and dimming it again only makes it harder to read. Lines are `border-line` and `border-line-strong`. Fills are `bg-surface` (rest), `bg-surface-2` (hover), `bg-surface-3` (selected). Meaning is `ok`, `warn`, `danger`, `contest`, `violet`, and those five appear only where they mean something — a status, a contested edge, a destructive action — never as decoration. `neutral-500`, `white/10`, `rose-400`, `[var(--u-…)]` do not appear in a page; the tokens are defined once in `styles.css` and exposed as Tailwind colours, and that is the only door.
 
 Glass is a surface treatment, not a colour: `glass` for a panel in peripheral vision, `glass-strong` for one being read, and both go solid under the pointer (see the note above `--u-surface-strong-hover`). A page does not write `backdrop-blur`.
+
+The same rule holds outside class names. A colour value — `#rrggbb`, `rgba(…)` — does not appear in a `.ts` or `.tsx` file, nor in a rule in `styles.css`: every value lives in one of the token blocks at the top of `styles.css`, once for dark (`:root`) and once for light (`:root[data-theme="light"]`), and a page never knows which theme it is in. Two files are the readers, and the only ones allowed to hold a value: `pages/graphVisuals.ts`, which reads the tokens the canvas needs through `getComputedStyle` (canvas cannot resolve `var()`) and re-reads them when the theme changes; and `palette.ts`, the entity colours, which are data (rule 4 allows them) and must stay byte-identical to `crates/utopia-store/src/palette.rs`. A shade of white or black is `rgba(var(--u-ink-rgb), α)` / `rgba(var(--u-ground-rgb), α)` with the alpha left where it was — alpha describes hierarchy, the triplet is what the theme swaps. `rgba(0,0,0,0)` is transparency, not a colour, and passes.
 
 ## 5. State lives in the component
 
@@ -56,7 +58,7 @@ A floating panel **shows**; it does not edit. A class, a property, an entity, a 
 
 ## How this is enforced
 
-`web/scripts/style-guard.mjs` scans `web/src/**/*.tsx` for the patterns above and fails CI on any hit. It runs first in `pnpm build`. While the pages were being migrated, `web/style-guard.baseline.json` listed the ones not yet done; every page passes now and the file is gone. A new file is checked from its first commit.
+`web/scripts/style-guard.mjs` scans `web/src/**/*.{ts,tsx}` for the patterns above and fails CI on any hit (the `web` job runs `pnpm build`, and the guard runs first in it). Block comments are ignored, so a rule can be quoted where it is explained. The `raw-colour` rule skips the two reader files named in rule 4 and `*.test.ts(x)` fixtures. While the pages were being migrated, `web/style-guard.baseline.json` listed the ones not yet done; every page passes now and the file is gone. A new file is checked from its first commit.
 
 ## Migration order
 

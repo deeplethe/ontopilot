@@ -59,6 +59,10 @@ pub struct ExtractedFact {
     /// 属性事实的字面值（谓词是 attribute 时）
     #[serde(default)]
     pub value: Option<serde_json::Value>,
+    /// **边上的属性**（0037）：`{"amount": "$5 billion", "stake": "20%"}`。
+    /// 只对关系事实有意义，key 必须是清单里这条关系声明过的；值照原文写，换算在服务端
+    #[serde(default)]
+    pub qualifiers: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(default)]
     pub valid_from: Option<String>,
     #[serde(default)]
@@ -67,6 +71,13 @@ pub struct ExtractedFact {
     pub confidence: Option<f32>,
     #[serde(default)]
     pub quote: Option<String>,
+    /// 引文里逐字点名主语的那几个字（#582）。模型抄，不判断；落库时机器核对它
+    /// 是不是 `subject` 那个名字——"Former OpenAI personnel" 不是 OpenAI
+    #[serde(default)]
+    pub subject_span: Option<String>,
+    /// 同上，宾语那一侧
+    #[serde(default)]
+    pub object_span: Option<String>,
 }
 
 /// 提示词里的一条关系。
@@ -86,6 +97,8 @@ pub struct PromptRelation {
     /// 时间语义（`relation_types.temporal`）：`state` / `event` / `eternal`（0031）。
     /// 只有 event 与 eternal 会在清单里带标记——状态是默认，写出来只多花 token
     pub temporal: String,
+    /// 这条关系的边能带的属性，已排好版：`amount: number $`（0037）。空 = 不带
+    pub qualifiers: Vec<String>,
 }
 
 /// Response-scoped reference to a persistent entity; database UUIDs must never enter prompts.
@@ -147,6 +160,12 @@ pub fn build_messages(
             let mark = temporal_mark(&r.temporal)
                 .map(|m| format!(" [{m}]"))
                 .unwrap_or_default();
+            // 边上能带的属性跟在标记后面：`{amount: number $, stake: number %}`
+            let mark = if r.qualifiers.is_empty() {
+                mark
+            } else {
+                format!("{mark} {{{}}}", r.qualifiers.join(", "))
+            };
             match (paren.is_empty(), d.is_empty()) {
                 (false, false) => format!("- {} ({paren}){mark}: {d}", r.key),
                 (false, true) => format!("- {} ({paren}){mark}", r.key),
@@ -226,8 +245,7 @@ pub fn build_messages(
     let attr_rules = if attributes.is_empty() {
         String::new()
     } else {
-        "\n10. Attribute facts carry \"value\" (no \"object\"): number = plain number without \
-         thousands separators or unit symbols; date = \"YYYY[-MM[-DD]]\" (a zoned clock time only when the text gives one); bool = true/false; \
+        "\n10. Attribute facts carry \"value\" (no \"object\"): number = the figure **as the text writes it, magnitude and currency included** \n         (\"86亿元\", \"$5 billion\", \"4,300 人\") — never reduce it to a bare number, the server converts; date = \"YYYY[-MM[-DD]]\" (a zoned clock time only when the text gives one); bool = true/false; \
          text = a short string. Only attach an attribute to a subject of its listed class. \
          valid_from = when this value took effect, if the text says so."
             .to_string()
@@ -243,7 +261,7 @@ pub fn build_messages(
          \n\
          Output format:\n\
          {{\"entities\":[{{\"local_id\":\"e1\",\"name\":\"entity name\",\"type\":\"type key\",\"specific_type\":\"what you would call it\"}}],\n\
-          \"facts\":[{{\"subject\":\"subject entity name\",\"subject_ref\":\"e1\",\"predicate\":\"relation key\",\"object\":\"object entity name\",\"object_ref\":\"e2\",\n\
+          \"facts\":[{{\"subject\":\"subject entity name\",\"subject_ref\":\"e1\",\"subject_span\":\"the words in quote that name the subject\",\"predicate\":\"relation key\",\"object\":\"object entity name\",\"object_ref\":\"e2\",\"object_span\":\"the words in quote that name the object\",\n\
                      \"valid_from\":\"2023-01\",\"valid_to\":null,\"confidence\":0.9,\"quote\":\"verbatim supporting quote\"}}]}}\n\
          \n\
          Rules:\n\
@@ -291,6 +309,7 @@ pub fn build_messages(
             units and all. **A stated figure left out is the loss that costs most**: the reader \
             came for those numbers, and no later step can recover one that was never written \
             down.\n\
+         8c. A listed relation followed by {{…}} can carry those **qualifiers on the edge**:             when the same sentence gives both the other entity and a figure for it — an             amount, a stake, a price, a share count — write the relation with its \"object\"             and put the figure in \"qualifiers\" keyed exactly as listed, **as written in the text, currency and all** (\"€30 million\", \"15亿元人民币\", never a bare number):             {{\"subject\":\"Vega Capital\",\"predicate\":\"invested_in\",\"object\":\"Northwind\",            \"qualifiers\":{{\"amount\":\"$5 billion\"}},…}}. Never invent a key that is not             listed for that relation, and never drop the figure to keep the edge — a             relation without its amount is half the sentence. A relation you name after the text (rule 8) carries its figure the same way — keyed by the listed attribute that fits it, or by the plainest word for it (\"amount\", \"stake\", \"price\") when none does.
          8b. A **listed** relation also takes \"value\" when what the text gives is a \
             string rather than another entity — a job title, a designation, a ticker, a \
             model number. Never invent an entity for a string. And when the text introduces \
@@ -302,6 +321,10 @@ pub fn build_messages(
             including A, B, C and D\" is four facts, not one; \"advisors A and B\" is two. \
             Do not collapse an enumeration into a summary or into its first member. \
             The same applies to the entities: each named party is its own entity.\n\
+         8d. subject_span and object_span are the exact words in quote that name each side. \
+            Copy them; never paraphrase. When the words that do the thing are a description \
+            rather than a name — \"former X employees\", \"companies using X\" — the span \
+            is that description, whatever you wrote in subject.\n\
          9. The same holds for entity types: if none of the listed types fits, write the type \
             the text implies, in snake_case (e.g. \"model\", \"technology\"). Do not fall back \
             to a broad listed type such as \"thing\" or \"creative_work\" merely because \
@@ -726,12 +749,204 @@ pub fn parse_adjudication(raw: &str) -> anyhow::Result<Vec<AdjudicationVerdict>>
     Ok(reply.verdicts)
 }
 
+/// 一个**整体就是一个量**的字符串 → (数值, 单位)。
+///
+/// 判据从严：可选货币符号 + 数字 + 可选量级词 + 可选百分号，此外**一个词都不许有**。
+/// 尾巴上还挂着实词的，含义就不再只是那个数：
+///
+/// ```text
+/// "$5 billion"                        → (5e9, Some("$"))
+/// "52%"                               → (52.0, Some("%"))
+/// "3.5 million"                       → (3.5e6, None)
+/// "35,000"                            → (35000.0, None)
+/// "900 million weekly active users"   → None   后面还有实词
+/// "2025 Atlantic hurricane season"    → None   那是一场赛事，不是 2025
+/// "8GW data center"                   → None
+/// "3M"                                → None   那是一家公司
+/// ```
+///
+/// **量级词只认全写**。单字母后缀（`3M`、`5k`、`2B`）看着省事，代价是把 3M、
+/// K2、B1 这些名字读成数字——一个真实体被读成量值，事实的形状就错了，
+/// 而错的那一头是不可逆的：节点没建，名字也没留下。
+///
+/// **单位照抄符号，不猜币种。** `$` 可能是美元、加元、澳元，`¥` 可能是日元或
+/// 人民币。猜出来的 "USD" 是一条没人负责的断言，而原文写的 `$` 是事实。
+pub fn parse_quantity(s: &str) -> Option<(f64, Option<String>)> {
+    scan_quantity(s, true)
+}
+
+/// 开头是一个量、后面还挂着词的 → 那个量。`"1,250 people"` → (1250, "people")。
+///
+/// **这是给已经知道要什么的地方用的**，与 `parse_quantity` 的严不是一回事。
+/// `parse_quantity` 要判「这串字是不是一个东西」，判错就把一个真实体吃掉，
+/// 所以尾巴上有实词一律不认。而这里的调用方手上已经有一条声明了
+/// `datatype = number` 的属性——问的不再是「是不是数」，是「那个数是多少」，
+/// 判错的代价只是一个值不对，量级差着好几档。
+pub fn parse_leading_quantity(s: &str) -> Option<(f64, Option<String>)> {
+    scan_quantity(s, false)
+}
+
+/// 货币：符号、ISO 码、中英文单词，统一成符号。**只认这张表**，认不出的不猜。
+pub fn currency_unit(tok: &str) -> Option<&'static str> {
+    Some(
+        match tok.trim_matches(|c: char| c == ',' || c == '.' || c == ';') {
+            "$" | "USD" | "usd" | "US$" | "dollar" | "dollars" | "美元" => "$",
+            "€" | "EUR" | "eur" | "euro" | "euros" | "欧元" => "€",
+            "£" | "GBP" | "gbp" | "pound" | "pounds" | "英镑" => "£",
+            "¥" | "JPY" | "jpy" | "yen" | "日元" => "¥",
+            "CNY" | "cny" | "RMB" | "rmb" | "yuan" | "人民币" | "元" | "元人民币" | "人民币元" => {
+                "¥"
+            }
+            "HKD" | "hkd" | "HK$" | "港元" | "港币" => "HK$",
+            "₩" | "KRW" | "won" | "韩元" => "₩",
+            "₹" | "INR" | "rupee" | "rupees" | "卢比" => "₹",
+            _ => return None,
+        },
+    )
+}
+
+/// 量级词：英文全写，中文千/万/亿。**不认单字母**（`3M` 是一家公司）。
+fn magnitude(tok: &str) -> Option<f64> {
+    Some(match tok {
+        "thousand" | "千" => 1e3,
+        "万" => 1e4,
+        "million" | "百万" => 1e6,
+        "千万" => 1e7,
+        "亿" => 1e8,
+        "billion" | "十亿" => 1e9,
+        "trillion" | "万亿" => 1e12,
+        _ => return None,
+    })
+}
+
+/// 把 `2亿美元`、`15亿元人民币`、`€30 million`、`30 million euros`、`USD 30m`（不认 m）
+/// 这类写法拆成 [前缀货币] 数字 [量级] [后缀货币/单位] [其余]。
+/// `strict` = 整体必须就是一个量：其余部分非空就不认。
+fn scan_quantity(s: &str, strict: bool) -> Option<(f64, Option<String>)> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let (body, percent) = match s.strip_suffix('%') {
+        Some(b) => (b.trim_end(), true),
+        None => (s, false),
+    };
+    // 1. 前缀货币：符号紧贴，或 ISO 码/单词后跟空格
+    let mut rest = body;
+    let mut currency: Option<&'static str> = None;
+    if let Some(c) = rest.chars().next() {
+        if let Some(u) = currency_unit(&c.to_string()) {
+            currency = Some(u);
+            rest = rest[c.len_utf8()..].trim_start();
+        }
+    }
+    if currency.is_none() {
+        if let Some((head, tail)) = rest.split_once(char::is_whitespace) {
+            if let Some(u) = currency_unit(head) {
+                currency = Some(u);
+                rest = tail.trim_start();
+            }
+        }
+    }
+    // 2. 数字：前导的 [-+0-9.,_]
+    let num_end = rest
+        .char_indices()
+        .find(|(_, c)| !matches!(c, '0'..='9' | '.' | ',' | '_' | '-' | '+'))
+        .map(|(i, _)| i)
+        .unwrap_or(rest.len());
+    let (num, after) = rest.split_at(num_end);
+    let cleaned: String = num.chars().filter(|c| !matches!(c, ',' | '_')).collect();
+    let mut n: f64 = cleaned.parse().ok()?;
+    // 3. 数字后面：紧贴或空格隔开的量级词、货币词，逐个吃；吃不动的就是「其余」
+    let mut tail = after.trim_start();
+    let mut unit: Option<String> = None;
+    let mut ate_magnitude = false;
+    loop {
+        if tail.is_empty() {
+            break;
+        }
+        // 取下一个记号：中文按字（量级/货币词最长两三个字），其它按空白分词
+        let (tok, next) = next_token(tail);
+        if !ate_magnitude {
+            if let Some(m) = magnitude(tok) {
+                n *= m;
+                ate_magnitude = true;
+                tail = next.trim_start();
+                continue;
+            }
+        }
+        if unit.is_none() && currency.is_none() {
+            if let Some(u) = currency_unit(tok) {
+                unit = Some(u.to_string());
+                tail = next.trim_start();
+                continue;
+            }
+        }
+        break;
+    }
+    if percent && (currency.is_some() || unit.is_some()) {
+        return None;
+    }
+    if !n.is_finite() {
+        return None;
+    }
+    // 9.2 × 1e8 在二进制浮点里是 919999999.9999999；乘过量级词的数本来就是整数，收回去
+    if ate_magnitude && (n - n.round()).abs() < 1e-6 * n.abs().max(1.0) {
+        n = n.round();
+    }
+    let unit = if percent {
+        Some("%".to_string())
+    } else {
+        currency.map(str::to_string).or(unit)
+    };
+    if strict {
+        return tail.is_empty().then_some((n, unit));
+    }
+    // 宽松：其余部分的第一个词当单位（`1,250 people` → people），没有货币时才用
+    if unit.is_none() && !tail.is_empty() {
+        let (tok, _) = next_token(tail);
+        return Some((n, Some(tok.to_string())));
+    }
+    Some((n, unit))
+}
+
+/// 下一个记号：ASCII 按空白切；CJK 试最长三字、两字、一字里能认出的量级/货币词，
+/// 都认不出就取到下一个空白为止
+fn next_token(s: &str) -> (&str, &str) {
+    let first = s.chars().next().unwrap_or(' ');
+    if first.is_ascii() {
+        let end = s.find(char::is_whitespace).unwrap_or(s.len());
+        return (&s[..end], &s[end..]);
+    }
+    let idx: Vec<usize> = s
+        .char_indices()
+        .map(|(i, _)| i)
+        .chain(std::iter::once(s.len()))
+        .collect();
+    for len in [4usize, 3, 2, 1] {
+        if idx.len() > len {
+            let cand = &s[..idx[len]];
+            if magnitude(cand).is_some() || currency_unit(cand).is_some() {
+                return (cand, &s[idx[len]..]);
+            }
+        }
+    }
+    let end = s.find(char::is_whitespace).unwrap_or(s.len());
+    (&s[..end], &s[end..])
+}
+
 /// 属性值按 datatype 归一。失败返回 None——宁缺勿脏，调用方跳过并记日志。
 /// number 容忍千分位/空格；date 要求 YYYY[-MM[-DD]] 且保留原精度；bool 宽容 yes/no。
 pub fn normalize_attr_value(datatype: &str, raw: &serde_json::Value) -> Option<serde_json::Value> {
     match datatype {
         "number" => match raw {
-            serde_json::Value::Number(n) => Some(serde_json::Value::Number(n.clone())),
+            // 模型给的 JSON 数也过一遍 f64：`65` 与 "65%" 解出来的 `65.0` 是同一个数，
+            // 而 serde_json 把整数和浮点当两种值——实测同一条边上 65 撞 65.0 记成了冲突
+            serde_json::Value::Number(n) => n
+                .as_f64()
+                .filter(|f| f.is_finite())
+                .and_then(serde_json::Number::from_f64)
+                .map(serde_json::Value::Number),
             serde_json::Value::String(s) => {
                 let cleaned: String = s
                     .chars()
@@ -740,6 +955,14 @@ pub fn normalize_attr_value(datatype: &str, raw: &serde_json::Value) -> Option<s
                 cleaned
                     .parse::<f64>()
                     .ok()
+                    // 清洗解不动的再当量解：`$5 billion`、`52%` 这些整体就是数，
+                    // 只是带着符号与量级词。单位不在这里落笔——它随事实走
+                    // （见 `parse_quantity`），这一档只负责把值变成可比的数
+                    // 清洗解不动的再当量解。**这一档已经声明了 datatype = number**，
+                    // 问的不是「是不是数」而是「那个数是多少」，所以用宽的那套：
+                    // `$5 billion` → 5e9，`1,250 people` → 1250，
+                    // `42% from customers in Europe` → 42
+                    .or_else(|| parse_leading_quantity(s).map(|(n, _)| n))
                     .filter(|f| f.is_finite())
                     .and_then(serde_json::Number::from_f64)
                     .map(serde_json::Value::Number)
@@ -843,6 +1066,7 @@ mod prompt_shape_tests {
             description: description.into(),
             signature: signature.into(),
             temporal: "state".into(),
+            qualifiers: vec![],
         }
     }
 
@@ -1011,6 +1235,194 @@ mod prompt_shape_tests {
 mod tests {
     use super::*;
 
+    /// 边上的属性（0037）：清单里跟在关系后面，回复里挂在事实上。
+    #[test]
+    fn a_relation_lists_its_qualifiers_and_a_fact_carries_them() {
+        use serde_json::json;
+        let mut r = PromptRelation {
+            key: "invested_in".into(),
+            label: "invested in".into(),
+            description: "money into a company".into(),
+            signature: "organization → organization".into(),
+            temporal: "event".into(),
+            qualifiers: vec!["amount: number $".into(), "stake: number %".into()],
+        };
+        let msgs = build_messages(
+            &[],
+            std::slice::from_ref(&r),
+            &[],
+            None,
+            "a.txt",
+            &[],
+            "text",
+        );
+        let prompt = format!("{:?}", msgs);
+        // 签名、标记、属性清单三段顺序固定：`(签名) [event] {属性}`
+        assert!(prompt.contains(
+            "- invested_in (organization → organization) [event] {amount: number $, stake: number %}: money into a company"
+        ), "{prompt}");
+        // 不带属性的关系不多一个花括号
+        r.qualifiers.clear();
+        let prompt = format!(
+            "{:?}",
+            build_messages(
+                &[],
+                std::slice::from_ref(&r),
+                &[],
+                None,
+                "a.txt",
+                &[],
+                "text"
+            )
+        );
+        assert!(
+            prompt.contains("- invested_in (organization → organization) [event]: money"),
+            "{prompt}"
+        );
+        assert!(!prompt.contains("[event] {"));
+
+        // 回复：qualifiers 挂在关系事实上；没写的是 None，旧回复不受影响
+        let reply = r#"{"entities":[],"facts":[
+            {"subject":"Vega","predicate":"invested_in","object":"Northwind",
+             "qualifiers":{"amount":"$5 billion"},"confidence":0.9},
+            {"subject":"Vega","predicate":"invested_in","object":"Kestrel","confidence":0.9}
+        ]}"#;
+        let parsed = parse_response(reply).unwrap();
+        assert_eq!(parsed.facts.len(), 2);
+        assert_eq!(
+            parsed.facts[0]
+                .qualifiers
+                .as_ref()
+                .and_then(|q| q.get("amount")),
+            Some(&json!("$5 billion"))
+        );
+        assert!(parsed.facts[1].qualifiers.is_none());
+    }
+
+    #[test]
+    fn a_quantity_is_the_whole_string_or_nothing() {
+        // 整体就是一个量：符号、量级词、千分位都读得动
+        assert_eq!(parse_quantity("$5 billion"), Some((5e9, Some("$".into()))));
+        assert_eq!(
+            parse_quantity("€1.5 million"),
+            Some((1.5e6, Some("€".into())))
+        );
+        assert_eq!(parse_quantity("52%"), Some((52.0, Some("%".into()))));
+        assert_eq!(parse_quantity("3.5 million"), Some((3.5e6, None)));
+        assert_eq!(parse_quantity("35,000"), Some((35000.0, None)));
+        assert_eq!(parse_quantity("  42 "), Some((42.0, None)));
+        // 币种：符号、ISO 码、中英文单词，统一成符号；量级：英文全写与中文千万亿
+        assert_eq!(
+            parse_quantity("EUR 30 million"),
+            Some((3e7, Some("€".into())))
+        );
+        assert_eq!(
+            parse_quantity("30 million euros"),
+            Some((3e7, Some("€".into())))
+        );
+        assert_eq!(
+            parse_quantity("USD 5 billion"),
+            Some((5e9, Some("$".into())))
+        );
+        assert_eq!(parse_quantity("2亿美元"), Some((2e8, Some("$".into()))));
+        assert_eq!(
+            parse_quantity("15亿元人民币"),
+            Some((1.5e9, Some("¥".into())))
+        );
+        assert_eq!(parse_quantity("3000万元"), Some((3e7, Some("¥".into()))));
+        assert_eq!(parse_quantity("1.5亿"), Some((1.5e8, None)));
+        // 乘过量级的数收成整数：9.2 亿不是 919999999.9999999
+        assert_eq!(
+            parse_quantity("9.2亿元"),
+            Some((920000000.0, Some("¥".into())))
+        );
+        assert_eq!(
+            parse_quantity("$2.5 billion"),
+            Some((2500000000.0, Some("$".into())))
+        );
+
+        // 尾巴上还有实词：含义不再只是那个数，宁可当实体也不当量
+        assert_eq!(parse_quantity("900 million weekly active users"), None);
+        assert_eq!(parse_quantity("2025 Atlantic hurricane season"), None);
+        assert_eq!(parse_quantity("$10 billion investment"), None);
+        assert_eq!(parse_quantity("8GW data center"), None);
+        // 单字母后缀不认：3M 是一家公司，读成三百万就把一个真实体吃掉了
+        assert_eq!(parse_quantity("3M"), None);
+        assert_eq!(parse_quantity("5k"), None);
+        // 两个记号撞一起，不是量
+        assert_eq!(parse_quantity("$5%"), None);
+        assert_eq!(parse_quantity(""), None);
+        assert_eq!(parse_quantity("杭州"), None);
+    }
+
+    #[test]
+    fn a_declared_number_reads_past_the_unit() {
+        // 属性已经声明了 datatype = number，问的是「那个数是多少」。
+        // 卡住过的两条都在这里
+        assert_eq!(
+            parse_leading_quantity("1,250 people"),
+            Some((1250.0, Some("people".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("42% from customers in Europe"),
+            Some((42.0, Some("%".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("3,400 people worldwide"),
+            Some((3400.0, Some("people".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("900 million weekly active users"),
+            Some((9e8, Some("weekly".into())))
+        );
+        // 整体就是量的仍走严的那套：单位是 `$`，不是 `billion`
+        assert_eq!(
+            parse_leading_quantity("$5 billion"),
+            Some((5e9, Some("$".into())))
+        );
+        // 开头不是数就还是不认
+        // 币种在尾巴上也认；认不出的词才落到「单位是第一个词」
+        assert_eq!(
+            parse_leading_quantity("30 million euros in cash"),
+            Some((3e7, Some("€".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("15亿元人民币的投资"),
+            Some((1.5e9, Some("¥".into())))
+        );
+        assert_eq!(
+            parse_leading_quantity("30 million francs"),
+            Some((3e7, Some("francs".into())))
+        );
+        assert_eq!(parse_leading_quantity("about ten"), None);
+        assert_eq!(parse_leading_quantity(""), None);
+
+        // **严的那套一点没松**：它要判「是不是一个东西」，判错会吃掉真实体
+        assert_eq!(parse_quantity("1,250 people"), None);
+        assert_eq!(parse_quantity("2025 Atlantic hurricane season"), None);
+    }
+
+    #[test]
+    fn a_number_attribute_takes_a_written_quantity() {
+        use serde_json::json;
+        // 采纳属性时按 datatype 换算，量也要换得动——否则 `$5 billion`
+        // 会一路「换不动」，事实永远拿不到谓词
+        assert_eq!(
+            normalize_attr_value("number", &json!("$5 billion")),
+            Some(json!(5e9))
+        );
+        assert_eq!(
+            normalize_attr_value("number", &json!("52%")),
+            Some(json!(52.0))
+        );
+        // 原来就认的两种写法不受影响
+        assert_eq!(
+            normalize_attr_value("number", &json!("35,000")),
+            Some(json!(35000.0))
+        );
+        assert_eq!(normalize_attr_value("number", &json!("about ten")), None);
+    }
+
     #[test]
     fn parse_time_precisions() {
         assert_eq!(parse_time("2024").unwrap().1, "year");
@@ -1055,7 +1467,11 @@ mod tests {
             normalize_attr_value("number", &json!("35,000")),
             Some(json!(35000.0))
         );
-        assert_eq!(normalize_attr_value("number", &json!(42)), Some(json!(42)));
+        // JSON 里的整数也落成同一种数：`42` 与 "42" 解出来是同一个值
+        assert_eq!(
+            normalize_attr_value("number", &json!(42)),
+            Some(json!(42.0))
+        );
         assert_eq!(normalize_attr_value("number", &json!("about ten")), None);
         assert_eq!(
             normalize_attr_value("date", &json!("2024-07")),
@@ -1129,6 +1545,26 @@ mod tests {
         assert!(parse_response(r#"{"facts": [{"subject": "a"#).is_err());
     }
 
+    /// 片段字段可有可无：老模型输出没有它们，照常解析
+    #[test]
+    fn spans_parse_and_default_to_none() {
+        let with = parse_response(
+            r#"{"entities":[],"facts":[{"subject":"OpenAI","predicate":"founded","object":"Anthropic","subject_span":"Former OpenAI personnel","object_span":"Anthropic"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            with.facts[0].subject_span.as_deref(),
+            Some("Former OpenAI personnel")
+        );
+        assert_eq!(with.facts[0].object_span.as_deref(), Some("Anthropic"));
+        let without = parse_response(
+            r#"{"entities":[],"facts":[{"subject":"OpenAI","predicate":"founded","object":"Anthropic"}]}"#,
+        )
+        .unwrap();
+        assert!(without.facts[0].subject_span.is_none());
+        assert!(without.facts[0].object_span.is_none());
+    }
+
     #[test]
     fn parse_response_with_fence() {
         let raw = "好的，结果如下：\n```json\n{\"entities\":[{\"name\":\"张三\",\"type\":\"person\"}],\"facts\":[]}\n```";
@@ -1196,6 +1632,8 @@ mod tests {
         let system = &msgs[0].content;
         assert!(system.contains("\"local_id\":\"e1\""));
         assert!(system.contains("\"subject_ref\":\"e1\""));
+        // #578：跟 X 有关的一群人不是 X
+        assert!(system.contains("subject_span and object_span are the exact words"));
         assert!(system.contains("unique within this response"));
         assert!(system.contains("Reuse the same local_id"));
         assert!(system.contains("permanent identity is proven"));
@@ -1221,5 +1659,22 @@ mod tests {
         assert!(user.contains("k1 [person]: Zhang Wei"));
         assert!(user.contains("k2 [person]: Zhang Wei"));
         assert!(user.contains("subject_ref/object_ref"));
+    }
+}
+
+#[cfg(test)]
+mod a_number_is_one_number {
+    use super::normalize_attr_value;
+    use serde_json::json;
+
+    /// 模型写 `65` 还是 "65%"，落下来都是同一个数——不然同一条边上会记成冲突
+    #[test]
+    fn a_number_is_one_number_however_it_is_written() {
+        let a = normalize_attr_value("number", &json!(65)).unwrap();
+        let b = normalize_attr_value("number", &json!("65%")).unwrap();
+        let c = normalize_attr_value("number", &json!("65")).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+        assert_eq!(a.as_f64(), Some(65.0));
     }
 }

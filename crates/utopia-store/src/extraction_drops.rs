@@ -22,6 +22,12 @@ pub mod reason {
     pub const ATTR_NO_VALUE: &str = "attr_no_value";
     /// 值不合 datatype，归一化失败
     pub const ATTR_DATATYPE: &str = "attr_datatype";
+    /// 模型在边上写了一个这条关系没声明过的属性 key（0037）
+    pub const QUALIFIER_UNKNOWN: &str = "qualifier_unknown";
+    /// 边上属性的值换不成它声明的 datatype
+    pub const QUALIFIER_DATATYPE: &str = "qualifier_datatype";
+    /// 同一条边再听到一次，属性值与已记的不一致——先记下，不覆盖
+    pub const QUALIFIER_CONFLICT: &str = "qualifier_conflict";
     /// 模型自报置信度低于阈值
     pub const LOW_CONFIDENCE: &str = "low_confidence";
     /// 关系事实缺宾语
@@ -42,6 +48,31 @@ pub mod reason {
     /// 守卫放行了、结构却像从句（限定词起头的长串、句中的关系词）。**只记不挡**：
     /// 实体照常落库，例句留下来——#193 要的是一份跨语料的标注集，再决定哪条升成硬规则
     pub const CLAUSE_SUSPECT: &str = "clause_suspect";
+    /// 主语是「跟 X 有关的一群人」而写成了 X（#578）："former OpenAI personnel" 不是
+    /// OpenAI。事实不落，例句是那个短语；这一类该由提示词的规则改写到有名字的一侧，
+    /// 这里只量它还错多少
+    pub const SUBJECT_SHORTENED: &str = "subject_shortened";
+    /// 主宾片段不在引文里（#582）：模型没照抄。事实照旧处理，只记下来
+    pub const SPAN_NOT_IN_QUOTE: &str = "span_not_in_quote";
+    /// 主语片段是个描述，不是任何声明过的实体的名字：事实不落（#582，取代 #578 的词表）
+    pub const SUBJECT_DESCRIBED: &str = "subject_described";
+    /// 宾语片段是个描述：事实照落，宾语落成字面值（#582）
+    pub const OBJECT_DESCRIBED: &str = "object_described";
+    /// 片段点的是另一个声明过的实体：改绑到它（#582）
+    pub const SPAN_REBOUND: &str = "span_rebound";
+    /// 片段是所绑名字前面带了别的词（"entrepreneur Tasha McCauley" / "companies using
+    /// OpenAI"）：头衔还是另一件东西，机器分不开，绑定照旧，只记（#582）
+    pub const SPAN_PREFIXED: &str = "span_prefixed";
+    /// 片段里没有任何声明过的名字（"him" / "the company"）：模型消解了指代，无从核对，
+    /// 绑定照旧，只记（#582）
+    pub const SPAN_COREFERENCE: &str = "span_coreference";
+    /// 片段抄的是事实**另一侧**的名字（宾语片段写成了主语）：抄错了位置，不是绑错了
+    /// 实体。绑定照旧，只记（#582）
+    pub const SPAN_MISPLACED: &str = "span_misplaced";
+    /// 宾语既没在 entities 里声明、库里也没有叫这个名字的东西：事实照落，
+    /// 宾语落成字面值而不是节点（#559）。记下来是为了量：这一类里有多少
+    /// 本该是实体（模型漏报），有多少本来就是描述
+    pub const OBJECT_UNDECLARED: &str = "object_undeclared";
 }
 
 pub async fn record(

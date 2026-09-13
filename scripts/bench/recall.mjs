@@ -86,7 +86,10 @@ function score() {
            coalesce(s.canonical_name,''),
            coalesce(rt.key, coalesce(fe.proposed_predicate,'')),
            coalesce(o.canonical_name, f.object_value #>> '{}', f.object_value::text, ''),
-           coalesce(to_char(f.valid_from,'YYYY-MM-DD'),''))
+           coalesce(to_char(f.valid_from,'YYYY-MM-DD'),''),
+           coalesce((SELECT string_agg(q.key || '=' || coalesce(fq.value #>> '{value}', '') || ' ' || coalesce(fq.value #>> '{unit}', ''), ' ')
+                       FROM fact_qualifiers fq JOIN relation_types q ON q.id = fq.qualifier_type_id
+                      WHERE fq.fact_id = f.id), ''))
     FROM facts f
     JOIN fact_evidence fe ON fe.fact_id = f.id
     JOIN documents d ON d.id = fe.document_id
@@ -97,8 +100,9 @@ function score() {
     .split("\n")
     .filter(Boolean)
     .map((l) => {
-      const [file, subj, pred, obj, from] = l.split("");
-      return { file, subj, pred, obj, from };
+      // 边上的属性（0037）也在这一行里：金额挂在边上时，值不在 object 那一格
+      const [file, subj, pred, obj, from, quals] = l.split("");
+      return { file, subj, pred, obj, from, quals };
     });
 
   const byDoc = new Map();
@@ -122,7 +126,7 @@ function score() {
     let ok = false;
     if (t.kind === "value") {
       ok = facts.some((f) => {
-        const raw = `${f.subj} | ${f.pred} | ${f.obj} | ${f.from}`;
+        const raw = `${f.subj} | ${f.pred} | ${f.obj} | ${f.from} | ${f.quals}`;
         return t.value_any.some((v) => norm(raw).includes(norm(v)) || squash(raw).includes(squash(v)));
       });
     } else if (t.kind === "edge") {

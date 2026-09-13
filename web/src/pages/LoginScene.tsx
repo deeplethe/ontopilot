@@ -5,7 +5,7 @@
    带一点由小到大的生长感。透视投影、结构大于视口（巨物应当出画）。
    性能：形态几何只在切换时重算进 TypedArray；点按亮度分桶、每桶一次 fill；
    DPR 封顶 1.5。纯中性白灰；prefers-reduced-motion 时静止单帧。 */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const U = 48; // 经向点数
 const V = 26; // 纬向点数
@@ -57,7 +57,14 @@ function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);
 }
 
+import { INK, inkAt, refreshPalette } from "./graphVisuals";
+import { onThemeChange } from "../theme";
+
 export function LoginScene({ leaving }: { leaving?: boolean }) {
+  // 主题一变，粒子的墨色跟着变：重跑一遍挂载 effect（它预生成了亮度分桶的样式串）
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => onThemeChange(() => setThemeTick((t) => t + 1)), []);
+  refreshPalette();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -114,7 +121,7 @@ export function LoginScene({ leaving }: { leaving?: boolean }) {
     // 亮度分桶：预生成样式串，帧内无字符串拼接
     const bucketStyle: string[] = [];
     for (let b = 0; b < BUCKETS; b++)
-      bucketStyle.push(`rgba(255,255,255,${(0.1 + (b / (BUCKETS - 1)) * 0.34).toFixed(3)})`);
+      bucketStyle.push(inkAt(+(0.1 + (b / (BUCKETS - 1)) * 0.34).toFixed(3)));
     const buckets: number[][] = Array.from({ length: BUCKETS }, () => []);
 
     // 原地闪烁：弱化为氛围层（主秀是下面的光脉冲）
@@ -281,7 +288,7 @@ export function LoginScene({ leaving }: { leaving?: boolean }) {
 
       // 边：极淡的白，一次 stroke
       ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(255,255,255,0.045)";
+      ctx.strokeStyle = inkAt(0.045);
       ctx.beginPath();
       for (let e = 0; e < edges.length; e += 2) {
         const a = edges[e];
@@ -319,7 +326,7 @@ export function LoginScene({ leaving }: { leaving?: boolean }) {
       }
 
       // 氛围闪烁：尖峰脉冲（sin⁶），弱化版
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.fillStyle = inkAt(0.92);
       for (let n = 0; n < TWINKLES; n++) {
         const s = Math.sin(now * twSpeed[n] + twPhase[n]);
         if (s <= 0) continue;
@@ -334,8 +341,8 @@ export function LoginScene({ leaving }: { leaving?: boolean }) {
       }
 
       // 光脉冲：头部亮点 + 沿走过的边渐隐的尾迹
-      ctx.strokeStyle = "#ffffff";
-      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = INK;
+      ctx.fillStyle = INK;
       ctx.lineWidth = 1.2;
       for (const p of pulses) {
         if (p.delay > 0 || p.fade <= 0) continue;
@@ -384,7 +391,7 @@ export function LoginScene({ leaving }: { leaving?: boolean }) {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, []);
+  }, [themeTick]);
 
   return (
     <canvas

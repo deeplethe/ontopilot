@@ -36,7 +36,8 @@ import {
   StatusCell,
   Textarea,
   PageHeader,
-} from "../ui";
+  buttonLike,
+  localDateTime,} from "../ui";
 import {
   KIND_ICON,
   SOURCE_ICONS,
@@ -566,11 +567,13 @@ export function Library() {
               <>
               {/* 历史视图下过滤框只藏不撤（invisible 保留占位），标题行高度不塌、不抖 */}
               <div className={`relative ${showHistory ? "invisible" : ""}`}>
+                {/* 中号带放大镜，与图谱、本体、成员那几页的筛选条同一副身材。
+                    从前这里是小号，挨着看就比别处矮一档 */}
                 <Search
                   size={13}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-2 pointer-events-none"
                 />
-                <Input size="sm" className="w-52 pl-8 pr-8"
+                <Input className="w-52 pl-[34px] pr-8"
                   placeholder={S.library.filterPlaceholder}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
@@ -928,6 +931,9 @@ function SourceBar({
     (cfg.urls ? `${cfg.urls.length} URLs` : "");
   const rssMode: RssContentMode =
     cfg.content_mode === "full_new_items" ? "full_new_items" : "feed";
+  // 补全进度只在这一档开着时才有话说
+  const hydration =
+    source.rss_full_content?.state === "disabled" ? null : source.rss_full_content;
 
   return (
     <div className="glass rounded-panel mb-3">
@@ -970,18 +976,16 @@ function SourceBar({
                         ? S.library.rssModeFullShort
                         : S.library.rssModeFeedShort}
                     </span>
-                    {rssMode === "full_new_items" && (
-                      <>
-                        <span className="text-ink-2 shrink-0 u-num">
-                          {S.library.rssHydrationCounts(
-                            source.rss_full_content_pending_count,
-                            source.rss_full_content_queued_count,
-                            source.rss_full_content_retrying_count,
-                            source.rss_full_content_complete_count,
-                            source.rss_full_content_terminal_count,
-                          )}
-                        </span>
-                      </>
+                    {/* **这一档开没开由服务端的 `state` 说，不由前端重推。**
+                        从前这里是 `rssMode === "full_new_items"`——把服务端那条
+                        CASE 在前端又算了一遍，同一条规矩两份。
+                        块对任何 RSS 来源都在（0033 决定 2），所以看的是 state：
+                        `disabled` 的来源没有补全队列，那五个 0 不是「队列空着」，
+                        是「这里没有队列」，不该显示。 */}
+                    {hydration && (
+                      <span className="text-ink-2 shrink-0 u-num">
+                        {S.library.rssHydrationCounts(hydration)}
+                      </span>
                     )}
                   </>
                 )}
@@ -1002,7 +1006,7 @@ function SourceBar({
               params={{ slug: "ingest" }}
               target="_blank"
               title={S.library.ingestGuideTitle}
-              className="u-btn u-btn-ghost px-2 py-1"
+              className={buttonLike("ghost", "sm")}
             >
               <BookOpen size={12} />
             </Link>
@@ -1019,9 +1023,7 @@ function SourceBar({
             /* 激活态用反色（与弹窗类型 tab、图标选中同一语汇），一眼可辨 */
             <Button variant="secondary" size="sm"
               onClick={onToggleHistory}
-              className={`u-btn px-3 py-1 text-small flex items-center gap-2 ${
-                historyOpen ? "u-btn-primary" : "u-btn-ghost"
-              }`}
+              className={buttonLike(historyOpen ? "primary" : "ghost", "sm")}
             >
               <HistoryIcon size={11} />
               {S.library.syncHistory}
@@ -1044,8 +1046,9 @@ function SourceBar({
               {S.library.viewToken}
             </Button>
           )}
-          {/* 全量重抽本来源：所有类型都给（有文档就能重抽） */}
-          {onReExtract && source.doc_count > 0 && (
+          {/* 全量重抽本来源：所有类型都给（有文档就能重抽）——除了说了不抽取的
+              那种（schema 文档）：后端会拒，按钮就不该出现 */}
+          {onReExtract && source.doc_count > 0 && source.config?.extract !== false && (
             <Button variant="secondary" size="sm" className="flex items-center gap-2"
               onClick={onReExtract}
             >
@@ -1813,7 +1816,7 @@ function SourceModal({
               <Checkbox
                 className="mb-4"
                 checked={includePrs}
-                onChange={(e) => setIncludePrs(e.target.checked)}
+                onChange={(v) => setIncludePrs(v)}
                 label={S.library.includePullRequests}
               />
             </>
@@ -2036,7 +2039,7 @@ function SourceEditModal({
               <Checkbox
                 className="mb-4"
                 checked={includePrs}
-                onChange={(e) => setIncludePrs(e.target.checked)}
+                onChange={(v) => setIncludePrs(v)}
                 label={S.library.includePullRequests}
               />
             </>
@@ -2154,7 +2157,7 @@ function DeletedTable({
               <td className="px-4 py-3 text-ink-2">{d.filename}</td>
               <td className="px-4 py-3 text-ink-2">{src?.name ?? S.library.uploads}</td>
               <td className="px-4 py-3 u-num text-ink-2">
-                {d.deleted_at ? new Date(d.deleted_at).toLocaleString() : ""}
+                {d.deleted_at ? localDateTime(d.deleted_at) : ""}
               </td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <LinkButton onClick={() => onRestore(d.id)}>

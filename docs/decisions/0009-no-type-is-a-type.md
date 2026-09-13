@@ -7,8 +7,9 @@
   same-name entities apart ahead of every heuristic; since #226 same-name entities of kin classes
   (ancestor, descendant or a shared non-root ancestor) go to Review; `CONFUSABLE_TYPE_KEYS` stays
   as the fallback when nothing is declared · `metric` /
-  `dimension` are created on demand by mapping exploration (#231); a semantic-layer pack is
-  still planned
+  `dimension` were created on demand by mapping exploration (#231); **they are to retire**
+  under [0036](0036-exploration-aligns-a-schema-to-the-ontology.md), which found them to be
+  the same species this record removed
 - **Written**: 2026-08-30 · condensed into English 2026-09-03
 - **Related**: [0008](0008-ontology-packs-as-cold-start.md) makes a real vocabulary the
   optional start; [0001](0001-ontology-import-and-governance.md) IRI/key split behind the
@@ -95,6 +96,15 @@ in the ontology as a class, as if someone had decided it.
   those classes silently produced zero mappings. 2026-09-03: exploration now creates both as
   builtin types before exploring (#231); a semantic-layer pack with IRIs is still planned
   (0016 D2).
+- 2026-09-09: #231 fixed the symptom and kept the mistake. `Metric` and `Dimension` are
+  not classes of things in the world; they are kinds of column, and this record's own
+  argument — a class that is control flow leaves the ontology — applies to them. Measured on
+  a flattened order table, exploration filed every column name as an entity of those classes
+  (28 of 40 concept entities were column names) and proposed 0 of 18 usable definitions.
+  [0036](0036-exploration-aligns-a-schema-to-the-ontology.md) retires both classes; a
+  concept becomes an attribute of a real class or a rule over such attributes. The
+  semantic-layer pack (0016 D2) is superseded by the same record: there is no vocabulary to
+  pack, only an alignment to propose.
 
 ## Open questions
 

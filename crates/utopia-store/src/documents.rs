@@ -1210,10 +1210,16 @@ pub async fn set_embeddings(pool: &PgPool, items: &[(Uuid, Vec<f32>)]) -> AppRes
             .await?;
     }
     tx.commit().await?;
+    // 第一次写下这个维度的向量，索引就该排上了（0035）。在了的话这一句是一次查找
+    if let Some((_, first)) = items.first() {
+        crate::vector_index::request(pool, crate::vector_index::Target::Chunks, first.len())
+            .await?;
+    }
     Ok(())
 }
 
-/// 向量近邻检索（余弦距离，顺扫；P1 规模足够）。
+/// 向量近邻检索（余弦距离）。维度写成字面量、两侧 cast、`relaxed_order`——三条
+/// 规矩见 `vector_index`；走不走索引由规划器定
 pub async fn vector_search(
     pool: &PgPool,
     kb_id: Uuid,
@@ -1221,21 +1227,30 @@ pub async fn vector_search(
     limit: i64,
     as_of: Option<DateTime<Utc>>,
 ) -> AppResult<Vec<Uuid>> {
+    let dims = embedding.len();
+    if dims == 0 {
+        return Ok(Vec::new());
+    }
     let query_vec = Vector::from(embedding.to_vec());
+    let mut tx = pool.begin().await?;
+    crate::vector_index::relaxed_order(pool, &mut tx).await?;
     let rows: Vec<(Uuid,)> = sqlx::query_as(&format!(
         "SELECT id FROM chunks c
          WHERE c.kb_id = $1 AND c.embedding IS NOT NULL AND {live}
-           AND vector_dims(c.embedding) = vector_dims($2)
-         ORDER BY c.embedding <=> $2
+           AND {same_dims}
+         ORDER BY {distance}
          LIMIT $3",
         live = crate::record_axis::chunk_live_at("c", 4),
+        same_dims = crate::vector_index::same_dims("c.embedding", dims),
+        distance = crate::vector_index::distance("c.embedding", 2, dims),
     ))
     .bind(kb_id)
     .bind(&query_vec)
     .bind(limit)
     .bind(as_of)
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
@@ -1301,11 +1316,16 @@ pub async fn queue_extraction(
     source_id: Option<Uuid>,
 ) -> AppResult<Vec<Uuid>> {
     let mut tx = pool.begin().await?;
+    // 来源说了不抽取的文档不排（`Source::extracts` 的 SQL 版，两处判的是同一个键）。
+    // 这条在库里挡而不是在各个入口挡：全库重建（`rebuild`）、按来源重抽、以后
+    // 任何新入口都走这里，schema 文档一律不进图（0035 决定 7，#553）
     let ids: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM documents
-         WHERE kb_id = $1 AND deleted_at IS NULL AND status = 'ready'
-           AND ($2::uuid IS NULL OR source_id = $2)
-         ORDER BY created_at",
+        "SELECT d.id FROM documents d
+         LEFT JOIN sources s ON s.id = d.source_id
+         WHERE d.kb_id = $1 AND d.deleted_at IS NULL AND d.status = 'ready'
+           AND ($2::uuid IS NULL OR d.source_id = $2)
+           AND NOT coalesce(s.config -> 'extract' = 'false'::jsonb, false)
+         ORDER BY d.created_at",
     )
     .bind(kb_id)
     .bind(source_id)
