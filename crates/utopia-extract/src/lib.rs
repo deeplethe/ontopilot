@@ -176,14 +176,18 @@ pub fn build_messages(
         .collect::<Vec<_>>()
         .join("\n");
     // 标记也只在真有事件或恒常关系时解释一次；全是状态的库，提示词一字不变。
-    // 说的是**写什么**而不是「它是什么」：事件的那一刻进 valid_from、valid_to 留空
-    // ——不然模型照状态的样子填一个起点，账本就把一次收购读成从那天起一直持续
+    // 写的是**最终落到那一行的形状**——事件的读取是「在 valid_from 那个精度
+    // 单位的桶里成立」，前提是 valid_from = valid_to（0022，0031）；模型看见
+    // "leave valid_to null"以为能自己决定，反而会把两端写成不同的时刻，读出侧
+    // 的 COALESCE 把它当成 valid_to + 1 precision——同一行的两端记两次时刻，
+    // 读出来更长一些的窗。提示词说的是形状而不是意图
     let temporal_note = if relations
         .iter()
         .any(|r| temporal_mark(&r.temporal).is_some())
     {
         "\n         3b. A relation marked [event] happens at one moment: put the date it happened in \
-            valid_from and leave valid_to null — it has no span and does not end. A relation \
+            both valid_from and valid_to — the row is read as holding throughout the \
+            bucket the source named (the day, the hour, the second). A relation \
             marked [eternal] holds regardless of time: leave both dates null."
     } else {
         ""
@@ -1092,7 +1096,7 @@ mod prompt_shape_tests {
         // 没有描述时括号里是 label，标记跟在括号后面
         assert!(s.contains("- capital_of (capital of) [eternal]"));
         assert!(s.contains("A relation marked [event] happens at one moment"));
-        assert!(s.contains("leave valid_to null"));
+        assert!(s.contains("both valid_from and valid_to"));
     }
 
     /// **全是状态的库，提示词一字不变**：不标、不解释
