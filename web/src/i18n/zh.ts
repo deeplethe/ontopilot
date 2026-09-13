@@ -666,6 +666,7 @@ export const zh: Strings = {
     deleteHint: (name: string) => `「${name}」及其消息将被永久移除。`,
     deleteBtn: "删除",
     cancel: "取消",
+    noSources: "未引用任何来源",
   },
   graph: {
     untyped: "未分类",

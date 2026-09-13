@@ -57,7 +57,12 @@ import {
   Textarea,
 } from "../ui";
 import { convMarks, useLive, useUnread } from "../unread";
-import { liveAnswer, type LiveHandle, type Turn } from "../liveAnswer";
+import {
+  answeredWithoutSources,
+  liveAnswer,
+  type LiveHandle,
+  type Turn,
+} from "../liveAnswer";
 import { NodCard } from "./PendingFacts";
 import { NextStep, nextStep, useReadiness } from "./NextStep";
 
@@ -887,6 +892,11 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
             ),
           )}
         </div>
+      )}
+      {/* 没有引用时，引用那一格换成一句「未引用任何来源」（#547）：
+          缺席没人读得出来，得写出来。判据见 answeredWithoutSources */}
+      {answeredWithoutSources(turn, !!live) && (
+        <div className="mt-2 text-small text-ink-2">{S.ask.noSources}</div>
       )}
     </div>
   );
