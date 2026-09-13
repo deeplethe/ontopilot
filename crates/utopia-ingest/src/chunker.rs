@@ -402,8 +402,7 @@ impl<'a> Packer<'a> {
         let mut rows = rows.into_iter().peekable();
         while rows.peek().is_some() {
             let mut taken: Vec<Range<usize>> = vec![rows.next().expect("peek 过")];
-            loop {
-                let Some(next) = rows.peek() else { break };
+            while let Some(next) = rows.peek() {
                 let mut trial = taken.clone();
                 trial.push(next.clone());
                 let piece = Piece::Table {

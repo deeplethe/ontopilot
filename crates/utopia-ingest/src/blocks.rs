@@ -42,11 +42,13 @@ pub fn blocks(text: &str) -> Vec<Block> {
     join_continuations(text, parse(text))
 }
 
+/// 正在收的表：整表范围、表头范围、体行范围
+type OpenTable = (Range<usize>, Option<Range<usize>>, Vec<Range<usize>>);
+
 fn parse(text: &str) -> Vec<Block> {
     let mut out: Vec<Block> = Vec::new();
     let mut depth = 0usize;
-    // 正在收的表：整表范围、表头范围、体行范围
-    let mut table: Option<(Range<usize>, Option<Range<usize>>, Vec<Range<usize>>)> = None;
+    let mut table: Option<OpenTable> = None;
     for (event, range) in Parser::new_ext(text, Options::ENABLE_TABLES).into_offset_iter() {
         match event {
             Event::Start(tag) => {
