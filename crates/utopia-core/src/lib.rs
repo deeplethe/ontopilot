@@ -5,4 +5,4 @@ pub mod error;
 pub mod models;
 pub mod secrets;
 
-pub use error::{is_terminal, AppError, AppResult, Terminal};
+pub use error::{is_deferred, is_terminal, AppError, AppResult, Deferred, Terminal};

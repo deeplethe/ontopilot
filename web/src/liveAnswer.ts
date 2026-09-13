@@ -28,6 +28,18 @@ export interface Turn {
   error?: string;
 }
 
+/** 这条回答要不要挂「未引用任何来源」（#547）。
+ *
+ *  判据只看数据：说完了、背后一条来源都没有，就挂——招呼、拒答挂着无害，
+ *  而「以下是我找到的内容」配零来源的那条，靠它露馅。还在流的不挂：来源是
+ *  增量到的，挂上又撤下比晚一点出现更糟。只有报错、一个字没说的那条也不挂，
+ *  它不是回答，红字已经交代了。回放时 `sources` 空数组存成 undefined，同样算零 */
+export function answeredWithoutSources(turn: Turn, live: boolean): boolean {
+  if (turn.role !== "assistant" || live) return false;
+  if (turn.error && !turn.content) return false;
+  return !turn.sources?.length;
+}
+
 /** 快照条目：纯数据，给渲染看。abort 不进快照——渲染不该顺手摸到它 */
 export interface Live {
   kbId: string;
