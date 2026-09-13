@@ -20,7 +20,7 @@ use utopia_core::models::{AxiomViolation, DerivedFactView, OntologyDefect};
 type RuleKind = &'static str;
 use utopia_core::AppResult;
 use utopia_reason::derive::{Contradictions, Derivation, TimedEdge};
-use utopia_reason::{check, Axioms, Edge, Kind, Violation};
+use utopia_reason::{check_all, Axioms, Edge, Kind, Violation};
 use uuid::Uuid;
 
 /// 一次检查的产出，给调用方写审计与告诉用户。
@@ -46,6 +46,9 @@ pub struct Report {
     /// 重新打开的 resolved 行：人曾说撤了、闭合了、要去改本体，而违规又算出来了——
     /// 承诺没兑现，队列不替人沉默（#202）
     pub reopened: usize,
+    /// 环没搜完的谓词数（#642）。不为零时这些谓词上的环只报了一部分，而且上一轮的
+    /// 环这一轮不清——没搜完不能说没有
+    pub cycles_capped: usize,
 }
 
 /// 单个谓词上进队列的矛盾上限（0017 §1）。超出的部分只计数。
@@ -217,7 +220,9 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
     let axioms = axioms(pool, kb_id).await?;
     // 带着区间查：互斥的三类只在同时成立时才算（#634）。从前这里把区间剥掉再查，
     // 每一次调薪、每一次换负责人都进了 Review
-    let mut violations = check(&timed, &axioms);
+    let checked = check_all(&timed, &axioms);
+    let cycles_capped = checked.cycles_capped;
+    let mut violations = checked.violations;
     // 第五类不在纯逻辑引擎里：它要看实体的类型与谓词的 domain / range，那是库里的
     // 东西。算出来后与其它四类走同一条落库与清陈规矩
     for fact in signature_breaks(pool, kb_id, None).await? {
@@ -286,6 +291,7 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
         contradictions: details.len(),
         contradictions_capped,
         rules_disagree: clashes.between_derivations.len(),
+        cycles_capped: cycles_capped.len(),
         ..Default::default()
     };
 
@@ -385,6 +391,23 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
             report.reopened += 1;
         }
         fresh.push(keep);
+    }
+
+    // 环没搜完的谓词，上一轮的 open 环这一轮不清（#642）：没搜到不等于不存在。
+    // 撞上上限时报出的是按数据排定的那一批，数据不变就是同一批；数据变了，旧的那几行
+    // 也宁可留着等人看，不能因为这一轮搜不到就当它没了
+    if !cycles_capped.is_empty() {
+        let kept: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT v.id FROM axiom_violations v
+               JOIN facts f ON f.id = v.left_fact
+              WHERE v.kb_id = $1 AND v.kind = 'cycle' AND v.status = 'open'
+                AND f.predicate_id = ANY($2)",
+        )
+        .bind(kb_id)
+        .bind(&cycles_capped)
+        .fetch_all(&mut *tx)
+        .await?;
+        fresh.extend(kept);
     }
 
     // 这一轮没算出来的 open 行是陈的：事实被撤了，或者公理放宽了。
