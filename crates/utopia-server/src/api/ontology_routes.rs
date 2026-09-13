@@ -51,6 +51,9 @@ pub struct InstancesQuery {
     pub page: i64,
     #[serde(default = "default_per")]
     pub per: i64,
+    /// 记录轴回放（#307 / 0019）——回放那一刻的实体已知事实数；NULL 即今天
+    #[serde(default)]
+    pub as_of: Option<String>,
 }
 
 fn default_per() -> i64 {
@@ -67,9 +70,16 @@ pub async fn list_entity_instances(
     require_kb(&state, &user, kb_id, Role::Viewer).await?;
     let per = q.per.clamp(1, 100);
     let page = q.page.max(0);
-    let (rows, total) =
-        utopia_store::ontology::entity_instances(&state.pool, kb_id, type_id, per, page * per)
-            .await?;
+    let as_of = crate::api::graph_routes::parse_instant("as_of", q.as_of.as_deref())?;
+    let (rows, total) = utopia_store::ontology::entity_instances(
+        &state.pool,
+        kb_id,
+        type_id,
+        per,
+        page * per,
+        as_of,
+    )
+    .await?;
     Ok(Json(json!({ "entities": rows, "total": total })))
 }
 

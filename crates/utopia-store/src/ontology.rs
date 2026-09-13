@@ -28,27 +28,49 @@ pub async fn entity_type_views(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<Enti
 }
 
 /// 某个类下的实体实例（按名称序，分页）。返回 (rows, total)。
+///
+/// `as_of` 是记录轴（0019 / #307）：**回放那一刻的实体已知事实数**——不是今天
+/// 这个库认下的事，而是 slider 上的那一刻认下的。`as_of = NULL` 退化到今天，
+/// 即 `invalidated_at IS NULL`，与原来的口径一致；传一个时间进去就会按
+/// `record_axis::facts_held_at` 重数——之前这条 SQL 写死 `invalidated_at IS NULL`，
+/// 在回放时永远只数"今天还活着"的那几条，于是同一个库在三月的视图上跟今天的
+/// 视图上数出来一模一样，与回放的承诺不符
 pub async fn entity_instances(
     pool: &PgPool,
     kb_id: Uuid,
     type_id: Uuid,
     limit: i64,
     offset: i64,
+    as_of: Option<chrono::DateTime<chrono::Utc>>,
 ) -> AppResult<(Vec<EntityInstance>, i64)> {
-    let rows: Vec<EntityInstance> = sqlx::query_as(
+    // as_of 时：把时间绑到 $5，子查询里的事实按 held_at 数（0031，0022）。事实表
+    // 上其余 SQL（subject/object 联接）不走 held_at——回放时挂到这条事实上的实体可
+    // 能尚未被合并掉（#336），但实体行本身仍是 row 的一部分，外层 `e.merged_into IS NULL`
+    // 已经把今天视角筛干净了
+    let held = match as_of {
+        Some(_) => format!(
+            "({} AND (f.subject_id = e.id OR f.object_id = e.id))",
+            crate::record_axis::facts_held_at("f", 5),
+        ),
+        None => {
+            "(f.invalidated_at IS NULL AND (f.subject_id = e.id OR f.object_id = e.id))".to_string()
+        }
+    };
+    let rows: Vec<EntityInstance> = sqlx::query_as(&format!(
         "SELECT e.id, e.canonical_name AS name,
                 (SELECT count(*) FROM facts f
-                 WHERE (f.subject_id = e.id OR f.object_id = e.id)
-                   AND f.invalidated_at IS NULL) AS fact_count
+                 WHERE {}) AS fact_count
          FROM entities e
          WHERE e.kb_id = $1 AND e.type_id = $2 AND e.merged_into IS NULL
          ORDER BY lower(e.canonical_name), e.id
          LIMIT $3 OFFSET $4",
-    )
+        held
+    ))
     .bind(kb_id)
     .bind(type_id)
     .bind(limit)
     .bind(offset)
+    .bind(as_of)
     .fetch_all(pool)
     .await?;
     let (total,): (i64,) = sqlx::query_as(
