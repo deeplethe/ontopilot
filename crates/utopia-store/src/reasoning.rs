@@ -20,7 +20,7 @@ use utopia_core::models::{AxiomViolation, DerivedFactView, OntologyDefect};
 type RuleKind = &'static str;
 use utopia_core::AppResult;
 use utopia_reason::derive::{Contradictions, Derivation, TimedEdge};
-use utopia_reason::{check, Axioms, Edge, Kind, Violation};
+use utopia_reason::{check_all, Axioms, Edge, Kind, Violation};
 use uuid::Uuid;
 
 /// 一次检查的产出，给调用方写审计与告诉用户。
@@ -46,6 +46,9 @@ pub struct Report {
     /// 重新打开的 resolved 行：人曾说撤了、闭合了、要去改本体，而违规又算出来了——
     /// 承诺没兑现，队列不替人沉默（#202）
     pub reopened: usize,
+    /// 环没搜完的谓词数（#642）。不为零时这些谓词上的环只报了一部分，而且上一轮的
+    /// 环这一轮不清——没搜完不能说没有
+    pub cycles_capped: usize,
 }
 
 /// 单个谓词上进队列的矛盾上限（0017 §1）。超出的部分只计数。
@@ -196,7 +199,7 @@ pub async fn record_signature_breaks(
         let id: Option<(Uuid,)> = sqlx::query_as(
             "INSERT INTO axiom_violations (id, kb_id, kind, left_fact, right_fact)
              VALUES ($1, $2, 'signature', $3, $3)
-             ON CONFLICT (kb_id, kind, left_fact, right_fact) DO NOTHING
+             ON CONFLICT (kb_id, kind, left_fact, right_fact) WHERE kind <> 'cycle' DO NOTHING
              RETURNING id",
         )
         .bind(Uuid::now_v7())
@@ -214,9 +217,12 @@ pub async fn record_signature_breaks(
 /// 跑一遍检查，把结果落库。
 pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
     let (timed, spans, _) = timed_edges(pool, kb_id).await?;
-    let edges: Vec<Edge> = timed.iter().map(|t| t.edge).collect();
     let axioms = axioms(pool, kb_id).await?;
-    let mut violations = check(&edges, &axioms);
+    // 带着区间查：互斥的三类只在同时成立时才算（#634）。从前这里把区间剥掉再查，
+    // 每一次调薪、每一次换负责人都进了 Review
+    let checked = check_all(&timed, &axioms);
+    let cycles_capped = checked.cycles_capped;
+    let mut violations = checked.violations;
     // 第五类不在纯逻辑引擎里：它要看实体的类型与谓词的 domain / range，那是库里的
     // 东西。算出来后与其它四类走同一条落库与清陈规矩
     for fact in signature_breaks(pool, kb_id, None).await? {
@@ -279,14 +285,17 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
     }
 
     let mut report = Report {
-        edges: edges.len(),
+        edges: timed.len(),
         predicates_with_axioms: axioms.len(),
         found: violations.len(),
         contradictions: details.len(),
         contradictions_capped,
         rules_disagree: clashes.between_derivations.len(),
+        cycles_capped: cycles_capped.len(),
         ..Default::default()
     };
+
+    let accepted = accepted_groups(pool, kb_id).await?;
 
     // 事务里做，否则「插新的」与「清陈旧的」之间有个窗口，那一瞬间 Review 页
     // 会短暂地少东西
@@ -299,15 +308,30 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
             right,
             path,
         } = v;
+        let grouped = is_grouped(*kind);
+        // 人认可过「这几条可以并存」，这一轮的组又全在那几条里——比如其中一条后来
+        // 撤了，剩下的组首尾变了、键也变了——仍然是那句认可管着，不再端上来。
+        // 组里有一条认可时没见过的，就不在这里拦：那是新情况
+        if grouped
+            && accepted
+                .iter()
+                .any(|(k, facts)| k == kind.as_str() && path.iter().all(|f| facts.contains(f)))
+        {
+            continue;
+        }
         let detail = details
             .get(&(*left, *right))
             .cloned()
             .unwrap_or_else(|| json!({}));
         // **证据跟着这一轮走**（#619）。从前这里是 `DO NOTHING`，而除此之外没有任何
         // 地方写 `path` / `detail`——重开那一支也不写。于是一行只要不被删，它带的
-        // 证据就永远是**头一次**记下这个键时算出来的那一份：同一个环后来经由另一条
-        // 中间路径再被算出来，行上写的还是最早那条。重开时更难看，`detected_at`
+        // 证据就永远是**头一次**记下这个键时算出来的那一份：同一处派生矛盾后来经由另一组
+        // 前提再被算出来，行上写的还是最早那组。重开时更难看，`detected_at`
         // 换成 now() 而 path 不动，一行上于是一个新时间戳配一份别的轮次的证据。
+        //
+        // **环不走首尾两条的键**（#641）。两个环共用最小的那条和收尾那条、中间不同，
+        // 从前落在同一个键上，后一个覆盖前一个的 path——那不是「同一个环换了证据」，
+        // 是另一个环被吞掉了。环就是它的事实集合，按整条 path 定键（0054）。
         //
         // 插与更新合成一条语句：从前是插一次再 SELECT 一次，两条语句问的是同一行。
         // `xmax = 0` 只有真正新插的行才成立——`DO UPDATE` 会让 RETURNING 对更新也
@@ -317,34 +341,44 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
         // 本来就在而且 resolved 的要再看一眼：`fact_retracted` / `fact_closed` /
         // `axiom_relaxed` 都是「世界会变」的承诺——事实没了、区间闭了、公理放宽了，
         // 违规就不该再算出来。又算出来了，承诺就是没兑现，那行回到 open，人再看一次。
-        // `accepted` 是有意并存，重算多少次都沉默（#202）
+        // `accepted` 是有意并存，重算多少次都沉默（#202）——只要还是认可时那几条。
+        // 互斥的组走到这里说明上面没拦住：同一个键下多了一条，那行也回到 open
+        // 两条部分唯一索引各管一类，冲突目标要把索引的 WHERE 原样写出来才推断得到
+        let upsert = if *kind == Kind::Cycle {
+            "INSERT INTO axiom_violations
+                 (id, kb_id, kind, left_fact, right_fact, path, detail)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (kb_id, path) WHERE kind = 'cycle' DO UPDATE
+                 SET path = EXCLUDED.path, detail = EXCLUDED.detail
+             RETURNING id, status, resolution, xmax = 0"
+        } else {
+            "INSERT INTO axiom_violations
+                 (id, kb_id, kind, left_fact, right_fact, path, detail)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (kb_id, kind, left_fact, right_fact) WHERE kind <> 'cycle' DO UPDATE
+                 SET path = EXCLUDED.path, detail = EXCLUDED.detail
+             RETURNING id, status, resolution, xmax = 0"
+        };
         let (keep, status, resolution, is_new): (Uuid, String, Option<String>, bool) =
-            sqlx::query_as(
-                "INSERT INTO axiom_violations
-                     (id, kb_id, kind, left_fact, right_fact, path, detail)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                 ON CONFLICT (kb_id, kind, left_fact, right_fact) DO UPDATE
-                     SET path = EXCLUDED.path, detail = EXCLUDED.detail
-                 RETURNING id, status, resolution, xmax = 0",
-            )
-            .bind(Uuid::now_v7())
-            .bind(kb_id)
-            .bind(kind.as_str())
-            .bind(left)
-            .bind(right)
-            .bind(path)
-            .bind(&detail)
-            .fetch_one(&mut *tx)
-            .await?;
+            sqlx::query_as(upsert)
+                .bind(Uuid::now_v7())
+                .bind(kb_id)
+                .bind(kind.as_str())
+                .bind(left)
+                .bind(right)
+                .bind(path)
+                .bind(&detail)
+                .fetch_one(&mut *tx)
+                .await?;
         if is_new {
             report.inserted += 1;
         }
-        if status == "resolved"
-            && matches!(
-                resolution.as_deref(),
-                Some("fact_retracted" | "fact_closed" | "axiom_relaxed")
-            )
-        {
+        let broken = match resolution.as_deref() {
+            Some("fact_retracted" | "fact_closed" | "axiom_relaxed") => true,
+            Some("accepted") => grouped,
+            _ => false,
+        };
+        if status == "resolved" && broken {
             sqlx::query(
                 "UPDATE axiom_violations
                     SET status = 'open', resolution = NULL, decided_by = NULL,
@@ -357,6 +391,23 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
             report.reopened += 1;
         }
         fresh.push(keep);
+    }
+
+    // 环没搜完的谓词，上一轮的 open 环这一轮不清（#642）：没搜到不等于不存在。
+    // 撞上上限时报出的是按数据排定的那一批，数据不变就是同一批；数据变了，旧的那几行
+    // 也宁可留着等人看，不能因为这一轮搜不到就当它没了
+    if !cycles_capped.is_empty() {
+        let kept: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT v.id FROM axiom_violations v
+               JOIN facts f ON f.id = v.left_fact
+              WHERE v.kb_id = $1 AND v.kind = 'cycle' AND v.status = 'open'
+                AND f.predicate_id = ANY($2)",
+        )
+        .bind(kb_id)
+        .bind(&cycles_capped)
+        .fetch_all(&mut *tx)
+        .await?;
+        fresh.extend(kept);
     }
 
     // 这一轮没算出来的 open 行是陈的：事实被撤了，或者公理放宽了。
@@ -440,6 +491,39 @@ pub async fn run(pool: &PgPool, kb_id: Uuid) -> AppResult<Report> {
     .await?;
     tx.commit().await?;
     Ok(report)
+}
+
+/// 互斥的三类：一处违规是一组同时成立、彼此冲突的事实（`path` 是整组）。
+fn is_grouped(kind: Kind) -> bool {
+    matches!(
+        kind,
+        Kind::Asymmetry | Kind::Functional | Kind::InverseFunctional
+    )
+}
+
+/// 人认可过并存的互斥组：(种类, 组里的事实)。
+///
+/// 认可说的是「这几条可以同时成立」，所以按事实集合比，不按键比——组里撤掉一条，
+/// 剩下的首尾换了、键也换了，那句认可照样管着它们（#624）。
+async fn accepted_groups(pool: &PgPool, kb_id: Uuid) -> AppResult<Vec<(String, HashSet<Uuid>)>> {
+    let rows: Vec<(String, Uuid, Uuid, Vec<Uuid>)> = sqlx::query_as(
+        "SELECT kind, left_fact, right_fact, path FROM axiom_violations
+          WHERE kb_id = $1 AND status = 'resolved' AND resolution = 'accepted'
+            AND kind IN ('asymmetry', 'functional', 'inverse_functional')",
+    )
+    .bind(kb_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(kind, left, right, path)| {
+            let mut facts: HashSet<Uuid> = path.into_iter().collect();
+            // 首尾本来就在 path 里；0053 之前记下的一对 path 是空的，靠这两列
+            facts.insert(left);
+            facts.insert(right);
+            (kind, facts)
+        })
+        .collect())
 }
 
 /// 矛盾要写成人能读的话，而派生没有落库、没有文本可查——名字在这里补。
@@ -556,7 +640,9 @@ pub async fn open_violations(
            JOIN triple rt ON rt.id = v.right_fact
            JOIN facts lf ON lf.id = v.left_fact
           WHERE v.kb_id = $1 AND v.status = 'open'
-          ORDER BY v.detected_at DESC
+          -- id 做第二键（#646）：一轮检查插下的行 detected_at 全都相同，只按它排，
+          -- 翻页时每一页的先后可以不同——有的行出现两次，有的一次也不出现
+          ORDER BY v.detected_at DESC, v.id DESC
           LIMIT $2 OFFSET $3",
         // 「左边还开着」按读出来的终点判（0022）：结束了不知哪天的不算开着
         left_holds_to = crate::world_axis::facts_holds_to("lf"),
@@ -2055,7 +2141,7 @@ pub async fn open_defects(
            LEFT JOIN entity_types   ot ON ot.id = d.other
            LEFT JOIN relation_types orr ON orr.id = d.other
           WHERE d.kb_id = $1 AND d.status = 'open'
-          ORDER BY d.detected_at DESC
+          ORDER BY d.detected_at DESC, d.id DESC
           LIMIT $2 OFFSET $3",
     )
     .bind(kb_id)
