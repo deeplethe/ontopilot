@@ -156,6 +156,15 @@ enum SpanVerdict {
     Misplaced(String),
 }
 
+/// 模型报给 `bound` 的别名，是不是已经声明成了另一个实体的名字（0041）。
+///
+/// 结构判据，不认词：同一个名字不会同时是两样东西的名字。模型把「海探1项目」列成
+/// 一个机构，又把它报成探测器的别名——两个答案打架，别名那个不要
+fn name_claimed_elsewhere(name: &str, bound: Uuid, declared: &HashMap<String, Uuid>) -> bool {
+    let key = utopia_store::resolution::normalize_name(name).to_lowercase();
+    declared.get(&key).is_some_and(|id| *id != bound)
+}
+
 /// 片段在不在引文里：大小写、空白都不论
 fn span_in_quote(span: &str, quote: &str) -> bool {
     let norm = |s: &str| {
@@ -1356,6 +1365,22 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
         // 实体的别的名字（0041 决定 2）。**名字与引文都要在这一块原文里**：名字是召回的桥，
         // 一座凭空造的桥会把两个不相干的实体接到一起。认不认「简称」「又名」是模型的事，
         // 服务端不认词，只核对它抄的字是不是真在原文里
+        // 这次回复声明的名字，加上本文档前面几块认下的：别名撞上它们之一就不收
+        let declared_names: HashMap<String, Uuid> = entity_ids
+            .iter()
+            .map(|(name, id)| (name.as_str(), *id))
+            .chain(
+                doc_entities
+                    .iter()
+                    .map(|(id, _, name)| (name.as_str(), *id)),
+            )
+            .map(|(name, id)| {
+                (
+                    utopia_store::resolution::normalize_name(name).to_lowercase(),
+                    id,
+                )
+            })
+            .collect();
         for n in &extraction.names {
             let name = n.name.trim();
             let Some(bound) = ref_entities.get(n.entity_ref.trim()) else {
@@ -1376,6 +1401,18 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 .map(str::trim)
                 .filter(|q| !q.is_empty())
                 .unwrap_or(name);
+            if name_claimed_elsewhere(name, bound.id, &declared_names) {
+                drop_signal(
+                    state,
+                    doc.kb_id,
+                    document_id,
+                    utopia_store::extraction_drops::reason::NAME_CLAIMED_BY_ANOTHER,
+                    &n.entity_ref,
+                    Some(name),
+                )
+                .await;
+                continue;
+            }
             if !is_entity_name(name)
                 || !span_in_quote(name, quote)
                 || !span_in_quote(quote, &chunk.text)
@@ -3329,7 +3366,29 @@ mod name_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{slot_matches, span_in_quote, verify_span, SpanVerdict};
+
+    #[test]
+    fn a_name_declared_for_another_entity_is_not_an_alias() {
+        let (probe, project) = (Uuid::now_v7(), Uuid::now_v7());
+        let declared = HashMap::from([
+            ("海洋探测器1号".to_string(), probe),
+            ("海探1项目".to_string(), project),
+        ]);
+        assert!(name_claimed_elsewhere("海探1项目", probe, &declared));
+        assert!(
+            name_claimed_elsewhere(" 海探1项目 ", probe, &declared),
+            "空白不论"
+        );
+        assert!(
+            !name_claimed_elsewhere("海探1", probe, &declared),
+            "没人声明过的名字照收"
+        );
+        assert!(
+            !name_claimed_elsewhere("海洋探测器1号", probe, &declared),
+            "自己的名字不算撞"
+        );
+    }
+    use super::{name_claimed_elsewhere, slot_matches, span_in_quote, verify_span, SpanVerdict};
     fn declared(names: &[&str]) -> HashMap<String, Uuid> {
         names
             .iter()
