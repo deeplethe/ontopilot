@@ -1104,7 +1104,7 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
         };
         // 模型的原话只在 debug 级别看得到：查它对哪几个字段怎么填（#582 的片段）时开
         tracing::debug!(%document_id, seq = chunk.seq, reply = %reply, "抽取原始回复");
-        let extraction = match utopia_extract::parse_response(&reply) {
+        let mut extraction = match utopia_extract::parse_response(&reply) {
             Ok(x) => x,
             Err(e) => {
                 tracing::warn!(%document_id, seq = chunk.seq, error = %e, "抽取结果解析失败，跳过该分块");
@@ -1149,6 +1149,41 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
         }
 
         // 实体消解：名称 → 实体 id（本分块的事实按原文名字连线）
+        // **落库前先归一形状**（utopia_extract::normalize）：期间做了宾语的拆成带有效期的值，
+        // 所有格描述本尊就在旁边的去掉。规矩与谓词、与文档无关，所以放在纯函数里；
+        // 这里只把它做过的事记进丢弃表，好量每个模型多常这么写
+        for n in utopia_extract::normalize_facts(&mut extraction) {
+            use utopia_extract::Normalization as N;
+            use utopia_store::extraction_drops::reason;
+            let (r, detail, example) = match n {
+                N::PeriodToValidity {
+                    predicate,
+                    label,
+                    dated,
+                    values,
+                } => (
+                    reason::PERIOD_TO_VALIDITY,
+                    predicate,
+                    format!(
+                        "{label} → {values} value(s){}",
+                        if dated { "" } else { ", undated" }
+                    ),
+                ),
+                N::PeriodAsObject { predicate, label } => {
+                    (reason::PERIOD_AS_OBJECT, predicate, label)
+                }
+                N::ObjectDescribesDeclared {
+                    predicate,
+                    name,
+                    head,
+                } => (
+                    reason::OBJECT_DESCRIBES_DECLARED,
+                    predicate,
+                    format!("{name} ← {head}"),
+                ),
+            };
+            drop_signal(state, doc.kb_id, document_id, r, &detail, Some(&example)).await;
+        }
         let mut entity_ids: HashMap<String, Uuid> = HashMap::new();
         // 名称 → 声明类型（属性 domain 校验用：salary 不能挂在 Organization 上）
         let mut entity_type_of: HashMap<String, Option<Uuid>> = HashMap::new();

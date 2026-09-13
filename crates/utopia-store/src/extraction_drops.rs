@@ -73,6 +73,12 @@ pub mod reason {
     /// 宾语落成字面值而不是节点（#559）。记下来是为了量：这一类里有多少
     /// 本该是实体（模型漏报），有多少本来就是描述
     pub const OBJECT_UNDECLARED: &str = "object_undeclared";
+    /// 期间做了宾语、边上带着数：拆成了带有效期的值事实（normalize）。只记，事实照落
+    pub const PERIOD_TO_VALIDITY: &str = "period_to_validity";
+    /// 期间做了宾语、边上没有数：这条事实没有可落的值，不落（normalize）
+    pub const PERIOD_AS_OBJECT: &str = "period_as_object";
+    /// 宾语是另一个声明实体的所有格描述，本尊那条边同句已在：不落，声明一并去掉（normalize）
+    pub const OBJECT_DESCRIBES_DECLARED: &str = "object_describes_declared";
 }
 
 pub async fn record(
