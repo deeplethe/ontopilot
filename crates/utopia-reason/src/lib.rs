@@ -132,8 +132,12 @@ pub const MAX_DEPTH: usize = 12;
 /// 于是每一次接任都进了 Review。判据与 `derive::contradictions` 同一个——派生那一侧
 /// 一直是按区间重叠判的，断言这一侧跟它对齐。
 ///
+/// **环要整条路径在同一时刻成立**（#636）。A 在 2019–2021 年并入 B、2022 年起 B
+/// 又并入 A，图在任何一刻都没有这个环；两两重叠也不够，三条边可以两两相交而三者
+/// 无交。所以沿路径求交集，与 `derive::validity` 对前提做的是同一件事。
+///
 /// 区间照 `TimedEdge` 的读法：半开 `[from, to)`，`None` 是那一侧无界（恒常谓词两端
-/// 都是 `None`，于是退回到只看形状）。自环与环不看时间。
+/// 都是 `None`，于是退回到只看形状）。自环不看时间：`A p A` 哪一刻成立都是错的。
 pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violation> {
     let mut out = Vec::new();
     let mut by_pred: HashMap<Uuid, Vec<TimedEdge>> = HashMap::new();
@@ -156,7 +160,7 @@ pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violati
             out.extend(asymmetries(&group));
         }
         if ax.transitive {
-            out.extend(cycles(&shapes));
+            out.extend(cycles(&group));
         }
         if ax.functional {
             out.extend(clashes(
@@ -219,20 +223,25 @@ fn asymmetries(edges: &[TimedEdge]) -> Vec<Violation> {
 /// 的正是这个。
 ///
 /// R1 物化推导要的是闭包本身，那时再建；R0 要的是「哪几条边凑成了环」。
-fn cycles(edges: &[Edge]) -> Vec<Violation> {
-    let mut adj: HashMap<Uuid, Vec<&Edge>> = HashMap::new();
-    for e in edges {
-        adj.entry(e.subject).or_default().push(e);
+///
+/// 走的时候带着路径上区间的交集（#636）。交集空了就不往下走：交集只会越求越窄，
+/// 一段已经无交的路径接上什么都凑不成同一时刻成立的环，剪掉它丢不了一个真环。
+/// 同一个环从哪儿走进来，事实集合相同，交集也相同，所以去重照旧按集合。
+fn cycles(edges: &[TimedEdge]) -> Vec<Violation> {
+    let mut adj: HashMap<Uuid, Vec<&TimedEdge>> = HashMap::new();
+    for t in edges {
+        adj.entry(t.edge.subject).or_default().push(t);
     }
     let mut reported: HashSet<Vec<Uuid>> = HashSet::new();
     let mut out = Vec::new();
     let nodes: Vec<Uuid> = adj.keys().copied().collect();
     for start in nodes {
-        let mut path: Vec<&Edge> = Vec::new();
+        let mut path: Vec<&TimedEdge> = Vec::new();
         let mut on_path: HashSet<Uuid> = HashSet::new();
         walk(
             start,
             start,
+            (None, None),
             &adj,
             &mut path,
             &mut on_path,
@@ -247,8 +256,10 @@ fn cycles(edges: &[Edge]) -> Vec<Violation> {
 fn walk<'a>(
     start: Uuid,
     at: Uuid,
-    adj: &HashMap<Uuid, Vec<&'a Edge>>,
-    path: &mut Vec<&'a Edge>,
+    // 路径上已走过的边的区间交集；起点是全时间
+    span: (Option<i64>, Option<i64>),
+    adj: &HashMap<Uuid, Vec<&'a TimedEdge>>,
+    path: &mut Vec<&'a TimedEdge>,
     on_path: &mut HashSet<Uuid>,
     reported: &mut HashSet<Vec<Uuid>>,
     out: &mut Vec<Violation>,
@@ -257,11 +268,17 @@ fn walk<'a>(
         return;
     }
     let Some(next) = adj.get(&at) else { return };
-    for e in next {
+    for t in next {
+        // 接上这条边，路径就没有哪一刻是整条成立的：不管是成环还是往下走，都不必了。
+        // 没日期的事件区间为空（0031），在这里自然被剪掉
+        let Some(span) = derive::overlap(span, (t.from, t.to)) else {
+            continue;
+        };
+        let e = &t.edge;
         if e.object == start && !path.is_empty() {
             // 回到起点：成环。**按事实 id 排序去重**——同一个环从不同节点
             // 出发会被走到 n 次，报 n 遍就是让人把同一件事看 n 次
-            let mut facts: Vec<Uuid> = path.iter().map(|x| x.fact).collect();
+            let mut facts: Vec<Uuid> = path.iter().map(|x| x.edge.fact).collect();
             facts.push(e.fact);
             let mut key = facts.clone();
             key.sort();
@@ -297,8 +314,8 @@ fn walk<'a>(
             continue;
         }
         on_path.insert(e.object);
-        path.push(e);
-        walk(start, e.object, adj, path, on_path, reported, out);
+        path.push(t);
+        walk(start, e.object, span, adj, path, on_path, reported, out);
         path.pop();
         on_path.remove(&e.object);
     }
@@ -729,6 +746,362 @@ mod tests {
             let (_, left, right, path) = &only[0];
             assert_eq!(path, &vec![f(1), f(2), f(3)], "整组，按 id 排序");
             assert_eq!((*left, *right), (f(1), f(3)), "首尾是最小与最大");
+        }
+    }
+
+    /// **环要整条路径同一时刻成立**（#636）。A 在 2019–2021 年属于 B，2022 年起 B
+    /// 属于 A：图在任何一刻都没有这个环。三元环更容易看走眼——三条边可以两两重叠，
+    /// 三者却没有共同的一刻，这时逐对比较会误报，只有沿路径求交才对。
+    #[test]
+    fn a_cycle_must_hold_at_one_moment() {
+        let transitive = with(Axioms {
+            transitive: true,
+            ..Default::default()
+        });
+        let cycles = |edges: &[TimedEdge]| -> Vec<Violation> {
+            super::check(edges, &transitive)
+                .into_iter()
+                .filter(|v| v.kind == Kind::Cycle)
+                .collect()
+        };
+
+        // 两条边一前一后
+        let swapped = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 2, 1, Some(100), None),
+        ];
+        assert!(cycles(&swapped).is_empty(), "前后相接的两段凑不成环");
+
+        // 三条边两两重叠，三者无交：[0,100) ∩ [50,150) ∩ [100,200) = ∅
+        let pairwise = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 2, 3, Some(50), Some(150)),
+            at(3, 3, 1, Some(100), Some(200)),
+        ];
+        assert!(cycles(&pairwise).is_empty(), "两两重叠不等于同时成立");
+
+        // 三者共有 [90,100) 这一段：是环，而且照旧只报一次、规范形状
+        let together = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 2, 3, Some(50), Some(150)),
+            at(3, 3, 1, Some(90), Some(200)),
+        ];
+        let v = cycles(&together);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].path, vec![f(1), f(2), f(3)]);
+
+        // 没日期的事件哪一刻都不成立，不进任何环
+        let undated = [at(1, 1, 2, Some(50), Some(50)), at(2, 2, 1, None, None)];
+        assert!(cycles(&undated).is_empty());
+    }
+
+    // ---------- 对拍：随机小图上，与暴力做法逐个比 ----------
+
+    /// 确定性的伪随机数（xorshift64*）。对拍要可复现：挂了的那一张图，种子一样就能
+    /// 原样再造出来；不为这个引依赖
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+    }
+
+    /// 一张随机小图：节点少、边多，平行边、自环、反向边都常见。端点落在 0..=60 的
+    /// 十格上，于是首尾相接、完全重合、空区间（起点不早于终点）、无界都经常出现——
+    /// 这些正是边界
+    fn random_graph(rng: &mut Rng, nodes: u64, max_edges: u64) -> Vec<TimedEdge> {
+        let count = rng.below(max_edges + 1) as u8;
+        let bound = |rng: &mut Rng| {
+            if rng.below(4) == 0 {
+                None
+            } else {
+                Some(rng.below(7) as i64 * 10)
+            }
+        };
+        (1..=count)
+            .map(|i| {
+                let (s, o) = (rng.below(nodes) as u8 + 1, rng.below(nodes) as u8 + 1);
+                let (from, to) = (bound(rng), bound(rng));
+                at(i, s, o, from, to)
+            })
+            .collect()
+    }
+
+    fn shuffled(rng: &mut Rng, edges: &[TimedEdge]) -> Vec<TimedEdge> {
+        let mut v = edges.to_vec();
+        for i in (1..v.len()).rev() {
+            v.swap(i, rng.below(i as u64 + 1) as usize);
+        }
+        v
+    }
+
+    /// 暴力找环：从每个节点起，枚举所有节点不重复、至少两条边的回路，整条路径的
+    /// 区间交集非空才算。不剪枝，不看遍历顺序，结果按事实集合收
+    fn cycles_by_brute_force(edges: &[TimedEdge]) -> HashSet<Vec<Uuid>> {
+        fn extend(
+            edges: &[TimedEdge],
+            start: Uuid,
+            at: Uuid,
+            path: &mut Vec<usize>,
+            seen: &mut Vec<Uuid>,
+            out: &mut HashSet<Vec<Uuid>>,
+        ) {
+            for (i, t) in edges.iter().enumerate() {
+                if t.edge.subject != at {
+                    continue;
+                }
+                if t.edge.object == start {
+                    if path.is_empty() {
+                        continue;
+                    }
+                    let mut all = path.clone();
+                    all.push(i);
+                    let holds = all.iter().try_fold((None, None), |acc, &j| {
+                        derive::overlap(acc, (edges[j].from, edges[j].to))
+                    });
+                    if holds.is_some() {
+                        let mut facts: Vec<Uuid> =
+                            all.iter().map(|&j| edges[j].edge.fact).collect();
+                        facts.sort();
+                        out.insert(facts);
+                    }
+                    continue;
+                }
+                if seen.contains(&t.edge.object) {
+                    continue;
+                }
+                seen.push(t.edge.object);
+                path.push(i);
+                extend(edges, start, t.edge.object, path, seen, out);
+                path.pop();
+                seen.pop();
+            }
+        }
+        let mut out = HashSet::new();
+        let starts: HashSet<Uuid> = edges.iter().map(|t| t.edge.subject).collect();
+        for start in starts {
+            extend(
+                edges,
+                start,
+                start,
+                &mut Vec::new(),
+                &mut vec![start],
+                &mut out,
+            );
+        }
+        out
+    }
+
+    /// 暴力分组：两两比，同键、「不同」、区间有交就连一条，取连通块
+    fn groups_by_brute_force(
+        edges: &[TimedEdge],
+        conflict: impl Fn(&Edge, &Edge) -> bool,
+    ) -> HashSet<Vec<Uuid>> {
+        let n = edges.len();
+        let mut parent: Vec<usize> = (0..n).collect();
+        let mut clashed = vec![false; n];
+        for i in 0..n {
+            for j in i + 1..n {
+                let (a, b) = (&edges[i], &edges[j]);
+                if conflict(&a.edge, &b.edge)
+                    && derive::overlap((a.from, a.to), (b.from, b.to)).is_some()
+                {
+                    clashed[i] = true;
+                    clashed[j] = true;
+                    let (x, y) = (root(&mut parent, i), root(&mut parent, j));
+                    parent[x] = y;
+                }
+            }
+        }
+        let mut blocks: HashMap<usize, Vec<Uuid>> = HashMap::new();
+        for i in 0..n {
+            if clashed[i] {
+                let r = root(&mut parent, i);
+                blocks.entry(r).or_default().push(edges[i].edge.fact);
+            }
+        }
+        blocks
+            .into_values()
+            .map(|mut v| {
+                v.sort();
+                v
+            })
+            .collect()
+    }
+
+    fn found(v: &[Violation], kind: Kind) -> Vec<Vec<Uuid>> {
+        v.iter()
+            .filter(|x| x.kind == kind)
+            .map(|x| {
+                let mut facts = x.path.clone();
+                facts.sort();
+                facts
+            })
+            .collect()
+    }
+
+    /// **环：几千张随机小图上与暴力枚举逐个一致**（#636）。剪枝是个"证明了才敢做"的
+    /// 优化——交集只会越求越窄，所以剪掉的分支凑不出真环。这里不信证明，信对拍：
+    /// 带剪枝的深搜报出的环集合必须与不剪枝、整条求交的暴力枚举完全相同，一个不多
+    /// 一个不少；每个环只报一次，报出来的形状是规范的（从最小事实起头、首尾对得上
+    /// 路径、路径真的首尾相连）；把输入打乱，输出逐字节不变。
+    #[test]
+    fn cycles_agree_with_brute_force_on_random_graphs() {
+        let transitive = with(Axioms {
+            transitive: true,
+            ..Default::default()
+        });
+        let mut rng = Rng(0x0636_C0FF_EE00_0001);
+        let (mut with_cycles, mut filtered_by_time) = (0, 0);
+        for round in 0..6000 {
+            let (nodes, max_edges) = if round % 2 == 0 { (3, 9) } else { (4, 12) };
+            let edges = random_graph(&mut rng, nodes, max_edges);
+            let v = super::check(&edges, &transitive);
+            let got = found(&v, Kind::Cycle);
+            let unique: HashSet<Vec<Uuid>> = got.iter().cloned().collect();
+            assert_eq!(got.len(), unique.len(), "同一个环报了两次: {edges:?}");
+            assert_eq!(
+                unique,
+                cycles_by_brute_force(&edges),
+                "与暴力枚举不一致: {edges:?}"
+            );
+            if !unique.is_empty() {
+                with_cycles += 1;
+            }
+            // 同一张图抹掉时间再暴力找一遍：形状上的环比带时间的多，说明这张图上
+            // 时间真的起了作用——剪枝与求交走到了
+            let timeless: Vec<TimedEdge> = edges
+                .iter()
+                .map(|t| TimedEdge {
+                    from: None,
+                    to: None,
+                    ..*t
+                })
+                .collect();
+            if cycles_by_brute_force(&timeless).len() > unique.len() {
+                filtered_by_time += 1;
+            }
+
+            let by_fact: HashMap<Uuid, &TimedEdge> =
+                edges.iter().map(|t| (t.edge.fact, t)).collect();
+            for c in v.iter().filter(|x| x.kind == Kind::Cycle) {
+                assert_eq!(c.left, *c.path.iter().min().unwrap(), "从最小的事实起头");
+                assert_eq!((c.left, c.right), (c.path[0], *c.path.last().unwrap()));
+                for w in 0..c.path.len() {
+                    let here = by_fact[&c.path[w]].edge;
+                    let next = by_fact[&c.path[(w + 1) % c.path.len()]].edge;
+                    assert_eq!(here.object, next.subject, "路径要真的首尾相连: {c:?}");
+                }
+            }
+
+            assert_eq!(
+                shape(v),
+                shape(super::check(&shuffled(&mut rng, &edges), &transitive)),
+                "打乱输入换了输出: {edges:?}"
+            );
+        }
+        // 对拍要真的碰到环才算数：随机图若几乎不成环，这个测试什么也没证明
+        eprintln!("{with_cycles} 张图有环，{filtered_by_time} 张图上时间筛掉过环");
+        assert!(with_cycles > 1000, "只有 {with_cycles} 张图有环，样本太稀");
+        assert!(
+            filtered_by_time > 1000,
+            "只有 {filtered_by_time} 张图上时间筛掉过环，剪枝没怎么走到"
+        );
+    }
+
+    /// **互斥三类：几千张随机小图上与两两比较的暴力分组逐个一致**（#634、#624）。
+    /// 按起点扫一遍、手里只留还没结束的——这个扫描省掉了两两比较，也最容易在边界上
+    /// 错：首尾相接、无界的起点、空区间、同一时刻开始的几条。暴力做法把每一对都比
+    /// 一遍再取连通块，两边给出的组必须完全相同；打乱输入，输出逐字节不变。
+    #[test]
+    fn clashes_agree_with_brute_force_on_random_graphs() {
+        let all = with(Axioms {
+            asymmetric: true,
+            functional: true,
+            inverse_functional: true,
+            ..Default::default()
+        });
+        let mut rng = Rng(0x0634_BEEF_0000_0002);
+        let mut seen = [0usize; 3];
+        for round in 0..4000 {
+            let (nodes, max_edges) = if round % 2 == 0 { (2, 8) } else { (4, 12) };
+            let edges = random_graph(&mut rng, nodes, max_edges);
+            let v = super::check(&edges, &all);
+            // 不捕获任何东西的闭包就是函数指针
+            type Conflict = fn(&Edge, &Edge) -> bool;
+            let cases: [(Kind, Conflict); 3] = [
+                (Kind::Functional, |a, b| {
+                    a.subject == b.subject && a.object != b.object
+                }),
+                (Kind::InverseFunctional, |a, b| {
+                    a.object == b.object && a.subject != b.subject
+                }),
+                (Kind::Asymmetry, |a, b| {
+                    a.subject != a.object && a.subject == b.object && a.object == b.subject
+                }),
+            ];
+            for (k, (kind, conflict)) in cases.into_iter().enumerate() {
+                let got = found(&v, kind);
+                let unique: HashSet<Vec<Uuid>> = got.iter().cloned().collect();
+                assert_eq!(
+                    got.len(),
+                    unique.len(),
+                    "{kind:?} 同一组报了两次: {edges:?}"
+                );
+                assert_eq!(
+                    unique,
+                    groups_by_brute_force(&edges, conflict),
+                    "{kind:?} 与暴力分组不一致: {edges:?}"
+                );
+                seen[k] += unique.len();
+            }
+            for x in v.iter().filter(|x| x.kind != Kind::Cycle) {
+                let mut sorted = x.path.clone();
+                sorted.sort();
+                assert_eq!(x.path, sorted, "组按 id 排序");
+                assert_eq!((x.left, x.right), (x.path[0], *x.path.last().unwrap()));
+            }
+            assert_eq!(
+                shape(v),
+                shape(super::check(&shuffled(&mut rng, &edges), &all)),
+                "打乱输入换了输出: {edges:?}"
+            );
+        }
+        assert!(seen.iter().all(|&n| n > 500), "有一类几乎没碰到: {seen:?}");
+    }
+
+    /// **剪枝丢不了真环。** 同一对节点之间有两条边，一条的区间让路径无交、另一条
+    /// 不会：前一条被剪掉之后，后一条照样把环走出来。输入的每一种顺序都要到——
+    /// 剪枝发生在遍历里，顺序决定先碰到哪一条。
+    #[test]
+    fn pruning_a_dead_branch_keeps_the_live_one() {
+        let transitive = with(Axioms {
+            transitive: true,
+            ..Default::default()
+        });
+        let edges = [
+            at(1, 1, 2, Some(0), Some(100)),
+            // 与 1 无交：经过它的路径被剪掉
+            at(2, 2, 3, Some(200), Some(300)),
+            // 与 1 有交：环走这一条
+            at(3, 2, 3, Some(50), Some(150)),
+            at(4, 3, 1, Some(60), None),
+        ];
+        for order in permutations(&edges) {
+            let v: Vec<Violation> = super::check(&order, &transitive)
+                .into_iter()
+                .filter(|v| v.kind == Kind::Cycle)
+                .collect();
+            assert_eq!(v.len(), 1, "{order:?}");
+            assert_eq!(v[0].path, vec![f(1), f(3), f(4)]);
         }
     }
 
