@@ -1222,7 +1222,11 @@ pub async fn set_embeddings(pool: &PgPool, items: &[(Uuid, Vec<f32>)]) -> AppRes
 }
 
 /// 向量近邻检索（余弦距离）。维度写成字面量、两侧 cast、`relaxed_order`——三条
-/// 规矩见 `vector_index`；走不走索引由规划器定
+/// 规矩见 `vector_index`；走不走索引由规划器定。
+///
+/// 次序在外层再排一遍（`vector_index::RESORT`）：`relaxed_order` 下索引给的次序
+/// 只是大致按距离，而距离并列时精确路径和 HNSW 各排各的——同一问两种计划回的
+/// 居首不同（#652）。并列由 id 定
 pub async fn vector_search(
     pool: &PgPool,
     kb_id: Uuid,
@@ -1238,14 +1242,18 @@ pub async fn vector_search(
     let mut tx = pool.begin().await?;
     crate::vector_index::relaxed_order(pool, &mut tx).await?;
     let rows: Vec<(Uuid,)> = sqlx::query_as(&format!(
-        "SELECT id FROM chunks c
-         WHERE c.kb_id = $1 AND c.embedding IS NOT NULL AND {live}
-           AND {same_dims}
-         ORDER BY {distance}
-         LIMIT $3",
+        "WITH nearest AS MATERIALIZED (
+             SELECT id, {distance} AS distance FROM chunks c
+             WHERE c.kb_id = $1 AND c.embedding IS NOT NULL AND {live}
+               AND {same_dims}
+             ORDER BY {distance}
+             LIMIT $3
+         )
+         SELECT id FROM nearest ORDER BY {resort}",
         live = crate::record_axis::chunk_live_at("c", 4),
         same_dims = crate::vector_index::same_dims("c.embedding", dims),
         distance = crate::vector_index::distance("c.embedding", 2, dims),
+        resort = crate::vector_index::RESORT,
     ))
     .bind(kb_id)
     .bind(&query_vec)
