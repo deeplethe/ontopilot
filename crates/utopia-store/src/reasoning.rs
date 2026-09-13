@@ -617,7 +617,9 @@ pub async fn open_violations(
            JOIN triple rt ON rt.id = v.right_fact
            JOIN facts lf ON lf.id = v.left_fact
           WHERE v.kb_id = $1 AND v.status = 'open'
-          ORDER BY v.detected_at DESC
+          -- id 做第二键（#646）：一轮检查插下的行 detected_at 全都相同，只按它排，
+          -- 翻页时每一页的先后可以不同——有的行出现两次，有的一次也不出现
+          ORDER BY v.detected_at DESC, v.id DESC
           LIMIT $2 OFFSET $3",
         // 「左边还开着」按读出来的终点判（0022）：结束了不知哪天的不算开着
         left_holds_to = crate::world_axis::facts_holds_to("lf"),
@@ -2116,7 +2118,7 @@ pub async fn open_defects(
            LEFT JOIN entity_types   ot ON ot.id = d.other
            LEFT JOIN relation_types orr ON orr.id = d.other
           WHERE d.kb_id = $1 AND d.status = 'open'
-          ORDER BY d.detected_at DESC
+          ORDER BY d.detected_at DESC, d.id DESC
           LIMIT $2 OFFSET $3",
     )
     .bind(kb_id)
