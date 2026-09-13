@@ -144,7 +144,7 @@ pub async fn proposed(
          FROM concept_mappings m
          JOIN entities e ON e.id = m.concept_id
          WHERE m.kb_id = $1 AND m.status = 'proposed'
-         ORDER BY e.canonical_name, m.source
+         ORDER BY e.canonical_name, m.source, m.id DESC
          LIMIT $2 OFFSET $3",
     )
     .bind(kb_id)
@@ -163,7 +163,7 @@ pub async fn confirmed(pool: &PgPool, kb_id: Uuid, limit: i64) -> AppResult<Vec<
          FROM concept_mappings m
          JOIN entities e ON e.id = m.concept_id
          WHERE m.kb_id = $1 AND m.status = 'confirmed'
-         ORDER BY e.canonical_name, m.source
+         ORDER BY e.canonical_name, m.source, m.id DESC
          LIMIT $2",
     )
     .bind(kb_id)
@@ -288,7 +288,7 @@ pub async fn page(
          FROM concept_mappings m
          JOIN entities e ON e.id = m.concept_id
          {WHERE}
-         ORDER BY e.canonical_name, m.source
+         ORDER BY e.canonical_name, m.source, m.id DESC
          LIMIT $4 OFFSET $5"
     ))
     .bind(kb_id)

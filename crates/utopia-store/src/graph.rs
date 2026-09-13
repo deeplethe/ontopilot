@@ -821,7 +821,7 @@ pub async fn overview(
     as_of: Option<chrono::DateTime<chrono::Utc>>,
 ) -> AppResult<(Vec<GraphNode>, Vec<GraphEdge>, i64, i64)> {
     let nodes: Vec<GraphNode> = sqlx::query_as(&format!(
-        "{} WHERE e.kb_id = $1 AND {visible} ORDER BY degree DESC, e.created_at LIMIT $2",
+        "{} WHERE e.kb_id = $1 AND {visible} ORDER BY degree DESC, e.created_at, e.id LIMIT $2",
         node_sql(Some(3), as_of.map(|_| 3)),
         visible = crate::record_axis::entity_visible_at("e", 3),
     ))
@@ -1082,7 +1082,7 @@ pub async fn search_entities(
         "{} WHERE e.kb_id = $1 AND e.merged_into IS NULL
          AND (e.canonical_name ILIKE $2
               OR EXISTS (SELECT 1 FROM unnest(e.aliases) AS a WHERE a ILIKE $2))
-         ORDER BY degree DESC, e.canonical_name LIMIT $3 OFFSET $4",
+         ORDER BY degree DESC, e.canonical_name, e.id LIMIT $3 OFFSET $4",
         node_sql(None, None)
     ))
     .bind(kb_id)
@@ -1343,7 +1343,7 @@ pub async fn low_confidence_facts(
          LEFT JOIN relation_types r ON r.id = f.predicate_id
          LEFT JOIN entities o ON o.id = f.object_id
          WHERE f.kb_id = $1 AND f.invalidated_at IS NULL AND f.confidence < $2
-         ORDER BY f.confidence, f.recorded_at DESC
+         ORDER BY f.confidence, f.recorded_at DESC, f.id DESC
          LIMIT $3 OFFSET $4",
     )
     .bind(kb_id)
@@ -1380,7 +1380,7 @@ pub async fn stale_facts(
            AND NOT EXISTS (SELECT 1 FROM fact_evidence fe
                            JOIN chunks c ON c.id = fe.chunk_id
                            WHERE fe.fact_id = f.id AND c.superseded_at IS NULL)
-         ORDER BY f.recorded_at DESC
+         ORDER BY f.recorded_at DESC, f.id DESC
          LIMIT $2 OFFSET $3",
     )
     .bind(kb_id)

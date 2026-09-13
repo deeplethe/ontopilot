@@ -552,7 +552,7 @@ pub async fn list_conflicts(
          LEFT JOIN entities oo ON oo.id = fo.object_id
          LEFT JOIN entities no_ ON no_.id = fn_.object_id
          WHERE c.kb_id = $1 AND c.status = 'open'
-         ORDER BY c.created_at DESC
+         ORDER BY c.created_at DESC, c.id DESC
          LIMIT $2 OFFSET $3",
     )
     .bind(kb_id)
