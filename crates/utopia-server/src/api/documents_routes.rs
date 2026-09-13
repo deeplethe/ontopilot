@@ -44,12 +44,29 @@ pub async fn upload(
 
     let mut created: Vec<Document> = Vec::new();
     let mut skipped: Vec<serde_json::Value> = Vec::new();
+    // `doc_time` 文本字段以出现在文件字段之前为有效；多文件上传可逐文件指定
+    // 各自的写入时间。#610 第一刀：multipart 接受 `doc_time` 文本字段。
+    let mut pending_doc_time: Option<chrono::DateTime<chrono::Utc>> = None;
 
     while let Some(field) = multipart
         .next_field()
         .await
         .map_err(|e| AppError::invalid_detail("bad_upload", "Malformed upload", e.to_string()))?
     {
+        // 文本字段 `doc_time`：吃掉字段值并把它挂在下一个文件字段上。
+        // 文件字段之间没有 doc_time 就一直沿用上一次的（直到出现新的或上传结束）。
+        if field.name() == Some("doc_time") {
+            match field.text().await {
+                Ok(s) => {
+                    match chrono::DateTime::parse_from_rfc3339(s.trim()) {
+                        Ok(dt) => pending_doc_time = Some(dt.with_timezone(&chrono::Utc)),
+                        Err(_) => pending_doc_time = None,
+                    }
+                }
+                Err(_) => pending_doc_time = None,
+            }
+            continue;
+        }
         let Some(filename) = field.file_name().map(String::from) else {
             continue;
         };
@@ -72,6 +89,7 @@ pub async fn upload(
             .await
             .map_err(AppError::Other)?;
 
+        let doc_time = pending_doc_time.take();
         match utopia_store::documents::create(
             &state.pool,
             kb_id,
@@ -80,7 +98,7 @@ pub async fn upload(
             bytes.len() as i64,
             &sha256,
             target_source,
-            None,
+            doc_time,
             None,
         )
         .await
