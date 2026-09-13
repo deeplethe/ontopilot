@@ -46,6 +46,19 @@ const MUST_CALL: &str = "(system) Every turn starts with a tool call. Call the t
     the evidence for this question, or call no_evidence_needed if the question is not about the \
     knowledge base at all. Do not describe a plan.";
 
+/// 模型回了一个**空回复**（没有正文、也没调工具）时重问的那句（#631）。
+///
+/// 空回复不是一个结论，只是没说话。从前它直接变成一帧 `error`：台子上 48 轮里出过
+/// 2 次，都在工具已经跑完之后——用户看见三四步查证，接着一句「Model returned an
+/// empty answer」，查到的东西全白费。重问一次，第二次还空才报错：只给一次，所以一个
+/// 始终不说话的端点不会让循环空转。
+///
+/// 措辞两头都留门：工具跑过的，就着查到的答；一步没查的（首轮就回空），缺证据
+/// 就去调工具。
+pub(crate) const EMPTY_REPLY_RETRY: &str = "(system) Your previous reply was empty. Reply to \
+    the user now: answer from the evidence gathered above, or call a tool if you still need \
+    evidence.";
+
 /// 弹药耗尽那一轮的系统提示补语；工具同时被撤走，模型只能作答
 const BUDGET_EXHAUSTED: &str =
     "\n\n(system) Tool budget exhausted. Answer now from the evidence gathered above.";
@@ -76,6 +89,8 @@ pub struct Shared {
     gate_passed: AtomicBool,
     /// 端点无视 `required` 时的退回只给一次
     nudged: AtomicBool,
+    /// 空回复的重问也只给一次（见 `EMPTY_REPLY_RETRY`）
+    asked_again: AtomicBool,
 }
 
 impl Shared {
@@ -105,6 +120,7 @@ impl Shared {
             steps: Mutex::new(HashMap::new()),
             gate_passed: AtomicBool::new(false),
             nudged: AtomicBool::new(false),
+            asked_again: AtomicBool::new(false),
         })
     }
 
@@ -252,10 +268,26 @@ impl AgentHook for Policy {
             .content
             .iter()
             .any(|c| matches!(c, AssistantContent::ToolCall(_)));
+        // 只有推理、或者正文全是空白，对用户来说都是没说话
+        let has_text = event
+            .content
+            .iter()
+            .any(|c| matches!(c, AssistantContent::Text(t) if !t.text.trim().is_empty()));
         let turn = event.turn;
         let shared = self.shared.clone();
         let max_rounds = self.max_rounds;
         async move {
+            // 空回复重问一次；再空就放它结束，`chat` 那边以「Model returned an empty
+            // answer」收尾。**不再叠加下面那次退回**：一个始终不说话的端点只多问一次
+            if !has_tool_call && !has_text {
+                if !shared.asked_again.swap(true, Ordering::Relaxed) {
+                    tracing::warn!(model = shared.model, turn, "模型回了空，重问一次");
+                    return ModelTurnAction::Retry(RetryRequest::Feedback(
+                        EMPTY_REPLY_RETRY.into(),
+                    ));
+                }
+                return ModelTurnAction::Continue;
+            }
             if has_tool_call || shared.gate_passed.load(Ordering::Relaxed) || turn > max_rounds {
                 return ModelTurnAction::Continue;
             }

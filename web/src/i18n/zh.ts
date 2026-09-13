@@ -666,6 +666,7 @@ export const zh: Strings = {
     deleteHint: (name: string) => `「${name}」及其消息将被永久移除。`,
     deleteBtn: "删除",
     cancel: "取消",
+    noSources: "未引用任何来源",
   },
   graph: {
     untyped: "未分类",
@@ -1405,6 +1406,26 @@ export const zh: Strings = {
     exploreHint:
       "一个智能体读这些库表结构，提出指标／维度的口径。提出来的落在「待审批」，确认之后问数才会用。",
     exploreQueued: "探索已排队，提议会出现在「待确认」里；一条都提不出来时，铃铛会告诉你。",
+    // **最近一轮探索的账**——光看列表答不了「漏了多少」（#503）：
+    // 十二条提议对着八十列的宽表与刚好覆盖完一个小库长得一样。这条贴出来人
+    // 才能从「等量提议」里看出覆盖范围。
+    lastRun: (r: {
+      tables: number;
+      columns: number;
+      returned: number;
+      accepted: number;
+      truncated: boolean;
+    }) => {
+      const parts = [
+        `${r.tables} 张表`,
+        `${r.columns} 列`,
+        `返回 ${r.returned}`,
+        `落库 ${r.accepted}`,
+      ];
+      if (r.truncated) parts.push("（结构被截）");
+      return `上一轮探索：${parts.join(" ／ ")}`;
+    },
+    lastRunMissing: "还没有跑过探索。",
     sourcesEmpty: "没有挂载任何数据源。",
     sourcesNoneAvailable: "还没有登记数据源——请部署管理员登记一个。",
     newConn: "登记新连接",
@@ -1581,9 +1602,10 @@ export const zh: Strings = {
     violationsHint:
       "与本体自己声明的公理相抵触的事实。这里没有猜测——谓词没声明公理就不查。",
     violationSelfLoop: "指向了自己",
-    violationAsymmetry: "两个方向都断言了",
+    violationAsymmetry: "两个方向同时成立",
     violationCycle: "传递链绕成了环",
-    violationFunctional: "该只有一个值，却有两个",
+    violationFunctional: "同一时间有不止一个值",
+    violationInverseFunctional: "同一时间有不止一个持有者",
     violationSignature: "主语或宾语不在关系声明的类型里",
     violationDerived: "推出来的与断言相抵触",
     derivedLine: (s: string, p: string, o: string) =>
@@ -1603,9 +1625,9 @@ export const zh: Strings = {
     violationPath: (n: number) => `环上 ${n} 条事实`,
     retractFact: "数据错了",
     retractThis: "撤这条",
-    retractThisHint: "把这条事实撤出图谱，另一条不动。",
+    retractThisHint: "把这条事实撤出图谱，其余的不动。",
     relaxAxiom: "公理错了",
-    acceptBoth: "两边都对",
+    acceptBoth: (n: number) => (n > 2 ? "都对" : "两边都对"),
     runCheck: "跑一遍检查",
     checkNeverRun:
       "还没查过。矛盾是拿本体自己声明的公理量出来的——跑一遍只会报公理确实说了的那些。",

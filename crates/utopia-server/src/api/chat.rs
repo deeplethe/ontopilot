@@ -1270,3 +1270,7 @@ mod tests {
             .expect("格式错的日期不归这一关管，交给 changes_window");
     }
 }
+
+#[cfg(test)]
+#[path = "chat_empty_reply_tests.rs"]
+mod chat_empty_reply_tests;

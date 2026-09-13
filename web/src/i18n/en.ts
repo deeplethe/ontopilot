@@ -725,6 +725,8 @@ export const en = {
       `“${name}” and its messages will be permanently removed.`,
     deleteBtn: "Delete",
     cancel: "Cancel",
+    // 这条回答背后一条来源都没有（#547）。是事实陈述，所以每条都挂，不猜哪条该挂
+    noSources: "No sources consulted",
   },
   graph: {
     // 还没判出类型的实体（0009）。不是一个类，是"这一格还空着"
@@ -1611,6 +1613,26 @@ export const en = {
       "An agent reads these schemas and proposes metric and dimension definitions. Proposals land in Pending; Ask uses them only once confirmed.",
     exploreQueued:
       "Exploration queued — proposals will appear under Pending. If nothing can be proposed, the alert bell will say so.",
+    // **最近一轮探索的账**——单看列表答不了「漏了多少」（#503）：
+    // 十二条提议对着八十列的宽表与刚好覆盖完一个小库长得一样。这条贴出来人
+    // 才能从「等量提议」里看出覆盖范围。
+    lastRun: (r: {
+      tables: number;
+      columns: number;
+      returned: number;
+      accepted: number;
+      truncated: boolean;
+    }) => {
+      const parts = [
+        `${r.tables} tables`,
+        `${r.columns} columns`,
+        `returned ${r.returned}`,
+        `accepted ${r.accepted}`,
+      ];
+      if (r.truncated) parts.push("(schema truncated)");
+      return `Last exploration: ${parts.join(" / ")}`;
+    },
+    lastRunMissing: "No exploration has run yet.",
     sourcesEmpty: "No data sources mounted.",
     sourcesNoneAvailable:
       "No data sources registered yet — ask a deployment admin to register one.",
@@ -1814,9 +1836,12 @@ export const en = {
     violationsHint:
       "Facts that contradict axioms your ontology declares. Nothing here is a guess — a predicate that declares no axioms is never checked.",
     violationSelfLoop: "Points at itself",
-    violationAsymmetry: "Both directions asserted",
+    violationAsymmetry: "Both directions hold at once",
     violationCycle: "Cycle through the transitive chain",
-    violationFunctional: "Should hold one value, holds two",
+    /** 互斥的三类只在同时成立时才报（#634），所以文案说「同一时间」 */
+    violationFunctional: "More than one value at once",
+    /** 宾语侧（#634）：同一个对象同一时间被不止一个主语指着 */
+    violationInverseFunctional: "More than one holder at once",
     /** 签名违规（#190 / #196）：一条事实的主语或宾语落在谓词声明的类型之外——
      *  抽取时会掰正，采纳与合并这两条路从前绕过了检查 */
     violationSignature: "Subject or object outside the declared types",
@@ -1843,9 +1868,10 @@ export const en = {
     retractFact: "Data is wrong",
     /** 双事实与环上的违规：撤具体哪一条（#202） */
     retractThis: "Retract",
-    retractThisHint: "Withdraw this fact from the graph; the other one stays.",
+    retractThisHint: "Withdraw this fact from the graph; the rest stay.",
     relaxAxiom: "Axiom is wrong",
-    acceptBoth: "Both are right",
+    /** 互斥组可以不止两条 */
+    acceptBoth: (n: number): string => (n > 2 ? "All are right" : "Both are right"),
     runCheck: "Run check",
     checkNeverRun:
       "Not checked yet. Contradictions are found by asking your ontology, so a run here only reports what its axioms actually say.",
