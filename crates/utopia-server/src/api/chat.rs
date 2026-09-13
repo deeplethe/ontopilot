@@ -56,10 +56,38 @@ const STALL_NUDGE: &str = "(system) Your last message ended the turn without cal
 const NO_EVIDENCE_NOTE: &str =
     "\n\n(No evidence was gathered for this answer: the model announced a search it did not perform.)";
 
-/// 追问之后模型的回复算哪种——见 `chat_policy::AfterNudge`。本地只保留别名
-/// 是因为下面那段 match 直接写 `AfterNudge::*`，改了名字就把那一段弄散。
-/// 真正的判定由 `chat_policy::classify_nudge_response` 做。
-use super::chat_policy::AfterNudge;
+/// 一轮结束、正文非空、整场没调过工具也没有引用：这个答案什么都不站在上面。
+/// 「问这场对话」的消息也满足这两条，所以追问必须便宜、安静，且留有 DONE 出口。
+fn answer_rests_on_nothing(steps: &[serde_json::Value], sources: &[serde_json::Value]) -> bool {
+    steps.is_empty() && sources.is_empty()
+}
+
+/// 追问之后模型的回复算哪种
+#[derive(Debug, PartialEq, Eq)]
+enum AfterNudge {
+    /// 调了工具：照常执行，接着走
+    Tools,
+    /// 说上一句已经是答案，或者什么都没说：原样收尾
+    Done,
+    /// 又是一段文字：还在说空话
+    Stalled,
+}
+
+fn after_nudge(turn: &utopia_llm::AssistantTurn) -> AfterNudge {
+    if !turn.tool_calls.is_empty() {
+        return AfterNudge::Tools;
+    }
+    let said = turn
+        .content
+        .as_deref()
+        .map(|t| t.trim().trim_matches(|c: char| !c.is_alphanumeric()))
+        .unwrap_or_default();
+    if said.is_empty() || said.eq_ignore_ascii_case("done") {
+        AfterNudge::Done
+    } else {
+        AfterNudge::Stalled
+    }
+}
 
 /// `remember` 曾整个停用过一段（见 `docs/decisions/0015`）：它那时会把一句话直接
 /// 变成图上一条活边，实测里「记住 Acme 把总部搬到了深圳」落成的是一条**空谓词、
@@ -761,7 +789,10 @@ pub async fn chat(
         loop {
             if rounds >= MAX_ROUNDS {
                 // 弹药耗尽：命令模型就现有证据作答（流式）
-                msgs.push(super::chat_policy::force_final_answer_message());
+                msgs.push(json!({
+                    "role": "user",
+                    "content": "(system) Tool budget exhausted. Answer now from the evidence gathered above.",
+                }));
                 match client.chat_stream_raw(&msgs).await {
                     Ok(deltas) => {
                         let mut deltas = std::pin::pin!(deltas);
@@ -791,7 +822,7 @@ pub async fn chat(
             let deltas = match client.chat_tools_stream(&msgs, &tools).await {
                 Ok(s) => s,
                 Err(e) => {
-                    if super::chat_policy::should_degrade_to_one_shot_rag(rounds, true) {
+                    if rounds == 0 {
                         // 模型可能不支持 tool-calling：降级为一次性 RAG 注入
                         tracing::warn!(error = %e, "tool-calling 不可用，降级为一次性 RAG");
                         let chunks =
@@ -863,28 +894,21 @@ pub async fn chat(
             };
 
             if turn.tool_calls.is_empty() {
-                if let Some(reason) =
-                    super::chat_policy::no_tool_on_empty_answer(&answer_acc, &turn.tool_calls)
-                {
-                    yield error_event(reason);
+                if answer_acc.is_empty() {
+                    yield error_event("Model returned an empty answer");
                     return;
                 }
                 // **没调工具的一轮不一定是答完了，也可能是停住了**（#509）：正文说
                 // 「我去查」，然后轮次就结束。循环分不出这两种，靠一次追问让模型自己
                 // 表态。追问不流式：模型若只是确认 DONE，用户不该看见那个词
                 let mut carry_on_with_tools = false;
-                if super::chat_policy::should_nudge_stalled_turn(
-                    nudged,
-                    &steps_acc,
-                    &sink.sources,
-                    &turn.tool_calls,
-                ) {
+                if !nudged && answer_rests_on_nothing(&steps_acc, &sink.sources) {
                     nudged = true;
                     let model = settings.chat_model.clone().unwrap_or_default();
                     msgs.push(turn.to_message());
                     msgs.push(json!({ "role": "user", "content": STALL_NUDGE }));
                     match client.chat_tools(&msgs, &tools).await {
-                        Ok(second) => match super::chat_policy::classify_nudge_response(&second) {
+                        Ok(second) => match after_nudge(&second) {
                             AfterNudge::Tools => {
                                 tracing::warn!(model, "模型只说了要查没查，追问后调了工具");
                                 // 追问那轮的叙述没有流过，这里补上，接在承诺后面
@@ -1331,7 +1355,7 @@ mod tests {
 
 #[cfg(test)]
 mod stall_tests {
-    use crate::api::chat_policy::{answer_rests_on_nothing, classify_nudge_response, AfterNudge};
+    use super::{after_nudge, answer_rests_on_nothing, AfterNudge};
     use utopia_llm::{AssistantTurn, ToolCall};
 
     fn says(text: Option<&str>) -> AssistantTurn {
@@ -1362,16 +1386,16 @@ mod stall_tests {
                 arguments: "{}".into(),
             }],
         };
-        assert_eq!(classify_nudge_response(&turn), AfterNudge::Tools);
+        assert_eq!(after_nudge(&turn), AfterNudge::Tools);
     }
 
     /// DONE 怎么写都算：大小写、句号、前后空白；什么都没说也算——没有可补的
     #[test]
     fn done_in_any_dress_keeps_the_answer() {
         for text in ["DONE", "done", " Done. ", "DONE!", ""] {
-            assert_eq!(classify_nudge_response(&says(Some(text))), AfterNudge::Done, "{text:?}");
+            assert_eq!(after_nudge(&says(Some(text))), AfterNudge::Done, "{text:?}");
         }
-        assert_eq!(classify_nudge_response(&says(None)), AfterNudge::Done);
+        assert_eq!(after_nudge(&says(None)), AfterNudge::Done);
     }
 
     /// 再来一段文字，不管哪种语言、说得多客气，都是又停住了
@@ -1383,7 +1407,7 @@ mod stall_tests {
             "Done searching, here is the timeline: ...",
         ] {
             assert_eq!(
-                classify_nudge_response(&says(Some(text))),
+                after_nudge(&says(Some(text))),
                 AfterNudge::Stalled,
                 "{text:?}"
             );

@@ -2,7 +2,6 @@ mod admin_routes;
 mod alerts_routes;
 mod auth_routes;
 mod chat;
-mod chat_policy;
 mod datasource_routes;
 pub(crate) mod documents_routes;
 mod events_routes;
