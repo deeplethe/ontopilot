@@ -15,7 +15,8 @@ use std::collections::HashSet;
 /// 形状检查做了什么；服务端按条记信号
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Normalization {
-    /// 值只有标点（`—`）或是空的：表里的「无」，不是一个值，不落
+    /// 值只有破折号（`—`）或是空的：表里的「无」，不是一个值，不落。**只认破折号**：
+    /// `☒`、`✓` 这类符号没有字母数字，却是一格写着的内容（勾选了），照值落
     NoValue { predicate: String, written: String },
     /// 值后面有一截引文里没有的字：只留引文里有的那段。模型读对了表头、却把期间
     /// 写进了值（`(6,176) for three months ended July 27, 2025`），引文只有 `(6,176)`
@@ -28,7 +29,8 @@ pub enum Normalization {
     /// 从前整条以 object_missing 丢掉，写对了的数跟着没了
     QualifiersWithoutObject { predicate: String, values: usize },
     /// 宾语是契约格式的日期（`2026-06-30`）：时间不是实体。边上的数落成值、日期进有效期；
-    /// 没带数的不落
+    /// 没带数的，把写出来的那段落成值——`2028`（「2028 年起上线」）、`4000`（人数）都
+    /// 解析得成年份，丢掉就把一条信息整个丢了
     TimeAsObject {
         predicate: String,
         written: String,
@@ -37,7 +39,9 @@ pub enum Normalization {
     /// 主语是契约格式的日期：数是某个东西在那一刻的数，那个东西是谁回复里没说。不落
     TimeAsSubject { predicate: String, written: String },
     /// 宾语的名字包住了另一个声明实体，而同一句、同主语、同谓词已有一条指向那个实体的边：
-    /// 它是那个实体的描述，不落
+    /// 它**可能**是那个实体的描述。**只记，不删**：「non-GAAP net income, or earnings, per
+    /// diluted share」包住了「non-GAAP net income」，却是另一个指标（每股收益）。结构上
+    /// 分不出描述与另一个东西，删错了就是实体连事实一起没了
     ObjectDescribesDeclared {
         predicate: String,
         name: String,
@@ -55,15 +59,60 @@ fn norm(s: &str) -> String {
         .to_lowercase()
 }
 
+/// 比对引文用的词元：一段连续的数字（中间的 `,` `.` 算在数里，`13,237`、`89.0`），或者
+/// 一段连续的非数字字母。其余字符都是分隔。
+///
+/// **按词元比，不按子串比**：从前 `10 to 15 GW` 对着「10–15 GW」，`10` 作为子串在引文
+/// 里，尾巴 `to 15 GW` 作为整段不在，于是被剪成 `10`。数字与汉字之间也切开——中文里数
+/// 贴着字写（「营收为12,345元」），不切的话一个数永远对不上
+fn tokens(t: &str) -> Vec<String> {
+    let chars: Vec<char> = t.chars().collect();
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut cur_digit = false;
+    for (i, &c) in chars.iter().enumerate() {
+        let digit = c.is_numeric();
+        let joins_number =
+            (c == ',' || c == '.') && cur_digit && chars.get(i + 1).is_some_and(|n| n.is_numeric());
+        if joins_number {
+            cur.push(c);
+            continue;
+        }
+        if !c.is_alphanumeric() {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+            }
+            continue;
+        }
+        if !cur.is_empty() && digit != cur_digit {
+            out.push(std::mem::take(&mut cur));
+        }
+        cur_digit = digit;
+        cur.extend(c.to_lowercase());
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// `needle` 的词元是否作为连续的一段出现在 `hay` 的词元里
+fn contains_tokens(hay: &[String], needle: &[String]) -> bool {
+    !needle.is_empty() && hay.windows(needle.len()).any(|w| w == needle)
+}
+
+fn has_digit(t: &str) -> bool {
+    t.chars().any(char::is_numeric)
+}
+
 /// 值后面是否挂着一截不属于它的字。返回 (保留的前缀, 去掉的尾巴)。
 ///
-/// 两个条件同时成立才剪，都是结构，不认词：
-/// - **保留的那段在引文里，而且是一格的写法**——含数字，是原文写的那个数；
-///   或者只有标点（`—`），是原文那一格写的「没有」。后一种还要尾巴里带数字的词
-///   **一个都不在引文里**：`$ 53,954 million` 对着 `Net income | $ | 53,954`，
-///   `$` 在引文里、也只有标点，可 `53,954` 也在，那个数就是值，不是一格空；
-/// - **尾巴不在引文里，而且自己含数字**——它是另一条信息（一个期间、一个日期、
-///   另一个百分比），不是这个数的单位。
+/// 两个条件同时成立才剪，都是结构，不认词，比的都是整词元（见 [`tokens`]）：
+/// - **保留的那段在引文里，而且是一格的写法**——含数字、词元连续地出现在引文里，是原文
+///   写的那个数；或者只有破折号（`—`），是原文那一格写的「没有」；
+/// - **尾巴自己含数字，而且那些数一个都不在引文里**——它是另一条信息（一个期间、一个
+///   日期、另一个百分比），不是这个数的单位。尾巴里有一个数在引文里，就说明它是原文的
+///   一部分换了写法（`10 to 15 GW` 对着「10–15 GW」），不剪。
 ///
 /// 第二条要数字，是因为挂在数后面、引文里又没有的，还有一类是对的：表头上的量级与
 /// 单位（`53,954 million USD`，这一行引文只有 `53,954`，`million` 在表头「in millions」）、
@@ -74,24 +123,17 @@ fn ungrounded_tail<'a>(value: &'a str, quote: &str) -> Option<(&'a str, &'a str)
     if q.is_empty() || q.contains(&norm(value)) {
         return None;
     }
-    let has_digit = |t: &str| t.chars().any(|c| c.is_numeric());
-    // 引文按词切开（表格的 `|` 也是分隔）：比的是整词，`27` 不算在 `1,227` 里
-    let words = |t: &str| -> Vec<String> {
-        t.split(|c: char| c.is_whitespace() || c == '|')
-            .map(|w| {
-                w.trim_matches(|c: char| !c.is_alphanumeric())
-                    .to_lowercase()
-            })
-            .filter(|w| !w.is_empty())
-            .collect()
+    let quote_tokens = tokens(quote);
+    let foreign_figures = |tail: &str| {
+        let numbers: Vec<String> = tokens(tail).into_iter().filter(|w| has_digit(w)).collect();
+        !numbers.is_empty() && numbers.iter().all(|w| !quote_tokens.contains(w))
     };
-    let quote_words = words(quote);
     let bounds: Vec<usize> = value
         .char_indices()
         .filter(|(i, c)| c.is_whitespace() && *i > 0)
         .map(|(i, _)| i)
         .collect();
-    let (kept, rest) = bounds
+    bounds
         .iter()
         .rev()
         .map(|&i| {
@@ -103,22 +145,41 @@ fn ungrounded_tail<'a>(value: &'a str, quote: &str) -> Option<(&'a str, &'a str)
             )
         })
         .find(|(p, r)| {
-            if p.is_empty() || !q.contains(&norm(p)) {
+            if p.is_empty() || r.is_empty() || !foreign_figures(r) {
                 return false;
             }
-            has_digit(p)
-                || (is_no_value(p)
-                    && words(r)
-                        .iter()
-                        .filter(|w| has_digit(w))
-                        .all(|w| !quote_words.contains(w)))
-        })?;
-    (!rest.is_empty() && has_digit(rest) && !q.contains(&norm(rest))).then_some((kept, rest))
+            if is_no_value(p) {
+                return q.contains(&norm(p));
+            }
+            has_digit(p) && contains_tokens(&quote_tokens, &tokens(p))
+        })
 }
 
-/// 只有标点、没有字母也没有数字：表格里表示「没有」的那一格
+/// 表格里表示「没有」的那一格：空的，或者只有破折号。
+///
+/// **只认破折号（Unicode 的 Pd 类）**，不是「没有字母数字就算」：`☒`、`✓`、`☐` 也没有
+/// 字母数字，却是那一格真写着的内容，从前被当成空格子丢了
 fn is_no_value(written: &str) -> bool {
-    !written.chars().any(char::is_alphanumeric)
+    written.chars().filter(|c| !c.is_whitespace()).all(|c| {
+        matches!(
+            c,
+            '-' | '\u{058A}' | '\u{05BE}' | '\u{1400}' | '\u{1806}' | '\u{2010}'
+                ..='\u{2015}'
+                    | '\u{2E17}'
+                    | '\u{2E1A}'
+                    | '\u{2E3A}'
+                    | '\u{2E3B}'
+                    | '\u{2E40}'
+                    | '\u{301C}'
+                    | '\u{3030}'
+                    | '\u{30A0}'
+                    | '\u{FE31}'
+                    | '\u{FE32}'
+                    | '\u{FE58}'
+                    | '\u{FE63}'
+                    | '\u{FF0D}'
+        )
+    })
 }
 
 /// 边属性里不是值、是单位的那几个键（与服务端同一张表）
@@ -256,6 +317,22 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
 
         // ---- 宾语是时间 ----
         if let Some(o) = object.as_deref().filter(|o| is_contract_time(o)) {
+            if values.is_empty() {
+                // 没带数：写出来的那段就是值。`2028`（「2028 年起上线」）、`4000`（人数）都解析
+                // 得成年份，从前整条丢掉，一条信息就没了。宾语那个声明没人引用，下面按孤点去掉
+                facts.push(value_fact(
+                    &f,
+                    f.predicate.trim().to_string(),
+                    serde_json::Value::String(o.to_string()),
+                    None,
+                ));
+                out.push(Normalization::TimeAsObject {
+                    predicate: f.predicate.clone(),
+                    written: o.to_string(),
+                    values: 0,
+                });
+                continue;
+            }
             let several = values.len() > 1;
             for (key, value) in &values {
                 let predicate = if several {
@@ -281,7 +358,7 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
         facts.push(f);
     }
 
-    // ---- 描述：名字包住另一个声明实体，本尊那条边同句已在 ----
+    // ---- 描述：名字包住另一个声明实体，本尊那条边同句已在。只记，不删 ----
     let declared: Vec<String> = entities.iter().map(|e| e.name.trim().to_string()).collect();
     let side = |r: Option<&String>, w: Option<&str>| {
         handle_name(r)
@@ -312,7 +389,6 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
                     && !(edge_out && glued(o[at + i.len()..].chars().next()))
             })
     };
-    let mut keep = vec![true; facts.len()];
     for i in 0..facts.len() {
         let Some(name) = objects[i].as_deref() else {
             continue;
@@ -334,7 +410,8 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
                 })
         });
         if let Some(head) = head {
-            keep[i] = false;
+            // 不删（见枚举上的说明）：结构分不出「SB Energy 的发展」与「每股收益」这类
+            // 包住了另一个名字的真指标。记下来，量得出这种形状多常见、有多少是描述
             out.push(Normalization::ObjectDescribesDeclared {
                 predicate: facts[i].predicate.clone(),
                 name: name.to_string(),
@@ -342,11 +419,7 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
             });
         }
     }
-    x.facts = facts
-        .into_iter()
-        .zip(keep)
-        .filter_map(|(f, k)| k.then_some(f))
-        .collect();
+    x.facts = facts;
 
     // ---- 被上面几条弄成孤点的声明 ----
     // 只去掉「原来有事实引用、现在没有了」的：模型一开始就只声明不连边的，不归这里管
@@ -529,6 +602,19 @@ mod tests {
             vec![entity("e1", "NVIDIA")],
             vec![
                 valued("NVIDIA", "dividend", "—", "Dividends | —"),
+                // 勾选框是那一格写着的内容，不是空格子：没有字母数字，照值落
+                valued(
+                    "NVIDIA",
+                    "large_accelerated_filer",
+                    "☒",
+                    "Large accelerated filer | ☒",
+                ),
+                valued(
+                    "NVIDIA",
+                    "emerging_growth_company",
+                    "☐",
+                    "Emerging growth company | ☐",
+                ),
                 valued("NVIDIA", "dividend", " – ", "Dividends | –"),
                 valued("NVIDIA", "dividend", "$0.01", "Dividends | $0.01"),
                 // 空的那一格后面挂着列头上的期间：剪掉尾巴，剩下的仍是空
@@ -548,7 +634,7 @@ mod tests {
             ],
         );
         let kept: Vec<&str> = x.facts.iter().map(value_of).collect();
-        assert_eq!(kept, ["$0.01", "$ 53,954 million"]);
+        assert_eq!(kept, ["☒", "☐", "$0.01", "$ 53,954 million"]);
         assert_eq!(
             n.iter()
                 .filter(|v| matches!(v, Normalization::NoValue { .. }))
@@ -618,10 +704,16 @@ mod tests {
             ],
             vec![margin, bare],
         );
-        assert_eq!(x.facts.len(), 1);
+        // 带数的：数落成值、日期进有效期；没带数的：写出来的那段落成值，不丢
+        assert_eq!(x.facts.len(), 2);
         assert_eq!(x.facts[0].predicate, "gross_margin");
         assert_eq!(value_of(&x.facts[0]), "75.0%");
         assert_eq!(x.facts[0].valid_from.as_deref(), Some("2026-06"));
+        assert_eq!(
+            (x.facts[1].predicate.as_str(), value_of(&x.facts[1])),
+            ("reported_in", "2026")
+        );
+        assert!(x.facts[1].object.is_none() && x.facts[1].object_ref.is_none());
         let names: Vec<&str> = x.entities.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["NVIDIA"]);
         assert_eq!(
@@ -664,9 +756,10 @@ mod tests {
         assert!(n.is_empty());
     }
 
-    /// SB Energy 那句：名字包住了另一个声明实体，同句同主语同谓词已有一条指向它的边
+    /// SB Energy 那句：名字包住了另一个声明实体，同句同主语同谓词已有一条指向它的边。
+    /// 记一条信号，事实与声明都留着——结构分不出它与下面「每股收益」那种真指标
     #[test]
-    fn a_description_beside_its_head_goes_with_its_declaration() {
+    fn a_description_beside_its_head_is_flagged_not_removed() {
         let quote = "NVIDIA to invest $1.5B in SB Energy now to support SB Energy\u{2019}s growth and commitments to the Ohio community";
         let mut head = fact("NVIDIA", "invested_in", Some("SB Energy"), quote);
         head.object_ref = Some("e2".into());
@@ -688,22 +781,19 @@ mod tests {
             ],
             vec![head, desc],
         );
-        assert_eq!(x.facts.len(), 1);
-        assert_eq!(x.facts[0].object.as_deref(), Some("SB Energy"));
-        assert!(x
-            .entities
-            .iter()
-            .all(|e| e.local_id.as_deref() != Some("e6")));
+        // 只记不删：两条都在，那个声明也在（它仍被引用）
+        assert_eq!(x.facts.len(), 2);
+        assert_eq!(x.entities.len(), 3);
         assert!(n.iter().any(
             |v| matches!(v, Normalization::ObjectDescribesDeclared { head, .. } if head == "SB Energy")
         ));
     }
 
-    /// 同样的结构，中文：不靠 's
+    /// 同样的结构，中文：不靠 's，照样认得出这个形状（只记）
     #[test]
     fn a_description_is_recognised_without_a_possessive() {
         let quote = "英伟达向星辰能源投资15亿美元，支持星辰能源在俄亥俄的发展";
-        let (x, _) = run(
+        let (x, n) = run(
             vec![
                 entity("e1", "英伟达"),
                 entity("e2", "星辰能源"),
@@ -714,8 +804,109 @@ mod tests {
                 fact("英伟达", "投资", Some("星辰能源在俄亥俄的发展"), quote),
             ],
         );
-        assert_eq!(x.facts.len(), 1);
-        assert_eq!(x.entities.len(), 2);
+        assert_eq!(x.facts.len(), 2);
+        assert_eq!(x.entities.len(), 3);
+        assert!(n
+            .iter()
+            .any(|v| matches!(v, Normalization::ObjectDescribesDeclared { .. })));
+    }
+
+    /// **四处误伤，逐个钉住**（#637 实测）：每一处从前都把一条真信息丢了或剪坏了
+    #[test]
+    fn what_the_shape_checks_used_to_break_is_kept() {
+        // 一、短数字被当子串匹配：`10 to 15 GW` 对着「10–15 GW」，从前剪成 `10`
+        let (x, n) = run(
+            vec![entity("e1", "SB Energy")],
+            vec![
+                valued(
+                    "SB Energy",
+                    "planned_capacity",
+                    "10 to 15 GW",
+                    "SB Energy plans 10–15 GW of new generation",
+                ),
+                // 词元不是子串：`5` 不在「25 GW」里
+                valued(
+                    "SB Energy",
+                    "planned_capacity",
+                    "5 GW by 2030",
+                    "SB Energy plans 25 GW by 2030",
+                ),
+                // 中文里数贴着字写，照样按词元对得上，尾巴那个日期不在引文里，剪
+                valued(
+                    "SB Energy",
+                    "营收",
+                    "12,345 截至2025年7月27日止三个月",
+                    "营收为12,345元",
+                ),
+            ],
+        );
+        let got: Vec<&str> = x.facts.iter().map(value_of).collect();
+        assert_eq!(got, ["10 to 15 GW", "5 GW by 2030", "12,345"]);
+        assert_eq!(n.len(), 1, "{n:?}");
+
+        // 二、勾选框：见 a_dash_is_no_value
+
+        // 三、四位数的宾语：`2028`、`4000` 解析得成年份，落成值，不丢
+        let mut launch = fact(
+            "Aurora",
+            "launch_year",
+            Some("2028"),
+            "Aurora goes live from 2028",
+        );
+        launch.object_ref = Some("e2".into());
+        let mut staff = fact(
+            "Acme",
+            "employees",
+            Some("4000"),
+            "Acme employs 4000 people",
+        );
+        staff.object_ref = Some("e3".into());
+        let (x, _) = run(
+            vec![
+                entity("e1", "Aurora"),
+                entity("e2", "2028"),
+                entity("e3", "4000"),
+                entity("e4", "Acme"),
+            ],
+            vec![launch, staff],
+        );
+        let got: Vec<(&str, &str)> = x
+            .facts
+            .iter()
+            .map(|f| (f.predicate.as_str(), value_of(f)))
+            .collect();
+        assert_eq!(got, [("launch_year", "2028"), ("employees", "4000")]);
+        let names: Vec<&str> = x.entities.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["Aurora", "Acme"], "年份那两个声明不建成节点");
+
+        // 四、包住了另一个指标名的真指标：每股收益不是净利润的描述，留着
+        let quote = "non-GAAP net income was $26.4 billion and non-GAAP net income, or earnings, per diluted share was $1.05";
+        let (x, n) = run(
+            vec![
+                entity("e1", "NVIDIA"),
+                entity("e2", "non-GAAP net income"),
+                entity("e3", "non-GAAP net income, or earnings, per diluted share"),
+            ],
+            vec![
+                fact(
+                    "NVIDIA",
+                    "reported_metric",
+                    Some("non-GAAP net income"),
+                    quote,
+                ),
+                fact(
+                    "NVIDIA",
+                    "reported_metric",
+                    Some("non-GAAP net income, or earnings, per diluted share"),
+                    quote,
+                ),
+            ],
+        );
+        assert_eq!(x.facts.len(), 2);
+        assert_eq!(x.entities.len(), 3);
+        assert!(n
+            .iter()
+            .any(|v| matches!(v, Normalization::ObjectDescribesDeclared { .. })));
     }
 
     /// 包住了别的名字、但旁边没有指向本尊的同一条边：可能真是一个东西，不动

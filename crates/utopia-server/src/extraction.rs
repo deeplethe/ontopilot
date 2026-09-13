@@ -1192,7 +1192,11 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 } => (
                     reason::TIME_AS_OBJECT,
                     predicate,
-                    format!("{written} → {values} value(s)"),
+                    if values == 0 {
+                        format!("{written} kept as a value")
+                    } else {
+                        format!("{written} → {values} value(s)")
+                    },
                 ),
                 N::TimeAsSubject { predicate, written } => {
                     (reason::TIME_AS_SUBJECT, predicate, written)
