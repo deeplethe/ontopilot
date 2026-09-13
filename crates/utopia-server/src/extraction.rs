@@ -1172,6 +1172,10 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 N::PeriodAsObject { predicate, label } => {
                     (reason::PERIOD_AS_OBJECT, predicate, label)
                 }
+                N::PeriodAsSubject { predicate, label } => {
+                    (reason::PERIOD_AS_SUBJECT, predicate, label)
+                }
+                N::PeriodDeclared { name } => (reason::PERIOD_DECLARED, "entity".to_string(), name),
                 N::ObjectDescribesDeclared {
                     predicate,
                     name,

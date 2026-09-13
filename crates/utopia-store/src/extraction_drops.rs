@@ -77,6 +77,10 @@ pub mod reason {
     pub const PERIOD_TO_VALIDITY: &str = "period_to_validity";
     /// 期间做了宾语、边上没有数：这条事实没有可落的值，不落（normalize）
     pub const PERIOD_AS_OBJECT: &str = "period_as_object";
+    /// 期间做了主语：数是谁的回复里没说，不猜，不落（normalize）
+    pub const PERIOD_AS_SUBJECT: &str = "period_as_subject";
+    /// 期间被声明成了实体：声明去掉，不造节点（normalize）
+    pub const PERIOD_DECLARED: &str = "period_declared";
     /// 宾语是另一个声明实体的所有格描述，本尊那条边同句已在：不落，声明一并去掉（normalize）
     pub const OBJECT_DESCRIBES_DECLARED: &str = "object_describes_declared";
 }

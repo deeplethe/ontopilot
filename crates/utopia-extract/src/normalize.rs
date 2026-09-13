@@ -28,6 +28,11 @@ pub enum Normalization {
     },
     /// 期间做了宾语、什么数都没带：这条事实只说「X 在 P 有过什么」，没有可落的值
     PeriodAsObject { predicate: String, label: String },
+    /// 期间做了主语（`second quarter of fiscal 2027 revenue $89.0 billion`）：数是某个东西在
+    /// 那个期间的数，那个东西是谁回复里没说。不猜，不落，例句进丢弃表
+    PeriodAsSubject { predicate: String, label: String },
+    /// 期间被声明成了实体：去掉声明。上面三条处理完之后已经没有事实引用它，留着就是孤点
+    PeriodDeclared { name: String },
     /// 宾语是另一个声明实体的所有格描述，本尊那条边同句已在：丢，连同它的声明
     ObjectDescribesDeclared {
         predicate: String,
@@ -242,8 +247,28 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
     let mut out = Vec::new();
     let mut facts: Vec<ExtractedFact> = Vec::with_capacity(x.facts.len());
 
-    // ---- 1. 期间做宾语 ----
-    for f in x.facts.drain(..) {
+    // ---- 1. 期间做主语、做宾语 ----
+    // 主语那一侧按句柄取声明的名字（模型常写 `subject: "NVIDIA"`、句柄指着别的），
+    // 取不到再看写出来的名字
+    let declared_name = |r: Option<&String>| {
+        r.and_then(|h| {
+            x.entities
+                .iter()
+                .find(|e| e.local_id.as_deref().map(str::trim) == Some(h.trim()))
+                .map(|e| e.name.trim().to_string())
+        })
+    };
+    let drained: Vec<ExtractedFact> = x.facts.drain(..).collect();
+    for f in drained {
+        let subject =
+            declared_name(f.subject_ref.as_ref()).unwrap_or_else(|| f.subject.trim().to_string());
+        if looks_like_period(&subject) {
+            out.push(Normalization::PeriodAsSubject {
+                predicate: f.predicate.clone(),
+                label: subject,
+            });
+            continue;
+        }
         let label = f
             .object
             .as_deref()
@@ -409,6 +434,23 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
         });
     }
     x.facts = kept;
+
+    // ---- 3. 期间不是实体 ----
+    // 到这里引用期间的事实都已经拆掉或丢掉了；声明还在的话，声明循环照样把它造成节点
+    //（实测一轮留下 `Q1 FY27`、`Q2 FY26` 等六个零事实的孤点）
+    let mut periods: Vec<String> = Vec::new();
+    x.entities.retain(|e| {
+        let is_period = looks_like_period(e.name.trim());
+        if is_period {
+            periods.push(e.name.trim().to_string());
+        }
+        !is_period
+    });
+    out.extend(
+        periods
+            .into_iter()
+            .map(|name| Normalization::PeriodDeclared { name }),
+    );
     out
 }
 
@@ -550,13 +592,20 @@ mod tests {
         assert_eq!(g.valid_to.as_deref(), Some("2026-06-30"));
         assert_eq!(
             n,
-            vec![Normalization::PeriodToValidity {
-                predicate: "gross_margin_for_period".into(),
-                label: "Q2 2026".into(),
-                dated: true,
-                values: 1
-            }]
+            vec![
+                Normalization::PeriodToValidity {
+                    predicate: "gross_margin_for_period".into(),
+                    label: "Q2 2026".into(),
+                    dated: true,
+                    values: 1
+                },
+                // e7 声明的是期间：拆完之后没人引用它，声明也去掉
+                Normalization::PeriodDeclared {
+                    name: "Q2 2026".into()
+                },
+            ]
         );
+        assert!(x.entities.iter().all(|e| e.name != "Q2 2026"));
     }
 
     /// 财年：数照收，日期留模型写的（这里是空），信号里说明没定出日期
@@ -609,6 +658,44 @@ mod tests {
         let mut preds: Vec<&str> = x.facts.iter().map(|f| f.predicate.as_str()).collect();
         preds.sort();
         assert_eq!(preds, ["results.net_income", "results.revenue"]);
+    }
+
+    #[test]
+    fn a_period_subject_is_dropped_and_no_period_stays_declared() {
+        let mut revenue = fact("second quarter of fiscal 2027", "revenue", None, None);
+        revenue.subject_ref = Some("e9".into());
+        revenue.value = Some(serde_json::Value::String("$89.0 billion".into()));
+        let mut margin = fact(
+            "NVIDIA",
+            "gross_margin_for_period",
+            Some("Q2 2026"),
+            Some("e7"),
+        );
+        margin.qualifiers = Some(quals(&[("percentage", "75.0%")]));
+        let mut x = Extraction {
+            entities: vec![
+                entity("e1", "NVIDIA"),
+                entity("e7", "Q2 2026"),
+                entity("e8", "Q1 FY27"),
+                entity("e9", "second quarter of fiscal 2027"),
+            ],
+            facts: vec![revenue, margin],
+            skipped_entities: 0,
+            skipped_facts: 0,
+            truncated: false,
+        };
+        let n = normalize_facts(&mut x);
+        assert_eq!(x.facts.len(), 1, "期间做主语的那条不落，毛利率那条拆成值");
+        assert_eq!(x.facts[0].subject, "NVIDIA");
+        let names: Vec<&str> = x.entities.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["NVIDIA"], "期间一个都不留");
+        assert!(n.iter().any(|v| matches!(v, Normalization::PeriodAsSubject { label, .. } if label == "second quarter of fiscal 2027")));
+        assert_eq!(
+            n.iter()
+                .filter(|v| matches!(v, Normalization::PeriodDeclared { .. }))
+                .count(),
+            3
+        );
     }
 
     #[test]
