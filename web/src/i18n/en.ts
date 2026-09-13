@@ -725,6 +725,8 @@ export const en = {
       `“${name}” and its messages will be permanently removed.`,
     deleteBtn: "Delete",
     cancel: "Cancel",
+    // 这条回答背后一条来源都没有（#547）。是事实陈述，所以每条都挂，不猜哪条该挂
+    noSources: "No sources consulted",
   },
   graph: {
     // 还没判出类型的实体（0009）。不是一个类，是"这一格还空着"
