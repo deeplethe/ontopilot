@@ -1403,6 +1403,12 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                 doc.doc_time,
             )
             .await?;
+            // 别的实体已经叫这个名字：送去裁决，不合并
+            if utopia_store::names::pair_shared_name(&state.pool, doc.kb_id, bound.id, name).await?
+                > 0
+            {
+                needs_adjudication = true;
+            }
         }
 
         // 改绑的候选：这次回复声明的实体，加上提示词里给过的库内实体（#582）

@@ -299,7 +299,9 @@ pub fn build_messages(
             former name, the name in another language. \"ref\" is the entity's local_id or its \
             known handle, and \"quote\" is a verbatim excerpt that contains the name. Only \
             names belong there — never a pronoun or a description (\"该公司\", \"the company\", \
-            \"former employees\") — and never the name already written in entities.\n\
+            \"former employees\") — and never the name already written in entities. A name \
+            must name the entity itself, not something that belongs to it: \"星云科技研发团队\" \
+            names a team, not 星云科技.\n\
          2. Every fact keeps its name fields and uses subject_ref; relation facts also use \
             object_ref. Each ref must be either a local_id defined exactly once in \
             entities or a known handle supplied with this text. An entity referenced by a known \

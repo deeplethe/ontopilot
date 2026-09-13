@@ -169,3 +169,50 @@ pub async fn for_entity(
     .fetch_all(pool)
     .await?)
 }
+
+/// 一个刚从原文里读到的别名，别的实体已经在用：把这一对送去裁决（0041 决定 5 的第一步）。
+///
+/// **只排队，不合并。** 两个实体叫同一个名字，可能是一个东西被拆开了（「海探1」先到、
+/// 写着「简称海探1」的那篇后到），也可能就是两个东西。判断归裁决器与治理闸门。
+/// 不排的话，后到的那篇把名字记在新实体上，两个实体都叫「海探1」，却没有任何东西
+/// 把它们配成一对——入库顺序又一次决定了结果。
+///
+/// 类型一方为空或两边相同才配：声明了不同类型的同名，是重名那条路的事。返回排进去的对数
+pub async fn pair_shared_name(
+    pool: &PgPool,
+    kb_id: Uuid,
+    entity_id: Uuid,
+    name: &str,
+) -> AppResult<usize> {
+    let name = normalize_name(name);
+    let others: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT DISTINCT e.id
+           FROM entities e
+           JOIN entities me ON me.id = $2
+           JOIN facts nf ON nf.subject_id = e.id AND nf.invalidated_at IS NULL
+           JOIN relation_types nr ON nr.id = nf.predicate_id AND nr.builtin AND nr.key = $4
+          WHERE e.kb_id = $1 AND e.merged_into IS NULL AND e.id <> $2
+            AND lower(nf.object_value->>'value') = lower($3)
+            AND (e.type_id IS NULL OR me.type_id IS NULL OR e.type_id = me.type_id)
+          LIMIT 4",
+    )
+    .bind(kb_id)
+    .bind(entity_id)
+    .bind(&name)
+    .bind(KNOWN_AS)
+    .fetch_all(pool)
+    .await?;
+    for (other,) in &others {
+        crate::resolution::create_review(
+            pool,
+            kb_id,
+            entity_id,
+            *other,
+            0.0,
+            &format!("shared_name|{name}"),
+            crate::resolution::ReviewStage::Adjudicating,
+        )
+        .await?;
+    }
+    Ok(others.len())
+}

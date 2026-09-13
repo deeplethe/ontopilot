@@ -170,3 +170,57 @@ async fn merging_moves_names_and_reverting_brings_them_back() -> anyhow::Result<
     teardown(&pool, &f).await?;
     run
 }
+
+#[tokio::test]
+async fn a_name_another_entity_already_has_queues_the_pair_without_merging() -> anyhow::Result<()> {
+    let Some(url) = utopia_store::test_db::url() else {
+        return Ok(());
+    };
+    let pool = PgPool::connect(&url).await?;
+    let f = seed(&pool).await?;
+    let run = async {
+        // 倒序到达：只写简称的那篇先建出「海探1」，写着全称的那篇后到
+        let short = mention(&pool, &f, "海探1").await?.entity_id;
+        let full = mention(&pool, &f, "海洋探测器1号").await?.entity_id;
+        names::record(&pool, f.kb, full, "海探1", None, None).await?;
+        assert_eq!(
+            names::pair_shared_name(&pool, f.kb, full, "海探1").await?,
+            1
+        );
+        let (reason, stage, status): (String, String, String) = sqlx::query_as(
+            "SELECT reason, stage, status FROM resolution_reviews
+              WHERE kb_id = $1 AND least(left_id, right_id) = least($2, $3)
+                AND greatest(left_id, right_id) = greatest($2, $3)",
+        )
+        .bind(f.kb)
+        .bind(short)
+        .bind(full)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(reason, "shared_name|海探1");
+        assert_eq!(
+            (stage.as_str(), status.as_str()),
+            ("adjudicating", "pending")
+        );
+        let merged: Option<Uuid> =
+            sqlx::query_scalar("SELECT merged_into FROM entities WHERE id = $1")
+                .bind(short)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(merged, None, "只排队，不合并");
+        // 再报一次同一个名字不重复排
+        assert_eq!(
+            names::pair_shared_name(&pool, f.kb, full, "海探1").await?,
+            1
+        );
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM resolution_reviews WHERE kb_id = $1")
+            .bind(f.kb)
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(n, 1);
+        anyhow::Ok(())
+    }
+    .await;
+    teardown(&pool, &f).await?;
+    run
+}
