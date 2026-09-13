@@ -799,6 +799,7 @@ function ViolationRow({
     asymmetry: S.review.violationAsymmetry,
     cycle: S.review.violationCycle,
     functional: S.review.violationFunctional,
+    inverse_functional: S.review.violationInverseFunctional,
     signature: S.review.violationSignature,
     derived_contradiction: S.review.violationDerived,
   }[v.kind];
@@ -826,7 +827,7 @@ function ViolationRow({
             {S.review.violationVia(v.predicate)}
           </span>
         )}
-        {v.path_len > 0 && (
+        {v.kind === "cycle" && v.path_len > 0 && (
           <span className="text-fine text-ink-2">
             {S.review.violationPath(v.path_len)}
           </span>
@@ -853,7 +854,7 @@ function ViolationRow({
           disabled={busy}
           onClick={() => onDecide("accepted")}
         >
-          {S.review.acceptBoth}
+          {S.review.acceptBoth(facts.length)}
         </Button>
         <Button variant="secondary" size="sm"
           disabled={busy}
