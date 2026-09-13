@@ -1,6 +1,6 @@
 # 0041 · A name is a claim about an entity
 
-- **Status**: proposed · decision 1 settled 2026-09-13 (names are facts) · nothing implemented · cut 0 (the identity bench) goes first
+- **Status**: decision 1 settled 2026-09-13 (names are facts) · cut 0 built: `scripts/bench/identity.mjs`, baseline on `dev` forward F1 0.43, reverse 0.54 · cut 1 implemented (#670): migration 0055 and `names` in the store, the extractor's `names`, shared-name pairs to the adjudicator; forward 0.68, reverse 0.68, the two orders agree on all 210 pairs (one run each; two cut-1 runs differed by 0.07 forward) · decisions 2 and 5 revised by cut 1 · cuts 2–4 not started
 - **Written**: 2026-09-13 (conventions in the [README](README.md))
 - **Related**: [0009](0009-no-type-is-a-type.md) made an undecided type an honest state, and [0016](0016-close-the-open-seams-before-cutting-new-ones.md) B3 let a declared `disjointWith` keep names apart; #270 stopped a namesake tie from being settled by candidate order and #331 let facts break it; #428 and [0025](0025-governance-reads-the-ledger-before-it-decides.md) moved duplicates through a queue an agent works; #582 and #583 made the extractor copy the words that name each side of a fact; [0037](0037-a-relation-carries-its-own-attributes.md) put attributes on edges.
 
@@ -51,6 +51,8 @@ Two sources, one contract:
 
 Whether a span names the entity or refers to it is the model's call, written into the contract. The server's check is whether the string is in the text. There is no word list.
 
+> **Revised 2026-09-13 (cut 1, #670).** One channel, not two: `names: [{ref, name, quote}]`. Spans stay a verification signal only; a model that follows rule 1b already lists the shortened form it used, and a second source would repeat the same check. The server keeps a name when the name is in its quote and the quote is in the chunk, and drops it when the same response or an earlier chunk of the document declares that string for a different entity (`name_claimed_by_another`) — one string cannot name two things, and that needs no vocabulary. The name the model writes for an entity gets the chunk as evidence when the chunk contains it. **Known gap:** a description the model reports as a name without declaring it as an entity still passes ("海探1项目" became a name of 海洋探测器1号 in every cut-1 run).
+
 ### 3. Recall has three channels, and none of them decides
 
 Candidates for a mention come from:
@@ -74,6 +76,8 @@ The rule: evidence against a candidate rules it out. One candidate left with evi
 To have edges to compare, a chunk's mentions resolve after the response is parsed: sides with one candidate and no evidence against it first, then the ambiguous sides, using their edges to the sides already resolved. `doc_cache` keyed by name is removed. Handles unify mentions within a response, and evidence unifies them across chunks.
 
 ### 5. Arrival order stops mattering
+
+> **Revised 2026-09-13 (cut 1, #670).** The first step landed with the names themselves, because without it cut 1 made reverse order worse: the abbreviation-only documents built 海探1 first, the document stating 简称海探1 arrived last and put the name on a new full-name entity, and nothing paired the two. Now a name that another entity of a compatible type already has queues the pair for the adjudicator (`shared_name|…`), never a merge, and the adjudicator and the Review card see an entity's non-canonical names as an `also known as:` line. Without that line the adjudicator kept the pair apart at 0.90–0.95. The canonical name is not listed, so two namesakes do not appear to share evidence. Re-evaluation on a new distinctive edge, and the periodic job, remain cut 4.
 
 When an entity gains a name fact or a distinctive edge, the pairs it now recalls are evaluated again and queued, through Review and the governance gate, never merged in place. A periodic job does the same for every group of entities that share a name. The document that states 简称海探1 therefore finds the 海探1 created a week earlier, and a pair decided on thin evidence comes back when better evidence arrives.
 
