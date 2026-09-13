@@ -888,6 +888,19 @@ function TurnView({ turn, live }: { turn: Turn; live?: boolean }) {
           )}
         </div>
       )}
+      {/* **「没有 sources」时的小标记**（#547）。
+          muted token，无新颜色——它**永远是事实陈述**：
+            - 招呼 / 问这场对话 / 拒答：标记无害地跟着；
+            - "以下是我找到的内容"配上零 citations：标记揭穿它。
+          判据是数据而不是启发式：模型能宣称它做了搜索且被追问时坚持，那就是
+          谎言。让它自己露馅，不要预判它的态度。
+          流式中不显示——`sources` 还在长，那时显示「未引用任何来源」会闪一下
+          又消失，比闪烁还糟。等 `done` 到了再判定，事实是事后才能说清的。 */}
+      {!live && (!turn.sources || turn.sources.length === 0) && (
+        <div className="mt-2 text-small text-ink-2">
+          {S.chat.noSourcesConsulted}
+        </div>
+      )}
     </div>
   );
 }
