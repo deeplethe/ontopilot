@@ -1035,21 +1035,18 @@ mod tests {
             let (nodes, max_edges) = if round % 2 == 0 { (2, 8) } else { (4, 12) };
             let edges = random_graph(&mut rng, nodes, max_edges);
             let v = super::check(&edges, &all);
-            let cases: [(Kind, Box<dyn Fn(&Edge, &Edge) -> bool>); 3] = [
-                (
-                    Kind::Functional,
-                    Box::new(|a, b| a.subject == b.subject && a.object != b.object),
-                ),
-                (
-                    Kind::InverseFunctional,
-                    Box::new(|a, b| a.object == b.object && a.subject != b.subject),
-                ),
-                (
-                    Kind::Asymmetry,
-                    Box::new(|a, b| {
-                        a.subject != a.object && a.subject == b.object && a.object == b.subject
-                    }),
-                ),
+            // 不捕获任何东西的闭包就是函数指针
+            type Conflict = fn(&Edge, &Edge) -> bool;
+            let cases: [(Kind, Conflict); 3] = [
+                (Kind::Functional, |a, b| {
+                    a.subject == b.subject && a.object != b.object
+                }),
+                (Kind::InverseFunctional, |a, b| {
+                    a.object == b.object && a.subject != b.subject
+                }),
+                (Kind::Asymmetry, |a, b| {
+                    a.subject != a.object && a.subject == b.object && a.object == b.subject
+                }),
             ];
             for (k, (kind, conflict)) in cases.into_iter().enumerate() {
                 let got = found(&v, kind);
