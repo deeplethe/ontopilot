@@ -17,6 +17,7 @@ pub mod ontology;
 pub mod rules;
 
 use derive::TimedEdge;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -121,6 +122,30 @@ impl Kind {
 /// 没有上限，一个环就能让求值不终止。
 pub const MAX_DEPTH: usize = 12;
 
+/// 一个谓词上最多报多少个环（#642）。
+///
+/// 上千个环不是上千件事：它们挤在同一团互相可达的节点里，根子多半是这个谓词不该
+/// 声明 transitive，或者有一两条边方向写反了。逐个端进 Review 只会淹掉队列，与
+/// `MAX_CLASHES_PER_PREDICATE` 同一个道理
+pub const MAX_CYCLES_PER_PREDICATE: usize = 1000;
+
+/// 一个谓词上找环最多走多少步（每看一条边算一步，#642）。
+///
+/// **环数上限管不住工作量。** 一团稠密的强连通分量里，深度 12 以内的简单路径是
+/// 指数级的，大多数根本不回到起点——步数没有上限，一次检查就能把请求挂住、把内存
+/// 撑满。量过：500 个节点、2000 条边、两成随机回边，从前 60 秒没跑完。
+pub const MAX_CYCLE_STEPS: usize = 1_000_000;
+
+/// 一次检查的完整结果：违规，以及哪些谓词的环没搜完。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Checked {
+    pub violations: Vec<Violation>,
+    /// 撞上 `MAX_CYCLES_PER_PREDICATE` 或 `MAX_CYCLE_STEPS`、环没搜完的谓词，排过序。
+    /// **必须回给调用方**：没搜完不能说没有——落库那边据此不清这些谓词上旧的环，
+    /// 界面据此说「这个谓词的环太多，先看公理」
+    pub cycles_capped: Vec<Uuid>,
+}
+
 /// 拿公理量一遍这批边。
 ///
 /// 每个谓词各查各的：公理是挂在谓词上的，跨谓词的边之间没有可比性
@@ -139,7 +164,13 @@ pub const MAX_DEPTH: usize = 12;
 /// 区间照 `TimedEdge` 的读法：半开 `[from, to)`，`None` 是那一侧无界（恒常谓词两端
 /// 都是 `None`，于是退回到只看形状）。自环不看时间：`A p A` 哪一刻成立都是错的。
 pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violation> {
+    check_all(edges, axioms).violations
+}
+
+/// 同 [`check`]，另外说出哪些谓词的环没搜完（#642）。
+pub fn check_all(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Checked {
     let mut out = Vec::new();
+    let mut cycles_capped = Vec::new();
     let mut by_pred: HashMap<Uuid, Vec<TimedEdge>> = HashMap::new();
     for t in edges {
         let Some(ax) = axioms.get(&t.edge.predicate) else {
@@ -160,7 +191,11 @@ pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violati
             out.extend(asymmetries(&group));
         }
         if ax.transitive {
-            out.extend(cycles(&group));
+            let (found, capped) = cycles(&group);
+            out.extend(found);
+            if capped {
+                cycles_capped.push(pred);
+            }
         }
         if ax.functional {
             out.extend(clashes(
@@ -179,7 +214,11 @@ pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violati
             ));
         }
     }
-    out
+    cycles_capped.sort();
+    Checked {
+        violations: out,
+        cycles_capped,
+    }
 }
 
 fn self_loops(edges: &[Edge]) -> Vec<Violation> {
@@ -215,85 +254,180 @@ fn asymmetries(edges: &[TimedEdge]) -> Vec<Violation> {
     )
 }
 
-/// 找环。**每个环只报一次，而且只以一种形状报**：去重按环上事实的集合，报出来的
-/// 路径转到最小的那条事实起头（见 `walk` 里的注释）。
+/// 找环。**每个环只报一次，而且只以一种形状报**：报出来的路径转到最小的那条事实
+/// 起头（见 `walk` 里的注释）。
 ///
 /// 用深度优先而不是半朴素闭包求值：两者都能发现环，但闭包只告诉你「A 推出了
 /// A」，而人要的是**路径**——顺着 `A→B→C→A` 看一遍才知道该撤哪一条。闭包丢掉
 /// 的正是这个。
 ///
-/// R1 物化推导要的是闭包本身，那时再建；R0 要的是「哪几条边凑成了环」。
+/// **只在强连通分量里找，每个环只从它最小的节点找一次**（#642）。从前从每个节点出发
+/// 把深度 12 以内的路径全走一遍，再按事实集合去重。环只可能落在一个强连通分量里，
+/// 而真实的 `part_of` 大体是一棵层级、只有几条回边：分量很小，绝大多数路径一路往下
+/// 走进 DAG、永远回不来。量过：一个宽 4、14 层的层级加一条回边（209 条边、256 个环）
+/// 从前要 10 秒，2 万个节点的层级要 8 秒。先算分量、只走分量内的边，这些路径一步都
+/// 不走；再规定环只从它编号最小的节点出发、途中只经过比起点大的节点，每个环恰好被
+/// 走到一次，去重的集合也省了。
 ///
-/// 走的时候带着路径上区间的交集（#636）。交集空了就不往下走：交集只会越求越窄，
-/// 一段已经无交的路径接上什么都凑不成同一时刻成立的环，剪掉它丢不了一个真环。
-/// 同一个环从哪儿走进来，事实集合相同，交集也相同，所以去重照旧按集合。
-fn cycles(edges: &[TimedEdge]) -> Vec<Violation> {
+/// 真正稠密的大分量里环本身就是指数级的，这两条救不了——那时撞上
+/// `MAX_CYCLES_PER_PREDICATE` / `MAX_CYCLE_STEPS` 就停，第二个返回值为真。起点与每个
+/// 节点的出边都排过序，所以停在哪儿只取决于数据：同一份数据跑多少遍、以什么顺序
+/// 读进来，报出来的都是同一批环。
+///
+/// R1 物化推导要的是闭包本身，那时再建；R0 要的是「哪几条边凑成了环」。
+fn cycles(edges: &[TimedEdge]) -> (Vec<Violation>, bool) {
+    // 自环不是这里的事（irreflexive 那一档管），也不可能在两个以上节点的环上
+    let mut next: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for t in edges.iter().filter(|t| t.edge.subject != t.edge.object) {
+        next.entry(t.edge.subject).or_default().push(t.edge.object);
+    }
+    let mut nodes: Vec<Uuid> = next.keys().copied().collect();
+    nodes.sort_unstable();
+    let component = components(&nodes, &next);
+
+    // 分量内的边才可能在环上；出边按 (宾语, 事实) 排，遍历顺序只取决于数据
     let mut adj: HashMap<Uuid, Vec<&TimedEdge>> = HashMap::new();
     for t in edges {
-        adj.entry(t.edge.subject).or_default().push(t);
+        let (s, o) = (t.edge.subject, t.edge.object);
+        let same = matches!((component.get(&s), component.get(&o)), (Some(a), Some(b)) if a == b);
+        if s != o && same {
+            adj.entry(s).or_default().push(t);
+        }
     }
-    let mut reported: HashSet<Vec<Uuid>> = HashSet::new();
-    let mut out = Vec::new();
-    let nodes: Vec<Uuid> = adj.keys().copied().collect();
-    for start in nodes {
-        let mut path: Vec<&TimedEdge> = Vec::new();
-        let mut on_path: HashSet<Uuid> = HashSet::new();
-        walk(
-            start,
-            start,
-            (None, None),
-            &adj,
-            &mut path,
-            &mut on_path,
-            &mut reported,
-            &mut out,
-        );
+    for out in adj.values_mut() {
+        out.sort_unstable_by_key(|t| (t.edge.object, t.edge.fact));
     }
-    out
+    let mut starts: Vec<Uuid> = adj.keys().copied().collect();
+    starts.sort_unstable();
+
+    let mut search = Search {
+        adj: &adj,
+        path: Vec::new(),
+        on_path: HashSet::new(),
+        out: Vec::new(),
+        steps: 0,
+        capped: false,
+    };
+    for start in starts {
+        search.walk(start, start, (None, None));
+        if search.capped {
+            break;
+        }
+    }
+    (search.out, search.capped)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn walk<'a>(
-    start: Uuid,
-    at: Uuid,
-    // 路径上已走过的边的区间交集；起点是全时间
-    span: (Option<i64>, Option<i64>),
-    adj: &HashMap<Uuid, Vec<&'a TimedEdge>>,
-    path: &mut Vec<&'a TimedEdge>,
-    on_path: &mut HashSet<Uuid>,
-    reported: &mut HashSet<Vec<Uuid>>,
-    out: &mut Vec<Violation>,
-) {
-    if path.len() >= MAX_DEPTH {
-        return;
-    }
-    let Some(next) = adj.get(&at) else { return };
-    for t in next {
-        // 接上这条边，路径就没有哪一刻是整条成立的：不管是成环还是往下走，都不必了。
-        // 没日期的事件区间为空（0031），在这里自然被剪掉
-        let Some(span) = derive::overlap(span, (t.from, t.to)) else {
+/// 强连通分量：每个节点所在分量的编号。
+///
+/// Tarjan，**迭代版**：递归版的调用深度等于最长的那条链，几万个节点的层级在它面前
+/// 就是几万层递归，栈会炸。这里自己维护调用栈 `(节点, 下一个要看的后继)`。
+fn components(nodes: &[Uuid], next: &HashMap<Uuid, Vec<Uuid>>) -> HashMap<Uuid, usize> {
+    let mut index: HashMap<Uuid, usize> = HashMap::new();
+    let mut low: HashMap<Uuid, usize> = HashMap::new();
+    let mut on_stack: HashSet<Uuid> = HashSet::new();
+    let mut stack: Vec<Uuid> = Vec::new();
+    let mut component: HashMap<Uuid, usize> = HashMap::new();
+    let (mut counter, mut count) = (0usize, 0usize);
+    for &root in nodes {
+        let Entry::Vacant(slot) = index.entry(root) else {
             continue;
         };
-        let e = &t.edge;
-        if e.object == start && !path.is_empty() {
-            // 回到起点：成环。**按事实 id 排序去重**——同一个环从不同节点
-            // 出发会被走到 n 次，报 n 遍就是让人把同一件事看 n 次
-            let mut facts: Vec<Uuid> = path.iter().map(|x| x.edge.fact).collect();
-            facts.push(e.fact);
-            let mut key = facts.clone();
-            key.sort();
-            if reported.insert(key) {
-                // **报之前把环转到规范位置。**环是一个圈，从哪条边开始读都是同一个
-                // 环；可 `left`/`right` 取的是这一次遍历的首尾，而遍历的起点来自
-                // `adj.keys()`——一个 HashMap，顺序每次不同。于是同一个三元环会以
-                // 三种旋转轮流出现，而 `axiom_violations` 里环是按整条 `path` 唯一的
-                // （0054；之前按首尾两条）：换一种旋转就是换一行。
-                //
-                // 后果不是"多一行"，是**人的裁决会悄悄失效**：重算删掉的是 open 的
-                // 行，裁过的那行留着，同一个环以新键插成 open，而重开那一支按键匹配，
-                // 匹配不上就不会触发（#618）。
-                //
-                // 转到最小的事实 id 起头，键就成了环自己的函数，与从哪儿走进来无关。
+        slot.insert(counter);
+        low.insert(root, counter);
+        counter += 1;
+        stack.push(root);
+        on_stack.insert(root);
+        let mut calls: Vec<(Uuid, usize)> = vec![(root, 0)];
+        while let Some(&(v, i)) = calls.last() {
+            let succ = next.get(&v).map(Vec::as_slice).unwrap_or(&[]);
+            if let Some(&w) = succ.get(i) {
+                if let Some(frame) = calls.last_mut() {
+                    frame.1 += 1;
+                }
+                if let Entry::Vacant(slot) = index.entry(w) {
+                    slot.insert(counter);
+                    low.insert(w, counter);
+                    counter += 1;
+                    stack.push(w);
+                    on_stack.insert(w);
+                    calls.push((w, 0));
+                } else if on_stack.contains(&w) {
+                    let lw = index[&w];
+                    if let Some(lv) = low.get_mut(&v) {
+                        *lv = (*lv).min(lw);
+                    }
+                }
+                continue;
+            }
+            calls.pop();
+            let lv = low[&v];
+            if let Some(&(parent, _)) = calls.last() {
+                if let Some(lp) = low.get_mut(&parent) {
+                    *lp = (*lp).min(lv);
+                }
+            }
+            if lv == index[&v] {
+                while let Some(w) = stack.pop() {
+                    on_stack.remove(&w);
+                    component.insert(w, count);
+                    if w == v {
+                        break;
+                    }
+                }
+                count += 1;
+            }
+        }
+    }
+    component
+}
+
+/// 一次找环的状态：当前路径、找到的环、走了多少步、是否撞上了上限。
+struct Search<'a> {
+    adj: &'a HashMap<Uuid, Vec<&'a TimedEdge>>,
+    path: Vec<&'a TimedEdge>,
+    on_path: HashSet<Uuid>,
+    out: Vec<Violation>,
+    steps: usize,
+    capped: bool,
+}
+
+impl<'a> Search<'a> {
+    /// 从 `at` 往下走。`span` 是路径上已走过的边的区间交集；起点是全时间
+    fn walk(&mut self, start: Uuid, at: Uuid, span: (Option<i64>, Option<i64>)) {
+        if self.path.len() >= MAX_DEPTH || self.capped {
+            return;
+        }
+        let adj = self.adj;
+        let Some(next) = adj.get(&at) else { return };
+        for &t in next {
+            self.steps += 1;
+            if self.steps > MAX_CYCLE_STEPS || self.out.len() >= MAX_CYCLES_PER_PREDICATE {
+                self.capped = true;
+                return;
+            }
+            let e = &t.edge;
+            // 只经过比起点大的节点：每个环只在从它最小的节点出发时被走到，恰好一次。
+            // 出边按宾语排过序，这里本可以二分跳过，但出边通常只有几条
+            if e.object < start {
+                continue;
+            }
+            // 接上这条边，路径就没有哪一刻是整条成立的：不管是成环还是往下走，都不必了。
+            // 没日期的事件区间为空（0031），在这里自然被剪掉
+            let Some(span) = derive::overlap(span, (t.from, t.to)) else {
+                continue;
+            };
+            if e.object == start {
+                if self.path.is_empty() {
+                    continue;
+                }
+                let mut facts: Vec<Uuid> = self.path.iter().map(|x| x.edge.fact).collect();
+                facts.push(e.fact);
+                // **报之前把环转到规范位置。**环是一个圈，从哪条边开始读都是同一个环；
+                // 而 `axiom_violations` 里环是按整条 `path` 唯一的（0054）：换一种旋转
+                // 就是换一行。后果不是"多一行"，是**人的裁决会悄悄失效**：重算删掉的是
+                // open 的行，裁过的那行留着，同一个环以新键插成 open，重开那一支匹配
+                // 不上就不会触发（#618）。起点是最小的节点，却未必是最小的事实——转到
+                // 最小的事实 id 起头，键就成了环自己的函数
                 let at = facts
                     .iter()
                     .enumerate()
@@ -301,23 +435,26 @@ fn walk<'a>(
                     .map(|(i, _)| i)
                     .unwrap();
                 facts.rotate_left(at);
-                out.push(Violation {
+                self.out.push(Violation {
                     kind: Kind::Cycle,
                     left: facts[0],
                     right: *facts.last().unwrap(),
                     path: facts,
                 });
+                continue;
             }
-            continue;
+            if self.on_path.contains(&e.object) {
+                continue;
+            }
+            self.on_path.insert(e.object);
+            self.path.push(t);
+            self.walk(start, e.object, span);
+            self.path.pop();
+            self.on_path.remove(&e.object);
+            if self.capped {
+                return;
+            }
         }
-        if e.object == start || on_path.contains(&e.object) {
-            continue;
-        }
-        on_path.insert(e.object);
-        path.push(t);
-        walk(start, e.object, span, adj, path, on_path, reported, out);
-        path.pop();
-        on_path.remove(&e.object);
     }
 }
 
@@ -541,6 +678,103 @@ mod tests {
             HashSet::from([vec![f(1), f(2), f(4), f(6)], vec![f(1), f(3), f(5), f(6)]])
         );
         assert!(v.iter().all(|c| (c.left, c.right) == (f(1), f(6))));
+    }
+
+    /// **层级里的一条回边，不让找环走遍整个层级**（#642）。宽 4、14 层的层级 DAG，
+    /// 第 5 层一条边回到第 0 层：环只有 256 个（第 0 层那个点经四层每层四选一到第 5 层
+    /// 那个点），全在前六层；而从前从每个节点出发把深度 12 以内的路径都走一遍，光一个
+    /// 起点就有 4^12 条，10 秒。只在强连通分量里找，那几万条路一步都不走——这里断言
+    /// 的是结果完整、没有撞上步数上限：若分量剪枝失效，这张图必然撞上
+    #[test]
+    fn a_back_edge_in_a_hierarchy_does_not_walk_the_hierarchy() {
+        let (width, layers) = (4u16, 14u16);
+        let node = |l: u16, x: u16| Uuid::from_u64_pair(0, (l * width + x) as u64);
+        let mut edges = Vec::new();
+        let mut fact = 0u64;
+        let mut push = |s: Uuid, o: Uuid, edges: &mut Vec<TimedEdge>| {
+            fact += 1;
+            edges.push(TimedEdge {
+                edge: Edge {
+                    fact: Uuid::from_u64_pair(1, fact),
+                    predicate: n(99),
+                    subject: s,
+                    object: o,
+                },
+                from: None,
+                to: None,
+            });
+        };
+        for l in 0..layers - 1 {
+            for x in 0..width {
+                for y in 0..width {
+                    push(node(l, x), node(l + 1, y), &mut edges);
+                }
+            }
+        }
+        push(node(5, 0), node(0, 0), &mut edges);
+        let checked = super::check_all(
+            &edges,
+            &with(Axioms {
+                transitive: true,
+                ..Default::default()
+            }),
+        );
+        assert!(checked.cycles_capped.is_empty(), "不该撞上上限");
+        let cycles = checked
+            .violations
+            .iter()
+            .filter(|v| v.kind == Kind::Cycle)
+            .count();
+        assert_eq!(
+            cycles,
+            4usize.pow(4),
+            "第 0 层那个点经四层、每层四选一到第 5 层那个点"
+        );
+    }
+
+    /// **稠密的分量里撞上上限就停，并且说出来**（#642）；停下时报出的那一批环只取决于
+    /// 数据，与读进来的顺序无关——否则同一份数据每跑一遍 Review 里就换一批环。
+    #[test]
+    fn a_dense_loop_stops_at_the_cap_and_says_so() {
+        // 12 个节点两两互指：深度 12 以内的简单环是天文数字
+        let mut edges = Vec::new();
+        let mut fact = 0u8;
+        for s in 1..=12u8 {
+            for o in 1..=12u8 {
+                if s != o {
+                    fact += 1;
+                    edges.push(TimedEdge {
+                        edge: e(fact, s, o),
+                        from: None,
+                        to: None,
+                    });
+                }
+            }
+        }
+        let ax = with(Axioms {
+            transitive: true,
+            ..Default::default()
+        });
+        let first = super::check_all(&edges, &ax);
+        assert_eq!(first.cycles_capped, vec![n(99)]);
+        let cycles = first
+            .violations
+            .iter()
+            .filter(|v| v.kind == Kind::Cycle)
+            .count();
+        assert!(cycles <= MAX_CYCLES_PER_PREDICATE, "报出 {cycles} 个");
+        assert!(cycles > 0, "撞上上限之前找到的照报");
+
+        let mut rng = Rng(0x0642);
+        for _ in 0..5 {
+            let again = super::check_all(&shuffled(&mut rng, &edges), &ax);
+            assert_eq!(again.cycles_capped, first.cycles_capped);
+            assert_eq!(
+                shape(again.violations),
+                shape(first.violations.clone()),
+                "撞上上限时报出的那一批环随输入顺序变了"
+            );
+        }
     }
 
     /// **没声明公理的谓词一条都不查。** 这是整套检查的地基：没有依据就不报矛盾。

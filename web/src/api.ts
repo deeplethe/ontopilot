@@ -2179,6 +2179,8 @@ export const api = {
       found: number;
       inserted: number;
       cleared: number;
+      /** 环没搜完的谓词数（#642）。不为零时那些谓词上的环只报了一部分 */
+      cycles_capped: number;
       classes: number;
       /** 本体自己的矛盾**单独回**，不加进 found：两个数不是一类东西 */
       defects_found: number;
