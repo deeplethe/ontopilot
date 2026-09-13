@@ -3,6 +3,7 @@
 //! 消解灰区只入审核队列并触发独立的攒批裁决任务——LLM 裁决永不阻塞本任务。
 
 use crate::llm_util;
+use crate::ontology_index;
 use crate::predicate_match::PredicateIndex;
 use crate::state::AppState;
 use sqlx::PgPool;
@@ -869,6 +870,32 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
     if doc.deleted_at.is_some() {
         tracing::info!(document = %document_id, "skipping a deleted document");
         return Ok(());
+    }
+    // **本体向量门控（#526）——把等待从 worker 里搬回队列。**
+    //
+    // 在这之前 `extraction::run` 直接调 `ontology_index::refresh` 等到补齐才动。
+    // 那次等待有三个坏处：它把 worker 槽占住，让同一批次的其余文档和别的库的
+    // 任务全卡在锁上；它让文档在这段时间里挂着 `extracting`，用户看见 32 篇
+    // 全在「抽取中」却没一个事实落库；它用一份可能没补齐的索引作依据，抽出来
+    // 的图是基于半个本体写的，再也不会被重抽。
+    //
+    // 换成队列内门控：本体超出提示词预算且需要嵌入时，先把 `embed_ontology`
+    // 排上、把这次抽取挂回 `queued` 等 30s，让 worker 槽立刻空出来——同一批
+    // 其余文档和其它库的任务都能继续认领。下次轮到这个文档时本体可能已就绪，
+    // 也可能还没，那就再等一轮。**不是同一个文档在等，是同一个抽取器在等**，
+    // 而等候归队列管，attempts 不烧。
+    //
+    // 没配嵌入模型且仍超预算的库直接 `Terminal`——那条路现在和从前一样送
+    // 完整本体，但这是配置错了（不是临时不可用），按 `Terminal` 处理给出
+    // 清楚的失败原因，让运维去开模型或调预算，而不是让文档在队列里
+    // 一天转 200 圈装作在工作。
+    if ontology_index::gate_required(state, doc.kb_id).await? {
+        // gate_required 已经把 `embed_ontology` 入队过了（如果应该入队的话）。
+        // 这里只挂等待时长，不重复 enqueue。attempts 会被 mark_failed 退回去——
+        // 同一个等待条件两次排队不应该消耗两次预算。
+        let err = anyhow::Error::msg("waiting for ontology index to be embedded")
+            .context(utopia_core::Deferred::new(Duration::from_secs(30)));
+        return Err(err);
     }
     let kb = utopia_store::kbs::get(&state.pool, doc.kb_id).await?;
     let settings = utopia_store::settings::get(&state.pool, kb.workspace_id)
@@ -2725,6 +2752,19 @@ impl PromptLists {
 /// 2. **属性跟着 domain 走**。属性行是 `class.attr`，它的类没铺出去这行就没意义。
 ///    这也顺带解决了属性段（占提示词 28%）的裁剪，不用单独处理。
 /// 3. **内置类恒在**。检索漏掉的分块仍然要有地方落脚，否则模型无类可选。
+/// 把当前本体在提示词里的字符数算出来。**空铺**（不筛类/关系）——这就是
+/// `extract_document` 用的「全铺」档，也是判断「要不要按块检索」的标准。
+///
+/// 抽成独立函数是因为 `ontology_index::gate_required`（#526）要在加载抽取器
+/// 之前问一次预算——那时 `build_lists` 还没被调用。两个路径必须用同一个判据，
+/// 否则 gate 的判定会和实际的「全铺」走分。
+pub(crate) fn full_ontology_chars(
+    etypes: &[utopia_core::models::EntityType],
+    rtypes: &[utopia_core::models::RelationType],
+) -> usize {
+    build_lists(etypes, rtypes, None, None).chars()
+}
+
 fn build_lists(
     etypes: &[utopia_core::models::EntityType],
     rtypes: &[utopia_core::models::RelationType],

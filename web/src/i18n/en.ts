@@ -726,6 +726,16 @@ export const en = {
     deleteBtn: "Delete",
     cancel: "Cancel",
   },
+  chat: {
+    /* 一个回答没有 citations 时的标记（#547）。
+     * 在 muted token 里、不引入新颜色——它**永远是事实陈述**，不问何时显示：
+     *   - 招呼 / 问这场对话 / 拒答：标记无害地跟着；
+     *   - "以下是我找到的内容"配上零 citations：标记揭穿它。
+     * 问何时显示的那条启发式正是这个 issue 要拆掉的：模型能宣称它做了搜索、且
+     * 被追问时坚持，那就是谎言。数据自己说。
+     */
+    noSourcesConsulted: "No sources consulted",
+  },
   graph: {
     // 还没判出类型的实体（0009）。不是一个类，是"这一格还空着"
     untyped: "Untyped",
