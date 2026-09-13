@@ -52,35 +52,8 @@ pub fn normalize_name(raw: &str) -> String {
 
 /// 泛用后缀词表：中文直接拼在词干后；英文按独立词算、首尾两种语序都认
 /// （"Phoenix Project" / "Project Phoenix"）。只影响召回，判定仍走画像相似度。
-/// 长的在前：`股份有限公司` 要在 `公司` 之前试，否则剥掉的只是尾巴
-const GENERIC_SUFFIXES_CJK: &[&str] = &[
-    "股份有限公司",
-    "有限公司",
-    "项目",
-    "公司",
-    "集团",
-    "部门",
-    "团队",
-];
-/// 公司形态词全收：`NVIDIA CORPORATION` 与 `NVIDIA` 从前召回键不同，消解时当成了
-/// 两个名字，只能靠事后的重复项提案把它们配回来（召回台子 2026-09-13）
-const GENERIC_WORDS_EN: &[&str] = &[
-    "project",
-    "corp",
-    "corporation",
-    "inc",
-    "incorporated",
-    "co",
-    "company",
-    "ltd",
-    "limited",
-    "llc",
-    "plc",
-    "gmbh",
-    "ag",
-    "group",
-    "team",
-];
+const GENERIC_SUFFIXES_CJK: &[&str] = &["项目", "公司", "集团", "部门", "团队"];
+const GENERIC_WORDS_EN: &[&str] = &["project", "corp", "inc", "team"];
 
 /// 词干：剥去一个泛用后缀后的 lower 形态。未命中、剥空、或词干本身就是
 /// 泛用词（"项目团队"）时返回 None。输入应已过 normalize_name。
@@ -2365,13 +2338,6 @@ mod tests {
         assert_eq!(name_stem("星辰科技公司").as_deref(), Some("星辰科技"));
         assert_eq!(name_stem("Phoenix Project").as_deref(), Some("phoenix"));
         assert_eq!(name_stem("Project Phoenix").as_deref(), Some("phoenix"));
-        assert_eq!(name_stem("NVIDIA CORPORATION").as_deref(), Some("nvidia"));
-        assert_eq!(name_stem("SoftBank Group").as_deref(), Some("softbank"));
-        assert_eq!(name_stem("Acme Ltd.").as_deref(), Some("acme"));
-        assert_eq!(
-            name_stem("星辰科技股份有限公司").as_deref(),
-            Some("星辰科技")
-        );
         assert_eq!(name_stem("Acme Inc.").as_deref(), Some("acme"));
         assert_eq!(name_stem("星尘"), None);
         assert_eq!(name_stem("项目"), None); // 剥空不算词干
