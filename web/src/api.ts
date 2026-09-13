@@ -634,7 +634,7 @@ export interface MappingRevision {
 /** derived_contradiction 独有（0017）：推出来的那条三元组——它没有落库，
  *  只能在这里写出来。其它种类是 `{}` */
 export interface ViolationDetail {
-  axiom?: "functional" | "asymmetry" | "self_loop";
+  axiom?: "functional" | "inverse_functional" | "asymmetry" | "self_loop";
   rule?: "transitive" | "symmetric" | "inverse" | "sub_property";
   via_label?: string;
   subject?: string;
@@ -656,6 +656,7 @@ export interface AxiomViolation {
     | "asymmetry"
     | "cycle"
     | "functional"
+    | "inverse_functional"
     | "signature"
     | "derived_contradiction";
   /** 判据来自哪条关系。判「公理写错了」时从这里进本体去改 */
@@ -665,14 +666,15 @@ export interface AxiomViolation {
   /** 自反那一类与 left 相同——一条事实跟自己矛盾 */
   right_fact: string;
   right_text: string;
-  /** 环的长度；其余三类为 0 */
+  /** `path` 的长度：环上的、互斥组里的事实，派生的前提；自环与签名为 0 */
   path_len: number;
   detected_at: string;
   detail: ViolationDetail;
   /** 审核线索（0017 §2），一次只给一条：旧断言没写结束日期、有同名实体、
    *  抽取置信度低。没有就空 */
   hint: "stale" | "duplicate" | "unsure" | null;
-  /** 环上的每一条事实，按顺序；其余种类为空。撤事实要指名撤哪条（#202） */
+  /** 环上的每一条事实（按顺序），或互斥组里的每一条（按 id）；自环与签名为空。
+   *  撤事实要指名撤哪条（#202） */
   path: { id: string; text: string }[];
 }
 /** 本体自己的一处自相矛盾。**与 AxiomViolation 不是一回事**：那个说
