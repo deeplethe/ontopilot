@@ -35,11 +35,13 @@ async fn entity_instances_fact_count_respects_as_of() -> anyhow::Result<()> {
         .bind(org)
         .execute(&pool)
         .await?;
-    sqlx::query("INSERT INTO workspaces (id, org_id, name) VALUES ($1, $2, 'as-of-factcount-test')")
-        .bind(ws)
-        .bind(org)
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO workspaces (id, org_id, name) VALUES ($1, $2, 'as-of-factcount-test')",
+    )
+    .bind(ws)
+    .bind(org)
+    .execute(&pool)
+    .await?;
     sqlx::query(
         "INSERT INTO knowledge_bases (id, workspace_id, name) VALUES ($1, $2, 'as-of-factcount-test')",
     )
@@ -47,11 +49,13 @@ async fn entity_instances_fact_count_respects_as_of() -> anyhow::Result<()> {
     .bind(ws)
     .execute(&pool)
     .await?;
-    sqlx::query("INSERT INTO entity_types (id, kb_id, key, label) VALUES ($1, $2, 'person', 'Person')")
-        .bind(etype)
-        .bind(kb)
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO entity_types (id, kb_id, key, label) VALUES ($1, $2, 'person', 'Person')",
+    )
+    .bind(etype)
+    .bind(kb)
+    .execute(&pool)
+    .await?;
     for id in [e_retracted, e_live, peer] {
         sqlx::query(
             "INSERT INTO entities (id, kb_id, type_id, canonical_name)
