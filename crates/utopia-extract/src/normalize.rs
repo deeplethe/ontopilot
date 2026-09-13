@@ -58,7 +58,10 @@ fn norm(s: &str) -> String {
 /// 值后面是否挂着一截不属于它的字。返回 (保留的前缀, 去掉的尾巴)。
 ///
 /// 两个条件同时成立才剪，都是结构，不认词：
-/// - **保留的那段在引文里，而且含数字**——它是原文写的那个数；
+/// - **保留的那段在引文里，而且是一格的写法**——含数字，是原文写的那个数；
+///   或者只有标点（`—`），是原文那一格写的「没有」。后一种还要尾巴里带数字的词
+///   **一个都不在引文里**：`$ 53,954 million` 对着 `Net income | $ | 53,954`，
+///   `$` 在引文里、也只有标点，可 `53,954` 也在，那个数就是值，不是一格空；
 /// - **尾巴不在引文里，而且自己含数字**——它是另一条信息（一个期间、一个日期、
 ///   另一个百分比），不是这个数的单位。
 ///
@@ -72,6 +75,17 @@ fn ungrounded_tail<'a>(value: &'a str, quote: &str) -> Option<(&'a str, &'a str)
         return None;
     }
     let has_digit = |t: &str| t.chars().any(|c| c.is_numeric());
+    // 引文按词切开（表格的 `|` 也是分隔）：比的是整词，`27` 不算在 `1,227` 里
+    let words = |t: &str| -> Vec<String> {
+        t.split(|c: char| c.is_whitespace() || c == '|')
+            .map(|w| {
+                w.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase()
+            })
+            .filter(|w| !w.is_empty())
+            .collect()
+    };
+    let quote_words = words(quote);
     let bounds: Vec<usize> = value
         .char_indices()
         .filter(|(i, c)| c.is_whitespace() && *i > 0)
@@ -88,7 +102,17 @@ fn ungrounded_tail<'a>(value: &'a str, quote: &str) -> Option<(&'a str, &'a str)
                 value[i..].trim(),
             )
         })
-        .find(|(p, _)| !p.is_empty() && has_digit(p) && q.contains(&norm(p)))?;
+        .find(|(p, r)| {
+            if p.is_empty() || !q.contains(&norm(p)) {
+                return false;
+            }
+            has_digit(p)
+                || (is_no_value(p)
+                    && words(r)
+                        .iter()
+                        .filter(|w| has_digit(w))
+                        .all(|w| !quote_words.contains(w)))
+        })?;
     (!rest.is_empty() && has_digit(rest) && !q.contains(&norm(rest))).then_some((kept, rest))
 }
 
@@ -181,7 +205,9 @@ pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
 
         // ---- 值 ----
         if let Some(written) = f.value.as_ref().and_then(|v| v.as_str()).map(str::to_owned) {
-            if is_no_value(&written) {
+            // 先剪再看空：`— for three months ended July 27, 2025` 剪掉尾巴才露出那一格是空的
+            let figure = ungrounded_tail(&written, &quote).map_or(written.as_str(), |(k, _)| k);
+            if is_no_value(figure) {
                 out.push(Normalization::NoValue {
                     predicate: f.predicate.clone(),
                     written,
@@ -505,14 +531,29 @@ mod tests {
                 valued("NVIDIA", "dividend", "—", "Dividends | —"),
                 valued("NVIDIA", "dividend", " – ", "Dividends | –"),
                 valued("NVIDIA", "dividend", "$0.01", "Dividends | $0.01"),
+                // 空的那一格后面挂着列头上的期间：剪掉尾巴，剩下的仍是空
+                valued(
+                    "NVIDIA",
+                    "amount",
+                    "— for three months ended July 27, 2025",
+                    "Purchases of marketable securities | — | (6,176)",
+                ),
+                // 反例：前缀只有标点、在引文里，可尾巴上的数也在引文里——那个数才是值
+                valued(
+                    "NVIDIA",
+                    "net_income",
+                    "$ 53,954 million",
+                    "Net income | $ | 53,954",
+                ),
             ],
         );
-        assert_eq!(x.facts.len(), 1);
+        let kept: Vec<&str> = x.facts.iter().map(value_of).collect();
+        assert_eq!(kept, ["$0.01", "$ 53,954 million"]);
         assert_eq!(
             n.iter()
                 .filter(|v| matches!(v, Normalization::NoValue { .. }))
                 .count(),
-            2
+            3
         );
     }
 
