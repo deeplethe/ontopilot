@@ -1415,7 +1415,7 @@ pub async fn list_reviews(
          JOIN entities a ON a.id = rr.left_id
          JOIN entities b ON b.id = rr.right_id
          WHERE rr.kb_id = $1 AND rr.status = 'pending' AND {}
-         ORDER BY rr.created_at DESC LIMIT $2 OFFSET $3",
+         ORDER BY rr.created_at DESC, rr.id DESC LIMIT $2 OFFSET $3",
         types.clause()
     );
     let rows: Vec<ReviewRow> = sqlx::query_as(&sql)
@@ -2040,7 +2040,7 @@ pub async fn list_merges(
          JOIN entities t ON t.id = m.target_id
          LEFT JOIN users u ON u.id = m.merged_by
          WHERE m.kb_id = $1
-         ORDER BY m.created_at DESC LIMIT $2 OFFSET $3",
+         ORDER BY m.created_at DESC, m.id DESC LIMIT $2 OFFSET $3",
     )
     .bind(kb_id)
     .bind(limit)

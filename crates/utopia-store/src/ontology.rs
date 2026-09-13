@@ -42,7 +42,7 @@ pub async fn entity_instances(
                    AND f.invalidated_at IS NULL) AS fact_count
          FROM entities e
          WHERE e.kb_id = $1 AND e.type_id = $2 AND e.merged_into IS NULL
-         ORDER BY lower(e.canonical_name)
+         ORDER BY lower(e.canonical_name), e.id
          LIMIT $3 OFFSET $4",
     )
     .bind(kb_id)
