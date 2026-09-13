@@ -87,22 +87,51 @@ fn units(text: &str, blocks: Vec<Block>) -> Vec<Unit> {
             }),
             Kind::Rule => {}
             Kind::Paragraph => {
-                // 紧跟着一张表的短段落是它的说明句，跟表走
+                // 紧跟着表的短段落是说明句，跟表走。**两条通用的补充**（召回台子，
+                // 2026-09-13 充值后那一轮量出来的）：
+                //
+                // - 说明句和表之间隔着水平线也算紧跟。这类文档里水平线是分页符，
+                //   第五项议案的「结果如下：」和它的表正好被一页隔开，说明句留在了
+                //   上一块，表去了下一块。
+                // - 一句说明引出的是**紧跟其后的一串表**，不只第一张。「选举十位董事
+                //   提名人，结果如下：」后面是十张表，从前只有第一张带着它；黄仁勋
+                //   那张在另一块里，四个票数都对，却没有一句话说这是在投什么，
+                //   「当选董事」那条边就没了。一串到别的东西（段落、标题）出现为止。
                 let caption_like = b.range.len() <= CAPTION_MAX_BYTES
                     || text[b.range.clone()].trim_end().ends_with(':');
-                match blocks.get(i + 1) {
-                    Some(Block {
-                        kind: Kind::Table { head, rows },
-                        ..
-                    }) if caption_like => {
+                let mut j = i + 1;
+                let mut attached = 0usize;
+                if caption_like {
+                    loop {
+                        while matches!(
+                            blocks.get(j),
+                            Some(Block {
+                                kind: Kind::Rule,
+                                ..
+                            })
+                        ) {
+                            j += 1;
+                        }
+                        let Some(Block {
+                            kind: Kind::Table { head, rows },
+                            ..
+                        }) = blocks.get(j)
+                        else {
+                            break;
+                        };
                         out.push(Unit::Table {
                             caption: Some(b.range.clone()),
                             head: head.clone(),
                             rows: rows.clone(),
                         });
-                        i += 1;
+                        attached += 1;
+                        j += 1;
                     }
-                    _ => out.push(Unit::Text(b.range.clone())),
+                }
+                if attached == 0 {
+                    out.push(Unit::Text(b.range.clone()));
+                } else {
+                    i = j - 1;
                 }
             }
             Kind::Table { head, rows } => out.push(Unit::Table {
@@ -185,7 +214,33 @@ impl<'a> Packer<'a> {
             .iter()
             .map(|r| self.text[r.clone()].to_string())
             .collect();
-        parts.extend(body.iter().map(|p| p.render(self.text)));
+        // 同一块里一串表共用一句说明：说明只在第一张前面出现一次。
+        // 十位董事的十张表挤在一块里，不该把「结果如下」念十遍
+        let mut last_caption: Option<Range<usize>> = None;
+        for p in body {
+            match p {
+                Piece::Table {
+                    caption: Some(c),
+                    head,
+                    rows,
+                } if last_caption.as_ref() == Some(c) => {
+                    let bare = Piece::Table {
+                        caption: None,
+                        head: head.clone(),
+                        rows: rows.clone(),
+                    };
+                    parts.push(bare.render(self.text));
+                }
+                Piece::Table { caption, .. } => {
+                    last_caption = caption.clone();
+                    parts.push(p.render(self.text));
+                }
+                Piece::Text(_) => {
+                    last_caption = None;
+                    parts.push(p.render(self.text));
+                }
+            }
+        }
         parts.join("\n\n")
     }
 
@@ -571,6 +626,89 @@ mod tests {
 
 4"
         ));
+    }
+
+    /// 第五项议案的形状：说明句 · 分页符 · 表。分页符不隔开说明句和它的表。
+    #[test]
+    fn a_page_break_between_a_caption_and_its_table_does_not_part_them() {
+        let filler = "Words about nothing in particular. ".repeat(10);
+        let text = format!(
+            "{filler}\n\n5. Stockholders did not approve the proposal. The results of the voting were as follows:\n\n* * *\n\n| Number of shares For | 144 |\n| --- | --- |\n| Number of shares Against | 16 |\n"
+        );
+        let pieces = chunk_with_budget(&text, 110);
+        let table = pieces
+            .iter()
+            .find(|p| p.text.contains("| Number of shares For |"))
+            .expect("有表的那块");
+        assert!(
+            table
+                .text
+                .contains("The results of the voting were as follows:"),
+            "{}",
+            table.text
+        );
+        for p in pieces
+            .iter()
+            .filter(|p| !p.text.contains("| Number of shares For |"))
+        {
+            assert!(
+                !p.text.contains("were as follows"),
+                "说明句留在了没有表的块里:\n{}",
+                p.text
+            );
+        }
+    }
+
+    /// 十位董事的形状：一句说明、一串表。每张表不论落在哪一块都看得见那句说明；
+    /// 同一块里的几张表，说明只念一遍。
+    #[test]
+    fn one_caption_introduces_the_whole_run_of_tables_after_it() {
+        let mut text = String::from("Stockholders elected each of the director nominees. The results of the voting were as follows:\n\n");
+        for (i, name) in [
+            "Tench Coxe",
+            "John Dabiri",
+            "Jen-Hsun Huang",
+            "Dawn Hudson",
+            "Harvey Jones",
+        ]
+        .iter()
+        .enumerate()
+        {
+            text.push_str(&format!(
+                "| {name} |  |\n| --- | --- |\n| Number of shares For | {} |\n| Number of shares Against | {} |\n\n",
+                1000 + i,
+                50 + i
+            ));
+        }
+        text.push_str(
+            "Another matter entirely.\n\n| Unrelated | 1 |\n| --- | --- |\n| row | 2 |\n",
+        );
+        let pieces = chunk_with_budget(&text, 90);
+        assert!(pieces.len() >= 3, "{}", pieces.len());
+        let huang = pieces
+            .iter()
+            .find(|p| p.text.contains("Jen-Hsun Huang"))
+            .expect("黄仁勋那块");
+        assert!(
+            huang.text.contains("director nominees"),
+            "续块丢了说明句:\n{}",
+            huang.text
+        );
+        for p in &pieces {
+            assert!(
+                p.text.matches("were as follows").count() <= 1,
+                "同一块里说明念了不止一遍:\n{}",
+                p.text
+            );
+        }
+        // 一串到别的东西出现为止：后面那张无关的表不带这句说明
+        let unrelated = pieces
+            .iter()
+            .find(|p| p.text.contains("| Unrelated |"))
+            .unwrap();
+        let before = &unrelated.text[..unrelated.text.find("| Unrelated |").unwrap()];
+        assert!(!before.ends_with("follows:\n\n"), "{}", unrelated.text);
+        assert!(unrelated.text.contains("Another matter entirely."));
     }
 
     #[test]
