@@ -1,220 +1,100 @@
-//! 模型回复落库前的**形状归一**：与谓词、与文档无关的两条规矩，放在纯函数里，
-//! 单测不用连库，服务端只负责把返回的信号记进丢弃表。
+//! 模型回复落库前的**形状检查**：只看结构，不看词。
 //!
-//! **期间是"什么时候"，不是"什么"。**财报里一行 `Gross margin | 75.0 | %` 落在
-//! `Q2 FY27` 那一列，模型常写成 `NVIDIA gross_margin_for_period Q2 FY27
-//! {percentage: 75.0%}`——期间成了实体、当了宾语，数字塞进边属性。这个形状不是
-//! 提示词能写死的（列头是期间的表格太多、写法太多），而账本本来就有时间轴：
-//! 数字是值，期间是这条值的有效期。这里把它拆回去。
+//! **分工。**读懂原文里的时间、判断一段话是不是一个东西——这是语言问题，归模型，
+//! 契约（提示词 3c）说清楚它该怎么写。这里只核对输出有没有照契约的形状写，判据一律
+//! 是结构性的：引文里有没有这段字、值是不是只有标点、一侧是不是契约的日期格式、
+//! 同一句里有没有另一条边。**不认任何一种语言的词**——第一版按英文词表认「季度」
+//!「N months ended」，中文财报一条都认不出，还把四份报告的标题当成期间删了。
 //!
-//! **另一个已声明实体的所有格描述，不是新实体。**`NVIDIA invested_in SB Energy`
-//! 与 `NVIDIA invested_in "SB Energy's growth and commitments to the Ohio
-//! community"` 同出一句，后者是前者的描述。判据是结构性的——同一句、同主语、
-//! 同谓词、本尊那条边就在旁边——而不是词面：`OpenAI's board of directors` 也是
-//! 所有格开头，但它是一个东西，旁边没有一条指向 OpenAI 的同样的边。
+//! 每条规则做了什么都返回给服务端记进丢弃表：违约多常见、出在哪个模型，量得出来，
+//! 契约该怎么改看数说话。
 
-use crate::{ExtractedFact, Extraction};
-use chrono::NaiveDate;
+use crate::{parse_time, ExtractedFact, Extraction};
+use std::collections::HashSet;
 
-/// 归一化做了什么；服务端按条记信号，量得出每个模型、每个库多常这么写
+/// 形状检查做了什么；服务端按条记信号
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Normalization {
-    /// 期间做了宾语、边上带着数：拆成带有效期的值事实。`dated` = 期间解得出日期
-    PeriodToValidity {
+    /// 值只有标点（`—`）或是空的：表里的「无」，不是一个值，不落
+    NoValue { predicate: String, written: String },
+    /// 值后面有一截引文里没有的字：只留引文里有的那段。模型读对了表头、却把期间
+    /// 写进了值（`(6,176) for three months ended July 27, 2025`），引文只有 `(6,176)`
+    ValueTrimmed {
         predicate: String,
-        label: String,
-        dated: bool,
+        kept: String,
+        dropped: String,
+    },
+    /// 没有宾语、没有值、只带边属性：每个属性落成主语上的一条值事实。
+    /// 从前整条以 object_missing 丢掉，写对了的数跟着没了
+    QualifiersWithoutObject { predicate: String, values: usize },
+    /// 宾语是契约格式的日期（`2026-06-30`）：时间不是实体。边上的数落成值、日期进有效期；
+    /// 没带数的不落
+    TimeAsObject {
+        predicate: String,
+        written: String,
         values: usize,
     },
-    /// 期间做了宾语、什么数都没带：这条事实只说「X 在 P 有过什么」，没有可落的值
-    PeriodAsObject { predicate: String, label: String },
-    /// 期间做了主语（`second quarter of fiscal 2027 revenue $89.0 billion`）：数是某个东西在
-    /// 那个期间的数，那个东西是谁回复里没说。不猜，不落，例句进丢弃表
-    PeriodAsSubject { predicate: String, label: String },
-    /// 期间被声明成了实体：去掉声明。上面三条处理完之后已经没有事实引用它，留着就是孤点
-    PeriodDeclared { name: String },
-    /// 宾语是另一个声明实体的所有格描述，本尊那条边同句已在：丢，连同它的声明
+    /// 主语是契约格式的日期：数是某个东西在那一刻的数，那个东西是谁回复里没说。不落
+    TimeAsSubject { predicate: String, written: String },
+    /// 宾语的名字包住了另一个声明实体，而同一句、同主语、同谓词已有一条指向那个实体的边：
+    /// 它是那个实体的描述，不落
     ObjectDescribesDeclared {
         predicate: String,
         name: String,
         head: String,
     },
+    /// 上面几条去掉事实之后，没有任何事实再引用的声明：不建，否则就是一个孤点
+    OrphanDeclaration { name: String },
 }
 
-/// 这段文字是不是一个期间标签：季度、半年、财年、年、月。
+/// 比对用的形态：空白折叠、小写
+fn norm(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// 值后面是否挂着一截不属于它的字。返回 (保留的前缀, 去掉的尾巴)。
 ///
-/// 认得出但解不出日期的（`Q2 FY27`：财年从哪天起要看公司）也算——它照样不是实体。
-pub fn looks_like_period(s: &str) -> bool {
-    period_shape(s).is_some()
-}
-
-/// 日历上能定位的期间的起止日（含两端）。财年的解不出，返回 None。
-pub fn period_span(s: &str) -> Option<(NaiveDate, NaiveDate)> {
-    match period_shape(s)? {
-        Shape::Year(y) => Some((ymd(y, 1, 1)?, ymd(y, 12, 31)?)),
-        Shape::Month(y, m) => Some((ymd(y, m, 1)?, month_end(y, m)?)),
-        Shape::Quarter(y, q) => {
-            let m = (q - 1) * 3 + 1;
-            Some((ymd(y, m, 1)?, month_end(y, m + 2)?))
-        }
-        Shape::Half(y, h) => {
-            let m = if h == 1 { 1 } else { 7 };
-            Some((ymd(y, m, 1)?, month_end(y, m + 5)?))
-        }
-        Shape::Fiscal => None,
-    }
-}
-
-enum Shape {
-    Year(i32),
-    Month(i32, u32),
-    Quarter(i32, u32),
-    Half(i32, u32),
-    /// 带 FY / fiscal 的：是期间，但起止日不在标签里
-    Fiscal,
-}
-
-fn period_shape(s: &str) -> Option<Shape> {
-    let t = s.trim().trim_end_matches(['.', ',']);
-    if t.is_empty() {
+/// 两个条件同时成立才剪，都是结构，不认词：
+/// - **保留的那段在引文里，而且含数字**——它是原文写的那个数；
+/// - **尾巴不在引文里，而且自己含数字**——它是另一条信息（一个期间、一个日期、
+///   另一个百分比），不是这个数的单位。
+///
+/// 第二条要数字，是因为挂在数后面、引文里又没有的，还有一类是对的：表头上的量级与
+/// 单位（`53,954 million USD`，这一行引文只有 `53,954`，`million` 在表头「in millions」）、
+/// 模型换了写法的单位（`10 gigawatts`）、缩写的头衔（`founder and CEO`）。它们不带数字，
+/// 不剪。整个值在引文里的，一个字不动。
+fn ungrounded_tail<'a>(value: &'a str, quote: &str) -> Option<(&'a str, &'a str)> {
+    let q = norm(quote);
+    if q.is_empty() || q.contains(&norm(value)) {
         return None;
     }
-    // 2026 / 2026-06 / 2026-06-30 直接是日期：整年或整月算期间，具体到日的是时点，不算
-    // 光秃秃的四位数才是整年；`FY2026`、`2026 Annual Meeting` 都不是
-    if t.chars().all(|c| c.is_ascii_digit()) {
-        return parse_year(t).map(Shape::Year);
-    }
-    if let Some((y, m)) = t.split_once('-') {
-        if let (Some(y), Ok(m)) = (parse_year(y), m.parse::<u32>()) {
-            if (1..=12).contains(&m) {
-                return Some(Shape::Month(y, m));
-            }
-        }
-        // 2026-Q2 / 2026-H1
-        if let (Some(y), Some(part)) = (parse_year(y), qh_token(m)) {
-            return Some(match part {
-                ('q', n) => Shape::Quarter(y, n),
-                (_, n) => Shape::Half(y, n),
-            });
-        }
-    }
-    let lower = t.to_lowercase();
-    let words: Vec<&str> = lower.split_whitespace().collect();
-    let fiscal = words.iter().any(|w| {
-        *w == "fy"
-            || *w == "fiscal"
-            || (w.starts_with("fy") && w[2..].chars().all(|c| c.is_ascii_digit()))
-    });
-    // Q2 2026 / Q2 FY27 / 2Q26 / 2026 Q2 / H1 2027 / H1 FY26
-    let qh = words.iter().find_map(|w| qh_token(w));
-    let year = words.iter().find_map(|w| parse_year(w)).or_else(|| {
-        words.iter().find_map(|w| {
-            // fy27 → 27；2q26 / 1h27 → 尾上那两位
-            let w = w.strip_prefix("fy").unwrap_or(w);
-            let w = match w.as_bytes() {
-                [d, b'q' | b'h', rest @ ..] if d.is_ascii_digit() => {
-                    std::str::from_utf8(rest).unwrap_or(w)
-                }
-                _ => w,
-            };
-            (w.len() == 2 && w.chars().all(|c| c.is_ascii_digit()))
-                .then(|| w.parse::<i32>().ok().map(|n| 2000 + n))
-                .flatten()
+    let has_digit = |t: &str| t.chars().any(|c| c.is_numeric());
+    let bounds: Vec<usize> = value
+        .char_indices()
+        .filter(|(i, c)| c.is_whitespace() && *i > 0)
+        .map(|(i, _)| i)
+        .collect();
+    let (kept, rest) = bounds
+        .iter()
+        .rev()
+        .map(|&i| {
+            (
+                value[..i]
+                    .trim()
+                    .trim_end_matches([',', ';', ':', '\u{3001}', '\u{FF0C}']),
+                value[i..].trim(),
+            )
         })
-    });
-    // 「first quarter of 2026」「second half of fiscal 2027」
-    let ordinal = words.iter().position(|w| {
-        matches!(
-            *w,
-            "first" | "second" | "third" | "fourth" | "1st" | "2nd" | "3rd" | "4th"
-        )
-    });
-    let ordinal_part = ordinal.and_then(|i| {
-        let n = match words[i] {
-            "first" | "1st" => 1,
-            "second" | "2nd" => 2,
-            "third" | "3rd" => 3,
-            _ => 4,
-        };
-        match words.get(i + 1).copied() {
-            Some("quarter") => Some(('q', n)),
-            Some("half") if n <= 2 => Some(('h', n)),
-            _ => None,
-        }
-    });
-    match (qh.or(ordinal_part), year, fiscal) {
-        (Some(_), _, true) | (None, Some(_), true) => Some(Shape::Fiscal),
-        (Some(('q', n)), Some(y), false) => Some(Shape::Quarter(y, n)),
-        (Some(('h', n)), Some(y), false) => Some(Shape::Half(y, n)),
-        (Some(_), None, _) => None,
-        (None, Some(y), false) => {
-            // May 2026 / 2026年6月 这类：月名 + 年
-            if let Some(m) = words.iter().find_map(|w| month_name(w)) {
-                return Some(Shape::Month(y, m));
-            }
-            // 只有一个年份词、别的都是 "year" / "calendar"：整年
-            let rest: Vec<&&str> = words
-                .iter()
-                .filter(|w| parse_year(w).is_none() && !matches!(**w, "year" | "calendar" | "cy"))
-                .collect();
-            rest.is_empty().then_some(Shape::Year(y))
-        }
-        _ => None,
-    }
+        .find(|(p, _)| !p.is_empty() && has_digit(p) && q.contains(&norm(p)))?;
+    (!rest.is_empty() && has_digit(rest) && !q.contains(&norm(rest))).then_some((kept, rest))
 }
 
-fn qh_token(w: &str) -> Option<(char, u32)> {
-    let w = w.trim_matches(|c: char| !c.is_ascii_alphanumeric());
-    let lower = w.to_ascii_lowercase();
-    let b = lower.as_bytes();
-    // q2 / h1 / 2q / 1h（后面可以直接接年份：2q26）
-    let (kind, n) = match b {
-        [k @ (b'q' | b'h'), d, ..] if d.is_ascii_digit() => (*k as char, (d - b'0') as u32),
-        [d, k @ (b'q' | b'h'), ..] if d.is_ascii_digit() => (*k as char, (d - b'0') as u32),
-        _ => return None,
-    };
-    let ok = match kind {
-        'q' => (1..=4).contains(&n),
-        _ => (1..=2).contains(&n),
-    };
-    // 剩下的字符只能是年份数字（2q26），不能是别的字母（"quarterly"）
-    let tail: String = lower.chars().filter(|c| c.is_ascii_alphabetic()).collect();
-    (ok && tail.len() == 1).then_some((kind, n))
-}
-
-fn parse_year(w: &str) -> Option<i32> {
-    let w = w.trim_matches(|c: char| !c.is_ascii_digit());
-    (w.len() == 4)
-        .then(|| w.parse::<i32>().ok())
-        .flatten()
-        .filter(|y| (1900..=2100).contains(y))
-}
-
-fn month_name(w: &str) -> Option<u32> {
-    Some(match w.trim_matches(|c: char| !c.is_ascii_alphabetic()) {
-        "january" | "jan" => 1,
-        "february" | "feb" => 2,
-        "march" | "mar" => 3,
-        "april" | "apr" => 4,
-        "may" => 5,
-        "june" | "jun" => 6,
-        "july" | "jul" => 7,
-        "august" | "aug" => 8,
-        "september" | "sep" | "sept" => 9,
-        "october" | "oct" => 10,
-        "november" | "nov" => 11,
-        "december" | "dec" => 12,
-        _ => return None,
-    })
-}
-
-fn ymd(y: i32, m: u32, d: u32) -> Option<NaiveDate> {
-    NaiveDate::from_ymd_opt(y, m, d)
-}
-
-fn month_end(y: i32, m: u32) -> Option<NaiveDate> {
-    let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
-    ymd(ny, nm, 1)?.pred_opt()
+/// 只有标点、没有字母也没有数字：表格里表示「没有」的那一格
+fn is_no_value(written: &str) -> bool {
+    !written.chars().any(char::is_alphanumeric)
 }
 
 /// 边属性里不是值、是单位的那几个键（与服务端同一张表）
@@ -225,231 +105,241 @@ fn is_unit_key(k: &str) -> bool {
     )
 }
 
-/// 谓词里把期间说了一遍的尾巴：期间进了有效期，尾巴就多余了。收得窄，只剥这几种
-fn strip_period_suffix(p: &str) -> &str {
-    for suf in [
-        "_for_the_period",
-        "_for_period",
-        "_in_period",
-        "_for_the_quarter",
-    ] {
-        if let Some(s) = p.strip_suffix(suf) {
-            if !s.is_empty() {
-                return s;
-            }
-        }
-    }
-    p
+fn qualifier_values(f: &ExtractedFact) -> Vec<(String, serde_json::Value)> {
+    f.qualifiers
+        .as_ref()
+        .map(|q| {
+            q.iter()
+                .filter(|(k, v)| !v.is_null() && !is_unit_key(k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-/// 两条规矩，按上面模块注释的顺序。改 `x` 本身，返回做了什么。
+fn value_fact(
+    f: &ExtractedFact,
+    predicate: String,
+    value: serde_json::Value,
+    valid_from: Option<String>,
+) -> ExtractedFact {
+    ExtractedFact {
+        subject: f.subject.clone(),
+        subject_ref: f.subject_ref.clone(),
+        predicate,
+        object: None,
+        object_ref: None,
+        value: Some(value),
+        qualifiers: None,
+        valid_from: valid_from.or_else(|| f.valid_from.clone()),
+        valid_to: f.valid_to.clone(),
+        confidence: f.confidence,
+        quote: f.quote.clone(),
+        subject_span: f.subject_span.clone(),
+        object_span: None,
+    }
+}
+
+/// 一侧写的是契约格式的时间（`YYYY` / `YYYY-MM` / `YYYY-MM-DD`，带时区的时刻）
+fn is_contract_time(s: &str) -> bool {
+    parse_time(s.trim()).is_some()
+}
+
 pub fn normalize_facts(x: &mut Extraction) -> Vec<Normalization> {
     let mut out = Vec::new();
-    let mut facts: Vec<ExtractedFact> = Vec::with_capacity(x.facts.len());
+    let entities = std::mem::take(&mut x.entities);
 
-    // ---- 1. 期间做主语、做宾语 ----
-    // 主语那一侧按句柄取声明的名字（模型常写 `subject: "NVIDIA"`、句柄指着别的），
-    // 取不到再看写出来的名字
-    let declared_name = |r: Option<&String>| {
-        r.and_then(|h| {
-            x.entities
+    // 一侧绑到的声明名：有句柄按句柄，没有按写出来的名字
+    let handle_name = |h: Option<&String>| {
+        h.and_then(|h| {
+            entities
                 .iter()
                 .find(|e| e.local_id.as_deref().map(str::trim) == Some(h.trim()))
                 .map(|e| e.name.trim().to_string())
         })
     };
-    let drained: Vec<ExtractedFact> = x.facts.drain(..).collect();
-    for f in drained {
-        let subject =
-            declared_name(f.subject_ref.as_ref()).unwrap_or_else(|| f.subject.trim().to_string());
-        if looks_like_period(&subject) {
-            out.push(Normalization::PeriodAsSubject {
-                predicate: f.predicate.clone(),
-                label: subject,
-            });
-            continue;
-        }
-        let label = f
-            .object
-            .as_deref()
-            .map(str::trim)
-            .filter(|o| !o.is_empty() && looks_like_period(o))
-            .map(str::to_owned);
-        let Some(label) = label else {
-            facts.push(f);
-            continue;
-        };
-        let values: Vec<(String, serde_json::Value)> = f
-            .qualifiers
-            .as_ref()
-            .map(|q| {
-                q.iter()
-                    .filter(|(k, v)| !v.is_null() && !is_unit_key(k))
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect()
+    let referenced = |facts: &[ExtractedFact]| -> HashSet<String> {
+        facts
+            .iter()
+            .flat_map(|f| {
+                [
+                    handle_name(f.subject_ref.as_ref())
+                        .or_else(|| Some(f.subject.trim().to_string())),
+                    handle_name(f.object_ref.as_ref())
+                        .or_else(|| f.object.as_deref().map(|o| o.trim().to_string())),
+                ]
             })
-            .unwrap_or_default();
-        if values.is_empty() {
-            out.push(Normalization::PeriodAsObject {
+            .flatten()
+            .map(|n| n.to_lowercase())
+            .collect()
+    };
+    let before = referenced(&x.facts);
+
+    let mut facts: Vec<ExtractedFact> = Vec::with_capacity(x.facts.len());
+    for mut f in std::mem::take(&mut x.facts) {
+        let quote = f.quote.clone().unwrap_or_default();
+
+        // ---- 值 ----
+        if let Some(written) = f.value.as_ref().and_then(|v| v.as_str()).map(str::to_owned) {
+            if is_no_value(&written) {
+                out.push(Normalization::NoValue {
+                    predicate: f.predicate.clone(),
+                    written,
+                });
+                continue;
+            }
+            if let Some((kept, dropped)) = ungrounded_tail(&written, &quote) {
+                out.push(Normalization::ValueTrimmed {
+                    predicate: f.predicate.clone(),
+                    kept: kept.to_string(),
+                    dropped: dropped.to_string(),
+                });
+                f.value = Some(serde_json::Value::String(kept.to_string()));
+            }
+        }
+
+        // ---- 主语是时间 ----
+        let subject =
+            handle_name(f.subject_ref.as_ref()).unwrap_or_else(|| f.subject.trim().to_string());
+        if is_contract_time(&subject) {
+            out.push(Normalization::TimeAsSubject {
                 predicate: f.predicate.clone(),
-                label,
+                written: subject,
             });
             continue;
         }
-        let span = period_span(&label);
-        let base = strip_period_suffix(f.predicate.trim()).to_string();
-        let several = values.len() > 1;
-        for (key, value) in &values {
-            let predicate = if several {
-                format!("{base}.{}", key.trim())
-            } else {
-                base.clone()
-            };
-            let (valid_from, valid_to) = match span {
-                Some((a, b)) => (
-                    Some(a.format("%Y-%m-%d").to_string()),
-                    Some(b.format("%Y-%m-%d").to_string()),
-                ),
-                // 财年：标签认得出、日期定不了，留模型自己写的（多半是空）
-                None => (f.valid_from.clone(), f.valid_to.clone()),
-            };
-            facts.push(ExtractedFact {
-                subject: f.subject.clone(),
-                subject_ref: f.subject_ref.clone(),
-                predicate,
-                object: None,
-                object_ref: None,
-                value: Some(value.clone()),
-                qualifiers: None,
-                valid_from,
-                valid_to,
-                confidence: f.confidence,
-                quote: f.quote.clone(),
-                subject_span: f.subject_span.clone(),
-                object_span: None,
+
+        let values = qualifier_values(&f);
+        let object = handle_name(f.object_ref.as_ref())
+            .or_else(|| f.object.as_deref().map(|o| o.trim().to_string()))
+            .filter(|o| !o.is_empty());
+        let has_value = f.value.as_ref().is_some_and(|v| !v.is_null());
+
+        // ---- 只有边属性 ----
+        if object.is_none() && !has_value && !values.is_empty() {
+            for (key, value) in &values {
+                let predicate = format!("{}.{}", f.predicate.trim(), key.trim());
+                facts.push(value_fact(&f, predicate, value.clone(), None));
+            }
+            out.push(Normalization::QualifiersWithoutObject {
+                predicate: f.predicate.clone(),
+                values: values.len(),
             });
+            continue;
         }
-        out.push(Normalization::PeriodToValidity {
-            predicate: f.predicate.clone(),
-            label,
-            dated: span.is_some(),
-            values: values.len(),
-        });
+
+        // ---- 宾语是时间 ----
+        if let Some(o) = object.as_deref().filter(|o| is_contract_time(o)) {
+            let several = values.len() > 1;
+            for (key, value) in &values {
+                let predicate = if several {
+                    format!("{}.{}", f.predicate.trim(), key.trim())
+                } else {
+                    f.predicate.trim().to_string()
+                };
+                facts.push(value_fact(
+                    &f,
+                    predicate,
+                    value.clone(),
+                    Some(o.to_string()),
+                ));
+            }
+            out.push(Normalization::TimeAsObject {
+                predicate: f.predicate.clone(),
+                written: o.to_string(),
+                values: values.len(),
+            });
+            continue;
+        }
+
+        facts.push(f);
     }
 
-    // ---- 2. 所有格描述 ----
-    // 声明名 → 句柄；一个句柄可能没有（旧回复），那就按名字比
-    let name_of = |f: &ExtractedFact, side_ref: Option<&str>, side_name: Option<&str>| {
-        side_ref
-            .and_then(|h| {
-                x.entities
-                    .iter()
-                    .find(|e| e.local_id.as_deref().map(str::trim) == Some(h.trim()))
-            })
-            .map(|e| e.name.trim().to_string())
-            .or_else(|| side_name.map(|s| s.trim().to_string()))
-            .filter(|_| f.object.is_some() || side_ref.is_some())
-    };
-    let declared: Vec<String> = x
-        .entities
-        .iter()
-        .map(|e| e.name.trim().to_string())
-        .collect();
-    let head_of = |name: &str| -> Option<String> {
-        let lower = name.to_lowercase();
-        declared
-            .iter()
-            .filter(|m| !m.eq_ignore_ascii_case(name))
-            .find(|m| {
-                let ml = m.to_lowercase();
-                ["'s ", "\u{2019}s "].iter().any(|p| {
-                    lower
-                        .strip_prefix(&ml)
-                        .is_some_and(|r| r.starts_with(p) && r.len() > p.len())
-                })
-            })
-            .cloned()
+    // ---- 描述：名字包住另一个声明实体，本尊那条边同句已在 ----
+    let declared: Vec<String> = entities.iter().map(|e| e.name.trim().to_string()).collect();
+    let side = |r: Option<&String>, w: Option<&str>| {
+        handle_name(r)
+            .or_else(|| w.map(|s| s.trim().to_string()))
+            .filter(|s| !s.is_empty())
     };
     let objects: Vec<Option<String>> = facts
         .iter()
-        .map(|f| name_of(f, f.object_ref.as_deref(), f.object.as_deref()))
+        .map(|f| side(f.object_ref.as_ref(), f.object.as_deref()))
         .collect();
     let subjects: Vec<Option<String>> = facts
         .iter()
-        .map(|f| name_of(f, f.subject_ref.as_deref(), Some(f.subject.as_str())))
+        .map(|f| side(f.subject_ref.as_ref(), Some(f.subject.as_str())))
         .collect();
-    let mut drop = vec![false; facts.len()];
+    // 名字边界：拉丁字母数字前后不能粘着字母数字；汉字之间本来就没有空格，不设边界
+    let contains_name = |outer: &str, inner: &str| {
+        let (o, i) = (norm(outer), norm(inner));
+        !i.is_empty()
+            && o.len() > i.len()
+            && o.match_indices(&i).any(|(at, _)| {
+                let glued = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric());
+                let edge_in = i.chars().next().is_some_and(|c| c.is_ascii_alphanumeric());
+                let edge_out = i
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_ascii_alphanumeric());
+                !(edge_in && glued(o[..at].chars().next_back()))
+                    && !(edge_out && glued(o[at + i.len()..].chars().next()))
+            })
+    };
+    let mut keep = vec![true; facts.len()];
     for i in 0..facts.len() {
         let Some(name) = objects[i].as_deref() else {
             continue;
         };
-        let Some(head) = head_of(name) else { continue };
-        let sibling = (0..facts.len()).any(|j| {
-            j != i
-                && facts[j].predicate.eq_ignore_ascii_case(&facts[i].predicate)
-                && subjects[j] == subjects[i]
-                && objects[j]
-                    .as_deref()
-                    .is_some_and(|o| o.eq_ignore_ascii_case(&head))
+        let quote_i = norm(facts[i].quote.as_deref().unwrap_or(""));
+        let head = declared.iter().find(|h| {
+            contains_name(name, h)
+                && (0..facts.len()).any(|j| {
+                    j != i
+                        && facts[j].predicate.eq_ignore_ascii_case(&facts[i].predicate)
+                        && subjects[j] == subjects[i]
+                        && objects[j]
+                            .as_deref()
+                            .is_some_and(|o| o.eq_ignore_ascii_case(h))
+                        && {
+                            let quote_j = norm(facts[j].quote.as_deref().unwrap_or(""));
+                            quote_i.contains(&quote_j) || quote_j.contains(&quote_i)
+                        }
+                })
         });
-        if sibling {
-            drop[i] = true;
+        if let Some(head) = head {
+            keep[i] = false;
             out.push(Normalization::ObjectDescribesDeclared {
                 predicate: facts[i].predicate.clone(),
                 name: name.to_string(),
-                head,
+                head: head.clone(),
             });
         }
     }
-    let dropped_names: Vec<String> = (0..facts.len())
-        .filter(|i| drop[*i])
-        .filter_map(|i| objects[i].clone())
-        .collect();
-    let kept: Vec<ExtractedFact> = facts
+    x.facts = facts
         .into_iter()
-        .zip(drop)
-        .filter_map(|(f, d)| (!d).then_some(f))
+        .zip(keep)
+        .filter_map(|(f, k)| k.then_some(f))
         .collect();
-    // 被丢的描述的声明也去掉——留着它，声明循环照样会把它造成一个孤点
-    if !dropped_names.is_empty() {
-        let still_used = |e: &crate::ExtractedEntity| {
-            kept.iter().any(|f| {
-                let by_ref = |r: Option<&String>| {
-                    r.map(|h| h.trim()) == e.local_id.as_deref().map(str::trim)
-                        && e.local_id.is_some()
-                };
-                by_ref(f.subject_ref.as_ref())
-                    || by_ref(f.object_ref.as_ref())
-                    || f.subject.trim().eq_ignore_ascii_case(e.name.trim())
-                    || f.object
-                        .as_deref()
-                        .is_some_and(|o| o.trim().eq_ignore_ascii_case(e.name.trim()))
-            })
-        };
-        x.entities.retain(|e| {
-            !dropped_names
-                .iter()
-                .any(|n| n.eq_ignore_ascii_case(e.name.trim()))
-                || still_used(e)
-        });
-    }
-    x.facts = kept;
 
-    // ---- 3. 期间不是实体 ----
-    // 到这里引用期间的事实都已经拆掉或丢掉了；声明还在的话，声明循环照样把它造成节点
-    //（实测一轮留下 `Q1 FY27`、`Q2 FY26` 等六个零事实的孤点）
-    let mut periods: Vec<String> = Vec::new();
-    x.entities.retain(|e| {
-        let is_period = looks_like_period(e.name.trim());
-        if is_period {
-            periods.push(e.name.trim().to_string());
+    // ---- 被上面几条弄成孤点的声明 ----
+    // 只去掉「原来有事实引用、现在没有了」的：模型一开始就只声明不连边的，不归这里管
+    let after = referenced(&x.facts);
+    let mut orphans = Vec::new();
+    let mut kept_entities = entities;
+    kept_entities.retain(|e| {
+        let n = e.name.trim().to_lowercase();
+        let orphan = before.contains(&n) && !after.contains(&n);
+        if orphan {
+            orphans.push(e.name.trim().to_string());
         }
-        !is_period
+        !orphan
     });
+    x.entities = kept_entities;
     out.extend(
-        periods
+        orphans
             .into_iter()
-            .map(|name| Normalization::PeriodDeclared { name }),
+            .map(|name| Normalization::OrphanDeclaration { name }),
     );
     out
 }
@@ -459,96 +349,27 @@ mod tests {
     use super::*;
     use crate::ExtractedEntity;
 
-    fn d(y: i32, m: u32, dd: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, dd).unwrap()
-    }
-
-    #[test]
-    fn a_calendar_period_resolves_to_its_dates() {
-        assert_eq!(
-            period_span("Q2 2026"),
-            Some((d(2026, 4, 1), d(2026, 6, 30)))
-        );
-        assert_eq!(
-            period_span("2026-Q4"),
-            Some((d(2026, 10, 1), d(2026, 12, 31)))
-        );
-        assert_eq!(period_span("2q26"), Some((d(2026, 4, 1), d(2026, 6, 30))));
-        assert_eq!(
-            period_span("H1 2027"),
-            Some((d(2027, 1, 1), d(2027, 6, 30)))
-        );
-        assert_eq!(
-            period_span("second half of 2026"),
-            Some((d(2026, 7, 1), d(2026, 12, 31)))
-        );
-        assert_eq!(
-            period_span("June 2026"),
-            Some((d(2026, 6, 1), d(2026, 6, 30)))
-        );
-        assert_eq!(
-            period_span("2026-02"),
-            Some((d(2026, 2, 1), d(2026, 2, 28)))
-        );
-        assert_eq!(period_span("2026"), Some((d(2026, 1, 1), d(2026, 12, 31))));
-        assert_eq!(
-            period_span("calendar year 2026"),
-            Some((d(2026, 1, 1), d(2026, 12, 31)))
-        );
-    }
-
-    /// 财年认得出是期间，但从哪天起要看公司：不解，也不猜
-    #[test]
-    fn a_fiscal_period_is_a_period_but_has_no_dates_of_its_own() {
-        for s in [
-            "Q2 FY27",
-            "FY2026",
-            "fy27",
-            "first quarter of fiscal 2027",
-            "H2 FY26",
-        ] {
-            assert!(looks_like_period(s), "{s}");
-            assert_eq!(period_span(s), None, "{s}");
-        }
-    }
-
-    #[test]
-    fn things_that_are_not_periods() {
-        for s in [
-            "NVIDIA",
-            "Q2 results",
-            "quarterly report",
-            "2026 Annual Meeting of Stockholders",
-            "Form 10-K",
-            "2026-07-26",
-            "May",
-            "3M",
-        ] {
-            assert!(!looks_like_period(s), "{s}");
-        }
-    }
-
-    fn fact(
-        subject: &str,
-        predicate: &str,
-        object: Option<&str>,
-        object_ref: Option<&str>,
-    ) -> ExtractedFact {
+    fn fact(subject: &str, predicate: &str, object: Option<&str>, quote: &str) -> ExtractedFact {
         ExtractedFact {
             subject: subject.into(),
-            subject_ref: Some("e1".into()),
+            subject_ref: None,
             predicate: predicate.into(),
             object: object.map(str::to_string),
-            object_ref: object_ref.map(str::to_string),
+            object_ref: None,
             value: None,
             qualifiers: None,
             valid_from: None,
             valid_to: None,
             confidence: Some(0.9),
-            quote: Some("Gross margin | 75.0 | %".into()),
+            quote: Some(quote.into()),
             subject_span: Some(subject.into()),
             object_span: object.map(str::to_string),
         }
+    }
+    fn valued(subject: &str, predicate: &str, value: &str, quote: &str) -> ExtractedFact {
+        let mut f = fact(subject, predicate, None, quote);
+        f.value = Some(serde_json::Value::String(value.into()));
+        f
     }
     fn entity(id: &str, name: &str) -> ExtractedEntity {
         ExtractedEntity {
@@ -564,159 +385,259 @@ mod tests {
             .map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string())))
             .collect()
     }
-
-    /// 财报那一格的形状：`NVIDIA gross_margin_for_period Q2 2026 {percentage: 75.0%}`
-    #[test]
-    fn a_period_object_with_a_figure_becomes_a_dated_value_fact() {
-        let mut f = fact(
-            "NVIDIA",
-            "gross_margin_for_period",
-            Some("Q2 2026"),
-            Some("e7"),
-        );
-        f.qualifiers = Some(quals(&[("percentage", "75.0%")]));
+    fn run(
+        entities: Vec<ExtractedEntity>,
+        facts: Vec<ExtractedFact>,
+    ) -> (Extraction, Vec<Normalization>) {
         let mut x = Extraction {
-            entities: vec![entity("e1", "NVIDIA"), entity("e7", "Q2 2026")],
-            facts: vec![f],
+            entities,
+            facts,
             skipped_entities: 0,
             skipped_facts: 0,
             truncated: false,
         };
         let n = normalize_facts(&mut x);
-        assert_eq!(x.facts.len(), 1);
-        let g = &x.facts[0];
-        assert_eq!(g.predicate, "gross_margin");
-        assert_eq!(g.object, None);
-        assert_eq!(g.value, Some(serde_json::Value::String("75.0%".into())));
-        assert_eq!(g.valid_from.as_deref(), Some("2026-04-01"));
-        assert_eq!(g.valid_to.as_deref(), Some("2026-06-30"));
-        assert_eq!(
-            n,
+        (x, n)
+    }
+    fn value_of(f: &ExtractedFact) -> &str {
+        f.value.as_ref().unwrap().as_str().unwrap()
+    }
+
+    /// 截图里那 21 条：模型读对了表头，却把期间写进了值。引文里只有数
+    #[test]
+    fn a_tail_the_quote_does_not_contain_is_not_the_value() {
+        let (x, n) = run(
+            vec![entity("e1", "NVIDIA")],
             vec![
-                Normalization::PeriodToValidity {
-                    predicate: "gross_margin_for_period".into(),
-                    label: "Q2 2026".into(),
-                    dated: true,
-                    values: 1
-                },
-                // e7 声明的是期间：拆完之后没人引用它，声明也去掉
-                Normalization::PeriodDeclared {
-                    name: "Q2 2026".into()
-                },
+                valued(
+                    "NVIDIA",
+                    "net_cash_used",
+                    "(6,176) for three months ended July 27, 2025",
+                    "Net cash used in financing activities (6,176)",
+                ),
+                // 同样的形状，中文：不认词，照样剪
+                valued(
+                    "NVIDIA",
+                    "经营现金流",
+                    "12,345 截至2025年7月27日止三个月",
+                    "经营活动产生的现金流量净额 | 12,345",
+                ),
+                valued(
+                    "NVIDIA",
+                    "revenue",
+                    "$89.0 billion, up 18% from the previous quarter",
+                    "Second-quarter revenue was $89.0 billion",
+                ),
+            ],
+        );
+        assert_eq!(value_of(&x.facts[0]), "(6,176)");
+        assert_eq!(value_of(&x.facts[1]), "12,345");
+        // 数后面接着另一个数：「up 18%」是另一条事实，不是这个数的一部分；逗号跟着前缀走
+        assert_eq!(value_of(&x.facts[2]), "$89.0 billion");
+        assert!(
+            matches!(&n[0], Normalization::ValueTrimmed { dropped, .. } if dropped == "for three months ended July 27, 2025")
+        );
+    }
+
+    #[test]
+    fn a_value_grounded_in_the_quote_is_left_alone() {
+        let (x, n) = run(
+            vec![entity("e1", "Tench Coxe")],
+            vec![
+                // 整个值在引文里
+                valued(
+                    "NVIDIA",
+                    "operating_expenses",
+                    "$9.2 billion",
+                    "expected to be approximately $9.2 billion and $9.0 billion",
+                ),
+                // 尾巴 shares 在引文别处出现过：原文的单位，不剪
+                valued(
+                    "Tench Coxe",
+                    "votes_for",
+                    "15,411,252,412 shares",
+                    "Number of shares For | 15,411,252,412",
+                ),
+                // 规范化过的值，前缀一个词都对不上：不是这条规则管的
+                valued("Vega", "amount", "$5 billion", "invested 5 billion dollars"),
+                // 表头上的量级与币种：引文那一行只有数，尾巴不带数字，是它的单位，不剪
+                valued(
+                    "NVIDIA",
+                    "net_income",
+                    "53,954 million USD",
+                    "Net income | $ | 53,954",
+                ),
+                // 模型换了写法的单位、缩写的头衔：不带数字，不剪
+                valued(
+                    "SB Energy",
+                    "capacity",
+                    "10 gigawatts",
+                    "at least 10 GW of new generation",
+                ),
+                valued(
+                    "Jensen Huang",
+                    "job_title",
+                    "founder and CEO",
+                    "Jensen Huang, founder and chief executive officer",
+                ),
+            ],
+        );
+        let got: Vec<&str> = x.facts.iter().map(value_of).collect();
+        assert_eq!(
+            got,
+            [
+                "$9.2 billion",
+                "15,411,252,412 shares",
+                "$5 billion",
+                "53,954 million USD",
+                "10 gigawatts",
+                "founder and CEO"
             ]
         );
-        assert!(x.entities.iter().all(|e| e.name != "Q2 2026"));
-    }
-
-    /// 财年：数照收，日期留模型写的（这里是空），信号里说明没定出日期
-    #[test]
-    fn a_fiscal_period_keeps_the_figure_and_says_it_is_undated() {
-        let mut f = fact(
-            "NVIDIA",
-            "net_income_for_period",
-            Some("Q2 FY27"),
-            Some("e7"),
-        );
-        f.valid_from = Some("2026-05".into());
-        f.qualifiers = Some(quals(&[("amount", "$53,954 million"), ("currency", "USD")]));
-        let mut x = Extraction {
-            entities: vec![entity("e1", "NVIDIA"), entity("e7", "Q2 FY27")],
-            facts: vec![f],
-            skipped_entities: 0,
-            skipped_facts: 0,
-            truncated: false,
-        };
-        let n = normalize_facts(&mut x);
-        assert_eq!(x.facts.len(), 1, "currency 是单位，不是第二个值");
-        assert_eq!(x.facts[0].predicate, "net_income");
-        assert_eq!(x.facts[0].valid_from.as_deref(), Some("2026-05"));
-        assert!(matches!(
-            &n[0],
-            Normalization::PeriodToValidity {
-                dated: false,
-                values: 1,
-                ..
-            }
-        ));
+        assert!(n.is_empty(), "{n:?}");
     }
 
     #[test]
-    fn two_figures_on_one_period_keep_their_keys() {
-        let mut f = fact("NVIDIA", "results_for_period", Some("Q2 2026"), None);
-        f.qualifiers = Some(quals(&[
-            ("revenue", "$96.2 billion"),
-            ("net_income", "$53.9 billion"),
-        ]));
-        let mut x = Extraction {
-            entities: vec![entity("e1", "NVIDIA")],
-            facts: vec![f],
-            skipped_entities: 0,
-            skipped_facts: 0,
-            truncated: false,
-        };
-        normalize_facts(&mut x);
-        let mut preds: Vec<&str> = x.facts.iter().map(|f| f.predicate.as_str()).collect();
-        preds.sort();
-        assert_eq!(preds, ["results.net_income", "results.revenue"]);
-    }
-
-    #[test]
-    fn a_period_subject_is_dropped_and_no_period_stays_declared() {
-        let mut revenue = fact("second quarter of fiscal 2027", "revenue", None, None);
-        revenue.subject_ref = Some("e9".into());
-        revenue.value = Some(serde_json::Value::String("$89.0 billion".into()));
-        let mut margin = fact(
-            "NVIDIA",
-            "gross_margin_for_period",
-            Some("Q2 2026"),
-            Some("e7"),
-        );
-        margin.qualifiers = Some(quals(&[("percentage", "75.0%")]));
-        let mut x = Extraction {
-            entities: vec![
-                entity("e1", "NVIDIA"),
-                entity("e7", "Q2 2026"),
-                entity("e8", "Q1 FY27"),
-                entity("e9", "second quarter of fiscal 2027"),
+    fn a_dash_is_no_value() {
+        let (x, n) = run(
+            vec![entity("e1", "NVIDIA")],
+            vec![
+                valued("NVIDIA", "dividend", "—", "Dividends | —"),
+                valued("NVIDIA", "dividend", " – ", "Dividends | –"),
+                valued("NVIDIA", "dividend", "$0.01", "Dividends | $0.01"),
             ],
-            facts: vec![revenue, margin],
-            skipped_entities: 0,
-            skipped_facts: 0,
-            truncated: false,
-        };
-        let n = normalize_facts(&mut x);
-        assert_eq!(x.facts.len(), 1, "期间做主语的那条不落，毛利率那条拆成值");
-        assert_eq!(x.facts[0].subject, "NVIDIA");
-        let names: Vec<&str> = x.entities.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, ["NVIDIA"], "期间一个都不留");
-        assert!(n.iter().any(|v| matches!(v, Normalization::PeriodAsSubject { label, .. } if label == "second quarter of fiscal 2027")));
+        );
+        assert_eq!(x.facts.len(), 1);
         assert_eq!(
             n.iter()
-                .filter(|v| matches!(v, Normalization::PeriodDeclared { .. }))
+                .filter(|v| matches!(v, Normalization::NoValue { .. }))
                 .count(),
-            3
+            2
+        );
+    }
+
+    /// Coxe 的形状：`vote_result` 带着数，没有宾语也没有值
+    #[test]
+    fn figures_on_an_edge_with_no_other_end_land_on_the_subject() {
+        let mut f = fact(
+            "Tench Coxe",
+            "vote_result",
+            None,
+            "Number of shares For | 15,411,252,412",
+        );
+        f.qualifiers = Some(quals(&[
+            ("for", "15,411,252,412"),
+            ("against", "1,399,727,580"),
+            ("unit", "shares"),
+        ]));
+        let (x, n) = run(vec![entity("e1", "Tench Coxe")], vec![f]);
+        let mut got: Vec<(String, String)> = x
+            .facts
+            .iter()
+            .map(|f| (f.predicate.clone(), value_of(f).to_string()))
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            [
+                (
+                    "vote_result.against".to_string(),
+                    "1,399,727,580".to_string()
+                ),
+                ("vote_result.for".to_string(), "15,411,252,412".to_string()),
+            ]
+        );
+        assert_eq!(
+            n,
+            vec![Normalization::QualifiersWithoutObject {
+                predicate: "vote_result".into(),
+                values: 2
+            }]
+        );
+    }
+
+    /// 时间做了宾语：边上的数落成值，时间进有效期，那个时间节点不建
+    #[test]
+    fn a_time_object_becomes_the_validity_and_leaves_no_node() {
+        let mut margin = fact(
+            "NVIDIA",
+            "gross_margin",
+            Some("2026-06"),
+            "Gross margin | 75.0%",
+        );
+        margin.object_ref = Some("e7".into());
+        margin.qualifiers = Some(quals(&[("percentage", "75.0%")]));
+        let mut bare = fact("NVIDIA", "reported_in", Some("2026"), "reported in 2026");
+        bare.object_ref = Some("e8".into());
+        let (x, n) = run(
+            vec![
+                entity("e1", "NVIDIA"),
+                entity("e7", "2026-06"),
+                entity("e8", "2026"),
+            ],
+            vec![margin, bare],
+        );
+        assert_eq!(x.facts.len(), 1);
+        assert_eq!(x.facts[0].predicate, "gross_margin");
+        assert_eq!(value_of(&x.facts[0]), "75.0%");
+        assert_eq!(x.facts[0].valid_from.as_deref(), Some("2026-06"));
+        let names: Vec<&str> = x.entities.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["NVIDIA"]);
+        assert_eq!(
+            n.iter()
+                .filter(|v| matches!(v, Normalization::OrphanDeclaration { .. }))
+                .count(),
+            2
         );
     }
 
     #[test]
-    fn a_period_object_with_nothing_on_the_edge_is_dropped() {
-        let mut x = Extraction {
-            entities: vec![entity("e1", "NVIDIA")],
-            facts: vec![fact("NVIDIA", "reported_in", Some("Q2 FY27"), None)],
-            skipped_entities: 0,
-            skipped_facts: 0,
-            truncated: false,
-        };
-        let n = normalize_facts(&mut x);
+    fn a_time_subject_is_not_placed() {
+        let f = valued(
+            "2026-07-26",
+            "revenue",
+            "$89.0 billion",
+            "revenue was $89.0 billion",
+        );
+        let (x, n) = run(vec![entity("e1", "NVIDIA")], vec![f]);
         assert!(x.facts.is_empty());
-        assert!(matches!(&n[0], Normalization::PeriodAsObject { label, .. } if label == "Q2 FY27"));
+        assert!(matches!(&n[0], Normalization::TimeAsSubject { .. }));
     }
 
-    /// 同一句、同主语、同谓词，本尊那条边就在旁边：所有格描述是描述，连声明一起去掉
+    /// 不是契约格式的期间名（`Q2 FY27`、`第二季度`）不归这里判：那是模型的事，契约 3c 管
     #[test]
-    fn a_possessive_description_beside_its_head_goes_and_takes_its_declaration_along() {
-        let mut x = Extraction {
-            entities: vec![
+    fn a_period_name_that_is_not_a_date_is_not_second_guessed() {
+        let mut f = fact(
+            "NVIDIA",
+            "gross_margin_for_period",
+            Some("Q2 FY27"),
+            "Gross margin | 75.0 | %",
+        );
+        f.qualifiers = Some(quals(&[("percentage", "75.0%")]));
+        let (x, n) = run(
+            vec![entity("e1", "NVIDIA"), entity("e7", "Q2 FY27")],
+            vec![f],
+        );
+        assert_eq!(x.facts.len(), 1);
+        assert_eq!(x.entities.len(), 2);
+        assert!(n.is_empty());
+    }
+
+    /// SB Energy 那句：名字包住了另一个声明实体，同句同主语同谓词已有一条指向它的边
+    #[test]
+    fn a_description_beside_its_head_goes_with_its_declaration() {
+        let quote = "NVIDIA to invest $1.5B in SB Energy now to support SB Energy\u{2019}s growth and commitments to the Ohio community";
+        let mut head = fact("NVIDIA", "invested_in", Some("SB Energy"), quote);
+        head.object_ref = Some("e2".into());
+        let mut desc = fact(
+            "NVIDIA",
+            "invested_in",
+            Some("SB Energy's growth and commitments to the Ohio community"),
+            quote,
+        );
+        desc.object_ref = Some("e6".into());
+        let (x, n) = run(
+            vec![
                 entity("e1", "NVIDIA"),
                 entity("e2", "SB Energy"),
                 entity(
@@ -724,53 +645,55 @@ mod tests {
                     "SB Energy's growth and commitments to the Ohio community",
                 ),
             ],
-            facts: vec![
-                fact("NVIDIA", "invested_in", Some("SB Energy"), Some("e2")),
-                fact(
-                    "NVIDIA",
-                    "invested_in",
-                    Some("SB Energy\u{2019}s growth and commitments to the Ohio community"),
-                    Some("e6"),
-                ),
-            ],
-            skipped_entities: 0,
-            skipped_facts: 0,
-            truncated: false,
-        };
-        let n = normalize_facts(&mut x);
+            vec![head, desc],
+        );
         assert_eq!(x.facts.len(), 1);
         assert_eq!(x.facts[0].object.as_deref(), Some("SB Energy"));
-        assert!(
-            x.entities
-                .iter()
-                .all(|e| e.local_id.as_deref() != Some("e6")),
-            "e6 不该留下成孤点"
-        );
-        assert!(
-            matches!(&n[0], Normalization::ObjectDescribesDeclared { head, .. } if head == "SB Energy")
-        );
+        assert!(x
+            .entities
+            .iter()
+            .all(|e| e.local_id.as_deref() != Some("e6")));
+        assert!(n.iter().any(
+            |v| matches!(v, Normalization::ObjectDescribesDeclared { head, .. } if head == "SB Energy")
+        ));
     }
 
-    /// 所有格开头但旁边没有本尊那条边：它可能真是一个东西（董事会），不动
+    /// 同样的结构，中文：不靠 's
     #[test]
-    fn a_possessive_name_without_a_sibling_edge_is_left_alone() {
-        let mut x = Extraction {
-            entities: vec![
+    fn a_description_is_recognised_without_a_possessive() {
+        let quote = "英伟达向星辰能源投资15亿美元，支持星辰能源在俄亥俄的发展";
+        let (x, _) = run(
+            vec![
+                entity("e1", "英伟达"),
+                entity("e2", "星辰能源"),
+                entity("e3", "星辰能源在俄亥俄的发展"),
+            ],
+            vec![
+                fact("英伟达", "投资", Some("星辰能源"), quote),
+                fact("英伟达", "投资", Some("星辰能源在俄亥俄的发展"), quote),
+            ],
+        );
+        assert_eq!(x.facts.len(), 1);
+        assert_eq!(x.entities.len(), 2);
+    }
+
+    /// 包住了别的名字、但旁边没有指向本尊的同一条边：可能真是一个东西，不动
+    #[test]
+    fn a_name_that_contains_another_without_a_sibling_edge_is_left_alone() {
+        let quote = "Sam Altman was removed by OpenAI's board of directors";
+        let (x, n) = run(
+            vec![
                 entity("e1", "Sam Altman"),
                 entity("e2", "OpenAI"),
                 entity("e3", "OpenAI's board of directors"),
             ],
-            facts: vec![fact(
+            vec![fact(
                 "Sam Altman",
                 "removed_by",
                 Some("OpenAI's board of directors"),
-                Some("e3"),
+                quote,
             )],
-            skipped_entities: 0,
-            skipped_facts: 0,
-            truncated: false,
-        };
-        let n = normalize_facts(&mut x);
+        );
         assert_eq!(x.facts.len(), 1);
         assert_eq!(x.entities.len(), 3);
         assert!(n.is_empty());

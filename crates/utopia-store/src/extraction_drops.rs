@@ -73,16 +73,21 @@ pub mod reason {
     /// 宾语落成字面值而不是节点（#559）。记下来是为了量：这一类里有多少
     /// 本该是实体（模型漏报），有多少本来就是描述
     pub const OBJECT_UNDECLARED: &str = "object_undeclared";
-    /// 期间做了宾语、边上带着数：拆成了带有效期的值事实（normalize）。只记，事实照落
-    pub const PERIOD_TO_VALIDITY: &str = "period_to_validity";
-    /// 期间做了宾语、边上没有数：这条事实没有可落的值，不落（normalize）
-    pub const PERIOD_AS_OBJECT: &str = "period_as_object";
-    /// 期间做了主语：数是谁的回复里没说，不猜，不落（normalize）
-    pub const PERIOD_AS_SUBJECT: &str = "period_as_subject";
-    /// 期间被声明成了实体：声明去掉，不造节点（normalize）
-    pub const PERIOD_DECLARED: &str = "period_declared";
-    /// 宾语是另一个声明实体的所有格描述，本尊那条边同句已在：不落，声明一并去掉（normalize）
+    /// 以下都来自 `utopia_extract::normalize`：只看结构、不看词的形状检查
+    /// 值只有标点（`—`）：表里的「无」，不落
+    pub const NO_VALUE: &str = "no_value";
+    /// 值后面有一截引文里没有的字：只留引文里有的那段。只记
+    pub const VALUE_TRIMMED: &str = "value_trimmed";
+    /// 没有宾语也没有值、只带边属性：属性落成主语上的值事实。只记
+    pub const QUALIFIERS_WITHOUT_OBJECT: &str = "qualifiers_without_object";
+    /// 宾语是契约格式的日期：数落成值、日期进有效期；没带数的不落
+    pub const TIME_AS_OBJECT: &str = "time_as_object";
+    /// 主语是契约格式的日期：数是谁的回复里没说，不落
+    pub const TIME_AS_SUBJECT: &str = "time_as_subject";
+    /// 宾语名字包住另一个声明实体、同句已有指向本尊的边：它是描述，不落
     pub const OBJECT_DESCRIBES_DECLARED: &str = "object_describes_declared";
+    /// 上面几条去掉事实后没人引用的声明：不建
+    pub const ORPHAN_DECLARATION: &str = "orphan_declaration";
 }
 
 pub async fn record(

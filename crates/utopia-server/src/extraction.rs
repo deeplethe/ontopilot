@@ -1149,33 +1149,40 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
         }
 
         // 实体消解：名称 → 实体 id（本分块的事实按原文名字连线）
-        // **落库前先归一形状**（utopia_extract::normalize）：期间做了宾语的拆成带有效期的值，
-        // 所有格描述本尊就在旁边的去掉。规矩与谓词、与文档无关，所以放在纯函数里；
-        // 这里只把它做过的事记进丢弃表，好量每个模型多常这么写
+        // **落库前先查形状**（utopia_extract::normalize）：只看结构、不看词——引文里有没有
+        // 这段字、值是不是只有标点、一侧是不是契约的日期、同句有没有另一条边。读懂时间
+        // 归模型（提示词 3c），这里只核对它照没照契约写，做了什么都记进丢弃表
         for n in utopia_extract::normalize_facts(&mut extraction) {
             use utopia_extract::Normalization as N;
             use utopia_store::extraction_drops::reason;
             let (r, detail, example) = match n {
-                N::PeriodToValidity {
+                N::NoValue { predicate, written } => (reason::NO_VALUE, predicate, written),
+                N::ValueTrimmed {
                     predicate,
-                    label,
-                    dated,
+                    kept,
+                    dropped,
+                } => (
+                    reason::VALUE_TRIMMED,
+                    predicate,
+                    format!("{kept} ✂ {dropped}"),
+                ),
+                N::QualifiersWithoutObject { predicate, values } => (
+                    reason::QUALIFIERS_WITHOUT_OBJECT,
+                    predicate,
+                    format!("{values} value(s) moved onto the subject"),
+                ),
+                N::TimeAsObject {
+                    predicate,
+                    written,
                     values,
                 } => (
-                    reason::PERIOD_TO_VALIDITY,
+                    reason::TIME_AS_OBJECT,
                     predicate,
-                    format!(
-                        "{label} → {values} value(s){}",
-                        if dated { "" } else { ", undated" }
-                    ),
+                    format!("{written} → {values} value(s)"),
                 ),
-                N::PeriodAsObject { predicate, label } => {
-                    (reason::PERIOD_AS_OBJECT, predicate, label)
+                N::TimeAsSubject { predicate, written } => {
+                    (reason::TIME_AS_SUBJECT, predicate, written)
                 }
-                N::PeriodAsSubject { predicate, label } => {
-                    (reason::PERIOD_AS_SUBJECT, predicate, label)
-                }
-                N::PeriodDeclared { name } => (reason::PERIOD_DECLARED, "entity".to_string(), name),
                 N::ObjectDescribesDeclared {
                     predicate,
                     name,
@@ -1185,6 +1192,9 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
                     predicate,
                     format!("{name} ← {head}"),
                 ),
+                N::OrphanDeclaration { name } => {
+                    (reason::ORPHAN_DECLARATION, "entity".to_string(), name)
+                }
             };
             drop_signal(state, doc.kb_id, document_id, r, &detail, Some(&example)).await;
         }
