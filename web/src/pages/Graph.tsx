@@ -2138,8 +2138,21 @@ function TimeScrubber({
 
 /* ============ 实体侧栏 ============ */
 
-function fmtInterval(f: EntityFact): string {
+/* 抽出来供 vitest 测；UI 段（`EntityPanel`）内部闭包用同名 */
+export function fmtInterval(f: EntityFact): string {
+  // 时态 = 永恒：不画区间。
+  // 写端 `Validity::under(Eternal)` 把 from/to 都抹成 null，render 时就空，
+  // 等同"这条没有时间维度"。
   if (f.temporal === "eternal") return "";
+  // 时态 = 事件：单点。`Validity::under(Event)` 把 from、to 都设成同一个时刻
+  // （0022 / #486 写端契约）——`from ~ from` 读起来像区间错框了，事件本就一个
+  // 时刻。from 为 null 时退到 to；都没有就空（抽取失败，UI 退化为不画）
+  if (f.temporal === "event") {
+    const moment = fmtTime(f.valid_from, f.valid_from_precision);
+    if (moment) return moment;
+    const at = fmtTime(f.valid_to, f.valid_to_precision);
+    return at ?? "";
+  }
   const from = fmtTime(f.valid_from, f.valid_from_precision);
   const to = fmtTime(f.valid_to, f.valid_to_precision);
   // **「结束了但不知哪天」绝不能显示成「至今」。** 那是这条改动要修的正脸：
