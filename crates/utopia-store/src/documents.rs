@@ -399,7 +399,7 @@ pub async fn page(
 
     let docs: Vec<Document> = sqlx::query_as(&format!(
         "SELECT * FROM documents {WHERE}
-         ORDER BY (CASE WHEN $5::bool THEN deleted_at ELSE created_at END) DESC
+         ORDER BY (CASE WHEN $5::bool THEN deleted_at ELSE created_at END) DESC, id DESC
          LIMIT $6 OFFSET $7"
     ))
     .bind(kb_id)
