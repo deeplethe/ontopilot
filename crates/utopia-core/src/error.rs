@@ -75,8 +75,47 @@ impl std::fmt::Display for Terminal {
 
 impl std::error::Error for Terminal {}
 
-/// 这次失败被标成不必重试了吗。**沿整条 context 链找**——处理器挂上标记之后，
-/// 上层还会继续 `context(...)`，只看最外层就等于没看
+/// 这次失败被标成不必重试了吗。
+///
+/// **问 `anyhow::Error::is`，不沿 `chain()` 逐个问。** 标记挂成 context
+/// （`e.context(Terminal)`，`main.rs` 两处都这么写）时，链上那一环的具体类型是
+/// anyhow 内部的 `ContextError<Terminal, _>`，`dyn Error::is::<Terminal>()` 认不出它，
+/// 于是「没救的失败不再退避」从来没有生效。`anyhow::Error::is` 会同时看 context
+/// 与被包的错误，并穿过上层再套的 `context(...)`，两种挂法都认得
 pub fn is_terminal(err: &anyhow::Error) -> bool {
-    err.chain().any(|e| e.is::<Terminal>())
+    err.is::<Terminal>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Context;
+
+    #[test]
+    fn terminal_as_the_context() {
+        let err = anyhow::anyhow!("model endpoint gone").context(Terminal);
+        assert!(is_terminal(&err));
+    }
+
+    #[test]
+    fn terminal_as_the_root() {
+        let err = anyhow::Error::new(Terminal).context("source_mismatch");
+        assert!(is_terminal(&err));
+    }
+
+    #[test]
+    fn terminal_under_more_context() {
+        let err = anyhow::anyhow!("balance gone")
+            .context(Terminal)
+            .context("job 42");
+        assert!(is_terminal(&err));
+        let io: Result<(), _> = Err(std::io::Error::other("io"));
+        assert!(is_terminal(&io.context(Terminal).unwrap_err()));
+    }
+
+    #[test]
+    fn a_plain_failure_is_not_terminal() {
+        let err = anyhow::anyhow!("network blip").context("job 42");
+        assert!(!is_terminal(&err));
+    }
 }
