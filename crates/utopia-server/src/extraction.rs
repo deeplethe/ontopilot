@@ -885,10 +885,8 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
     // 也可能还没，那就再等一轮。**不是同一个文档在等，是同一个抽取器在等**，
     // 而等候归队列管，attempts 不烧。
     //
-    // 没配嵌入模型且仍超预算的库直接 `Terminal`——那条路现在和从前一样送
-    // 完整本体，但这是配置错了（不是临时不可用），按 `Terminal` 处理给出
-    // 清楚的失败原因，让运维去开模型或调预算，而不是让文档在队列里
-    // 一天转 200 圈装作在工作。
+    // 没配嵌入模型的库不等，照旧送完整本体——那种部署本来就没有检索。
+    // 等也有期限（`jobs::DEFER_WINDOW_SECS`），补齐任务一直失败时这篇按失败处理。
     if ontology_index::gate_required(state, doc.kb_id).await? {
         // gate_required 已经把 `embed_ontology` 入队过了（如果应该入队的话）。
         // 这里只挂等待时长，不重复 enqueue。attempts 会被 mark_failed 退回去——

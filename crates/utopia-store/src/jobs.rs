@@ -279,9 +279,10 @@ fn retry_delay(attempts: i32, max_attempts: i32, terminal: bool) -> Option<i64> 
 /// 与第几次没有关系。同一个等待条件挂回队列两次，两次都得到同一个 `run_at`
 /// 偏移，没有 60s、120s 的递增（#526）。
 ///
-/// 之所以**不**预算耗尽就拒绝 `Deferred`：处理器选 `Deferred` 不是「这次可能
-/// 失败」，而是「这次不该叫它失败」。预算耗尽是该给 `Terminal` 的——抽错了
-/// 信号。详见 `utopia_core::is_terminal` 注释里的优先级说明。
+/// 一条任务最多连续等多久（见 `mark_failed`）。一小时够一个大本体在远端嵌入模型上
+/// 补齐；过了还没好，多半是补齐任务自己在失败，该让这条抽取按失败处理、被人看见
+pub const DEFER_WINDOW_SECS: i64 = 60 * 60;
+
 fn deferred_retry_secs(retry_in: std::time::Duration) -> i64 {
     // 截断到秒：底层 `run_at` 是 timestamptz，亚秒精度存不住，而几十毫秒也不值得
     // 一行浮点换算。向上取整——少等一秒比早跑一秒好，前者无害，后者会把还在跑的
@@ -316,22 +317,34 @@ pub async fn mark_failed(pool: &PgPool, job: &Job, err: &anyhow::Error) -> AppRe
     // 第一次走到这里时 `claim_one` 已经把 `attempts` 加 1，写回时要 -1，
     // 否则同一次等待会让 `attempts` 慢慢爬到 `max_attempts`，最后那条
     // `failed` 是我们最不想看见的——ontology 还差一秒就绪，文档却先死了。
+    //
+    // **等也有期限。** 从第一次挂回去算起（记在 payload 的 `deferred_since`，不用
+    // `created_at`：一批上传排队几小时是常态，那不算在等）超过 [`DEFER_WINDOW_SECS`]
+    // 还在等，就不再挂回去，落到下面的普通退避、烧预算。等的那件事（比如
+    // `embed_ontology`）自己一直失败时，不设期限这条任务会每 30 秒醒一次、永远排着，
+    // 却没有一次被记成失败
     if let Some(retry_in) = utopia_core::is_deferred(err) {
         let secs = deferred_retry_secs(retry_in);
         let res = sqlx::query(
             "UPDATE jobs SET status = 'queued', last_error = $2,
                     attempts = GREATEST(0, attempts - 1),
                     run_at = now() + make_interval(secs => $3::float8),
+                    payload = payload || jsonb_build_object('deferred_since',
+                        COALESCE(payload->>'deferred_since', now()::text)),
                     updated_at = now()
-             WHERE id = $1",
+             WHERE id = $1
+               AND COALESCE((payload->>'deferred_since')::timestamptz, now())
+                   > now() - make_interval(secs => $4::float8)",
         )
         .bind(job.id)
         .bind(&text)
         .bind(secs as f64)
+        .bind(DEFER_WINDOW_SECS as f64)
         .execute(pool)
         .await?;
-        let _ = res.rows_affected();
-        return Ok(());
+        if res.rows_affected() > 0 {
+            return Ok(());
+        }
     }
     let Some(backoff_secs) = retry_delay(job.attempts, job.max_attempts, false) else {
         sqlx::query(

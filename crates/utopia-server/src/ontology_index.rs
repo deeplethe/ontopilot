@@ -69,13 +69,11 @@ pub async fn refresh(state: &AppState, kb_id: Uuid) -> anyhow::Result<usize> {
 /// `refresh` 锁上空转把 32 个并发槽占死。
 ///
 /// 返回值语义：
-/// - `Ok(false)`：本体小，全铺就行；或者本体大但已经在向量里了。继续抽。
+/// - `Ok(false)`：本体小，全铺就行；本体大但已经在向量里了；或者没配嵌入模型
+///   （照旧全铺）。继续抽。
 /// - `Err(anyhow::Error::context(Deferred{30s}))`：本体超出预算且向量还没补齐，
 ///   调用方应该把这个错误原样往上抛——`jobs::mark_failed` 认 `Deferred`，把任务
 ///   挂回 `queued` 等 30s。worker 槽立刻空出来，下一轮再试。
-/// - `Err(Terminal)`：本体超出预算且**没有配嵌入模型**。配置错——按 `Terminal`
-///   处理，让运维去配模型或调预算，而不是让文档在队列里一天转 200 圈装作在工作。
-///   出错信息同时列两条出路，免得后面再写一份解释。
 pub async fn gate_required(state: &AppState, kb_id: Uuid) -> anyhow::Result<bool> {
     let etypes = utopia_store::graph::entity_types(&state.pool, kb_id).await?;
     let rtypes = utopia_store::graph::relation_types(&state.pool, kb_id).await?;
@@ -94,16 +92,15 @@ pub async fn gate_required(state: &AppState, kb_id: Uuid) -> anyhow::Result<bool
         // 没设模型就走全铺那条路——和原行为一致。配置阶段不该在这里就报错
         return Ok(false);
     };
-    let Some(embed_model) = settings.embed_model.clone() else {
-        // 超预算 + 没配嵌入模型：原行为是 warn 后继续按全铺抽，等同于每块
-        // 109k tokens 实测过会丢实体。按 `Terminal` 处理让运维看见——消息里
-        // 写明两条出路（配模型 / 调预算），免得后面再来一份解释文档
-        let err = anyhow::Error::msg(
-            "ontology exceeds the prompt budget but no embedding model is configured; \
-             either configure an embedding model under Administration → Models, \
-             or raise ontology_prompt_budget in deployment_settings",
-        );
-        return Err(anyhow::Error::new(utopia_core::Terminal).context(err));
+    // 与 `refresh_scoped` 同一个判据：客户端与模型名缺一个，补齐就什么都不做，
+    // 等下去只会空等到期限
+    let (Some(_), Some(embed_model)) = (
+        llm_util::embed_client(&settings),
+        settings.embed_model.clone(),
+    ) else {
+        // 超预算 + 没配嵌入模型：照旧按全量本体抽。那种部署本来就没有检索，
+        // 没有什么可等；判成失败会让只配了对话模型的库一篇都抽不出来
+        return Ok(false);
     };
     let stale =
         utopia_store::ontology::types_needing_embedding(&state.pool, kb_id, &embed_model, None)

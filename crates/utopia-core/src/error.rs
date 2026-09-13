@@ -75,12 +75,13 @@ impl std::fmt::Display for Terminal {
 
 impl std::error::Error for Terminal {}
 
-/// 这次失败被标成不必重试了吗。**只看顶层 Error**——任何挂在 `&str` context 之下的
-/// marker 都丢失了类型身份（`Context` 的 `Display` 实现覆盖了 `Error` 实现）。
-/// 真实用法见 `utopia-server/src/rss_full_content.rs:137`（`Error::new(Terminal).context(...)`）
-/// 与 `main.rs:482`（`anyhow::Error::from(e).context(Terminal)`）——两种都让 marker
-/// 留在最外层。任何中间包了 `&str` 上下文的写法（`err.context(Terminal).context("...")`）
-/// 在这条链路上是错的，调用方应该改成 `anyhow::Error::new(Terminal).context("...")`。
+/// 这次失败被标成不必重试了吗。
+///
+/// **问 `anyhow::Error::is`，不沿 `chain()` 逐个问。** 标记挂成 context
+/// （`e.context(Terminal)`，`main.rs` 两处都这么写）时，链上那一环的具体类型是
+/// anyhow 内部的 `ContextError<Terminal, _>`，`dyn Error::is::<Terminal>()` 认不出它，
+/// 于是「没救的失败不再退避」从来没有生效。`anyhow::Error::is` 会同时看 context
+/// 与被包的错误，并穿过上层再套的 `context(...)`，两种挂法都认得
 pub fn is_terminal(err: &anyhow::Error) -> bool {
     err.is::<Terminal>()
 }
@@ -97,8 +98,9 @@ pub fn is_terminal(err: &anyhow::Error) -> bool {
 /// 与失败次数无关。两次都因为同一个等待挂回队列，下次 `run_at` 都是同一个
 /// 偏移，不会有 60s、120s 的递增。
 ///
-/// **不能与 `Terminal` 同挂**：语义互斥。后挂的胜出，详见 [`is_deferred`] 沿
-/// context 链的实现选择——返回最近一个标记，最近挂上去的那一个赢。
+/// **与 `Terminal` 同挂时 `Terminal` 赢**：`mark_failed` 先问 [`is_terminal`]。
+/// 等待也有期限——从第一次挂回去算起超过 `jobs::DEFER_WINDOW_SECS` 还在等，就不再算等待，
+/// 按普通失败退避、烧预算，免得一个永远补不齐的索引让任务永远排着。
 #[derive(Debug, Clone, Copy)]
 pub struct Deferred {
     pub retry_in: std::time::Duration,
@@ -119,9 +121,8 @@ impl std::fmt::Display for Deferred {
 
 impl std::error::Error for Deferred {}
 
-/// 最近挂上去的 `Deferred` 标记的等待时长。看顶层的 marker（参见 [`is_terminal`]
-/// 的注释——同一个 anyhow 类型约束）。`mark_failed` 里先问 [`is_terminal`]，
-/// 再问 `is_deferred`——两个看的是同一层，不会有「层层套娃」的二义性。
+/// 挂着的 `Deferred` 要等多久。与 [`is_terminal`] 同理用 anyhow 自己的 downcast，
+/// 挂成 context 还是作为根都认得
 pub fn is_deferred(err: &anyhow::Error) -> Option<std::time::Duration> {
     err.downcast_ref::<Deferred>().map(|d| d.retry_in)
 }
@@ -131,13 +132,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    /// 仓库里的真实用法：`anyhow::Error::new(Terminal).context(...)`——
-    /// marker 是根，外层 `context` 是给它加的可读说明。链上仍能在 source 找到
-    /// `Terminal`（chain 索引 1）。
-    ///
-    /// 注意 `anyhow::anyhow!("...").context(Terminal)` 是错的写法：内层 `&str`
-    /// 触发了 `Context` 的 `Display` 实现而非 `Error` 实现，marker 会变成
-    /// display-only context 而 `e.is::<Terminal>()` 找不到它。
+    /// 标记作为根、外面套一句说明（`rss_full_content.rs` 的写法）
     #[test]
     fn terminal_is_recognised_through_context() {
         let err: anyhow::Error = anyhow::Error::new(Terminal).context("balance gone: third retry");
@@ -153,31 +148,28 @@ mod tests {
         assert_eq!(is_deferred(&err), Some(Duration::from_secs(30)));
     }
 
-    /// 处理器常这样用：把 marker 挂在一个真正的 Error 上（不是字符串）。
-    /// 这是 `utopia-server/src/rss_full_content.rs:137` 的写法。marker 必须留在
-    /// 顶层，不能再用 `.context(&str)` 包它——见 `is_terminal` 注释里说的
-    /// anyhow `Context` `Display`-impl 覆盖问题。
+    /// 标记挂成 context（`main.rs` 与 `extraction::run` 的写法），外面再套一层也认得
     #[test]
     fn marker_attached_via_context_method_works() {
-        let inner: anyhow::Error = anyhow::Error::msg("network blip");
-        let marked: anyhow::Error =
-            anyhow::Error::new(Deferred::new(Duration::from_secs(7))).context(inner);
+        let marked = anyhow::Error::msg("waiting")
+            .context(Deferred::new(Duration::from_secs(7)))
+            .context("job 42");
         assert_eq!(is_deferred(&marked), Some(Duration::from_secs(7)));
 
-        let inner_t: anyhow::Error = anyhow::Error::msg("balance gone");
-        let marked_t: anyhow::Error = anyhow::Error::new(Terminal).context(inner_t);
+        let marked_t = anyhow::Error::msg("balance gone")
+            .context(Terminal)
+            .context("job 42");
         assert!(is_terminal(&marked_t));
     }
 
-    /// 两个 marker 都挂在顶层时由调用方决定谁胜出——`is_terminal` 在 `mark_failed`
-    /// 里先问，`is_deferred` 后问。这个测试只是把行为钉死，将来谁动了优先级
-    /// 都会看到这一处失败。
+    /// 两个都挂时两个都认得；谁赢由 `mark_failed` 的提问顺序定（`Terminal` 先问）
     #[test]
-    fn terminal_takes_priority_at_top_level() {
-        let err: anyhow::Error = anyhow::Error::new(Deferred::new(Duration::from_secs(10)));
-        let err: anyhow::Error = anyhow::Error::new(Terminal).context(err);
+    fn both_marks_are_seen() {
+        let err = anyhow::Error::msg("balance gone after waiting")
+            .context(Deferred::new(Duration::from_secs(10)))
+            .context(Terminal);
         assert!(is_terminal(&err));
-        assert!(is_deferred(&err).is_none());
+        assert_eq!(is_deferred(&err), Some(Duration::from_secs(10)));
     }
 
     /// 一个普通错误不该被认成 `Deferred` 或 `Terminal`

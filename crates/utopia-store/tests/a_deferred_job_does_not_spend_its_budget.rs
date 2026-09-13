@@ -88,7 +88,10 @@ async fn a_deferred_job_does_not_spend_its_budget() -> anyhow::Result<()> {
     assert_eq!(attempts2, 0, "两次 Deferred 之后 attempts 应该退到 0");
 
     // 收尾：避免污染下一次跑（其它测试共享同一个库）
-    sqlx::query("DELETE FROM jobs WHERE id = $1").bind(id).execute(&pool).await?;
+    sqlx::query("DELETE FROM jobs WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await?;
     Ok(())
 }
 
@@ -131,6 +134,69 @@ async fn terminal_wins_over_deferred_when_both_attached() -> anyhow::Result<()> 
     // attempts 不会被退回去——`failed` 走的是另一条 SQL 路径。
     assert_eq!(attempts, 1);
 
-    sqlx::query("DELETE FROM jobs WHERE id = $1").bind(id).execute(&pool).await?;
+    sqlx::query("DELETE FROM jobs WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await?;
+    Ok(())
+}
+
+/// 等也有期限：从第一次挂回去算起超过 `DEFER_WINDOW_SECS` 还在等，就按普通失败
+/// 退避、烧预算。等的那件事自己一直失败时，任务不该每 30 秒醒一次、永远排着
+#[tokio::test]
+async fn a_wait_past_its_window_is_a_failure() -> anyhow::Result<()> {
+    let Some(url) = utopia_store::test_db::url() else {
+        return Ok(());
+    };
+    let pool = PgPool::connect(&url).await?;
+
+    // 第一次挂回去时记下开始等的时刻
+    let (fresh,): (i64,) = sqlx::query_as(
+        "INSERT INTO jobs (kind, payload, status, attempts, max_attempts)
+         VALUES ('extract_document', '{}', 'running', 1, 3) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await?;
+    let err = anyhow!("waiting on ontology index").context(Deferred::new(Duration::from_secs(30)));
+    let job = jobs::Job {
+        id: fresh,
+        kind: "extract_document".into(),
+        payload: serde_json::json!({}),
+        attempts: 1,
+        max_attempts: 3,
+    };
+    jobs::mark_failed(&pool, &job, &err).await?;
+    let since: Option<String> =
+        sqlx::query_scalar("SELECT payload->>'deferred_since' FROM jobs WHERE id = $1")
+            .bind(fresh)
+            .fetch_one(&pool)
+            .await?;
+    assert!(since.is_some(), "第一次等待应当记下 deferred_since");
+
+    // 已经等过了期限：不再退回 attempts，走普通退避
+    let (stale,): (i64,) = sqlx::query_as(
+        "INSERT INTO jobs (kind, payload, status, attempts, max_attempts)
+         VALUES ('extract_document',
+                 jsonb_build_object('deferred_since', (now() - make_interval(secs => $1::float8))::text),
+                 'running', 1, 3)
+         RETURNING id",
+    )
+    .bind((jobs::DEFER_WINDOW_SECS + 60) as f64)
+    .fetch_one(&pool)
+    .await?;
+    let job = jobs::Job { id: stale, ..job };
+    jobs::mark_failed(&pool, &job, &err).await?;
+    let (status, attempts): (String, i32) =
+        sqlx::query_as("SELECT status, attempts FROM jobs WHERE id = $1")
+            .bind(stale)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(status, "queued", "还有预算，按退避重排");
+    assert_eq!(attempts, 1, "过了期限的等待要烧预算，attempts 不再退回");
+
+    sqlx::query("DELETE FROM jobs WHERE id = ANY($1)")
+        .bind(vec![fresh, stale])
+        .execute(&pool)
+        .await?;
     Ok(())
 }
