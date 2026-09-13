@@ -62,9 +62,10 @@ async fn run(state: &AppState, document_id: Uuid) -> anyhow::Result<()> {
     let filename = doc.filename.clone();
     let parsed =
         tokio::task::spawn_blocking(move || utopia_ingest::parse(&filename, &bytes)).await??;
-    // 解析出来的正文可能夹着 NUL，入库之前剥掉（见 `without_nul`）。之后的长度、分块、
-    // 全文索引、嵌入读的都是这一份，彼此的偏移才对得上
-    let text = without_nul(&parsed.text);
+    // 解析出来的正文可能夹着 NUL，入库之前剥掉（见 `utopia_core::without_nul`，与
+    // 记忆那条路共用一个函数，#611 / #630 / #665）。剥必须在算长度、分块之前：
+    // 那之后的 text_len 与分块偏移都得跟真正入库的正文对得上
+    let text = utopia_core::without_nul(&parsed.text);
     let text_len = text.chars().count() as i32;
 
     // 2. 分块 + 入库
@@ -237,16 +238,11 @@ async fn embed_pending(
 /// 要在算长度和分块**之前**：放到更下游，存下的 `text_len` 与分块偏移就和真正入库的
 /// 正文对不上了。
 ///
-/// 绝大多数文档一个 NUL 都没有，那时原样借用，不为每篇文档复制一整份正文。
+/// 绝大多数文档一个 NUL 都没有，那时原样借用，**不**为每篇文档复制一整份正文。
 /// （#611，Jun Du / @plpycoin 报告并给出修法）
-fn without_nul(text: &str) -> std::borrow::Cow<'_, str> {
-    if text.contains('\0') {
-        std::borrow::Cow::Owned(text.replace('\0', ""))
-    } else {
-        std::borrow::Cow::Borrowed(text)
-    }
-}
-
+///
+/// 这条 helper 已搬到 `utopia_core::without_nul`（#665），文档路径与记忆路径共用一处。
+/// `pipeline_tests::without_nul_*` 几个测试随之搬过去；本地不再重复。
 #[cfg(test)]
 #[path = "pipeline_tests.rs"]
 mod pipeline_tests;
