@@ -213,11 +213,28 @@ async fn explore(state: &AppState, kb_id: Uuid, run: Uuid) -> anyhow::Result<()>
                 schema_txt.push_str(&format!("table {key}:\n"));
             }
             columns_scanned += 1;
+            // 列的注释与约束标记拼接在一起：注释先行（原本就是这样），约束标记
+            // 跟在后面。`-- PK` / ` -- FK→schema.table` / ` -- NOT NULL` 三档互不
+            // 冲突，可同时出现。FK 的目标表名带上，模型看到「FK→public.orders.id」
+            // 立刻知道是哪张表的哪一列；NOT NULL 放在最后——它影响 prompt 里
+            // 「哪些列算 key」「可空列与可省过滤的关联」两句提示
+            let constraint = match (c.is_primary_key, c.is_foreign_key, c.nullable) {
+                (true, _, _) => " -- PK",
+                (_, true, _) => " -- FK",
+                (_, _, false) => " -- NOT NULL",
+                _ => "",
+            };
+            let fk_target = c.references_table.as_deref().map(|t| format!("→{t}"));
             schema_txt.push_str(&format!(
-                "  {} {}{}\n",
+                "  {} {}{}{}{}\n",
                 c.column,
                 c.data_type,
-                c.comment.map(|x| format!(" -- {x}")).unwrap_or_default()
+                c.comment
+                    .as_deref()
+                    .map(|x| format!(" -- {x}"))
+                    .unwrap_or_default(),
+                constraint,
+                fk_target.as_deref().unwrap_or(""),
             ));
             if schema_txt.len() > MAX_SCHEMA_CHARS {
                 schema_txt.push_str("(truncated)\n");
