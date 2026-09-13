@@ -101,6 +101,19 @@ split; a piece that is caption plus header plus one row and still over budget is
 because there is no better cut. This is the change that addresses the 13 headerless chunks
 directly. The rest of this record makes it possible; this is the point.
 
+> **Revised 2026-09-13, after the funded 300-token round.** Two gaps in "a caption moves with its
+> table", both visible in one filing. *A caption introduces the run of tables after it, not the
+> first one.* "Stockholders approved the election of each of our ten director nominees. The
+> results of the voting were as follows:" is followed by ten tables; the caption travelled with
+> Tench Coxe's, and Jen-Hsun Huang's table sat in another chunk with four correct vote counts and
+> nothing saying what the vote was for — the "elected director" edge went. A caption now attaches
+> to every table that follows it until something other than a table or a rule appears, and within
+> one chunk it is rendered once. *A rule between a caption and its table does not part them.*
+> Proposal 5's "results were as follows:" and its table are a page apart in the HTML; the lookahead
+> saw the rule and not the table, and the caption stayed in the previous chunk. Rules are skipped
+> when looking for a caption's tables. Both are rules about document structure, not about SEC
+> wording.
+
 ### 4. The budget is tokens, not characters — and it is 300, because 1000 was measured and lost
 
 > **Revised 2026-09-13, the same day, by the first bench round.** The paragraph below chose
@@ -180,6 +193,14 @@ the paragraph holding all seven of its numbers — were never sent. On the three
 finished before the balance ran out the round scored 29/37, against 29/37 and 33/37 for the two
 rounds before; within one standard deviation of both. The round is to be rerun once the account
 is funded, and the number that matters is the Ohio exhibit's.
+
+Rerun at 300 tokens with the account funded: **45/52**. The total equals the better baseline round,
+but the distribution moved: literals **36/39** (baseline 31 and 32), the Ohio exhibit **15/15**,
+relations **8/12** (baseline 12 and 12). Of the four relation misses, three are the Vera Rubin
+partners, and they are in the graph — the model wrote `NVIDIA partner CoreWeave` and four more
+where the truth reads the platform as the subject; both readings are defensible and this one had
+flipped by chance in the baseline rounds. The fourth, Huang's election, was structural, and it is
+the first revision to decision 3 above.
 
 Seen in the rebuilt chunks, independent of the score: no chunk begins inside a table without
 its header (was 13 of 35 in the earnings release); the Neal vote table is one table again with
