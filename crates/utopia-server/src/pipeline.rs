@@ -62,9 +62,9 @@ async fn run(state: &AppState, document_id: Uuid) -> anyhow::Result<()> {
     let filename = doc.filename.clone();
     let parsed =
         tokio::task::spawn_blocking(move || utopia_ingest::parse(&filename, &bytes)).await??;
-    // 解析出来的正文可能夹着 NUL，入库之前剥掉（见 `utopia_core::without_nul`，与
-    // 记忆那条路共用一个函数，#611 / #630 / #665）。剥必须在算长度、分块之前：
-    // 那之后的 text_len 与分块偏移都得跟真正入库的正文对得上
+    // 解析出来的正文可能夹着 NUL（PDF 文本层常见），入库之前剥掉（#611）——与记忆
+    // 那条路共用 `utopia_core::without_nul`（#665）。剥必须在算长度、分块之前：之后的
+    // text_len、分块偏移、全文索引、嵌入读的都是这一份，彼此才对得上
     let text = utopia_core::without_nul(&parsed.text);
     let text_len = text.chars().count() as i32;
 
@@ -228,21 +228,6 @@ async fn embed_pending(
     Ok(done)
 }
 
-/// 正文里的 NUL（`\0`）剥掉。
-///
-/// PDF 的文本层会夹带它——字体的 `ToUnicode` 映射与编码过的内容流是常见来源——而
-/// Postgres 的 `TEXT` 不收 0x00：`chunks.text` 一插就报
-/// `invalid byte sequence for encoding "UTF8": 0x00`，事务回滚，**整篇文档钉在 failed**，
-/// 坏的只是其中几个字节。剥在这里，是因为文档正文进库只有这一条路（`replace_chunks`
-/// 只有这一个调用方；记忆的 episode 另走 `memory::append_episode`，不经解析器），而且
-/// 要在算长度和分块**之前**：放到更下游，存下的 `text_len` 与分块偏移就和真正入库的
-/// 正文对不上了。
-///
-/// 绝大多数文档一个 NUL 都没有，那时原样借用，**不**为每篇文档复制一整份正文。
-/// （#611，Jun Du / @plpycoin 报告并给出修法）
-///
-/// 这条 helper 已搬到 `utopia_core::without_nul`（#665），文档路径与记忆路径共用一处。
-/// `pipeline_tests::without_nul_*` 几个测试随之搬过去；本地不再重复。
 #[cfg(test)]
 #[path = "pipeline_tests.rs"]
 mod pipeline_tests;

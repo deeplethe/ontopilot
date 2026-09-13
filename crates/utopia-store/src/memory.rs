@@ -85,8 +85,7 @@ pub async fn append_episode(
     occurred_at: DateTime<Utc>,
 ) -> AppResult<(Uuid, Uuid)> {
     let doc_id = get_or_create_memory_doc(pool, kb_id).await?;
-    // `Cow::Borrowed` 时 `.chars().count()` 与 `.len()` 一致；`Owned` 时
-    // `text` 已经是剥过的实字符串。两条路下 char_end 都用同一份剥过的文本算
+    // 先剥 NUL 再拼前缀：下面入库的 text 与 char_end 都从 `stamped` 来，算的是同一份
     let stripped = utopia_core::without_nul(text);
     let stamped = format!(
         "[{}] {}",
