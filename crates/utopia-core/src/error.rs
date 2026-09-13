@@ -130,6 +130,7 @@ pub fn is_deferred(err: &anyhow::Error) -> Option<std::time::Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Context;
     use std::time::Duration;
 
     /// 标记作为根、外面套一句说明（`rss_full_content.rs` 的写法）
@@ -178,5 +179,33 @@ mod tests {
         let err: anyhow::Error = anyhow::Error::msg("network blip");
         assert!(!is_terminal(&err));
         assert!(is_deferred(&err).is_none());
+    }
+
+    #[test]
+    fn terminal_as_the_context() {
+        let err = anyhow::anyhow!("model endpoint gone").context(Terminal);
+        assert!(is_terminal(&err));
+    }
+
+    #[test]
+    fn terminal_as_the_root() {
+        let err = anyhow::Error::new(Terminal).context("source_mismatch");
+        assert!(is_terminal(&err));
+    }
+
+    #[test]
+    fn terminal_under_more_context() {
+        let err = anyhow::anyhow!("balance gone")
+            .context(Terminal)
+            .context("job 42");
+        assert!(is_terminal(&err));
+        let io: Result<(), _> = Err(std::io::Error::other("io"));
+        assert!(is_terminal(&io.context(Terminal).unwrap_err()));
+    }
+
+    #[test]
+    fn a_plain_failure_is_not_terminal() {
+        let err = anyhow::anyhow!("network blip").context("job 42");
+        assert!(!is_terminal(&err));
     }
 }
