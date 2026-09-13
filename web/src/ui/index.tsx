@@ -1433,8 +1433,11 @@ export function Row({
  *  同一样东西。小到只起项目符号的作用，不跟标题抢眼（从前 12 的方块太重） */
 export function ConvMark({ state }: { state: "rest" | "live" | "unread" }) {
   return (
+    // `flex` 不是 `inline-flex`：Row 把图标包在一个 span 里，inline 的盒会坐在
+    // 那一行字的基线上、底下还垫着行高，于是整个记号偏下（三个点里没有字，
+    // 基线就是底边，偏得最明显）。块级的盒没有行框，交给 Row 的 items-center 居中
     <span
-      className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"
+      className="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
       aria-hidden
     >
       {state === "live" ? (
