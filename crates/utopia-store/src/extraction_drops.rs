@@ -54,6 +54,9 @@ pub mod reason {
     pub const SUBJECT_SHORTENED: &str = "subject_shortened";
     /// 主宾片段不在引文里（#582）：模型没照抄。事实照旧处理，只记下来
     pub const SPAN_NOT_IN_QUOTE: &str = "span_not_in_quote";
+    /// 模型报的别名（或它的引文）不在这一块原文里（0041 决定 2）：不记这个名字。
+    /// 名字是召回的桥，一座凭空的桥会把两个不相干的实体接到一起
+    pub const NAME_NOT_IN_TEXT: &str = "name_not_in_text";
     /// 主语片段是个描述，不是任何声明过的实体的名字：事实不落（#582，取代 #578 的词表）
     pub const SUBJECT_DESCRIBED: &str = "subject_described";
     /// 宾语片段是个描述：事实照落，宾语落成字面值（#582）

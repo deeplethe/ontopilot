@@ -909,7 +909,9 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
     let etypes = utopia_store::graph::entity_types(&state.pool, doc.kb_id).await?;
     // 这一轮落过的事实（新建或重复观察）：结尾对它们跑一遍签名检查
     let mut touched_facts: Vec<Uuid> = Vec::new();
-    let rtypes = utopia_store::graph::relation_types(&state.pool, doc.kb_id).await?;
+    let mut rtypes = utopia_store::graph::relation_types(&state.pool, doc.kb_id).await?;
+    // 名字属性不进给模型的清单（0041）：名字走回复里的 `names`，服务端核对它在原文里
+    rtypes.retain(|r| !utopia_store::names::is_name_attribute(r));
     // 关系与属性分道：属性走字面值通道，不进关系清单。
     //
     // **本体里没有对应关系时就没有谓词**（见 `facts.predicate_id`）。原词落进
@@ -1302,6 +1304,23 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             if let Some(p) = proposed {
                 let _ = utopia_store::resolution::set_proposed_type(&state.pool, id, p).await;
             }
+            // 模型写下的这个名字就在这一块原文里时，给这条名字事实补出处（0041）。
+            // 给已知句柄时它照提示词写的是清单上的全称，这一块里未必有——那就不补，
+            // 这一块用的别的写法走下面的 `names`
+            if span_in_quote(name, &chunk.text) {
+                let _ = utopia_store::names::record(
+                    &state.pool,
+                    doc.kb_id,
+                    id,
+                    name,
+                    Some(utopia_store::names::NameSource {
+                        chunk_id: chunk.id,
+                        quote: name,
+                    }),
+                    doc.doc_time,
+                )
+                .await;
+            }
             // 模型自己的说法。**跟 proposed_type 分开存**：那一列的含义是
             // "本体里没有"，增长回路靠它的稀有性设门槛；这一列每个实体都有。
             // 与粗类同名的不记——那不是更具体的说法，只是把清单抄了一遍
@@ -1332,6 +1351,58 @@ async fn run(state: &AppState, document_id: Uuid, proposer: Proposer) -> anyhow:
             // model output when the surface name is unambiguous.
             entity_ids.insert(name.to_string(), id);
             entity_type_of.insert(name.to_string(), type_id);
+        }
+
+        // 实体的别的名字（0041 决定 2）。**名字与引文都要在这一块原文里**：名字是召回的桥，
+        // 一座凭空造的桥会把两个不相干的实体接到一起。认不认「简称」「又名」是模型的事，
+        // 服务端不认词，只核对它抄的字是不是真在原文里
+        for n in &extraction.names {
+            let name = n.name.trim();
+            let Some(bound) = ref_entities.get(n.entity_ref.trim()) else {
+                drop_signal(
+                    state,
+                    doc.kb_id,
+                    document_id,
+                    utopia_store::extraction_drops::reason::MALFORMED_ITEM,
+                    "name ref is not a declared handle",
+                    Some(name),
+                )
+                .await;
+                continue;
+            };
+            let quote = n
+                .quote
+                .as_deref()
+                .map(str::trim)
+                .filter(|q| !q.is_empty())
+                .unwrap_or(name);
+            if !is_entity_name(name)
+                || !span_in_quote(name, quote)
+                || !span_in_quote(quote, &chunk.text)
+            {
+                drop_signal(
+                    state,
+                    doc.kb_id,
+                    document_id,
+                    utopia_store::extraction_drops::reason::NAME_NOT_IN_TEXT,
+                    &n.entity_ref,
+                    Some(name),
+                )
+                .await;
+                continue;
+            }
+            utopia_store::names::record(
+                &state.pool,
+                doc.kb_id,
+                bound.id,
+                name,
+                Some(utopia_store::names::NameSource {
+                    chunk_id: chunk.id,
+                    quote,
+                }),
+                doc.doc_time,
+            )
+            .await?;
         }
 
         // 改绑的候选：这次回复声明的实体，加上提示词里给过的库内实体（#582）
@@ -3902,7 +3973,9 @@ mod tests {
                 .await?;
             }
             let pairs: Vec<(Uuid, Uuid)> = sqlx::query_as(
-                "SELECT subject_id, object_id FROM facts WHERE kb_id = $1 ORDER BY subject_id",
+                // 只看边：实体身上还有名字事实（0041），那些没有宾语实体
+                "SELECT subject_id, object_id FROM facts
+                  WHERE kb_id = $1 AND object_id IS NOT NULL ORDER BY subject_id",
             )
             .bind(kb)
             .fetch_all(&pool)
@@ -3985,7 +4058,8 @@ mod tests {
                 "later bare mentions must reuse document-local C"
             );
             let c_objects: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT object_id FROM facts WHERE kb_id = $1 AND subject_id = $2 ORDER BY object_id",
+                "SELECT object_id FROM facts
+                  WHERE kb_id = $1 AND subject_id = $2 AND object_id IS NOT NULL ORDER BY object_id",
             )
             .bind(kb)
             .bind(c)

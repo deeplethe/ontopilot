@@ -253,16 +253,19 @@ pub async fn resolve_mention(
     // 召回键 = 本名 + 泛用后缀词干及其增广（"星尘"↔"星尘项目"互为候选）。
     // 只扩召回，归并与否仍由下方画像相似度分层定夺。
     let keys = recall_keys(&name);
-    let candidates: Vec<Candidate> = sqlx::query_as(
+    // 名字召回读名字事实（0041 决定 1）：本名、简称、曾用名都是 `known_as` 上的一条。
+    // 度数不数名字事实——名字不是一条「关于它的事」，数进去每个实体都凭空多一
+    let candidates: Vec<Candidate> = sqlx::query_as(&format!(
         "SELECT e.id, e.canonical_name, e.profile_embedding, e.profile_n,
                 (SELECT count(*) FROM facts f
                  WHERE (f.subject_id = e.id OR f.object_id = e.id)
-                   AND f.invalidated_at IS NULL) AS degree
+                   AND f.invalidated_at IS NULL AND {not_name}) AS degree
          FROM entities e
          WHERE e.kb_id = $1 AND e.type_id = $2 AND e.merged_into IS NULL
-           AND (lower(e.canonical_name) = ANY($3)
-                OR EXISTS (SELECT 1 FROM unnest(e.aliases) a WHERE lower(a) = ANY($3)))",
-    )
+           AND (lower(e.canonical_name) = ANY($3) OR {named})",
+        not_name = crate::names::not_a_name("f"),
+        named = crate::names::has_name_in("e", 3),
+    ))
     .bind(kb_id)
     .bind(type_id)
     .bind(&keys)
@@ -559,7 +562,7 @@ const CONTAIN_SCAN_LIMIT: i64 = 16;
 /// 包含关系绝不能走它：`华瑞集团技术中心` 与 `星云科技技术中心` 都含「技术中心」，
 /// 同一篇文档里上下文相似度很容易过线，而它们是两个部门。宁分勿合。
 ///
-/// **别名一并参与**：合并会把名字搬进 `aliases`，只查 `canonical_name` 的话，
+/// **别的名字一并参与**：合并会把名字事实搬到存活者身上，只查 `canonical_name` 的话，
 /// 每成功合并一次就少一条召回的桥——`Holmes` 并入 `Sherlock Holmes` 之后，
 /// 后来的 `Mr. Holmes` 就再也搭不上了（它跟 `Sherlock Holmes` 谁也不含谁）。
 /// 合并越成功、漏得越多，是个会自我加剧的洞。
@@ -616,9 +619,9 @@ async fn containment_reviews(
              (char_length(e.canonical_name) >= $4
               AND (lower(e.canonical_name) LIKE '%' || $3 || '%'
                    OR $3 LIKE '%' || lower(e.canonical_name) || '%'))
-             -- **别名也要参与召回，否则每合并一次就少一条桥。**
+             -- **别的名字也要参与召回，否则每合并一次就少一条桥。**
              --
-             -- 合并把名字搬进 aliases：Holmes 并入 Sherlock Holmes 之后，
+             -- 合并把名字事实搬到存活者身上：Holmes 并入 Sherlock Holmes 之后，
              -- Holmes 那一行 merged_into 非空、被上面第一个条件滤掉了。可十分钟后
              -- 出现的 Mr. Holmes 跟 Sherlock Holmes 谁也不含谁——本来正是靠
              -- Holmes 才桥得上。实测就是这么漏的：同类型那个 bug 修好、Holmes
@@ -626,10 +629,13 @@ async fn containment_reviews(
              --
              -- 合并越成功，桥拆得越多。这个洞会自我加剧。
              OR EXISTS (
-               SELECT 1 FROM unnest(e.aliases) AS alias
-               WHERE char_length(alias) >= $4
-                 AND (lower(alias) LIKE '%' || $3 || '%'
-                      OR $3 LIKE '%' || lower(alias) || '%'))
+               SELECT 1 FROM facts nf
+                 JOIN relation_types nr ON nr.id = nf.predicate_id
+                WHERE nf.subject_id = e.id AND nr.builtin AND nr.key = 'known_as'
+                  AND nf.invalidated_at IS NULL
+                  AND char_length(nf.object_value->>'value') >= $4
+                  AND (lower(nf.object_value->>'value') LIKE '%' || $3 || '%'
+                       OR $3 LIKE '%' || lower(nf.object_value->>'value') || '%'))
            )
          ORDER BY char_length(e.canonical_name)
          LIMIT $5",
@@ -814,16 +820,16 @@ async fn resolve_type_drift(
             .map(|(k,)| k),
         None => None,
     };
-    let cross: Vec<CrossCandidate> = sqlx::query_as(
+    let cross: Vec<CrossCandidate> = sqlx::query_as(&format!(
         "SELECT e.id, e.canonical_name, t.key AS type_key, e.type_id, e.type_source,
                 e.profile_embedding, e.profile_n
          FROM entities e LEFT JOIN entity_types t ON t.id = e.type_id
          -- IS DISTINCT FROM 而不是 <>：后者遇 NULL 返回 NULL，被 WHERE 当假，
          -- 未分类实体会被整个漏掉（0009）
          WHERE e.kb_id = $1 AND e.type_id IS DISTINCT FROM $2 AND e.merged_into IS NULL
-           AND (lower(e.canonical_name) = ANY($3)
-                OR EXISTS (SELECT 1 FROM unnest(e.aliases) a WHERE lower(a) = ANY($3)))",
-    )
+           AND (lower(e.canonical_name) = ANY($3) OR {named})",
+        named = crate::names::has_name_in("e", 3),
+    ))
     .bind(kb_id)
     .bind(type_id)
     .bind(keys)
@@ -974,6 +980,8 @@ async fn create_entity(
     // 分不开就别硬分，谁也不归，两个都送审。
     weighed: &[Uuid],
 ) -> AppResult<(Uuid, bool)> {
+    // 名字属性在锁外取：它自己有一次插入，放进锁里会让所有建实体的人排同一把队
+    let known_as = crate::names::ensure_known_as(pool, kb_id).await?;
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))")
         .bind(kb_id.to_string())
@@ -1007,6 +1015,19 @@ async fn create_entity(
     .bind(name)
     .bind(context.map(|c| Vector::from(c.to_vec())))
     .bind(i32::from(context.is_some()))
+    .execute(&mut *tx)
+    .await?;
+    // 与实体同一个事务：召回按名字事实找它，建出来却查不到名字的那一瞬间不能有。
+    // 出处（哪一块、哪句话）由抽取随后给这条事实补证据
+    sqlx::query(
+        "INSERT INTO facts (id, kb_id, subject_id, predicate_id, object_value)
+         VALUES ($1, $2, $3, $4, jsonb_build_object('value', $5::text))",
+    )
+    .bind(Uuid::now_v7())
+    .bind(kb_id)
+    .bind(id)
+    .bind(known_as)
+    .bind(name)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1092,15 +1113,17 @@ pub async fn existing_by_name(
 ) -> AppResult<Option<Uuid>> {
     let name = normalize_name(raw_name);
     let keys = recall_keys(&name);
-    let id: Option<Uuid> = sqlx::query_scalar(
+    let id: Option<Uuid> = sqlx::query_scalar(&format!(
         "SELECT e.id FROM entities e
           WHERE e.kb_id = $1 AND e.merged_into IS NULL
-            AND (lower(e.canonical_name) = ANY($2)
-                 OR EXISTS (SELECT 1 FROM unnest(e.aliases) a WHERE lower(a) = ANY($2)))
+            AND (lower(e.canonical_name) = ANY($2) OR {named})
           ORDER BY (SELECT count(*) FROM facts f
-                     WHERE f.subject_id = e.id OR f.object_id = e.id) DESC, e.created_at
+                     WHERE (f.subject_id = e.id OR f.object_id = e.id) AND {not_name}) DESC,
+                   e.created_at
           LIMIT 1",
-    )
+        named = crate::names::has_name_in("e", 2),
+        not_name = crate::names::not_a_name("f"),
+    ))
     .bind(kb_id)
     .bind(&keys)
     .fetch_optional(pool)
@@ -1275,7 +1298,9 @@ pub async fn entity_fact_lines(
         valid_from: Option<DateTime<Utc>>,
         valid_to: Option<DateTime<Utc>>,
     }
-    let rows: Vec<Line> = sqlx::query_as(
+    // 名字不算审阅卡上的一条事实（0041）：两个同名实体各有一条「known as 张伟」，
+    // 摆出来像是一条共同证据，其实它什么也分不出来
+    let rows: Vec<Line> = sqlx::query_as(&format!(
         "SELECT CASE WHEN f.subject_id = $2 THEN 'out' ELSE 'in' END AS direction,
                 COALESCE(r.label, fact_surface_predicate(f.id)) AS predicate_label,
                 o.canonical_name AS other_name,
@@ -1287,9 +1312,11 @@ pub async fn entity_fact_lines(
          WHERE f.kb_id = $1 AND f.invalidated_at IS NULL
            AND (f.subject_id = $2 OR f.object_id = $2)
            AND COALESCE(r.label, fact_surface_predicate(f.id)) IS NOT NULL
+           AND {not_name}
          ORDER BY f.confidence DESC, f.recorded_at DESC
          LIMIT $3",
-    )
+        not_name = crate::names::not_a_name("f"),
+    ))
     .bind(kb_id)
     .bind(entity_id)
     .bind(limit)
@@ -1636,7 +1663,6 @@ struct EntityFull {
     // None = 还没判出来（0009）
     type_id: Option<Uuid>,
     canonical_name: String,
-    aliases: Vec<String>,
     profile_embedding: Option<Vector>,
     profile_n: i32,
     merged_into: Option<Uuid>,
@@ -1644,7 +1670,7 @@ struct EntityFull {
 
 async fn entity_full(pool: &PgPool, kb_id: Uuid, id: Uuid) -> AppResult<EntityFull> {
     sqlx::query_as(
-        "SELECT type_id, canonical_name, aliases, profile_embedding, profile_n, merged_into
+        "SELECT type_id, canonical_name, profile_embedding, profile_n, merged_into
          FROM entities WHERE kb_id = $1 AND id = $2",
     )
     .bind(kb_id)
@@ -1655,7 +1681,10 @@ async fn entity_full(pool: &PgPool, kb_id: Uuid, id: Uuid) -> AppResult<EntityFu
 }
 
 /// 合并 source → target：事实改挂 target、互指事实与合并后的重复事实作废、
-/// source 名并入 target 别名、画像加权合并、source 标记 merged_into。全程记日志可回滚。
+/// 画像加权合并、source 标记 merged_into。全程记日志可回滚。
+///
+/// **名字不用特判**（0041）：source 的名字是它身上的 `known_as` 事实，跟别的事实一起
+/// 搬到 target、记进 `moved_subject_facts`；同名的那条按重复事实作废。撤回合并时一起搬回去
 pub async fn merge_entities(
     pool: &PgPool,
     kb_id: Uuid,
@@ -1741,19 +1770,6 @@ pub async fn merge_entities(
         invalidated.extend(dup_ids);
     }
 
-    // source 名与别名并入 target 别名（去重、排除 target 本名）
-    let mut aliases = target.aliases.clone();
-    let taken: std::collections::HashSet<String> = std::iter::once(&target.canonical_name)
-        .chain(aliases.iter())
-        .map(|s| s.to_lowercase())
-        .collect();
-    for a in std::iter::once(&source.canonical_name).chain(source.aliases.iter()) {
-        if !taken.contains(&a.to_lowercase()) && !aliases.iter().any(|x| x.eq_ignore_ascii_case(a))
-        {
-            aliases.push(a.clone());
-        }
-    }
-
     // 画像加权合并
     let (profile, profile_n) = match (&target.profile_embedding, &source.profile_embedding) {
         (Some(t), Some(s)) if t.as_slice().len() == s.as_slice().len() => {
@@ -1785,11 +1801,10 @@ pub async fn merge_entities(
     let new_type_id = target.type_id.or(source.type_id);
 
     sqlx::query(
-        "UPDATE entities SET aliases = $2, profile_embedding = $3, profile_n = $4,
-                type_id = $5, updated_at = now() WHERE id = $1",
+        "UPDATE entities SET profile_embedding = $2, profile_n = $3,
+                type_id = $4, updated_at = now() WHERE id = $1",
     )
     .bind(target_id)
-    .bind(&aliases)
     .bind(&profile)
     .bind(profile_n)
     .bind(new_type_id)
@@ -1990,22 +2005,14 @@ pub async fn revert_merge(pool: &PgPool, kb_id: Uuid, merge_id: Uuid) -> AppResu
     .await?;
 
     let source = entity_full(pool, kb_id, m.source_id).await?;
-    // target 别名回退：剔除来自 source 的名字
+    // source 的名字是它的名字事实，已经跟着 moved_subject_facts 搬回去了
     sqlx::query(
         "UPDATE entities SET
-            aliases = (SELECT coalesce(array_agg(a), '{}') FROM unnest(aliases) a
-                       WHERE lower(a) <> ALL($2)),
-            profile_embedding = $3, profile_n = $4,
-            type_id = coalesce($5, type_id), updated_at = now()
+            profile_embedding = $2, profile_n = $3,
+            type_id = coalesce($4, type_id), updated_at = now()
          WHERE id = $1",
     )
     .bind(m.target_id)
-    .bind(
-        std::iter::once(&source.canonical_name)
-            .chain(source.aliases.iter())
-            .map(|s| s.to_lowercase())
-            .collect::<Vec<_>>(),
-    )
     .bind(&m.target_profile_before)
     .bind(m.target_profile_n_before)
     .bind(m.target_type_before)
@@ -2422,7 +2429,9 @@ mod tests {
 pub struct TypeCandidateSubject {
     pub id: Uuid,
     pub canonical_name: String,
-    pub aliases: Vec<String>,
+    /// 本名以外的名字（名字事实，0041）。给模型看：「海探1」一个人判不出是什么，
+    /// 连着「海洋探测器1号」就判得出
+    pub other_names: Vec<String>,
     /// 现在挂着的类，**可能没有**（0009：没判出来就是 NULL）。名字里的"粗"
     /// 是历史——抽取现在也可能直接给一个细类，而且可能给错（实测
     /// `绍兴 → address`），所以这里也可能是要被**纠正**的那个
@@ -2466,7 +2475,13 @@ pub async fn entities_for_type_resolution(
     unattended: bool,
 ) -> AppResult<Vec<TypeCandidateSubject>> {
     Ok(sqlx::query_as(
-        "SELECT e.id, e.canonical_name, e.aliases, t.key AS coarse_key, t.id AS coarse_id,
+        "SELECT e.id, e.canonical_name,
+                ARRAY(SELECT DISTINCT nf.object_value->>'value' FROM facts nf
+                        JOIN relation_types nr ON nr.id = nf.predicate_id
+                       WHERE nf.subject_id = e.id AND nr.builtin AND nr.key = 'known_as'
+                         AND nf.invalidated_at IS NULL
+                         AND lower(nf.object_value->>'value') <> lower(e.canonical_name)) AS other_names,
+                t.key AS coarse_key, t.id AS coarse_id,
                 t.description AS coarse_description,
                 e.proposed_type, e.specific_type,
                 -- 对方写**名字**，不写它的类型 key。
