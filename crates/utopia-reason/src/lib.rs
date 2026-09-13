@@ -132,8 +132,12 @@ pub const MAX_DEPTH: usize = 12;
 /// 于是每一次接任都进了 Review。判据与 `derive::contradictions` 同一个——派生那一侧
 /// 一直是按区间重叠判的，断言这一侧跟它对齐。
 ///
+/// **环要整条路径在同一时刻成立**（#636）。A 在 2019–2021 年并入 B、2022 年起 B
+/// 又并入 A，图在任何一刻都没有这个环；两两重叠也不够，三条边可以两两相交而三者
+/// 无交。所以沿路径求交集，与 `derive::validity` 对前提做的是同一件事。
+///
 /// 区间照 `TimedEdge` 的读法：半开 `[from, to)`，`None` 是那一侧无界（恒常谓词两端
-/// 都是 `None`，于是退回到只看形状）。自环与环不看时间。
+/// 都是 `None`，于是退回到只看形状）。自环不看时间：`A p A` 哪一刻成立都是错的。
 pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violation> {
     let mut out = Vec::new();
     let mut by_pred: HashMap<Uuid, Vec<TimedEdge>> = HashMap::new();
@@ -156,7 +160,7 @@ pub fn check(edges: &[TimedEdge], axioms: &HashMap<Uuid, Axioms>) -> Vec<Violati
             out.extend(asymmetries(&group));
         }
         if ax.transitive {
-            out.extend(cycles(&shapes));
+            out.extend(cycles(&group));
         }
         if ax.functional {
             out.extend(clashes(
@@ -219,20 +223,25 @@ fn asymmetries(edges: &[TimedEdge]) -> Vec<Violation> {
 /// 的正是这个。
 ///
 /// R1 物化推导要的是闭包本身，那时再建；R0 要的是「哪几条边凑成了环」。
-fn cycles(edges: &[Edge]) -> Vec<Violation> {
-    let mut adj: HashMap<Uuid, Vec<&Edge>> = HashMap::new();
-    for e in edges {
-        adj.entry(e.subject).or_default().push(e);
+///
+/// 走的时候带着路径上区间的交集（#636）。交集空了就不往下走：交集只会越求越窄，
+/// 一段已经无交的路径接上什么都凑不成同一时刻成立的环，剪掉它丢不了一个真环。
+/// 同一个环从哪儿走进来，事实集合相同，交集也相同，所以去重照旧按集合。
+fn cycles(edges: &[TimedEdge]) -> Vec<Violation> {
+    let mut adj: HashMap<Uuid, Vec<&TimedEdge>> = HashMap::new();
+    for t in edges {
+        adj.entry(t.edge.subject).or_default().push(t);
     }
     let mut reported: HashSet<Vec<Uuid>> = HashSet::new();
     let mut out = Vec::new();
     let nodes: Vec<Uuid> = adj.keys().copied().collect();
     for start in nodes {
-        let mut path: Vec<&Edge> = Vec::new();
+        let mut path: Vec<&TimedEdge> = Vec::new();
         let mut on_path: HashSet<Uuid> = HashSet::new();
         walk(
             start,
             start,
+            (None, None),
             &adj,
             &mut path,
             &mut on_path,
@@ -247,8 +256,10 @@ fn cycles(edges: &[Edge]) -> Vec<Violation> {
 fn walk<'a>(
     start: Uuid,
     at: Uuid,
-    adj: &HashMap<Uuid, Vec<&'a Edge>>,
-    path: &mut Vec<&'a Edge>,
+    // 路径上已走过的边的区间交集；起点是全时间
+    span: (Option<i64>, Option<i64>),
+    adj: &HashMap<Uuid, Vec<&'a TimedEdge>>,
+    path: &mut Vec<&'a TimedEdge>,
     on_path: &mut HashSet<Uuid>,
     reported: &mut HashSet<Vec<Uuid>>,
     out: &mut Vec<Violation>,
@@ -257,11 +268,17 @@ fn walk<'a>(
         return;
     }
     let Some(next) = adj.get(&at) else { return };
-    for e in next {
+    for t in next {
+        // 接上这条边，路径就没有哪一刻是整条成立的：不管是成环还是往下走，都不必了。
+        // 没日期的事件区间为空（0031），在这里自然被剪掉
+        let Some(span) = derive::overlap(span, (t.from, t.to)) else {
+            continue;
+        };
+        let e = &t.edge;
         if e.object == start && !path.is_empty() {
             // 回到起点：成环。**按事实 id 排序去重**——同一个环从不同节点
             // 出发会被走到 n 次，报 n 遍就是让人把同一件事看 n 次
-            let mut facts: Vec<Uuid> = path.iter().map(|x| x.fact).collect();
+            let mut facts: Vec<Uuid> = path.iter().map(|x| x.edge.fact).collect();
             facts.push(e.fact);
             let mut key = facts.clone();
             key.sort();
@@ -297,8 +314,8 @@ fn walk<'a>(
             continue;
         }
         on_path.insert(e.object);
-        path.push(e);
-        walk(start, e.object, adj, path, on_path, reported, out);
+        path.push(t);
+        walk(start, e.object, span, adj, path, on_path, reported, out);
         path.pop();
         on_path.remove(&e.object);
     }
@@ -729,6 +746,79 @@ mod tests {
             let (_, left, right, path) = &only[0];
             assert_eq!(path, &vec![f(1), f(2), f(3)], "整组，按 id 排序");
             assert_eq!((*left, *right), (f(1), f(3)), "首尾是最小与最大");
+        }
+    }
+
+    /// **环要整条路径同一时刻成立**（#636）。A 在 2019–2021 年属于 B，2022 年起 B
+    /// 属于 A：图在任何一刻都没有这个环。三元环更容易看走眼——三条边可以两两重叠，
+    /// 三者却没有共同的一刻，这时逐对比较会误报，只有沿路径求交才对。
+    #[test]
+    fn a_cycle_must_hold_at_one_moment() {
+        let transitive = with(Axioms {
+            transitive: true,
+            ..Default::default()
+        });
+        let cycles = |edges: &[TimedEdge]| -> Vec<Violation> {
+            super::check(edges, &transitive)
+                .into_iter()
+                .filter(|v| v.kind == Kind::Cycle)
+                .collect()
+        };
+
+        // 两条边一前一后
+        let swapped = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 2, 1, Some(100), None),
+        ];
+        assert!(cycles(&swapped).is_empty(), "前后相接的两段凑不成环");
+
+        // 三条边两两重叠，三者无交：[0,100) ∩ [50,150) ∩ [100,200) = ∅
+        let pairwise = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 2, 3, Some(50), Some(150)),
+            at(3, 3, 1, Some(100), Some(200)),
+        ];
+        assert!(cycles(&pairwise).is_empty(), "两两重叠不等于同时成立");
+
+        // 三者共有 [90,100) 这一段：是环，而且照旧只报一次、规范形状
+        let together = [
+            at(1, 1, 2, Some(0), Some(100)),
+            at(2, 2, 3, Some(50), Some(150)),
+            at(3, 3, 1, Some(90), Some(200)),
+        ];
+        let v = cycles(&together);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].path, vec![f(1), f(2), f(3)]);
+
+        // 没日期的事件哪一刻都不成立，不进任何环
+        let undated = [at(1, 1, 2, Some(50), Some(50)), at(2, 2, 1, None, None)];
+        assert!(cycles(&undated).is_empty());
+    }
+
+    /// **剪枝丢不了真环。** 同一对节点之间有两条边，一条的区间让路径无交、另一条
+    /// 不会：前一条被剪掉之后，后一条照样把环走出来。输入的每一种顺序都要到——
+    /// 剪枝发生在遍历里，顺序决定先碰到哪一条。
+    #[test]
+    fn pruning_a_dead_branch_keeps_the_live_one() {
+        let transitive = with(Axioms {
+            transitive: true,
+            ..Default::default()
+        });
+        let edges = [
+            at(1, 1, 2, Some(0), Some(100)),
+            // 与 1 无交：经过它的路径被剪掉
+            at(2, 2, 3, Some(200), Some(300)),
+            // 与 1 有交：环走这一条
+            at(3, 2, 3, Some(50), Some(150)),
+            at(4, 3, 1, Some(60), None),
+        ];
+        for order in permutations(&edges) {
+            let v: Vec<Violation> = super::check(&order, &transitive)
+                .into_iter()
+                .filter(|v| v.kind == Kind::Cycle)
+                .collect();
+            assert_eq!(v.len(), 1, "{order:?}");
+            assert_eq!(v[0].path, vec![f(1), f(3), f(4)]);
         }
     }
 
