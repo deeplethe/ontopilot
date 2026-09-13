@@ -666,15 +666,7 @@ export const zh: Strings = {
     deleteHint: (name: string) => `「${name}」及其消息将被永久移除。`,
     deleteBtn: "删除",
     cancel: "取消",
-  },
-  chat: {
-    // 一个回答没有 citations 时的标记（#547）。muted token，无新颜色——它**永远
-    // 是事实陈述**，不问何时显示：
-    //   - 招呼 / 问这场对话 / 拒答：标记无害地跟着；
-    //   - "以下是我找到的内容"配上零 citations：标记揭穿它。
-    // 问何时显示的那条启发式正是这个 issue 要拆掉的：模型能宣称它做了搜索、且
-    // 被追问时坚持，那就是谎言。数据自己说。
-    noSourcesConsulted: "未引用任何来源",
+    noSources: "未引用任何来源",
   },
   graph: {
     untyped: "未分类",
