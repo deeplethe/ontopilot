@@ -224,3 +224,29 @@ async fn a_name_another_entity_already_has_queues_the_pair_without_merging() -> 
     teardown(&pool, &f).await?;
     run
 }
+
+#[tokio::test]
+async fn the_adjudicator_sees_the_other_names_and_never_the_shared_one() -> anyhow::Result<()> {
+    let Some(url) = utopia_store::test_db::url() else {
+        return Ok(());
+    };
+    let pool = PgPool::connect(&url).await?;
+    let f = seed(&pool).await?;
+    let run = async {
+        let full = mention(&pool, &f, "海洋探测器1号").await?.entity_id;
+        names::record(&pool, f.kb, full, "海探1", None, None).await?;
+        let lines = resolution::entity_fact_lines(&pool, f.kb, full, 4).await?;
+        assert_eq!(lines, vec!["also known as: 海探1".to_string()]);
+        let bare = mention(&pool, &f, "海探2").await?.entity_id;
+        assert!(
+            resolution::entity_fact_lines(&pool, f.kb, bare, 4)
+                .await?
+                .is_empty(),
+            "只有本名的实体没有「又名」这一行"
+        );
+        anyhow::Ok(())
+    }
+    .await;
+    teardown(&pool, &f).await?;
+    run
+}

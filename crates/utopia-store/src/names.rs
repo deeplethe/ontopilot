@@ -216,3 +216,25 @@ pub async fn pair_shared_name(
     }
     Ok(others.len())
 }
+
+/// 本名以外的现行名字，按首次记下的先后。给裁决器与审阅卡的「又名」那一行
+pub async fn other_names(pool: &PgPool, entity_id: Uuid) -> AppResult<Vec<String>> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT v FROM (
+           SELECT DISTINCT ON (lower(f.object_value->>'value'))
+                  f.object_value->>'value' AS v, f.recorded_at
+             FROM facts f
+             JOIN relation_types r ON r.id = f.predicate_id
+             JOIN entities e ON e.id = f.subject_id
+            WHERE f.subject_id = $1 AND r.builtin AND r.key = $2
+              AND f.invalidated_at IS NULL
+              AND lower(f.object_value->>'value') <> lower(e.canonical_name)
+            ORDER BY lower(f.object_value->>'value'), f.recorded_at
+         ) n ORDER BY n.recorded_at",
+    )
+    .bind(entity_id)
+    .bind(KNOWN_AS)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(v,)| v).collect())
+}

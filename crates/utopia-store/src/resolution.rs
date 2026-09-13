@@ -1255,17 +1255,18 @@ async fn review_side(pool: &PgPool, kb_id: Uuid, entity_id: Uuid) -> AppResult<R
         disambiguator: Option<String>,
         degree: i64,
     }
-    let row: SideRow = sqlx::query_as(
+    let row: SideRow = sqlx::query_as(&format!(
         "SELECT e.id, e.canonical_name AS name, t.label AS type_label,
                 coalesce(t.color, '#94a3b8') AS color, e.disambiguator,
                 (SELECT count(*) FROM facts f
                  WHERE (f.subject_id = e.id OR f.object_id = e.id)
-                   AND f.invalidated_at IS NULL) AS degree
+                   AND f.invalidated_at IS NULL AND {not_name}) AS degree
          -- LEFT JOIN：没判出类型的实体照样要能进审核（0009）。
          -- 内连接会让它整条审核项取不出来，而漂移审核恰恰最常发生在它们身上
          FROM entities e LEFT JOIN entity_types t ON t.id = e.type_id
          WHERE e.kb_id = $1 AND e.id = $2",
-    )
+        not_name = crate::names::not_a_name("f"),
+    ))
     .bind(kb_id)
     .bind(entity_id)
     .fetch_optional(pool)
@@ -1323,9 +1324,16 @@ pub async fn entity_fact_lines(
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
+    // 本名以外的名字单独打头一行（0041）：「海洋探测器1号」对「海探1」，裁决器要看得见
+    // 前者也叫海探1，否则两边的事实各说各的，它只会判「不是同一个」。本名不列——
+    // 两个张伟各有一条「known as 张伟」，摆出来像共同证据，其实什么也分不出
+    let also_known_as = crate::names::other_names(pool, entity_id).await?;
+    let head =
+        (!also_known_as.is_empty()).then(|| format!("also known as: {}", also_known_as.join(", ")));
+
+    Ok(head
         .into_iter()
-        .map(|l| {
+        .chain(rows.into_iter().map(|l| {
             let other = l.other_name.unwrap_or_else(|| "?".into());
             let core = if l.direction == "out" {
                 format!("{} → {}", l.predicate_label, other)
@@ -1339,7 +1347,7 @@ pub async fn entity_fact_lines(
                 (Some(f), None) => format!("{core} ({} → now)", f.format("%Y-%m")),
                 _ => core,
             }
-        })
+        }))
         .collect())
 }
 
