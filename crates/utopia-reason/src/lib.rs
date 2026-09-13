@@ -286,8 +286,8 @@ fn walk<'a>(
                 // **报之前把环转到规范位置。**环是一个圈，从哪条边开始读都是同一个
                 // 环；可 `left`/`right` 取的是这一次遍历的首尾，而遍历的起点来自
                 // `adj.keys()`——一个 HashMap，顺序每次不同。于是同一个三元环会以
-                // 三种旋转轮流出现，而 `axiom_violations` 是按
-                // `(kind, left_fact, right_fact)` 唯一的：换一种旋转就是换一行。
+                // 三种旋转轮流出现，而 `axiom_violations` 里环是按整条 `path` 唯一的
+                // （0054；之前按首尾两条）：换一种旋转就是换一行。
                 //
                 // 后果不是"多一行"，是**人的裁决会悄悄失效**：重算删掉的是 open 的
                 // 行，裁过的那行留着，同一个环以新键插成 open，而重开那一支按键匹配，
@@ -510,6 +510,37 @@ mod tests {
         assert_eq!(left, path[0]);
         assert_eq!(right, *path.last().unwrap());
         assert_eq!(path.len(), 3);
+    }
+
+    /// **共用首尾两条边的两个环是两个环**（#641）。A→B 起头、X→A 收尾，中间一条走 C、
+    /// 一条走 D：两个环的 left 都是 A→B、right 都是 X→A。从前库里按这两列定键，一个
+    /// 覆盖另一个；这里钉的是检查器给出的就是两个、路径不同——落库那边按整条 path 定键
+    #[test]
+    fn two_cycles_sharing_their_ends_are_two_cycles() {
+        let edges = [
+            e(1, 1, 2),
+            e(2, 2, 3),
+            e(3, 2, 4),
+            e(4, 3, 5),
+            e(5, 4, 5),
+            e(6, 5, 1),
+        ];
+        let v: Vec<Violation> = check(
+            &edges,
+            &with(Axioms {
+                transitive: true,
+                ..Default::default()
+            }),
+        )
+        .into_iter()
+        .filter(|v| v.kind == Kind::Cycle)
+        .collect();
+        let paths: HashSet<Vec<Uuid>> = v.iter().map(|c| c.path.clone()).collect();
+        assert_eq!(
+            paths,
+            HashSet::from([vec![f(1), f(2), f(4), f(6)], vec![f(1), f(3), f(5), f(6)]])
+        );
+        assert!(v.iter().all(|c| (c.left, c.right) == (f(1), f(6))));
     }
 
     /// **没声明公理的谓词一条都不查。** 这是整套检查的地基：没有依据就不报矛盾。
