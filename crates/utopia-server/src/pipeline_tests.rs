@@ -370,9 +370,12 @@ async fn a_nul_byte_does_not_fail_the_whole_document() -> anyhow::Result<()> {
 #[test]
 fn without_nul_borrows_when_there_is_nothing_to_strip() {
     use std::borrow::Cow;
-    assert!(matches!(super::without_nul("plain text"), Cow::Borrowed(_)));
-    assert_eq!(super::without_nul("a\0b\0\0c"), "abc");
-    assert_eq!(super::without_nul("\0"), "");
+    assert!(matches!(
+        utopia_core::without_nul("plain text"),
+        Cow::Borrowed(_)
+    ));
+    assert_eq!(utopia_core::without_nul("a\0b\0\0c"), "abc");
+    assert_eq!(utopia_core::without_nul("\0"), "");
 }
 
 #[tokio::test]
