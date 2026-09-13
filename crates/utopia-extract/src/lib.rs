@@ -313,10 +313,17 @@ pub fn build_messages(
          8b. A **listed** relation also takes \"value\" when what the text gives is a \
             string rather than another entity — a job title, a designation, a ticker, a \
             model number. Never invent an entity for a string. And when the text introduces \
-            someone by their role — \"X, founder and CEO of Y\", \"Z, co-CEO of W\" — write \
-            both facts: the tie to the organization, and the role itself as a value on the \
-            person. The tie alone says they are connected; the role is what the sentence \
-            was actually telling you.\n\
+            someone by their role — \"X, founder and CEO of Y\", \"Z, co-CEO of W\", \
+            \"Y's vice president of research\", \"the president of OpenAI\", \
+            \"chief executive of Quora\", \"OpenAI's chief technology officer of \
+            applications\" — write both facts: the tie to the organization, and \
+            the role itself as a value on the person. The tie alone says they \
+            are connected; the role is what the sentence was actually telling \
+            you. The possessive (\"Y's <role>\", \"<role> of Y\", \"<role> at Y\"), the past \
+            tense (\"was Y's <role>\", \"former <role> of Y\"), and the implied form \
+            (\"appointed … as OpenAI's CTO of applications\") all carry the same \
+            shape — the role is the value, the organization is the other \
+            entity. Past tense and \"former\" give the tie valid_to: \"unknown\".\n\
          8c. A list of named parties is a list of facts — one per name. \"partners \
             including A, B, C and D\" is four facts, not one; \"advisors A and B\" is two. \
             Do not collapse an enumeration into a summary or into its first member. \
